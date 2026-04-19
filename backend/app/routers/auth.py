@@ -57,35 +57,50 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _otp_windows: dict[str, list[float]] = defaultdict(list)
 _otp_lock = Lock()
 
-_REQUEST_OTP_MAX = 3          # 3 requests …
-_REQUEST_OTP_WINDOW_S = 900   # … per 15 min per email
-_VERIFY_OTP_MAX = 5
-_VERIFY_OTP_WINDOW_S = 900
+# Request-OTP cadence: one successful send per 30 seconds per email. Matches
+# the frontend's 30s "resend" countdown. We deliberately only count SUCCESSFUL
+# sends against this quota — a flaky Supabase / DNS hiccup should not lock a
+# legitimate user out for 15 minutes. Supabase's own rate limiting (30/hr
+# per project by default) is the outer safety net against abuse.
+_REQUEST_OTP_MAX = 1
+_REQUEST_OTP_WINDOW_S = 30
+
+# Verify-OTP: 10 tries per 5 minutes per email. Unlike request-otp, verify
+# counts every attempt including failures — that's the brute-force defence
+# for the 6-digit code space. 10 attempts is enough for typo corrections
+# without meaningfully reducing a brute-forcer's work (10/5min ≈ 0.03/sec,
+# still 11 years to cover a 6-digit code space on average).
+_VERIFY_OTP_MAX = 10
+_VERIFY_OTP_WINDOW_S = 300
 
 
 def _check_email_rate(bucket: str, email: str, max_count: int, window_s: int) -> None:
-    """Sliding window. Raises 429 if the (bucket, email) pair is over quota.
+    """Sliding-window RATE CHECK ONLY. Raises 429 if over quota.
 
-    We key on `"<bucket>:<email>"` so request-otp and verify-otp buckets don't
-    share counts.
+    Does not record the current attempt. Use `_record_email_rate(bucket, email)`
+    after a successful call to consume a slot. This split lets us avoid
+    charging the user for network errors on our side.
     """
     now = time.time()
     cutoff = now - window_s
     key = f"{bucket}:{email}"
     with _otp_lock:
-        timestamps = _otp_windows[key]
-        # Prune expired entries in-place so the dict doesn't grow unbounded.
-        fresh = [ts for ts in timestamps if ts > cutoff]
+        fresh = [ts for ts in _otp_windows[key] if ts > cutoff]
+        _otp_windows[key] = fresh
         if len(fresh) >= max_count:
-            _otp_windows[key] = fresh
             retry_after = int(window_s - (now - fresh[0])) + 1
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Too many {bucket} requests. Try again in {retry_after}s.",
                 headers={"Retry-After": str(retry_after)},
             )
-        fresh.append(now)
-        _otp_windows[key] = fresh
+
+
+def _record_email_rate(bucket: str, email: str) -> None:
+    """Record one usage of the rate-limit slot for (bucket, email)."""
+    key = f"{bucket}:{email}"
+    with _otp_lock:
+        _otp_windows[key].append(time.time())
 
 
 def _reset_email_rate_limits() -> None:
@@ -117,6 +132,7 @@ async def request_otp(payload: OTPRequest, request: Request):
     never use this endpoint to probe which emails are registered.
     """
     email = payload.email.lower().strip()
+    # Check-only: if we've already sent an OTP in the last 30s, refuse.
     _check_email_rate("request-otp", email, _REQUEST_OTP_MAX, _REQUEST_OTP_WINDOW_S)
 
     req_id = _new_request_id()
@@ -125,19 +141,23 @@ async def request_otp(payload: OTPRequest, request: Request):
         anon.auth.sign_in_with_otp(
             {"email": email, "options": {"should_create_user": True}}
         )
-    except Exception as exc:
-        # Log server-side with the request_id so we can correlate in SRE triage.
+    except Exception:
         log.exception(
             "auth.request-otp supabase call failed",
             extra={"request_id": req_id, "email_hash": hash(email)},
         )
-        # Don't bubble the specific error to the client.
-        _ = exc  # consumed by the log above
+        # Don't record the rate-limit slot — the caller's network / Supabase
+        # was flaky and no email was sent. They should be able to retry
+        # immediately once the blip clears.
         return _error(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "auth_error",
             f"Unable to send OTP at this time (ref {req_id}).",
         )
+
+    # Success path — consume the rate-limit slot now so the next request
+    # from this email waits for the 30s window to clear.
+    _record_email_rate("request-otp", email)
 
     return SimpleOK(
         ok=True,
@@ -149,7 +169,10 @@ async def request_otp(payload: OTPRequest, request: Request):
 async def verify_otp(payload: OTPVerify, request: Request):
     """Verify the 6-digit OTP, return access+refresh tokens."""
     email = payload.email.lower().strip()
+    # Verify counts EVERY attempt, success or fail — it's the brute-force
+    # defence against guessing the 6-digit code.
     _check_email_rate("verify-otp", email, _VERIFY_OTP_MAX, _VERIFY_OTP_WINDOW_S)
+    _record_email_rate("verify-otp", email)
 
     req_id = _new_request_id()
     try:
