@@ -17,8 +17,12 @@ export default function VerifyPage() {
 
   const email = (params.get("email") || "").trim().toLowerCase();
   const nextParam = params.get("next") || "";
+  // Dev shortcut: `?code=NNNNNN` pre-fills the OTP. Used by the
+  // backend/scripts/dev_get_otp.py one-click URL so you can jump straight
+  // into the wizard without typing the code manually.
+  const prefillCode = (params.get("code") || "").replace(/\D/g, "").slice(0, 6);
 
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(prefillCode);
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
   const [resendCountdown, setResendCountdown] = useState(RESEND_SECONDS);

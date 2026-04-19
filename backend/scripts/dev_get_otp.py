@@ -55,11 +55,22 @@ def main() -> int:
     print(f"→ Asking Supabase for a magic link for {email}…")
     admin = get_admin_client()
 
+    frontend_origin = os.environ.get("DEV_FRONTEND_ORIGIN", "http://localhost:5173")
+
     try:
         # generate_link's 'magiclink' type returns both email_otp and action_link.
         # The email_otp is what Supabase would have sent via SMTP.
+        #
+        # Pass redirect_to so Supabase's fallback magic-link URL points at the
+        # right port (Supabase defaults to whatever Site URL is set to, which
+        # is often :3000 out of the box). This isn't the recommended signin
+        # path — the one-click URL below is — but it's a useful fallback.
         res = admin.auth.admin.generate_link(
-            {"type": "magiclink", "email": email}
+            {
+                "type": "magiclink",
+                "email": email,
+                "options": {"redirect_to": f"{frontend_origin}/apply"},
+            }
         )
     except Exception as exc:
         print(f"✗ Supabase rejected the request: {exc}")
@@ -75,22 +86,35 @@ def main() -> int:
 
     otp = getattr(props, "email_otp", None) or props.get("email_otp")
     link = getattr(props, "action_link", None) or props.get("action_link")
-    expires_iso = (
-        getattr(props, "verification_type", None) or props.get("verification_type")
+
+    # The actual one-click URL: a direct link into our frontend's /apply/verify
+    # page with both email and code pre-filled. VerifyPage auto-submits on the
+    # 6th digit so this is a single-click signin — no typing, no Supabase
+    # redirect dance.
+    from urllib.parse import quote
+
+    frontend_verify_url = (
+        f"{frontend_origin}/apply/verify"
+        f"?email={quote(email)}&code={otp or ''}"
     )
 
     print()
     print("┌─────────────────────────────────────────────┐")
     print(f"│  OTP code: {otp or '(missing)':<33}│")
     print("└─────────────────────────────────────────────┘")
+    print()
+    print("★ ONE-CLICK SIGN IN (recommended) — paste into your browser:")
+    print()
+    print(f"  {frontend_verify_url}")
+    print()
+    print("  Loads /apply/verify with email + code pre-filled; auto-submits;")
+    print("  lands you straight in the wizard.")
+    print()
     if link:
-        print()
-        print("Or click this magic link to sign in directly:")
+        print("Alternative — Supabase magic link (falls back to localhost:5173/apply):")
         print(f"  {link}")
-    print()
-    print(f"Type: {expires_iso}")
-    print()
-    print("Enter the 6-digit OTP on http://localhost:5173/apply/verify")
+        print()
+    print(f"Or manually enter the OTP at {frontend_origin}/apply/verify")
     return 0
 
 
