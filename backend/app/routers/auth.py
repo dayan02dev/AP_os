@@ -141,7 +141,7 @@ async def request_otp(payload: OTPRequest, request: Request):
         anon.auth.sign_in_with_otp(
             {"email": email, "options": {"should_create_user": True}}
         )
-    except Exception:
+    except Exception as exc:
         log.exception(
             "auth.request-otp supabase call failed",
             extra={"request_id": req_id, "email_hash": hash(email)},
@@ -149,6 +149,19 @@ async def request_otp(payload: OTPRequest, request: Request):
         # Don't record the rate-limit slot — the caller's network / Supabase
         # was flaky and no email was sent. They should be able to retry
         # immediately once the blip clears.
+
+        # Surface Supabase's OWN 429 as a 429 to the client (instead of
+        # collapsing to 500) so the UI can show a meaningful message. Default
+        # Supabase project email cap is ~30/hour; bump it at
+        # Supabase Dashboard → Authentication → Rate Limits.
+        if _is_supabase_rate_limit(exc):
+            return _error(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "supabase_email_rate_limited",
+                "Supabase's email rate limit is temporarily exceeded. Try again "
+                "in a few minutes, use a different email, or raise the limit in "
+                "Supabase Dashboard → Authentication → Rate Limits.",
+            )
         return _error(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "auth_error",
@@ -163,6 +176,16 @@ async def request_otp(payload: OTPRequest, request: Request):
         ok=True,
         message="If this email is registered, an OTP has been sent.",
     )
+
+
+def _is_supabase_rate_limit(exc: Exception) -> bool:
+    """Detect whether a gotrue/httpx exception represents a 429 from Supabase."""
+    status_code = getattr(exc, "status", None) or getattr(exc, "status_code", None)
+    if status_code == 429:
+        return True
+    # AuthApiError carries `.to_dict()` or similar; fall back to message scan.
+    msg = str(exc).lower()
+    return "rate limit" in msg or "too many" in msg or "429" in msg
 
 
 @router.post("/verify-otp", response_model=TokenResponse)

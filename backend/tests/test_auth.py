@@ -199,6 +199,26 @@ def test_rate_limit_request_otp(client, mock_supabase):
     assert res.status_code == 200
 
 
+def test_supabase_email_rate_limit_surfaces_as_429(client, mock_supabase):
+    """When Supabase itself 429s on email sends, the backend must bubble that
+    as a 429 (with a helpful code) rather than hiding it behind a 500.
+    """
+
+    class FakeAuthApiError(Exception):
+        def __init__(self, message, status):
+            super().__init__(message)
+            self.status = status
+
+    anon, _admin = mock_supabase
+    anon.auth.sign_in_with_otp.side_effect = FakeAuthApiError(
+        "email rate limit exceeded", 429
+    )
+
+    res = client.post("/auth/request-otp", json={"email": "quota@example.com"})
+    assert res.status_code == 429
+    assert res.json()["error"]["code"] == "supabase_email_rate_limited"
+
+
 def test_failed_otp_send_does_not_burn_rate_limit(client, mock_supabase):
     """A 500 from Supabase must NOT consume the caller's rate-limit slot.
 
