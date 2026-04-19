@@ -1,15 +1,35 @@
-import { Navigate, useLocation } from "react-router-dom";
+// ProtectedRoute — gate for authed-only pages. Redirects to /apply/signin
+// with a ?next= that preserves the intended destination.
 
-function readUser() {
-  try { return JSON.parse(localStorage.getItem("tir:user") || "null"); } catch { return null; }
-}
+import { Navigate, useLocation } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth.jsx";
 
 export default function ProtectedRoute({ children }) {
+  const { isAuthed, loading } = useAuth();
   const location = useLocation();
-  const user = readUser();
-  if (!user) {
+
+  if (loading) {
+    // Plain passthrough while rehydrating — a flash of loading UI is ok.
+    return (
+      <div className="eir-root">
+        <div className="eir-bg" />
+        <div className="eir-frame">
+          <main className="eir-main">
+            <div className="eir-screen">
+              <div className="eir-welcome-body">
+                <p className="eir-mono eir-dim">checking your session…</p>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthed) {
     const next = location.pathname + (location.search || "");
     return <Navigate to={`/apply/signin?next=${encodeURIComponent(next)}`} replace />;
   }
+
   return children;
 }
