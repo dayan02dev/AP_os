@@ -1,0 +1,35 @@
+# pyproject.toml — ruff + pytest config.
+# Dependencies live in requirements.txt (not here) so Lambda + pip-install flows
+# stay first-class. We treat pyproject.toml purely as a tooling config file.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"   # code must run on 3.11+ per Phase 2 spec
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # isort
+  "UP",  # pyupgrade
+  "B",   # flake8-bugbear
+  "SIM", # flake8-simplify
+]
+ignore = [
+  "E501", # line length — ruff formatter handles it
+  "B008", # Depends(...) in default args (idiomatic in FastAPI)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]  # assert in tests is fine
+"__init__.py" = ["F401"]  # re-exports
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+  "ignore::DeprecationWarning:pydantic.*",
+]

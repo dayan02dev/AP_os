@@ -1,0 +1,30 @@
+# Runtime dependencies. Pinned to major versions per Phase 2 spec —
+# minor/patch bumps within each range are welcome.
+
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+pydantic==2.9.*
+pydantic-settings==2.6.*
+
+# Supabase client (sync + async); used for auth + data access.
+supabase==2.9.*
+
+# File uploads (multipart parsing) + outbound HTTP client.
+python-multipart==0.0.*
+httpx==0.27.*
+
+# Resume parsing (Phase 5).
+pypdf==5.*
+python-docx==1.1.*
+
+# AWS SES for transactional email (Phase 6).
+boto3==1.35.*
+
+# In-memory rate limiting.
+slowapi==0.1.*
+
+# AWS Lambda adapter (used by SAM in Phase 9; no-op locally).
+mangum==0.19.*
+
+# Error tracking.
+sentry-sdk[fastapi]==2.*
