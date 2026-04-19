@@ -25,6 +25,10 @@ python-docx==1.1.*
 # AWS SES for transactional email (Phase 6).
 boto3==1.35.*
 
+# HTML/text email templating (Phase 6). Used by app/services/email_service.py
+# to render templates in app/templates/email/.
+jinja2==3.1.*
+
 # In-memory rate limiting.
 slowapi==0.1.*
 
