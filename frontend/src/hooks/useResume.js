@@ -7,7 +7,8 @@
 //                               should then call useApplication.refetch().
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, UPLOAD_TIMEOUT_MS } from "../lib/api.js";
+import { api, ApiError, UPLOAD_TIMEOUT_MS } from "../lib/api.js";
+import { loadSession } from "../lib/session.js";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 10;
@@ -18,6 +19,26 @@ export function useResume() {
   const [parsing, setParsing] = useState(false);
   const [error, setError] = useState(null);
   const pollTimerRef = useRef(null);
+
+  // Fetch any existing resume on mount so callers can skip the upload step
+  // if the user already has one. 404 is expected (no resume yet) and
+  // silently swallowed.
+  useEffect(() => {
+    if (!loadSession()) return;
+    let cancelled = false;
+    api
+      .get("/resume/me")
+      .then((latest) => {
+        if (!cancelled) setResume(latest);
+      })
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 404) return;
+        // Non-404 errors just leave resume=null; the upload step still works.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(
     () => () => {

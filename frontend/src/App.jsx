@@ -42,6 +42,10 @@ const PHASES = {
   WELCOME: "welcome",
   UPLOAD: "upload",
   PARSING: "parsing",
+  // Post-upload confirmation of parsed CV fields. Distinct from REVIEW
+  // (pre-submission summary) so that re-entering REVIEW later doesn't
+  // bounce the user back to the CV-review screen when a resume is on file.
+  PARSE_REVIEW: "parse_review",
   REVIEW: "review",
   SECTION_INTRO: "section_intro",
   QUESTION: "question",
@@ -67,7 +71,15 @@ function urlForState(phase, sectionIdx) {
   if (phase === PHASES.PROFILE) return "/apply/profile";
   if (phase === PHASES.REVIEW) return "/apply/review";
   if (phase === PHASES.DONE) return "/apply/submitted";
-  if (phase === PHASES.UPLOAD || phase === PHASES.PARSING) return "/apply";
+  // UPLOAD / PARSING / PARSE_REVIEW all live on /apply so the URL doesn't
+  // jitter during the CV flow. The user sees these as one continuous step.
+  if (
+    phase === PHASES.UPLOAD ||
+    phase === PHASES.PARSING ||
+    phase === PHASES.PARSE_REVIEW
+  ) {
+    return "/apply";
+  }
   if (phase === PHASES.SECTION_INTRO || phase === PHASES.QUESTION || phase === PHASES.CELEBRATE) {
     return "/apply/" + (SECTION_ORDER[sectionIdx] || SECTION_ORDER[0]);
   }
@@ -133,23 +145,20 @@ export default function App() {
   const currentFQ = phase === PHASES.QUESTION && stepIdx < flat.length ? flat[stepIdx] : null;
 
   // ─── URL → phase/section sync ────────────────────────────────
+  //
+  // Fires ONLY when the URL pathname changes. The `application` and `locked`
+  // state transitions have their own effects below, so an inbound save
+  // response doesn't trip this effect and reset stepIdx back to zero
+  // (which was the Phase-7-post-launch bug that bounced users from the
+  // name question to the hasTeam question after every auto-save).
   useEffect(() => {
     const slug = pickSlug(location.pathname);
     if (slug === null) return;
     urlSyncRef.current.applying = true;
 
-    if (slug === "") {
-      // /apply itself — default to WELCOME or RETURNING.
-      // If application has no content yet, show WELCOME.
-      if (!application) return; // still loading
-      if (locked) {
-        setPhase(PHASES.DONE);
-        return;
-      }
-      const hasAny = answers && Object.keys(answers).length > 0;
-      setPhase(hasAny ? PHASES.SECTION_INTRO : PHASES.WELCOME);
-      return;
-    }
+    // Slug "" is handled by the dedicated /apply effect below — it needs to
+    // wait for the application to load before deciding the initial phase.
+    if (slug === "") return;
 
     if (slug === "profile") {
       setPhase(PHASES.PROFILE);
@@ -164,18 +173,15 @@ export default function App() {
       return;
     }
     if (SECTION_ORDER.includes(slug)) {
-      if (locked) {
-        // Submitted — bounce to /apply/submitted.
-        navigate("/apply/submitted", { replace: true });
-        return;
-      }
       const idx = SECTION_ORDER.indexOf(slug);
-      setSectionIdx(idx);
-
-      // Find the first question in this section (or first unanswered).
-      const questionsUpToSection = flat.findIndex((fq) => fq.sectionIdx === idx);
-      if (questionsUpToSection >= 0) setStepIdx(questionsUpToSection);
-
+      // Only reset stepIdx when we've actually changed section. This is the
+      // fix: prior to the split, every save() → setRow() → application-dep
+      // effect → setStepIdx(firstQInSection) and the user lost their place.
+      if (idx !== sectionIdx) {
+        setSectionIdx(idx);
+        const firstQInSection = flat.findIndex((fq) => fq.sectionIdx === idx);
+        if (firstQInSection >= 0) setStepIdx(firstQInSection);
+      }
       if (phase !== PHASES.QUESTION && phase !== PHASES.CELEBRATE) {
         setPhase(PHASES.SECTION_INTRO);
       }
@@ -183,7 +189,35 @@ export default function App() {
     }
     // Unknown slug — handled by router-level 404.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, application, locked]);
+  }, [location.pathname]);
+
+  // /apply (empty slug) needs to wait for the application to load before it
+  // can decide between WELCOME (first-timer, no answers yet) and
+  // SECTION_INTRO (returning user with saved answers).
+  useEffect(() => {
+    if (!application) return;
+    const slug = pickSlug(location.pathname);
+    if (slug !== "") return;
+    if (locked) {
+      setPhase(PHASES.DONE);
+      return;
+    }
+    const hasAny = answers && Object.keys(answers).length > 0;
+    setPhase(hasAny ? PHASES.SECTION_INTRO : PHASES.WELCOME);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [application, locked]);
+
+  // When the application flips to non-draft status mid-session (another
+  // device submitted, or the user did so via another tab), bounce any
+  // section URL to /apply/submitted.
+  useEffect(() => {
+    if (!locked) return;
+    const slug = pickSlug(location.pathname);
+    if (slug && SECTION_ORDER.includes(slug)) {
+      navigate("/apply/submitted", { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked]);
 
   // ─── Phase/section → URL push ────────────────────────────────
   useEffect(() => {
@@ -199,6 +233,19 @@ export default function App() {
 
   // ─── Navigation handlers ─────────────────────────────────────
   const startWizard = () => {
+    // Resume upload comes before the first section so parsed fields can
+    // pre-fill contact info. If the user already uploaded a CV we skip
+    // straight to the sections; they can always re-upload from /apply/profile.
+    if (!resume.resume) {
+      setPhase(PHASES.UPLOAD);
+      return;
+    }
+    setSectionIdx(0);
+    setStepIdx(0);
+    setPhase(PHASES.SECTION_INTRO);
+  };
+
+  const skipUpload = () => {
     setSectionIdx(0);
     setStepIdx(0);
     setPhase(PHASES.SECTION_INTRO);
@@ -373,15 +420,26 @@ export default function App() {
             <WelcomeScreen onStart={startWizard} warmCopy={warmCopy} />
           )}
           {phase === PHASES.UPLOAD && (
-            <UploadScreen onUploaded={onUploadedReal} warmCopy={warmCopy} />
+            <div>
+              <UploadScreen onUploaded={onUploadedReal} warmCopy={warmCopy} />
+              <div className="eir-upload-skip">
+                <button
+                  type="button"
+                  className="eir-link-btn eir-mono"
+                  onClick={skipUpload}
+                >
+                  skip for now — I'll fill it in manually ↗
+                </button>
+              </div>
+            </div>
           )}
           {phase === PHASES.PARSING && (
             <ParsingScreen
-              onDone={() => setPhase(PHASES.REVIEW)}
+              onDone={() => setPhase(PHASES.PARSE_REVIEW)}
               uploaded={{ cv: resume.resume?.original_filename || "your CV" }}
             />
           )}
-          {phase === PHASES.REVIEW && resume.resume?.parsed_data && (
+          {phase === PHASES.PARSE_REVIEW && resume.resume?.parsed_data && (
             <ParsedReviewScreen
               parsed={{
                 fullName: resume.resume.parsed_data.full_name || "",
@@ -425,7 +483,7 @@ export default function App() {
               saving={saving}
             />
           )}
-          {phase === PHASES.REVIEW && !resume.resume?.parsed_data && (
+          {phase === PHASES.REVIEW && (
             <ReviewSubmitPanel
               answers={answers}
               completion={completion}
