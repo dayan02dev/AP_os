@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}[ARTPARK Support] {{ ticket.subject }}{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 8px 0;font-size:20px;font-weight:600;">New support ticket</h1>
+<p style="margin:0 0 18px 0;color:#4a4a45;font-size:13px;">Reply directly to this email — the applicant's address is set as Reply-To.</p>
+
+<table role="presentation" cellpadding="8" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:13px;">
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;width:140px;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;vertical-align:top;">ticket id</td>
+    <td style="border:1px solid #d7d1c2;font-family:'SFMono-Regular',Menlo,Consolas,monospace;">{{ ticket.id }}</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">from</td>
+    <td style="border:1px solid #d7d1c2;">{{ ticket.email }}</td>
+  </tr>
+  {% if ticket.user_id %}
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">user id</td>
+    <td style="border:1px solid #d7d1c2;font-family:'SFMono-Regular',Menlo,Consolas,monospace;">{{ ticket.user_id }}</td>
+  </tr>
+  {% else %}
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">user id</td>
+    <td style="border:1px solid #d7d1c2;color:#8a867c;">anonymous (no account)</td>
+  </tr>
+  {% endif %}
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">category</td>
+    <td style="border:1px solid #d7d1c2;">{{ ticket.category }}</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">subject</td>
+    <td style="border:1px solid #d7d1c2;"><strong>{{ ticket.subject }}</strong></td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">received</td>
+    <td style="border:1px solid #d7d1c2;">{{ ticket.created_at }}</td>
+  </tr>
+</table>
+
+<h2 style="margin:22px 0 8px 0;font-size:14px;font-weight:600;">Message</h2>
+<div style="border:1px solid #d7d1c2;padding:14px;background:#fafaf7;white-space:pre-wrap;font-size:14px;line-height:1.55;color:#1a1a1a;">{{ ticket.body }}</div>
+{% endblock %}

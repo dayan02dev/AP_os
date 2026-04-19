@@ -1,0 +1,15 @@
+{% extends "base.txt" %}
+{% block content %}New support ticket — reply to this email to respond to the applicant.
+
+  ticket id : {{ ticket.id }}
+  from      : {{ ticket.email }}
+  user id   : {% if ticket.user_id %}{{ ticket.user_id }}{% else %}anonymous (no account){% endif %}
+  category  : {{ ticket.category }}
+  subject   : {{ ticket.subject }}
+  received  : {{ ticket.created_at }}
+
+Message:
+----------------------------------------------------------------
+{{ ticket.body }}
+----------------------------------------------------------------
+{% endblock %}

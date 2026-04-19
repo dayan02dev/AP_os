@@ -1,0 +1,12 @@
+{% extends "base.txt" %}
+{% block content %}We've got your ticket.
+
+Thanks for reaching out. Our team will reply within 2 business days, usually much sooner.
+
+  Ticket ID : #{{ ticket_id_short }}
+  Subject   : {{ subject_summary }}
+
+If you need to add more detail, just reply to this email — it'll thread back to the same ticket.
+
+— ARTPARK Support
+{% endblock %}
