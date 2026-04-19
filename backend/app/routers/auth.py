@@ -150,10 +150,13 @@ async def request_otp(payload: OTPRequest, request: Request):
         # was flaky and no email was sent. They should be able to retry
         # immediately once the blip clears.
 
-        # Surface Supabase's OWN 429 as a 429 to the client (instead of
-        # collapsing to 500) so the UI can show a meaningful message. Default
-        # Supabase project email cap is ~30/hour; bump it at
-        # Supabase Dashboard → Authentication → Rate Limits.
+        # Translate Supabase's error to something actionable:
+        #
+        # 429 → rate limit exceeded (project email cap); bump in dashboard
+        # 500 "Error sending confirmation email" → SMTP misconfigured in
+        #     Supabase's Auth → SMTP Settings (Resend / SES / etc rejecting
+        #     the send — usually an unverified sender domain)
+        # other → generic 500
         if _is_supabase_rate_limit(exc):
             return _error(
                 status.HTTP_429_TOO_MANY_REQUESTS,
@@ -161,6 +164,17 @@ async def request_otp(payload: OTPRequest, request: Request):
                 "Supabase's email rate limit is temporarily exceeded. Try again "
                 "in a few minutes, use a different email, or raise the limit in "
                 "Supabase Dashboard → Authentication → Rate Limits.",
+            )
+        if _is_smtp_send_failure(exc):
+            return _error(
+                status.HTTP_502_BAD_GATEWAY,
+                "supabase_smtp_failed",
+                "Supabase accepted the OTP request but couldn't deliver the email. "
+                "Check Supabase Dashboard → Authentication → SMTP Settings: the "
+                "sender domain probably isn't verified with your SMTP provider "
+                "(Resend / SES). As a dev bypass, run "
+                "`python backend/scripts/dev_get_otp.py <email>` to fetch the OTP "
+                "without relying on email delivery.",
             )
         return _error(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -186,6 +200,24 @@ def _is_supabase_rate_limit(exc: Exception) -> bool:
     # AuthApiError carries `.to_dict()` or similar; fall back to message scan.
     msg = str(exc).lower()
     return "rate limit" in msg or "too many" in msg or "429" in msg
+
+
+def _is_smtp_send_failure(exc: Exception) -> bool:
+    """Detect Supabase's 500 when its configured SMTP provider rejected the send.
+
+    Supabase surfaces this as AuthApiError("Error sending confirmation email")
+    with status 500. It's a config problem, not a transient error — the caller's
+    inbox will never get the code until SMTP is fixed.
+    """
+    status_code = getattr(exc, "status", None) or getattr(exc, "status_code", None)
+    msg = str(exc).lower()
+    if status_code == 500 and (
+        "sending confirmation email" in msg
+        or "sending email" in msg
+        or "smtp" in msg
+    ):
+        return True
+    return False
 
 
 @router.post("/verify-otp", response_model=TokenResponse)
