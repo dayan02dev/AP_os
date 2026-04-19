@@ -21,7 +21,7 @@ because the optional-auth pattern is only used here; the authoritative
 # annotations, so keep runtime (non-stringified) type hints in this file.
 
 import logging
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from slowapi.util import get_remote_address
@@ -49,8 +49,8 @@ router = APIRouter(prefix="/support", tags=["support"])
 # anonymous rather than 401 — this is the one place in the API where that
 # behaviour is desired.
 async def get_current_user_optional(
-    authorization: Annotated[Optional[str], Header()] = None,
-) -> Optional[CurrentUser]:
+    authorization: Annotated[str | None, Header()] = None,
+) -> CurrentUser | None:
     if not authorization or not authorization.lower().startswith("bearer "):
         return None
     try:
@@ -105,7 +105,7 @@ def _support_rate_limit(key: str) -> str:
 async def create_ticket(
     request: Request,
     payload: SupportTicketCreate,
-    user: Optional[CurrentUser] = Depends(get_current_user_optional),
+    user: CurrentUser | None = Depends(get_current_user_optional),
 ) -> SupportTicketCreateResponse:
     admin = get_admin_client()
 

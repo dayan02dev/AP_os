@@ -16,7 +16,6 @@ from uuid import uuid4
 import pytest
 from botocore.exceptions import ClientError
 
-
 VALID_PAYLOAD = {
     "email": "applicant@example.com",
     "subject": "CV upload keeps failing",
@@ -40,7 +39,7 @@ class _FakeQuery:
       .select("*").eq(col, val).order(...).limit(N).execute()
     """
 
-    def __init__(self, table: "_FakeTable", op: str, payload=None):
+    def __init__(self, table: _FakeTable, op: str, payload=None):
         self._table = table
         self._op = op
         self._payload = payload
@@ -85,7 +84,7 @@ class _FakeQuery:
 
 
 class _FakeTable:
-    def __init__(self, client: "FakeSupabaseClient", name: str):
+    def __init__(self, client: FakeSupabaseClient, name: str):
         self._client = client
         self._name = name
 

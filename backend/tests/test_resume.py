@@ -8,15 +8,14 @@ OpenRouter are mocked.
 from typing import Any
 
 import pytest
+from app.deps import get_current_user
+from app.routers import resume as resume_router
+from app.utils.rate_limit import limiter
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-
-from app.deps import get_current_user
-from app.routers import resume as resume_router
-from app.utils.rate_limit import limiter
 
 TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 TEST_USER_EMAIL = "applicant@example.com"
