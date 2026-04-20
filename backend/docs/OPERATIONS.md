@@ -281,11 +281,14 @@ template.
 
 ---
 
-## 10. Production stack (Phase 9B)
+## 10. Production stack (Phase 9B / 9C / 9D)
 
 The backend is deployed as a single Lambda function behind an HTTP API
-Gateway in `ap-south-1`. See `infra/sam/README.md` for the redeploy /
-rollback / destroy playbook; this section is the operator cheat sheet.
+Gateway in `ap-south-1`. The frontend is deployed to Vercel. See
+`infra/sam/README.md` and `frontend/README.md` for the redeploy / rollback
+playbooks per tier; this section is the operator cheat sheet.
+
+### Backend
 
 | Key            | Value |
 |----------------|-------|
@@ -297,6 +300,41 @@ rollback / destroy playbook; this section is the operator cheat sheet.
 | Lambda fn      | `artpark-eir-api-production` |
 | Log group      | `/aws/lambda/artpark-eir-api-production` (30-day retention) |
 | Runtime        | Python 3.11 / arm64 / 1024 MB / 29 s timeout |
+
+### Frontend
+
+| Key            | Value |
+|----------------|-------|
+| Frontend URL   | `https://apply.artpark.info` |
+| Marketing page | `https://apply.artpark.info/2026` (static; /marketing.html 308s here) |
+| Vercel project | `ap-os` (Hobby tier) |
+| Production branch | `main` — auto-deploys on every push |
+| Root directory | `frontend/` |
+| Framework      | Vite (React 18 SPA) |
+| DNS            | CNAME `apply.artpark.info` → `cname.vercel-dns.com` (GoDaddy) |
+| TLS            | Vercel-managed (Let's Encrypt) |
+
+### Cross-origin flow
+
+```
+          browser
+  https://apply.artpark.info
+          │
+          │  fetch (CORS preflight → 200)
+          ▼
+          Lambda (FastAPI)
+  https://api.artpark.info           ← custom domain on AWS HTTP API
+          │
+          │  admin-client httpx
+          ▼
+          Supabase prod
+  xtmszlpwgbyoumalgbhs.supabase.co   ← REST + Auth + Storage
+```
+
+- Gateway-level CORS pinned to `https://apply.artpark.info` (see SAM template)
+- FastAPI `CORSMiddleware` enforces the same allow-list defensively
+- Vercel + API Gateway both send HSTS headers (double-tagged; belt + braces)
+- `credentials: "omit"` in `lib/api.js` — auth travels only in `Authorization: Bearer <jwt>`
 
 Quick reference:
 
