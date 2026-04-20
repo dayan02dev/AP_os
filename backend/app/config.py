@@ -21,7 +21,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,7 +52,13 @@ class Settings(BaseSettings):
     )
 
     # ── Environment ─────────────────────────────────────────────
-    env: Literal["development", "staging", "production", "dev", "prod"] = "development"
+    # We prefer APP_ENV as the env-var name because plain ENV is generic
+    # enough to clash with other tooling. Pydantic's default would map the
+    # field name `env` to env var `ENV`; override that.
+    env: Literal["development", "staging", "production", "dev", "prod"] = Field(
+        default="development",
+        validation_alias=AliasChoices("APP_ENV", "ENV"),
+    )
 
     # ── Supabase ────────────────────────────────────────────────
     supabase_url: str
@@ -64,7 +70,15 @@ class Settings(BaseSettings):
     openrouter_model: str = "google/gemini-2.0-flash-001"
 
     # ── AWS SES ─────────────────────────────────────────────────
-    aws_region: str = "ap-south-1"
+    # AWS_REGION is a *reserved* Lambda env var that the runtime pre-populates
+    # with the region the function is running in — you can't override it in a
+    # CloudFormation/SAM template. So in production we set AWS_REGION_APP via
+    # the SAM template and read that first. Local .env still uses AWS_REGION
+    # (via the alias) so dev boxes don't need a new name.
+    aws_region: str = Field(
+        default="ap-south-1",
+        validation_alias=AliasChoices("AWS_REGION_APP", "AWS_REGION"),
+    )
     ses_from_email: str = ""
     support_recipient_emails: str = ""
 

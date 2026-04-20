@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: ARTPARK EIR API — FastAPI on Lambda + HTTP API Gateway (Phase 9B)
+
+# ─── Parameters ──────────────────────────────────────────────────────
+# Non-secret params are passed plainly; secrets are NoEcho so they never
+# appear in CloudFormation events / console audit trails.
+Parameters:
+  EnvName:
+    Type: String
+    AllowedValues: [dev, staging, production]
+    Default: production
+  FrontendOrigin:
+    Type: String
+    Description: "Comma-separated list of allowed origins (e.g. https://apply.artpark.info)"
+  SupabaseUrl:
+    Type: String
+  SupabaseAnonKey:
+    Type: String
+    NoEcho: true
+  SupabaseServiceRoleKey:
+    Type: String
+    NoEcho: true
+  OpenRouterApiKey:
+    Type: String
+    NoEcho: true
+  OpenRouterModel:
+    Type: String
+    Default: google/gemini-2.0-flash-001
+  SentryDsn:
+    Type: String
+    NoEcho: true
+    Default: ""
+  AdminApiKey:
+    Type: String
+    NoEcho: true
+  AppVersion:
+    Type: String
+    Default: 0.1.0
+  LogLevel:
+    Type: String
+    AllowedValues: [DEBUG, INFO, WARN, ERROR]
+    Default: INFO
+  SesFromEmail:
+    Type: String
+    Default: noreply@artpark.info
+  AwsRegionParam:
+    Type: String
+    Default: ap-south-1
+
+# ─── Globals: every function inherits these ──────────────────────────
+# arm64 + python3.11 + 1GB RAM is the sweet spot for FastAPI on Lambda:
+# 1GB gets us a full vCPU which halves cold-start parsing time; arm64 is
+# ~20% cheaper and ships the same wheels as x86 for our deps.
+Globals:
+  Function:
+    Runtime: python3.11
+    Architectures: [arm64]
+    MemorySize: 1024
+    Timeout: 29
+    Tracing: Active
+    Environment:
+      Variables:
+        APP_ENV: !Ref EnvName
+        APP_VERSION: !Ref AppVersion
+        LOG_LEVEL: !Ref LogLevel
+        FRONTEND_ORIGIN: !Ref FrontendOrigin
+        FRONTEND_ORIGINS: !Ref FrontendOrigin
+        SUPABASE_URL: !Ref SupabaseUrl
+        SUPABASE_ANON_KEY: !Ref SupabaseAnonKey
+        SUPABASE_SERVICE_ROLE_KEY: !Ref SupabaseServiceRoleKey
+        OPENROUTER_API_KEY: !Ref OpenRouterApiKey
+        OPENROUTER_MODEL: !Ref OpenRouterModel
+        SENTRY_DSN: !Ref SentryDsn
+        ADMIN_API_KEY: !Ref AdminApiKey
+        SES_FROM_EMAIL: !Ref SesFromEmail
+        # Lambda reserves AWS_REGION and pre-sets it to the runtime region.
+        # Our Settings class reads AWS_REGION_APP first so we can override it
+        # via the SAM template; AWS_REGION remains the fallback locally.
+        AWS_REGION_APP: !Ref AwsRegionParam
+
+Resources:
+  # ── Lambda function ─────────────────────────────────────────────
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub artpark-eir-api-${EnvName}
+      CodeUri: ../../backend/
+      Handler: app.main.handler
+      Events:
+        CatchAll:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: ANY
+      Policies:
+        - CloudWatchLogsFullAccess
+
+  # ── HTTP API Gateway ────────────────────────────────────────────
+  # CORS is enforced BOTH at the gateway (below) and inside FastAPI
+  # (CORSMiddleware). Gateway catches preflights so the Lambda stays cold
+  # for them; FastAPI still enforces the allow-list for actual requests.
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Name: !Sub artpark-eir-api-${EnvName}
+      DisableExecuteApiEndpoint: false
+      CorsConfiguration:
+        AllowOrigins: [!Ref FrontendOrigin]
+        AllowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
+        AllowHeaders: [Authorization, Content-Type, X-Request-ID, X-Admin-Key]
+        AllowCredentials: true
+        ExposeHeaders: [X-Request-ID]
+        MaxAge: 600
+
+  # ── CloudWatch log group ────────────────────────────────────────
+  # Declared explicitly (not auto-created by Lambda) so we can pin
+  # retention. Matches the function name Lambda will write to.
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/artpark-eir-api-${EnvName}
+      RetentionInDays: 30
+
+Outputs:
+  ApiUrl:
+    Description: Execute-API URL (before custom domain)
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  HttpApiId:
+    Value: !Ref HttpApi
+    Export:
+      Name: !Sub ${AWS::StackName}-HttpApiId
+  ApiFunctionArn:
+    Value: !GetAtt ApiFunction.Arn
