@@ -16,6 +16,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   ParsedReviewScreen,
   ParsingScreen,
+  ReturningChoiceScreen,
   UploadScreen,
 } from "./auth_upload.jsx";
 import { QuestionInput, isAnswered, whyBlocked } from "./inputs.jsx";
@@ -40,6 +41,9 @@ import { SECTION_ORDER } from "./lib/fieldMap.js";
 
 const PHASES = {
   WELCOME: "welcome",
+  // Authed user re-entering /apply with a draft or past submissions — shows
+  // the "Good to see you" chooser (Start new / Continue / Past applications).
+  RETURNING: "returning",
   UPLOAD: "upload",
   PARSING: "parsing",
   // Post-upload confirmation of parsed CV fields. Distinct from REVIEW
@@ -71,9 +75,12 @@ function urlForState(phase, sectionIdx) {
   if (phase === PHASES.PROFILE) return "/apply/profile";
   if (phase === PHASES.REVIEW) return "/apply/review";
   if (phase === PHASES.DONE) return "/apply/submitted";
-  // UPLOAD / PARSING / PARSE_REVIEW all live on /apply so the URL doesn't
-  // jitter during the CV flow. The user sees these as one continuous step.
+  // WELCOME / RETURNING / UPLOAD / PARSING / PARSE_REVIEW all live on /apply
+  // so the URL doesn't jitter during the landing + CV flow. The user sees
+  // these as one continuous lead-in to the sectioned wizard.
   if (
+    phase === PHASES.WELCOME ||
+    phase === PHASES.RETURNING ||
     phase === PHASES.UPLOAD ||
     phase === PHASES.PARSING ||
     phase === PHASES.PARSE_REVIEW
@@ -91,7 +98,7 @@ export default function App() {
   const navigate = useNavigate();
   const urlSyncRef = useRef({ applying: false });
 
-  const { user, logout } = useAuth();
+  const { user, logout, loading: authLoading } = useAuth();
   const { application, answers, loading, saving, locked, save, submit, refetch, completion } =
     useApplication();
   const resume = useResume();
@@ -191,21 +198,37 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
-  // /apply (empty slug) needs to wait for the application to load before it
-  // can decide between WELCOME (first-timer, no answers yet) and
-  // SECTION_INTRO (returning user with saved answers).
+  // /apply (empty slug) decides what the first screen is:
+  //
+  //   unauthed                       → WELCOME (public landing, Begin → signin)
+  //   authed, submitted              → DONE  (redirects to /apply/submitted)
+  //   authed, has draft answers      → RETURNING chooser
+  //   authed, no draft yet           → UPLOAD (CV upload is the first step)
+  //
+  // We can't decide until both auth rehydrate AND application fetch have
+  // resolved. `authLoading` covers the first; waiting for `application` to
+  // be non-null (or for the user to be null) covers the second.
   useEffect(() => {
-    if (!application) return;
     const slug = pickSlug(location.pathname);
     if (slug !== "") return;
+    if (authLoading) return;
+
+    // Unauthed visitors land on the welcome screen.
+    if (!user) {
+      setPhase(PHASES.WELCOME);
+      return;
+    }
+    // Authed but application hasn't finished loading yet.
+    if (!application) return;
+
     if (locked) {
       setPhase(PHASES.DONE);
       return;
     }
     const hasAny = answers && Object.keys(answers).length > 0;
-    setPhase(hasAny ? PHASES.SECTION_INTRO : PHASES.WELCOME);
+    setPhase(hasAny ? PHASES.RETURNING : PHASES.UPLOAD);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [application, locked]);
+  }, [authLoading, user, application, locked]);
 
   // When the application flips to non-draft status mid-session (another
   // device submitted, or the user did so via another tab), bounce any
@@ -232,14 +255,44 @@ export default function App() {
   }, [phase, sectionIdx, navigate, location.pathname]);
 
   // ─── Navigation handlers ─────────────────────────────────────
+  //
+  // Clicking "Begin application" on the welcome screen can mean three things
+  // depending on state:
+  //   unauthed              → go to signin (preserves ?next=/apply)
+  //   authed, CV uploaded   → straight to first section
+  //   authed, no CV         → CV upload flow
+  //
+  // ReturningChoiceScreen has its own "Begin new" / "Resume" / "View past"
+  // buttons, handled below in onStartNew / onResumeDraft / onViewPast.
   const startWizard = () => {
-    // Resume upload comes before the first section so parsed fields can
-    // pre-fill contact info. If the user already uploaded a CV we skip
-    // straight to the sections; they can always re-upload from /apply/profile.
+    if (!user) {
+      navigate("/apply/signin?next=%2Fapply", { replace: false });
+      return;
+    }
     if (!resume.resume) {
       setPhase(PHASES.UPLOAD);
       return;
     }
+    setSectionIdx(0);
+    setStepIdx(0);
+    setPhase(PHASES.SECTION_INTRO);
+  };
+
+  // ReturningChoiceScreen handlers. The screen shows three tabs; each tab's
+  // primary action hits one of these.
+  const onStartNew = () => {
+    // Fresh slate — upload a new CV. The existing draft is preserved in the
+    // backend; we just route the user through the upload flow again.
+    setPhase(PHASES.UPLOAD);
+  };
+  const onResumeDraft = () => {
+    setSectionIdx(0);
+    setStepIdx(0);
+    setPhase(PHASES.SECTION_INTRO);
+  };
+  const onViewPast = () => {
+    // Past-applications view isn't wired to a backend endpoint yet (Phase 8+);
+    // placeholder just takes them into the current draft.
     setSectionIdx(0);
     setStepIdx(0);
     setPhase(PHASES.SECTION_INTRO);
@@ -414,10 +467,28 @@ export default function App() {
         )}
 
         <main className="eir-main">
-          {loading && !application && <LoadingScreen />}
+          {/* Loading only blocks when we're authed and waiting for data.
+              Unauthed visitors should see WELCOME immediately. */}
+          {user && loading && !application && <LoadingScreen />}
 
-          {phase === PHASES.WELCOME && application && (
+          {phase === PHASES.WELCOME && (
             <WelcomeScreen onStart={startWizard} warmCopy={warmCopy} />
+          )}
+          {phase === PHASES.RETURNING && user && (
+            <ReturningChoiceScreen
+              user={user}
+              hasDraft={!!application && Object.keys(answers || {}).length > 0}
+              draftProgress={
+                application && completion
+                  ? (completion.completion_pct ?? 0) / 100
+                  : 0
+              }
+              pastSubmissions={locked && application ? [application] : []}
+              onResume={onResumeDraft}
+              onViewPast={onViewPast}
+              onStartNew={onStartNew}
+              warmCopy={warmCopy}
+            />
           )}
           {phase === PHASES.UPLOAD && (
             <div>
