@@ -49,12 +49,17 @@ async function _buildError(response) {
   }
 
   // Our backend's shape: { error: { code, message, ... } }
+  //
+  // Some endpoints return extra siblings next to `error` (notably
+  // /applications/me/submit — `missing_fields` and `invalid_fields` sit at
+  // the top level). Merge the whole body into `details` so callers can
+  // render precise "this field failed because…" messages.
   if (data && data.error && typeof data.error === "object") {
     return new ApiError({
       status: response.status,
       code: data.error.code,
       message: data.error.message,
-      details: data.error,
+      details: { ...data, ...data.error },
     });
   }
   // FastAPI default shape: { detail: ... }

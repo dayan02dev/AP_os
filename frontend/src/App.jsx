@@ -71,6 +71,21 @@ function pickSlug(pathname) {
   return m ? (m[1] || "") : null;
 }
 
+// Turn a backend column name ("solution_ten_x") into something a human
+// wants to read in a toast ("Solution: ten x"). Best-effort — good enough
+// for surfacing which field broke submission without cross-referencing
+// the questions.jsx title for every field.
+function humanizeField(col) {
+  if (!col || typeof col !== "string") return "(unknown field)";
+  const [section, ...rest] = col.split("_");
+  const tail = rest.join(" ");
+  const sectionLabel =
+    { basic: "Basic info", problem: "Problem", solution: "Solution",
+      execution: "Execution", evidence: "Evidence", declaration: "Declaration" }[section] ||
+    section;
+  return tail ? `${sectionLabel}: ${tail}` : sectionLabel;
+}
+
 function urlForState(phase, sectionIdx) {
   if (phase === PHASES.PROFILE) return "/apply/profile";
   if (phase === PHASES.REVIEW) return "/apply/review";
@@ -405,9 +420,23 @@ export default function App() {
       }
     } catch (err) {
       if (err?.status === 422) {
+        // Backend shape: { error: {...}, missing_fields: [...], invalid_fields: [{field, reason}] }
+        // api.js already merges these into err.details. Surface the actual
+        // field names so the user knows *what* to fix — a vague "some fields
+        // need attention" makes people think the button is broken.
+        const missing = err?.details?.missing_fields || [];
+        const invalid = err?.details?.invalid_fields || [];
+        const problems = [
+          ...missing.map((f) => `${humanizeField(f)} — not filled in`),
+          ...invalid.map((x) => `${humanizeField(x.field)} — ${x.reason}`),
+        ];
+        const shown = problems.slice(0, 3).join("; ");
+        const extra = problems.length > 3 ? ` (+${problems.length - 3} more)` : "";
         pushToast({
           kind: "error",
-          message: "Some fields need attention before submitting. See the review screen.",
+          message: problems.length
+            ? `Can't submit yet: ${shown}${extra}`
+            : "Some fields need attention before submitting.",
         });
       } else {
         pushToast({

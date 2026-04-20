@@ -96,6 +96,17 @@ Resources:
             Method: ANY
       Policies:
         - CloudWatchLogsFullAccess
+        # Allow sending transactional email (submission confirmations, support
+        # acks) via SES. Resource "*" is fine at the account level: the
+        # sender identity is controlled separately by "Verified Identities" in
+        # the SES console — IAM alone can't bypass that. Once we have a
+        # dedicated verified domain ARN, we can tighten this to that identity.
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: "*"
 
   # ── HTTP API Gateway ────────────────────────────────────────────
   # CORS is enforced BOTH at the gateway (below) and inside FastAPI
