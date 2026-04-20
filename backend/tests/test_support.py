@@ -1,8 +1,9 @@
 """/support router tests.
 
-All SES calls are mocked via `boto3.client` at the `app.services.email_service`
-import site. The Supabase admin client is replaced with an in-memory fake that
-records inserts/updates and serves pre-seeded rows for selects.
+Email delivery is mocked at the `httpx.Client.post` level inside
+`app.services.email_service` — the service posts to Resend's HTTP API.
+The Supabase admin client is replaced with an in-memory fake that records
+inserts/updates and serves pre-seeded rows for selects.
 
 Auth is injected via FastAPI's `app.dependency_overrides` — tests never rely on
 real Supabase JWT verification.
@@ -13,8 +14,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import httpx
 import pytest
-from botocore.exceptions import ClientError
 
 VALID_PAYLOAD = {
     "email": "applicant@example.com",
@@ -138,50 +139,70 @@ def install_db(fake_db):
         yield fake_db
 
 
-@pytest.fixture
-def ses_mock():
-    """Mock boto3.client so EmailService never hits real SES.
+def _ok_response() -> MagicMock:
+    """Mimic a successful Resend response: HTTP 200 + JSON {"id": ...}."""
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = 200
+    resp.json.return_value = {"id": "resend-msg-001"}
+    resp.text = '{"id":"resend-msg-001"}'
+    return resp
 
-    Also patches `settings.ses_from_email` — the unit-test env doesn't set it,
-    and `send_raw` guards against an empty FROM address. Clears the cached
-    email_service singleton so a fresh (mocked) client is used.
+
+def _error_response() -> MagicMock:
+    """Mimic Resend rejecting the send — HTTP 422 with an error body."""
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = 422
+    resp.json.return_value = {
+        "name": "validation_error",
+        "message": "Sender domain is not verified",
+    }
+    resp.text = '{"message":"Sender domain is not verified"}'
+    return resp
+
+
+def _patch_email(*, post_return: MagicMock):
+    """Install a mocked httpx client on the EmailService singleton.
+
+    Must patch ONLY the service's own httpx instance — patching
+    `httpx.Client.post` class-wide would also intercept Starlette's
+    TestClient (which uses httpx under the hood) and the request would
+    never reach the FastAPI app.
     """
     from app.services import email_service as es
 
-    fake = MagicMock()
-    fake.send_email.return_value = {"MessageId": "ses-msg-001"}
-
     es.get_email_service.cache_clear()
+    svc = es.get_email_service()
+    fake_client = MagicMock(spec=httpx.Client)
+    fake_client.post = MagicMock(return_value=post_return)
+    svc._http = fake_client
+    return fake_client
+
+
+@pytest.fixture
+def ses_mock():
+    """Route the EmailService's httpx calls to an in-memory success stub."""
+    from app.services import email_service as es
+
+    fake = _patch_email(post_return=_ok_response())
     with (
-        patch("app.services.email_service.boto3.client", return_value=fake),
         patch.object(es.settings, "ses_from_email", "noreply@artpark.test"),
+        patch.object(es.settings, "resend_api_key", "re_test_key_not_real"),
     ):
-        yield fake
+        yield fake.post
     es.get_email_service.cache_clear()
 
 
 @pytest.fixture
 def ses_failing():
-    """Like ses_mock, but every send_email raises SES ClientError."""
+    """Like ses_mock, but every POST returns a Resend rejection."""
     from app.services import email_service as es
 
-    fake = MagicMock()
-    fake.send_email.side_effect = ClientError(
-        {
-            "Error": {
-                "Code": "MessageRejected",
-                "Message": "Email address is not verified",
-            }
-        },
-        "SendEmail",
-    )
-
-    es.get_email_service.cache_clear()
+    fake = _patch_email(post_return=_error_response())
     with (
-        patch("app.services.email_service.boto3.client", return_value=fake),
         patch.object(es.settings, "ses_from_email", "noreply@artpark.test"),
+        patch.object(es.settings, "resend_api_key", "re_test_key_not_real"),
     ):
-        yield fake
+        yield fake.post
     es.get_email_service.cache_clear()
 
 
@@ -221,8 +242,8 @@ def test_create_ticket_anon(client, install_db, ses_mock):
     assert tickets[0]["user_id"] is None
     assert tickets[0]["email"] == VALID_PAYLOAD["email"]
 
-    # SES called twice: staff notification + applicant ack.
-    assert ses_mock.send_email.call_count == 2
+    # Email transport called twice: staff notification + applicant ack.
+    assert ses_mock.call_count == 2
 
     # Delivery status stamped 'sent' on the ticket row.
     updates = install_db.updates.get("support_tickets", [])

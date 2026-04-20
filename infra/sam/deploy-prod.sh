@@ -36,7 +36,7 @@ set +a
 
 # ── Required-vars gate ─────────────────────────────────────────────
 # Fail before wasting 2 minutes on a sam build that can't possibly deploy.
-for var in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY OPENROUTER_API_KEY ADMIN_API_KEY FRONTEND_ORIGIN; do
+for var in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY OPENROUTER_API_KEY ADMIN_API_KEY FRONTEND_ORIGIN RESEND_API_KEY; do
   if [[ -z "${!var:-}" ]]; then
     echo "✗ Missing $var in $ENV_FILE"
     exit 1
@@ -73,6 +73,7 @@ sam deploy \
     "AppVersion=${APP_VERSION:-0.1.0}" \
     "LogLevel=${LOG_LEVEL:-INFO}" \
     "SesFromEmail=${SES_FROM_EMAIL:-noreply@artpark.info}" \
+    "ResendApiKey=${RESEND_API_KEY}" \
     "AwsRegionParam=ap-south-1"
 
 echo ""

@@ -1,49 +1,37 @@
-"""AWS SES v2 email service — transactional email for the EIR portal.
+"""Transactional email service — Resend HTTP API.
 
-Wraps `boto3.client('sesv2')` behind three high-level methods:
+Wraps Resend's ``POST https://api.resend.com/emails`` behind three
+high-level methods that take a Jinja template base + context:
 
   send_submission_confirmation(to, applicant_name, application_id)
   send_support_ticket(ticket, recipients)
   send_ticket_acknowledgement(to, ticket_id, subject_summary)
 
 Each method renders a paired Jinja2 template (`*.html` + `*.txt`) from
-`backend/app/templates/email/` and hands both parts to `send_raw()`.
+``backend/app/templates/email/`` and hands both parts to ``send_raw()``.
 
-`EmailDeliveryError` is raised on SES ClientError so callers can decide whether
-to swallow or propagate — the support-ticket route swallows (so the ticket row
-is never lost) and marks `email_delivery_status='failed'`.
+``EmailDeliveryError`` is raised on any non-2xx response so callers can
+decide whether to swallow or propagate — the support-ticket route swallows
+(so the ticket row is never lost) and marks ``email_delivery_status='failed'``.
 
-════════════════════════════════════════════════════════════════════════
- AWS SES setup checklist (do this once per environment before go-live)
-════════════════════════════════════════════════════════════════════════
- 1. Verified Identities
-    AWS Console → SES → Verified Identities → verify `artpark.online`
-    (or, for sandbox: verify each From/To address individually).
- 2. IAM user `artpark-ses` with this inline policy:
-      {
-        "Version": "2012-10-17",
-        "Statement": [{
-          "Effect": "Allow",
-          "Action": ["ses:SendEmail"],
-          "Resource": "*"
-        }]
-      }
- 3. Populate `backend/.env`:
-      AWS_REGION=ap-south-1
-      SES_FROM_EMAIL=noreply@artpark.online
-      SUPPORT_RECIPIENT_EMAILS=dev@artpark.in,udayan.pawar@artpark.in,nirav@artpark.in
-      AWS_ACCESS_KEY_ID=AKIA...
-      AWS_SECRET_ACCESS_KEY=...
-    (boto3 reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY from the process
-     environment automatically via its default credential chain — no code in
-     this service reads them directly.)
- 4. Sandbox constraints
-    While the AWS account is in the SES sandbox you can only send to verified
-    addresses. The three hardcoded default support recipients
-    (dev@artpark.in, udayan.pawar@artpark.in, nirav@artpark.in) MUST be
-    verified in SES during sandbox testing.
- 5. Request production access at least 5 days before launch — the approval is
-    a manual review by AWS.
+─────────────────────────────────────────────────────────────────
+ Why Resend instead of SES
+─────────────────────────────────────────────────────────────────
+We originally wired AWS SES (see git history pre-Phase-9E). SES sandbox
+mode requires every *recipient* to be pre-verified — fine for tests,
+fatal at launch because real applicants are arbitrary Gmail / college
+addresses. Resend accepts any recipient as long as the *sender* domain is
+verified, and ``artpark.info`` is already DKIM-verified in Resend for
+Supabase OTPs, so the infrastructure piggy-backs on existing setup.
+
+Operational notes:
+  - Set ``RESEND_API_KEY`` in the environment (same key used by Supabase
+    SMTP for OTPs). ``SES_FROM_EMAIL`` (or alias ``EMAIL_FROM``) controls
+    the ``From:`` header — the chosen address must be on a domain
+    verified in Resend.
+  - The ``boto3`` dependency is retained in ``requirements.txt`` for
+    future AWS work (Sentry spans, SES bounce-handling, S3) but this
+    service does **not** import it.
 """
 
 from __future__ import annotations
@@ -53,8 +41,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import boto3
-from botocore.exceptions import ClientError
+import httpx
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config import settings
@@ -63,21 +50,32 @@ log = logging.getLogger(__name__)
 
 _TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates" / "email"
 
+# Resend's REST endpoint. Held as a module constant (not injected) because
+# Resend doesn't offer multiple regions; if they ever do, flip this.
+_RESEND_URL = "https://api.resend.com/emails"
+
+# HTTP timeout in seconds. Resend is fast — anything over ~10s is a sign
+# the connection is wedged, not a slow mail server. Fail fast.
+_HTTP_TIMEOUT_S = 10.0
+
 
 class EmailDeliveryError(Exception):
-    """Raised when SES rejects a send or the API call fails."""
+    """Raised when Resend rejects a send or the HTTP call fails."""
 
 
 class EmailService:
-    """Thin wrapper around SESv2 + Jinja2.
+    """Thin wrapper around Resend's HTTP API + Jinja2.
 
-    One instance per process is sufficient; use `get_email_service()` to get
-    the memoised singleton. The boto3 client and Jinja environment are both
-    created eagerly in `__init__` so the first request doesn't pay the cost.
+    One instance per process. Use ``get_email_service()`` to get the
+    memoised singleton. The ``httpx.Client`` and Jinja environment are
+    both created eagerly in ``__init__`` so the first request doesn't pay
+    the cost.
     """
 
     def __init__(self) -> None:
-        self._client = boto3.client("sesv2", region_name=settings.aws_region)
+        # httpx.Client uses a keep-alive connection pool; reused across
+        # calls it amortises TLS handshake on warm Lambda invocations.
+        self._http = httpx.Client(timeout=_HTTP_TIMEOUT_S)
 
         self._html_env = Environment(
             loader=FileSystemLoader(str(_TEMPLATE_DIR)),
@@ -91,7 +89,7 @@ class EmailService:
         )
 
     def _render_pair(self, template_base: str, context: dict[str, Any]) -> tuple[str, str]:
-        """Render `<base>.html` and `<base>.txt` with the same context."""
+        """Render ``<base>.html`` and ``<base>.txt`` with the same context."""
         html = self._html_env.get_template(f"{template_base}.html").render(**context)
         text = self._text_env.get_template(f"{template_base}.txt").render(**context)
         return html, text
@@ -105,44 +103,72 @@ class EmailService:
         text: str,
         reply_to: str | None = None,
     ) -> dict[str, str]:
-        """Send one message to one or more recipients.
+        """Send one message via Resend to one or more recipients.
 
-        Returns {"message_id", "status": "sent"} on success.
-        Raises EmailDeliveryError on any SES ClientError.
+        Returns ``{"message_id", "status": "sent"}`` on success.
+        Raises ``EmailDeliveryError`` on any HTTP failure or non-2xx.
         """
         if not to:
             raise EmailDeliveryError("No recipients supplied")
         if not settings.ses_from_email:
             raise EmailDeliveryError("SES_FROM_EMAIL is not configured")
+        if not settings.resend_api_key:
+            raise EmailDeliveryError("RESEND_API_KEY is not configured")
 
-        kwargs: dict[str, Any] = {
-            "FromEmailAddress": settings.ses_from_email,
-            "Destination": {"ToAddresses": list(to)},
-            "Content": {
-                "Simple": {
-                    "Subject": {"Data": subject, "Charset": "UTF-8"},
-                    "Body": {
-                        "Html": {"Data": html, "Charset": "UTF-8"},
-                        "Text": {"Data": text, "Charset": "UTF-8"},
-                    },
-                }
-            },
+        payload: dict[str, Any] = {
+            "from": settings.ses_from_email,
+            "to": list(to),
+            "subject": subject,
+            "html": html,
+            "text": text,
         }
         if reply_to:
-            kwargs["ReplyToAddresses"] = [reply_to]
+            # Resend accepts string OR list here; lists pass cleanly.
+            payload["reply_to"] = [reply_to]
+
+        headers = {
+            "Authorization": f"Bearer {settings.resend_api_key}",
+            "Content-Type": "application/json",
+        }
 
         try:
-            response = self._client.send_email(**kwargs)
-        except ClientError as exc:
+            response = self._http.post(_RESEND_URL, json=payload, headers=headers)
+        except httpx.RequestError as exc:
+            # Network / DNS / timeout — the send never landed at Resend.
             log.error(
-                "ses send_email failed",
+                "resend request failed",
                 extra={"to": to, "subject": subject, "err": str(exc)},
             )
-            raise EmailDeliveryError(f"SES rejected the message: {exc}") from exc
+            raise EmailDeliveryError(f"Resend request failed: {exc}") from exc
 
-        message_id = response.get("MessageId", "")
+        if response.status_code >= 400:
+            # Pull the structured error from Resend's JSON body if present
+            # so we log a useful message, not just "HTTP 422".
+            try:
+                body = response.json()
+                err_msg = body.get("message") or body.get("name") or response.text
+            except Exception:
+                err_msg = response.text
+            log.error(
+                "resend rejected send",
+                extra={
+                    "to": to,
+                    "subject": subject,
+                    "status_code": response.status_code,
+                    "err": err_msg,
+                },
+            )
+            raise EmailDeliveryError(
+                f"Resend rejected the message ({response.status_code}): {err_msg}"
+            )
+
+        try:
+            data = response.json()
+        except Exception as exc:
+            raise EmailDeliveryError(f"Resend returned non-JSON on 2xx: {exc}") from exc
+        message_id = data.get("id", "")
         log.info(
-            "ses send_email ok",
+            "resend send ok",
             extra={"message_id": message_id, "to": to, "subject": subject},
         )
         return {"message_id": message_id, "status": "sent"}
@@ -208,5 +234,5 @@ class EmailService:
 
 @lru_cache(maxsize=1)
 def get_email_service() -> EmailService:
-    """Memoised accessor. Tests can `get_email_service.cache_clear()` to reset."""
+    """Memoised accessor. Tests can ``get_email_service.cache_clear()`` to reset."""
     return EmailService()

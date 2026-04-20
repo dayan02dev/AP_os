@@ -34,6 +34,10 @@ Parameters:
   AdminApiKey:
     Type: String
     NoEcho: true
+  ResendApiKey:
+    Type: String
+    NoEcho: true
+    Description: Resend API key (re_...) used for transactional email (Phase 9E migration from SES)
   AppVersion:
     Type: String
     Default: 0.1.0
@@ -74,6 +78,9 @@ Globals:
         SENTRY_DSN: !Ref SentryDsn
         ADMIN_API_KEY: !Ref AdminApiKey
         SES_FROM_EMAIL: !Ref SesFromEmail
+        # Transactional email now routes through Resend (Phase 9E); the name
+        # SES_FROM_EMAIL is retained for back-compat with existing callers.
+        RESEND_API_KEY: !Ref ResendApiKey
         # Lambda reserves AWS_REGION and pre-sets it to the runtime region.
         # Our Settings class reads AWS_REGION_APP first so we can override it
         # via the SAM template; AWS_REGION remains the fallback locally.
@@ -96,17 +103,11 @@ Resources:
             Method: ANY
       Policies:
         - CloudWatchLogsFullAccess
-        # Allow sending transactional email (submission confirmations, support
-        # acks) via SES. Resource "*" is fine at the account level: the
-        # sender identity is controlled separately by "Verified Identities" in
-        # the SES console — IAM alone can't bypass that. Once we have a
-        # dedicated verified domain ARN, we can tighten this to that identity.
-        - Statement:
-            - Effect: Allow
-              Action:
-                - ses:SendEmail
-                - ses:SendRawEmail
-              Resource: "*"
+      # Phase 9E: SES IAM permissions removed — transactional email now
+      # routes through Resend's HTTP API (auth is the RESEND_API_KEY env var,
+      # not AWS IAM). boto3 stays in requirements.txt for future AWS work
+      # (Sentry spans, S3 signed URLs, SES bounce handling, etc.) but this
+      # Lambda currently makes no SES calls.
 
   # ── HTTP API Gateway ────────────────────────────────────────────
   # CORS is enforced BOTH at the gateway (below) and inside FastAPI

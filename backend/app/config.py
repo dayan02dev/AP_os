@@ -69,7 +69,23 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_model: str = "google/gemini-2.0-flash-001"
 
-    # ── AWS SES ─────────────────────────────────────────────────
+    # ── Email (Resend HTTP API) ─────────────────────────────────
+    # We migrated off AWS SES because sandbox-mode recipient verification
+    # blocks real applicants (Phase 9D). Resend accepts any recipient as
+    # long as the sender domain is verified, and artpark.info is already
+    # DKIM-verified in Resend for Supabase OTPs.
+    #
+    # The field name stays as `ses_from_email` for back-compat with callers;
+    # only the transport changed. Set via `SES_FROM_EMAIL` or the alias
+    # `EMAIL_FROM` in the environment.
+    resend_api_key: str = ""
+    ses_from_email: str = Field(
+        default="",
+        validation_alias=AliasChoices("SES_FROM_EMAIL", "EMAIL_FROM"),
+    )
+    support_recipient_emails: str = ""
+
+    # ── AWS region (retained for future boto3 use; not read by email) ──
     # AWS_REGION is a *reserved* Lambda env var that the runtime pre-populates
     # with the region the function is running in — you can't override it in a
     # CloudFormation/SAM template. So in production we set AWS_REGION_APP via
@@ -79,8 +95,6 @@ class Settings(BaseSettings):
         default="ap-south-1",
         validation_alias=AliasChoices("AWS_REGION_APP", "AWS_REGION"),
     )
-    ses_from_email: str = ""
-    support_recipient_emails: str = ""
 
     # ── CORS ────────────────────────────────────────────────────
     # FRONTEND_ORIGIN (singular) is the back-compat env var — it's parsed into
