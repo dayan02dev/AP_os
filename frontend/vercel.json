@@ -4,7 +4,11 @@
   "installCommand": "npm install",
   "framework": "vite",
   "rewrites": [
+    { "source": "/2026", "destination": "/marketing.html" },
     { "source": "/((?!assets/|.*\\..*).*)", "destination": "/index.html" }
+  ],
+  "redirects": [
+    { "source": "/marketing.html", "destination": "/2026", "permanent": true }
   ],
   "headers": [
     {

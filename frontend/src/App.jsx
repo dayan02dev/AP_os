@@ -802,12 +802,12 @@ function Header({ config, user, onLogout, onProfile, phase }) {
   return (
     <header className="eir-header">
       <div className="eir-header-left">
-        <a href="/marketing.html" className="eir-home-link eir-mono" title="Back to home">
+        <a href="/2026" className="eir-home-link eir-mono" title="Back to home">
           <span className="eir-home-arrow">←</span>
           <span className="eir-home-label">home</span>
         </a>
         <span className="eir-header-sep" />
-        <a href="/marketing.html" className="eir-brand" title="ARTPARK × IISc">
+        <a href="/2026" className="eir-brand" title="ARTPARK × IISc">
           <img src="/assets/iisc-logo-blue.png" alt="Indian Institute of Science" className="eir-brand-iisc" />
           <span className="eir-brand-divider" />
           <img src="/assets/artpark-logo.png" alt="ARTPARK" className="eir-brand-artpark" />
