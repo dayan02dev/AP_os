@@ -1,10 +1,16 @@
-"""Resume upload + parse pipeline (Phase 5).
+"""Resume upload + parse pipeline (Phase 5, Phase 8 rate-limit audit).
 
 Four endpoints:
   POST /resume/upload                  — upload, store, parse inline
   GET  /resume/me                      — latest resume for caller
   GET  /resume/{resume_id}             — specific resume (owner only)
   POST /resume/me/apply-to-application — null-guarded copy into profiles/applications
+
+Rate limits (per-user, via utils/rate_limit.per_user_rate_limit):
+  POST /upload                     5/hour/user
+  GET  /me                         30/min/user
+  GET  /{resume_id}                30/min/user
+  POST /me/apply-to-application    10/hour/user
 
 Parsing is inline on upload. At ~1000 apps over 4 months, an SQS+worker split
 would be over-engineering. If volume changes, pull the `_parse_inline` call
@@ -27,7 +33,13 @@ from ..models.resume import (
 from ..services.file_parser import UnsupportedFileType, extract_text
 from ..services.llm_service import LLMParseError, OpenRouterClient
 from ..supabase_client import get_admin_client
-from ..utils.rate_limit import limiter
+from ..utils.rate_limit import per_user_rate_limit
+
+# Per-user rate-limit dependencies — all keyed on the authed user's id.
+_rl_upload = per_user_rate_limit("resume-upload", 5, 3600)          # 5/hour
+_rl_get_me = per_user_rate_limit("resume-get-me", 30, 60)           # 30/min
+_rl_get_id = per_user_rate_limit("resume-get-id", 30, 60)           # 30/min
+_rl_apply = per_user_rate_limit("resume-apply", 10, 3600)           # 10/hour
 
 log = logging.getLogger(__name__)
 
@@ -55,8 +67,8 @@ PARSE_BUDGET_SECONDS = 22.0
     "/upload",
     response_model=ResumeUploadResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(_rl_upload)],
 )
-@limiter.limit("5/hour")
 async def upload_resume(
     request: Request,
     file: UploadFile = File(...),
@@ -200,7 +212,11 @@ def _stamp_failed(resume_id: str, error: str) -> None:
         log.error("could not stamp failed", extra={"resume_id": resume_id, "err": str(exc)})
 
 
-@router.get("/me", response_model=ResumeRecord)
+@router.get(
+    "/me",
+    response_model=ResumeRecord,
+    dependencies=[Depends(_rl_get_me)],
+)
 async def get_my_latest_resume(current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
     try:
@@ -223,7 +239,11 @@ async def get_my_latest_resume(current_user: dict = Depends(get_current_user)):
     return rows[0]
 
 
-@router.get("/{resume_id}", response_model=ResumeRecord)
+@router.get(
+    "/{resume_id}",
+    response_model=ResumeRecord,
+    dependencies=[Depends(_rl_get_id)],
+)
 async def get_resume_by_id(
     resume_id: str,
     current_user: dict = Depends(get_current_user),
@@ -267,7 +287,11 @@ APPLICATION_MAP: list[tuple[str, str]] = [
 UNMAPPED_PARSED_KEYS = ("education", "work_experience", "skills", "ventures", "summary")
 
 
-@router.post("/me/apply-to-application", response_model=ApplyToApplicationResult)
+@router.post(
+    "/me/apply-to-application",
+    response_model=ApplyToApplicationResult,
+    dependencies=[Depends(_rl_apply)],
+)
 async def apply_parsed_to_application(current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
     admin = get_admin_client()

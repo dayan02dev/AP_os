@@ -1,6 +1,13 @@
-# pyproject.toml — ruff + pytest config.
+# pyproject.toml — project metadata + ruff + pytest config.
 # Dependencies live in requirements.txt (not here) so Lambda + pip-install flows
-# stay first-class. We treat pyproject.toml purely as a tooling config file.
+# stay first-class. The [project] table only carries metadata (name, version)
+# that the app reads at runtime via config.APP_VERSION.
+
+[project]
+name = "artpark-eir-backend"
+version = "0.8.0"
+description = "FastAPI backend for the ARTPARK EIR application portal"
+requires-python = ">=3.11"
 
 [tool.ruff]
 line-length = 100
@@ -30,6 +37,29 @@ ignore = [
 pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+  "integration: tests that hit real external services (Supabase, OpenRouter). Skipped by default; run with `pytest -m integration`.",
+]
+# Default filter: skip @pytest.mark.integration unless explicitly requested.
+addopts = "-m 'not integration' --cov=app --cov-report=term-missing --cov-fail-under=70"
 filterwarnings = [
   "ignore::DeprecationWarning:pydantic.*",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = [
+  "app/__init__.py",
+  "app/models/__init__.py",
+  "app/routers/__init__.py",
+  "app/services/__init__.py",
+  "app/utils/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
 ]

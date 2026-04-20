@@ -1,4 +1,4 @@
-"""Applications router (Phase 4).
+"""Applications router (Phase 4, Phase 8 rate-limit audit).
 
 Endpoints (all require auth via `get_current_user`):
 
@@ -7,14 +7,18 @@ Endpoints (all require auth via `get_current_user`):
     POST   /applications/me/submit      strict validate → status='submitted'
     GET    /applications/me/completion  completion_pct + missing_required_fields
 
+Rate limits (per spec; enforced via utils/rate_limit.per_user_rate_limit):
+    GET    /me              60/min/user
+    PATCH  /me              30/min/user
+    POST   /me/submit        5/hour/user
+    GET    /me/completion   60/min/user
+
 Design notes
     * Admin client bypasses RLS because we've already verified the caller via
       `get_current_user`. Every DB call is filtered by `user_id = caller`.
     * PATCH re-computes `completion_pct` server-side after applying the patch.
     * Submit runs the same required-field set that completion uses, plus
       per-field format rules (phone, URL, email, word-count mins).
-    * Per-user rate limit on PATCH uses an in-memory sliding window keyed on
-      user_id — separate from the global slowapi IP limiter.
     * Email confirmation on submit is best-effort: if the SES service fails
       or isn't configured, we log a warning and still return success to the
       applicant. The submission is already written.
@@ -24,11 +28,8 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 import uuid
-from collections import defaultdict
 from datetime import datetime
-from threading import Lock
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, status
@@ -43,6 +44,7 @@ from ..models.application import (
     SubmissionResult,
 )
 from ..supabase_client import get_admin_client
+from ..utils.rate_limit import per_user_rate_limit, reset_buckets_for_tests
 
 log = logging.getLogger(__name__)
 
@@ -94,38 +96,19 @@ _PHONE_RE = re.compile(r"^\+?[\d][\d\s\-\(\)]{5,19}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-# ─── Per-user PATCH rate limit (30/min/user) ─────────────────────────
+# ─── Per-user rate-limit dependencies ────────────────────────────────
+# Backed by utils/rate_limit.per_user_rate_limit (in-memory sliding window
+# keyed on user_id). Shared primitive with auth/resume/support routers.
 
-_patch_windows: dict[str, list[float]] = defaultdict(list)
-_patch_lock = Lock()
-_PATCH_MAX = 30
-_PATCH_WINDOW_S = 60
-
-
-def _check_user_patch_rate(user_id: str) -> None:
-    now = time.time()
-    cutoff = now - _PATCH_WINDOW_S
-    with _patch_lock:
-        fresh = [ts for ts in _patch_windows[user_id] if ts > cutoff]
-        if len(fresh) >= _PATCH_MAX:
-            _patch_windows[user_id] = fresh
-            retry_after = int(_PATCH_WINDOW_S - (now - fresh[0])) + 1
-            # Raise the same HTTPException shape slowapi uses, so the existing
-            # 429 handler can format it.
-            from fastapi import HTTPException
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"PATCH over {_PATCH_MAX}/min. Retry in {retry_after}s.",
-                headers={"Retry-After": str(retry_after)},
-            )
-        fresh.append(now)
-        _patch_windows[user_id] = fresh
+_rl_get = per_user_rate_limit("applications-get", 60, 60)          # 60/min
+_rl_patch = per_user_rate_limit("applications-patch", 30, 60)       # 30/min
+_rl_submit = per_user_rate_limit("applications-submit", 5, 3600)    # 5/hour
+_rl_completion = per_user_rate_limit("applications-completion", 60, 60)  # 60/min
 
 
 def _reset_patch_rate_limits() -> None:
-    """Test hook."""
-    with _patch_lock:
-        _patch_windows.clear()
+    """Test hook — flushes all in-memory rate-limit state."""
+    reset_buckets_for_tests()
 
 
 # ─── Error helpers ───────────────────────────────────────────────────
@@ -361,7 +344,11 @@ def _send_submission_email(user_id: str, email: str, full_name: str, application
 
 # ─── Routes ──────────────────────────────────────────────────────────
 
-@router.get("/me", response_model=ApplicationRead)
+@router.get(
+    "/me",
+    response_model=ApplicationRead,
+    dependencies=[Depends(_rl_get)],
+)
 async def get_application(current_user: dict = Depends(get_current_user)):
     """Fetch the caller's application row; auto-create a draft if missing."""
     req_id = _new_request_id()
@@ -382,7 +369,11 @@ async def get_application(current_user: dict = Depends(get_current_user)):
     return ApplicationRead.model_validate(row)
 
 
-@router.patch("/me", response_model=ApplicationRead)
+@router.patch(
+    "/me",
+    response_model=ApplicationRead,
+    dependencies=[Depends(_rl_patch)],
+)
 async def patch_application(
     request: Request,
     body: dict[str, Any],
@@ -392,12 +383,10 @@ async def patch_application(
       - unknown fields → 400
       - invalid types → 422
       - status != 'draft' → 409
-      - > 30 PATCHes/min/user → 429
+      - > 30 PATCHes/min/user → 429 (enforced by _rl_patch dependency)
     """
     req_id = _new_request_id()
     user_id = current_user["user_id"]
-
-    _check_user_patch_rate(user_id)
 
     if not isinstance(body, dict):
         return _error(
@@ -479,7 +468,11 @@ async def patch_application(
     return ApplicationRead.model_validate(updated)
 
 
-@router.post("/me/submit", response_model=SubmissionResult)
+@router.post(
+    "/me/submit",
+    response_model=SubmissionResult,
+    dependencies=[Depends(_rl_submit)],
+)
 async def submit_application(
     request: Request,
     current_user: dict = Depends(get_current_user),
@@ -571,7 +564,11 @@ async def submit_application(
     )
 
 
-@router.get("/me/completion", response_model=CompletionStatus)
+@router.get(
+    "/me/completion",
+    response_model=CompletionStatus,
+    dependencies=[Depends(_rl_completion)],
+)
 async def get_completion(current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
     try:

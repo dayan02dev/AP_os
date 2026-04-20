@@ -40,3 +40,20 @@ build/
 # Claude Code session state
 .claude/
 .gstack/
+
+
+# Environment files - NEVER commit
+.env
+.env.*
+.env.local
+.env.prod
+.env.production
+.env.development
+
+# Python artifacts
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+__pycache__/
+*.pyc
