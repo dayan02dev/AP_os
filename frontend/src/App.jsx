@@ -346,18 +346,37 @@ export default function App() {
 
   // Wizard upload/parse/review — thin wiring to the real hook.
   const onUploadedReal = async (uploaded) => {
-    if (!uploaded?.cv) {
-      setPhase(PHASES.PARSING);
+    // UploadScreen passes { cv: { name, size, file }, linkedin, github }.
+    // Legacy shape was { cv: File } directly; handle both.
+    const file =
+      uploaded?.cv?.file instanceof File
+        ? uploaded.cv.file
+        : uploaded?.cv instanceof File
+          ? uploaded.cv
+          : null;
+
+    if (!file) {
+      pushToast({
+        kind: "error",
+        message: "Couldn't read the selected CV file. Try choosing it again.",
+      });
       return;
     }
+
+    setPhase(PHASES.PARSING);
     try {
-      await resume.upload(uploaded.cv);
-      setPhase(PHASES.PARSING);
+      await resume.upload(file);
+      // Once the backend parse completes, resume.parsed ends up populated via
+      // the poll loop; the PARSING screen's onDone callback then advances to
+      // PARSE_REVIEW. If parsing fails, resume.error is set and we still move
+      // along — PARSE_REVIEW's render branch shows null parsed_data gracefully.
     } catch (err) {
       pushToast({
         kind: "error",
         message: err?.message || "Upload failed. Try again.",
       });
+      // Back out of parsing since nothing is actually parsing.
+      setPhase(PHASES.UPLOAD);
     }
   };
 
@@ -510,21 +529,23 @@ export default function App() {
               uploaded={{ cv: resume.resume?.original_filename || "your CV" }}
             />
           )}
-          {phase === PHASES.PARSE_REVIEW && resume.resume?.parsed_data && (
-            <ParsedReviewScreen
-              parsed={{
-                fullName: resume.resume.parsed_data.full_name || "",
-                email: resume.resume.parsed_data.email || user?.email || "",
-                phone: resume.resume.parsed_data.phone || "",
-                org: resume.resume.parsed_data.location || "",
-                degree: "",
-                _meta: {},
-                _order: ["fullName", "email", "phone", "org", "degree"],
-              }}
-              onContinue={onReviewParsed}
-              warmCopy={warmCopy}
-              userEmail={user?.email}
-            />
+          {phase === PHASES.PARSE_REVIEW && (
+            resume.resume?.parsed_data ? (
+              <ParsedReviewScreen
+                parsed={buildParsedReviewPayload(resume.resume.parsed_data, user)}
+                onContinue={onReviewParsed}
+                warmCopy={warmCopy}
+                userEmail={user?.email}
+              />
+            ) : resume.parsing || resume.resume?.parse_status === "processing" ? (
+              <ParseStillRunningScreen onSkip={skipUpload} />
+            ) : (
+              <ParseFailedScreen
+                error={resume.resume?.parse_error || resume.error?.message}
+                onContinue={skipUpload}
+                onRetry={() => setPhase(PHASES.UPLOAD)}
+              />
+            )
           )}
           {phase === PHASES.SECTION_INTRO && currentSection && (
             <SectionIntroScreen
@@ -613,11 +634,134 @@ export default function App() {
 
 // ─── Sub-components ──────────────────────────────────────────────
 
+// Shape the backend's ParsedResumeSchema → the ParsedReviewScreen's expected
+// props ({fullName, email, phone, org, degree, _meta, _order}). Every field
+// referenced in _order MUST have a _meta entry with a `confidence` string
+// or the component dereferences `undefined.confidence` and crashes.
+function buildParsedReviewPayload(parsed, user) {
+  const fullName = parsed.full_name || "";
+  const email = parsed.email || user?.email || "";
+  const phone = parsed.phone || "";
+  // LLM returns `location` as a freeform string (e.g. "Bangalore, India") AND
+  // separately provides structured `work_experience` / `ventures`. For the
+  // "current organization" field, prefer the most recent employer; fall back
+  // to `location`.
+  const latestExperience =
+    Array.isArray(parsed.work_experience) && parsed.work_experience.length > 0
+      ? parsed.work_experience[0]
+      : null;
+  const org = latestExperience?.company || parsed.location || "";
+
+  // Map the latest education entry to one of our four degree options.
+  const topEducation =
+    Array.isArray(parsed.education) && parsed.education.length > 0
+      ? parsed.education[0]
+      : null;
+  const degreeRaw = (topEducation?.degree || "").toLowerCase();
+  let degree = "";
+  if (degreeRaw.includes("phd") || degreeRaw.includes("doctor")) {
+    degree = "PhD";
+  } else if (
+    degreeRaw.includes("master") || degreeRaw.includes("msc") || degreeRaw.includes("m.s") || degreeRaw.includes("m.tech")
+  ) {
+    degree = "Master's Degree";
+  } else if (
+    degreeRaw.includes("bachelor") || degreeRaw.includes("b.tech") || degreeRaw.includes("bsc") || degreeRaw.includes("b.e")
+  ) {
+    degree = "Bachelor's Degree";
+  } else if (degreeRaw) {
+    degree = "Self-taught / Other";
+  }
+
+  const confidence = (value, highCertainty) => {
+    if (!value) return "low";
+    return highCertainty ? "high" : "low";
+  };
+
+  return {
+    fullName,
+    email,
+    phone,
+    org,
+    degree,
+    _meta: {
+      fullName: { label: "full name", confidence: confidence(fullName, !!parsed.full_name) },
+      email: { label: "email", confidence: confidence(email, !!parsed.email) },
+      phone: { label: "phone number", confidence: confidence(phone, !!parsed.phone) },
+      org: {
+        label: "current organization",
+        confidence: confidence(org, !!latestExperience?.company),
+      },
+      degree: {
+        label: "highest degree",
+        confidence: confidence(degree, degreeRaw.length > 0),
+      },
+    },
+    _order: ["fullName", "email", "phone", "org", "degree"],
+  };
+}
+
 function LoadingScreen() {
   return (
     <div className="eir-screen">
       <div className="eir-welcome-body">
         <p className="eir-mono eir-dim">loading your application…</p>
+      </div>
+    </div>
+  );
+}
+
+function ParseStillRunningScreen({ onSkip }) {
+  return (
+    <div className="eir-screen">
+      <div className="eir-coord eir-mono">
+        <span>§ 01 · Professional Profile</span>
+        <span>parsing · in progress</span>
+      </div>
+      <div className="eir-welcome-body">
+        <h1 className="eir-welcome-title">Still reading your CV…</h1>
+        <p className="eir-welcome-lede">
+          OpenRouter is working through it — usually 10–30 seconds. You can
+          wait here or skip ahead and fill the basics in manually; parsed
+          data will flow in automatically once it's ready.
+        </p>
+        <div className="eir-q-actions">
+          <button className="eir-btn eir-btn-ghost" onClick={onSkip}>
+            <span>Skip — I'll fill it in manually</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ParseFailedScreen({ error, onContinue, onRetry }) {
+  return (
+    <div className="eir-screen">
+      <div className="eir-coord eir-mono">
+        <span>§ 01 · Professional Profile</span>
+        <span>parsing · couldn't read CV</span>
+      </div>
+      <div className="eir-welcome-body">
+        <h1 className="eir-welcome-title">We couldn't read that CV.</h1>
+        <p className="eir-welcome-lede">
+          Something went sideways in the parse step. You can upload a
+          different file or continue and fill the form in manually.
+        </p>
+        {error && (
+          <div className="eir-mono eir-block-reason" style={{ marginTop: "0.5rem" }}>
+            ↳ {String(error).slice(0, 200)}
+          </div>
+        )}
+        <div className="eir-q-actions">
+          <button className="eir-btn eir-btn-ghost" onClick={onRetry}>
+            <span>Upload a different file</span>
+          </button>
+          <button className="eir-btn eir-btn-primary" onClick={onContinue}>
+            <span>Continue — fill in manually</span>
+            <span className="eir-btn-key eir-mono">⏎</span>
+          </button>
+        </div>
       </div>
     </div>
   );
