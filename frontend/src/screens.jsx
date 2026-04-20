@@ -262,17 +262,13 @@ function DoneScreen({ answers, onRestart, submission, onBack }) {
           </div>
         )}
 
-        <div className="eir-q-actions">
-          {isPast ? (
-            <button className="eir-btn eir-btn-primary" onClick={onBack}>
-              <span>← back to applications</span>
-            </button>
-          ) : (
+        {!isPast && (
+          <div className="eir-q-actions">
             <button className="eir-btn eir-btn-ghost" onClick={onRestart}>
               <span>Submit another response</span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

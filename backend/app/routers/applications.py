@@ -44,7 +44,12 @@ from ..models.application import (
     SubmissionResult,
 )
 from ..supabase_client import get_admin_client
-from ..utils.rate_limit import per_user_rate_limit, reset_buckets_for_tests
+from ..utils.rate_limit import (
+    check_rate,
+    per_user_rate_limit,
+    record_rate,
+    reset_buckets_for_tests,
+)
 
 log = logging.getLogger(__name__)
 
@@ -102,8 +107,14 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 _rl_get = per_user_rate_limit("applications-get", 60, 60)          # 60/min
 _rl_patch = per_user_rate_limit("applications-patch", 30, 60)       # 30/min
-_rl_submit = per_user_rate_limit("applications-submit", 5, 3600)    # 5/hour
 _rl_completion = per_user_rate_limit("applications-completion", 60, 60)  # 60/min
+
+# Submit uses check-only + record-on-success. A failed 422 (word-count /
+# missing-field validation) MUST NOT consume the caller's hourly quota, or
+# users iterating on validation errors lock themselves out. Same split we
+# use for /auth/request-otp.
+_SUBMIT_MAX = 5
+_SUBMIT_WINDOW_S = 3600
 
 
 def _reset_patch_rate_limits() -> None:
@@ -471,15 +482,23 @@ async def patch_application(
 @router.post(
     "/me/submit",
     response_model=SubmissionResult,
-    dependencies=[Depends(_rl_submit)],
 )
 async def submit_application(
     request: Request,
     current_user: dict = Depends(get_current_user),
 ):
-    """Strict validate, then flip status to 'submitted'."""
+    """Strict validate, then flip status to 'submitted'.
+
+    Rate limit: 5 successful submissions per hour per user. The quota is
+    consumed only after the status flip lands — validation failures (422)
+    do NOT count, otherwise users iterating on word-count errors would
+    lock themselves out.
+    """
     req_id = _new_request_id()
     user_id = current_user["user_id"]
+
+    # Check-only — raises 429 if over quota without consuming a slot.
+    check_rate("applications-submit", user_id, _SUBMIT_MAX, _SUBMIT_WINDOW_S)
 
     try:
         row = _fetch_application(user_id)
@@ -534,6 +553,12 @@ async def submit_application(
             "submit_failed",
             f"Could not submit application (ref {req_id}).",
         )
+
+    # Consume the rate-limit slot now — a SUCCESSFUL submit burns one of the
+    # 5/hour/user allowance. (Idempotent re-submits of an already-submitted
+    # app can't reach here because the status != 'draft' guard above returns
+    # 409, so this will never double-charge the quota.)
+    record_rate("applications-submit", user_id)
 
     _audit(
         user_id=user_id,
