@@ -41,7 +41,8 @@ About 90–120 s if cache is warm (no dependency changes), 2–3 min if cold.
 |----------------|-------|
 | Stack name     | `artpark-eir-api-production` |
 | Region         | `ap-south-1` |
-| API URL        | `https://w1yw8stevk.execute-api.ap-south-1.amazonaws.com` |
+| API URL        | `https://api.artpark.info` (custom domain — see §Custom domain) |
+| Raw exec-URL   | `https://w1yw8stevk.execute-api.ap-south-1.amazonaws.com` (internal; don't advertise) |
 | Lambda ARN     | `arn:aws:lambda:ap-south-1:348287123004:function:artpark-eir-api-production` |
 | Log group      | `/aws/lambda/artpark-eir-api-production` (30-day retention) |
 | Runtime        | Python 3.11 on arm64, 1024 MB, 29 s timeout |
@@ -137,3 +138,64 @@ the cost cap is around **$5/mo** even with a 3× load spike.
 - IAM role is scoped to CloudWatch Logs only — no S3, no DynamoDB, no
   SES yet. When Phase 6's SES email work goes live, add
   `SESCrudPolicy` scoped to the verified sender domain.
+
+## Custom domain (Phase 9C)
+
+The production API is served from `https://api.artpark.info`. TLS is
+terminated at API Gateway using an ACM certificate. DNS is managed in
+GoDaddy; two CNAMEs live there:
+
+| Record | Purpose | Value |
+|--------|---------|-------|
+| `_0864f35b2c2974372d519b02ca400d38.api` | ACM DNS validation — never delete while the cert is in use | `_5d41cfadc520946ec4b751434fd3ee08.jkddzztszm.acm-validations.aws` |
+| `api` | Routes traffic to the API Gateway regional endpoint | `d-g6k6lgwbi8.execute-api.ap-south-1.amazonaws.com` |
+
+Key AWS resources:
+
+| Resource | Value |
+|----------|-------|
+| Certificate ARN | `arn:aws:acm:ap-south-1:348287123004:certificate/87d0ce6a-f468-4365-9aa4-9b855ff68e52` |
+| API Gateway target | `d-g6k6lgwbi8.execute-api.ap-south-1.amazonaws.com` |
+| Hosted zone (API GW side) | `Z3VO1THU9YC4UR` |
+| Security policy | TLS 1.2 |
+| Endpoint type | REGIONAL |
+
+### Rotation
+
+ACM **auto-renews DNS-validated certificates** up to 60 days before
+expiry — no action needed as long as the `_0864f35b2c29…` validation
+CNAME stays in GoDaddy. If that CNAME is deleted, the first renewal that
+hits validation will fail and the certificate will expire ~55 days later.
+The renewal attempt emails AWS root-account contacts; set a Google
+Calendar reminder ~1 year out as a belt-and-braces check.
+
+### If we ever switch DNS provider
+
+1. Export both CNAMEs from GoDaddy.
+2. Recreate them in the new provider (same name + value).
+3. Wait for DNS TTL to expire (default 1 h) before cutting `api.artpark.info`
+   traffic over.
+4. Nothing in AWS needs to change — the cert is tied to the domain name,
+   not the DNS provider.
+
+### Teardown (emergency)
+
+```bash
+# Remove the mapping
+aws apigatewayv2 delete-api-mapping \
+  --domain-name api.artpark.info \
+  --api-mapping-id <id-from-get-api-mappings> \
+  --region ap-south-1
+
+# Delete the custom domain
+aws apigatewayv2 delete-domain-name \
+  --domain-name api.artpark.info --region ap-south-1
+
+# Delete the cert (only after confirming nothing else uses it)
+aws acm delete-certificate \
+  --certificate-arn arn:aws:acm:ap-south-1:348287123004:certificate/87d0ce6a-f468-4365-9aa4-9b855ff68e52 \
+  --region ap-south-1
+```
+
+Clients will then fail over to the raw execute-API URL if it's still in
+their config, or 404/cert-error if they're pinned to the custom domain.

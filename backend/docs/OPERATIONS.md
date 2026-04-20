@@ -292,7 +292,8 @@ rollback / destroy playbook; this section is the operator cheat sheet.
 | Environment    | `production` (from `APP_ENV=production`) |
 | Stack name     | `artpark-eir-api-production` |
 | Region         | `ap-south-1` |
-| API URL        | `https://w1yw8stevk.execute-api.ap-south-1.amazonaws.com` |
+| API URL        | `https://api.artpark.info` |
+| Raw exec-URL   | `https://w1yw8stevk.execute-api.ap-south-1.amazonaws.com` — still works but **do not advertise**; route clients through the custom domain |
 | Lambda fn      | `artpark-eir-api-production` |
 | Log group      | `/aws/lambda/artpark-eir-api-production` (30-day retention) |
 | Runtime        | Python 3.11 / arm64 / 1024 MB / 29 s timeout |
@@ -305,11 +306,11 @@ aws logs tail /aws/lambda/artpark-eir-api-production \
   --follow --since 10m --region ap-south-1
 
 # Smoke the API
-curl https://w1yw8stevk.execute-api.ap-south-1.amazonaws.com/health/ready
+curl https://api.artpark.info/health/ready
 
 # Admin stats (key from backend/.env.prod)
 curl -H "X-Admin-Key: $ADMIN_KEY" \
-  https://w1yw8stevk.execute-api.ap-south-1.amazonaws.com/admin/stats
+  https://api.artpark.info/admin/stats
 
 # Redeploy latest main
 cd infra/sam && ./deploy-prod.sh
