@@ -3,5 +3,11 @@ dist
 .env
 .env.local
 .env.*.local
+# Vite mode-specific files — kept local only. Prod values live in Vercel's
+# dashboard, not in git. The template `.env.example` is the only tracked
+# env file (see the bang-negation below).
+.env.production
+.env.staging
+!.env.example
 *.log
 .DS_Store
