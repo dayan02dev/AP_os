@@ -9,23 +9,8 @@ const SECTIONS = [
     label: "Basic Information",
     blurb: "Most of this was auto-filled from your CV. Take a moment to review.",
     questions: [
-      {
-        id: "hasTeam",
-        kind: "single",
-        prompt: "Do you have a team?",
-        help: "Solo founders are very welcome. We'll just tailor the rest of the form.",
-        options: ["Yes — I have co-founders", "No — going solo for now"],
-        required: true,
-      },
-      {
-        id: "teammates",
-        kind: "teamInvite",
-        prompt: "Invite your co-founders to collaborate on this application.",
-        help: "We'll email each person an invite. Everyone shares access to this single application — but only one person can edit at a time. We ask the same three onboarding questions (name, phone, current org) about each teammate.",
-        maxMembers: 3,
-        required: true,
-        conditional: (a) => a.hasTeam === "Yes — I have co-founders",
-      },
+      // Contact + background first — these are the fields the resume parser
+      // can auto-fill, so the user is mostly confirming values here.
       {
         id: "fullName",
         kind: "short",
@@ -95,6 +80,25 @@ const SECTIONS = [
           "Other",
         ],
         required: true,
+      },
+      // Team questions at the end — once we know who the primary applicant is,
+      // ask about co-founders.
+      {
+        id: "hasTeam",
+        kind: "single",
+        prompt: "Do you have a team?",
+        help: "Solo founders are very welcome. We'll just tailor the rest of the form.",
+        options: ["Yes — I have co-founders", "No — going solo for now"],
+        required: true,
+      },
+      {
+        id: "teammates",
+        kind: "teamInvite",
+        prompt: "Invite your co-founders to collaborate on this application.",
+        help: "We'll email each person an invite. Everyone shares access to this single application — but only one person can edit at a time. We ask the same three onboarding questions (name, phone, current org) about each teammate.",
+        maxMembers: 3,
+        required: true,
+        conditional: (a) => a.hasTeam === "Yes — I have co-founders",
       },
     ],
   },

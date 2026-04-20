@@ -402,7 +402,12 @@ function UploadScreen({ onUploaded, warmCopy }) {
   const inputRef = useAR(null);
   const [drag, setDrag] = useAS(false);
 
-  const handleFile = (f) => { if (f) setCv({ name: f.name, size: f.size }); };
+  // Keep the actual File object on `cv.file` so App.jsx can POST it to
+  // /resume/upload. Display-only fields (name, size) still render from the
+  // top-level keys so the file-received UI below doesn't need to change.
+  const handleFile = (f) => {
+    if (f) setCv({ name: f.name, size: f.size, file: f });
+  };
 
   const submit = () => { if (cv) onUploaded({ cv, linkedin, github }); };
 

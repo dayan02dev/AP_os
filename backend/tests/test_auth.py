@@ -181,16 +181,15 @@ def test_me_returns_profile_when_authed(client, mock_supabase):
 # ─── Rate limit ────────────────────────────────────────────────────
 
 def test_rate_limit_request_otp(client, mock_supabase):
-    """4th request-otp for the same email within 15 min → 429."""
+    """1 OTP send per 30s per email — second send within the window → 429."""
     anon, _admin = mock_supabase
     anon.auth.sign_in_with_otp.return_value = MagicMock()
 
-    # First 3 must succeed.
-    for _ in range(3):
-        res = client.post("/auth/request-otp", json={"email": "rl@example.com"})
-        assert res.status_code == 200
+    # First send for this email succeeds.
+    res = client.post("/auth/request-otp", json={"email": "rl@example.com"})
+    assert res.status_code == 200
 
-    # 4th is over quota.
+    # Second send within 30s is over quota.
     res = client.post("/auth/request-otp", json={"email": "rl@example.com"})
     assert res.status_code == 429
     assert "Retry-After" in res.headers
@@ -198,3 +197,67 @@ def test_rate_limit_request_otp(client, mock_supabase):
     # A DIFFERENT email is not affected by another email's bucket.
     res = client.post("/auth/request-otp", json={"email": "other@example.com"})
     assert res.status_code == 200
+
+
+def test_supabase_smtp_failure_surfaces_as_502(client, mock_supabase):
+    """Supabase's `500 Error sending confirmation email` (SMTP misconfig)
+    must translate to a 502 with an actionable code, not a generic 500.
+    """
+
+    class FakeAuthApiError(Exception):
+        def __init__(self, message, status):
+            super().__init__(message)
+            self.status = status
+
+    anon, _admin = mock_supabase
+    anon.auth.sign_in_with_otp.side_effect = FakeAuthApiError(
+        "Error sending confirmation email", 500
+    )
+
+    res = client.post("/auth/request-otp", json={"email": "smtp@example.com"})
+    assert res.status_code == 502
+    assert res.json()["error"]["code"] == "supabase_smtp_failed"
+    # Must mention the dev bypass so the user knows what to do.
+    assert "dev_get_otp.py" in res.json()["error"]["message"]
+
+
+def test_supabase_email_rate_limit_surfaces_as_429(client, mock_supabase):
+    """When Supabase itself 429s on email sends, the backend must bubble that
+    as a 429 (with a helpful code) rather than hiding it behind a 500.
+    """
+
+    class FakeAuthApiError(Exception):
+        def __init__(self, message, status):
+            super().__init__(message)
+            self.status = status
+
+    anon, _admin = mock_supabase
+    anon.auth.sign_in_with_otp.side_effect = FakeAuthApiError(
+        "email rate limit exceeded", 429
+    )
+
+    res = client.post("/auth/request-otp", json={"email": "quota@example.com"})
+    assert res.status_code == 429
+    assert res.json()["error"]["code"] == "supabase_email_rate_limited"
+
+
+def test_failed_otp_send_does_not_burn_rate_limit(client, mock_supabase):
+    """A 500 from Supabase must NOT consume the caller's rate-limit slot.
+
+    Reported scenario: brief DNS blip to Supabase caused 3 consecutive 500s
+    and locked the user out for 15 minutes. Fix: only record the slot on
+    successful sends.
+    """
+    anon, _admin = mock_supabase
+    anon.auth.sign_in_with_otp.side_effect = Exception("DNS outage")
+
+    for _ in range(3):
+        res = client.post("/auth/request-otp", json={"email": "flaky@example.com"})
+        assert res.status_code == 500
+
+    # Network recovers — Supabase starts responding normally. The caller
+    # should NOT be rate-limited from those 3 failed attempts.
+    anon.auth.sign_in_with_otp.side_effect = None
+    anon.auth.sign_in_with_otp.return_value = MagicMock()
+    res = client.post("/auth/request-otp", json={"email": "flaky@example.com"})
+    assert res.status_code == 200, res.json()

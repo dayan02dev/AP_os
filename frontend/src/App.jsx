@@ -1,30 +1,55 @@
-// Main app with phase machine: welcome → auth → upload → parsing → review → sections → done
+// ARTPARK EIR wizard shell — wired to the FastAPI backend via hooks.
+//
+// All data reads/writes go through useAuth + useApplication + useResume.
+// This file owns:
+//   - theme application (unchanged from Phase 0)
+//   - phase state machine for the wizard (welcome → sections → done)
+//   - URL ↔ section sync via react-router-dom
+//   - keyboard shortcuts (Enter to advance)
+//   - layout (header, progress bar, footer)
+// All screen components live in /screens.jsx, /auth_upload.jsx, /profile.jsx —
+// their markup is unchanged; we only wire them up differently.
 
-import { useState as useS, useEffect as useE, useRef as useR } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { THEMES } from "./themes.jsx";
-import { SECTIONS, flattenQuestions } from "./questions.jsx";
-import { QuestionInput, isAnswered, whyBlocked } from "./inputs.jsx";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+
 import {
-  AuthScreen, ReturningChoiceScreen, UploadScreen, ParsingScreen, ParsedReviewScreen,
-  simulateParse,
+  ParsedReviewScreen,
+  ParsingScreen,
+  ReturningChoiceScreen,
+  UploadScreen,
 } from "./auth_upload.jsx";
-import {
-  ProgressBar, WelcomeScreen, SectionIntroScreen, CelebrationScreen, DoneScreen,
-} from "./screens.jsx";
+import { QuestionInput, isAnswered, whyBlocked } from "./inputs.jsx";
 import { ProfileScreen } from "./profile.jsx";
-import { TweaksPanel } from "./tweaks.jsx";
-import { SupportButton } from "./support.jsx";
+import { SECTIONS, flattenQuestions } from "./questions.jsx";
 import {
-  useSessionLock, TakeoverPrompt, KickedScreen, SessionLockBanner,
-} from "./session_lock.jsx";
+  CelebrationScreen,
+  DoneScreen,
+  ProgressBar,
+  SectionIntroScreen,
+  WelcomeScreen,
+} from "./screens.jsx";
+import { SupportButton } from "./support.jsx";
+import { THEMES } from "./themes.jsx";
+import { TweaksPanel } from "./tweaks.jsx";
+
+import { useApplication } from "./hooks/useApplication.jsx";
+import { useAuth } from "./hooks/useAuth.jsx";
+import { useResume } from "./hooks/useResume.js";
+import { useToast } from "./hooks/useToast.jsx";
+import { SECTION_ORDER } from "./lib/fieldMap.js";
 
 const PHASES = {
   WELCOME: "welcome",
-  AUTH: "auth",
+  // Authed user re-entering /apply with a draft or past submissions — shows
+  // the "Good to see you" chooser (Start new / Continue / Past applications).
   RETURNING: "returning",
   UPLOAD: "upload",
   PARSING: "parsing",
+  // Post-upload confirmation of parsed CV fields. Distinct from REVIEW
+  // (pre-submission summary) so that re-entering REVIEW later doesn't
+  // bounce the user back to the CV-review screen when a resume is on file.
+  PARSE_REVIEW: "parse_review",
   REVIEW: "review",
   SECTION_INTRO: "section_intro",
   QUESTION: "question",
@@ -33,176 +58,73 @@ const PHASES = {
   PROFILE: "profile",
 };
 
-const SECTION_SLUGS = SECTIONS.map((s) => s.id);
-const KNOWN_APPLY_PATHS = new Set([
-  "", "signin", "verify", "profile", "review", "submitted", "support", ...SECTION_SLUGS,
-]);
-const PROTECTED_PATHS = new Set(["profile", "review", "submitted", ...SECTION_SLUGS]);
+const CELEBRATE_MESSAGES = [
+  "Nice — basics are squared away.",
+  "The hard part: you framed the problem.",
+  "Solution articulated. Keep going.",
+  "Execution plan captured.",
+  "Evidence uploaded. Home stretch.",
+];
 
-function pickPathFromLocation(pathname) {
+function pickSlug(pathname) {
   const m = pathname.replace(/\/+$/, "").match(/^\/apply(?:\/([^/]*))?$/);
   return m ? (m[1] || "") : null;
 }
 
-function urlForPhase(phase, sectionIdx) {
-  if (phase === PHASES.AUTH) return "/apply/signin";
+function urlForState(phase, sectionIdx) {
   if (phase === PHASES.PROFILE) return "/apply/profile";
   if (phase === PHASES.REVIEW) return "/apply/review";
   if (phase === PHASES.DONE) return "/apply/submitted";
+  // WELCOME / RETURNING / UPLOAD / PARSING / PARSE_REVIEW all live on /apply
+  // so the URL doesn't jitter during the landing + CV flow. The user sees
+  // these as one continuous lead-in to the sectioned wizard.
+  if (
+    phase === PHASES.WELCOME ||
+    phase === PHASES.RETURNING ||
+    phase === PHASES.UPLOAD ||
+    phase === PHASES.PARSING ||
+    phase === PHASES.PARSE_REVIEW
+  ) {
+    return "/apply";
+  }
   if (phase === PHASES.SECTION_INTRO || phase === PHASES.QUESTION || phase === PHASES.CELEBRATE) {
-    return "/apply/" + (SECTION_SLUGS[sectionIdx] || SECTION_SLUGS[0]);
+    return "/apply/" + (SECTION_ORDER[sectionIdx] || SECTION_ORDER[0]);
   }
   return "/apply";
 }
 
-function App() {
+export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
-  const urlSyncRef = useR({ applying: false });
+  const urlSyncRef = useRef({ applying: false });
 
-  const [config, setConfig] = useS(() => window.__eirDefaults);
-  const [tweaksOpen, setTweaksOpen] = useS(false);
+  const { user, logout, loading: authLoading } = useAuth();
+  const { application, answers, loading, saving, locked, save, submit, refetch, completion } =
+    useApplication();
+  const resume = useResume();
+  const { push: pushToast } = useToast();
 
-  const [phase, setPhase] = useS(() => localStorage.getItem("tir:phase") || PHASES.WELCOME);
-  const [user, setUser] = useS(() => { try { return JSON.parse(localStorage.getItem("tir:user") || "null"); } catch { return null; } });
-  const [uploaded, setUploaded] = useS(() => { try { return JSON.parse(localStorage.getItem("tir:uploaded") || "null"); } catch { return null; } });
-  const [parsed, setParsed] = useS(() => { try { return JSON.parse(localStorage.getItem("tir:parsed") || "null"); } catch { return null; } });
-  const [answers, setAnswers] = useS(() => { try { return JSON.parse(localStorage.getItem("tir:answers") || "{}"); } catch { return {}; } });
-  const [stepIdx, setStepIdx] = useS(() => parseInt(localStorage.getItem("tir:stepIdx") || "0", 10));
-  const [sectionIdx, setSectionIdx] = useS(() => parseInt(localStorage.getItem("tir:sectionIdx") || "0", 10));
-  const [viewingSubmission, setViewingSubmission] = useS(null);
+  const [config, setConfig] = useState(() => window.__eirDefaults);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [phase, setPhase] = useState(PHASES.WELCOME);
+  const [sectionIdx, setSectionIdx] = useState(0);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [celebMsg, setCelebMsg] = useState("");
+  const [prevPhase, setPrevPhase] = useState(null);
 
-  // Persist
-  useE(() => { localStorage.setItem("tir:phase", phase); }, [phase]);
-  useE(() => { if (user) localStorage.setItem("tir:user", JSON.stringify(user)); }, [user]);
-  useE(() => { if (uploaded) localStorage.setItem("tir:uploaded", JSON.stringify(uploaded)); }, [uploaded]);
-  useE(() => { if (parsed) localStorage.setItem("tir:parsed", JSON.stringify(parsed)); }, [parsed]);
-  useE(() => { localStorage.setItem("tir:answers", JSON.stringify(answers)); }, [answers]);
-  useE(() => { localStorage.setItem("tir:stepIdx", String(stepIdx)); }, [stepIdx]);
-  useE(() => { localStorage.setItem("tir:sectionIdx", String(sectionIdx)); }, [sectionIdx]);
-
-  // Save submission record when reaching DONE
-  useE(() => {
-    if (phase !== PHASES.DONE || !user?.email) return;
-    try {
-      const key = `tir:submissions:${user.email}`;
-      const existing = JSON.parse(localStorage.getItem(key) || "[]");
-      const already = existing.some(s => s.answers && JSON.stringify(s.answers) === JSON.stringify(answers));
-      if (already) return;
-      const rec = {
-        id: "TIR-" + Math.floor(Math.random() * 90000 + 10000),
-        cycle: "TIR cohort 2026",
-        projectTitle: answers?.problemStatement?.slice(0, 80) || "Your TIR.2026 application",
-        ts: Date.now(),
-        lastUpdate: Date.now(),
-        currentMilestone: "submitted",
-        outcome: null,
-        feedback: null,
-        answers,
-      };
-      existing.unshift(rec);
-      localStorage.setItem(key, JSON.stringify(existing.slice(0, 10)));
-    } catch {}
-  }, [phase]);
-
-  // Auto-seed demo data for test accounts — runs once per page load
-  useE(() => {
-    const SEED_EMAILS = ["ndedhia18@gmail.com", "test@artpark.in"];
-    const SEED_FLAG = "tir:seededV3";
-    if (localStorage.getItem(SEED_FLAG)) return;
-
-    SEED_EMAILS.forEach((email) => {
-      const key = `tir:submissions:${email}`;
-      if (localStorage.getItem(key)) return;
-
-      const firstName = email.split("@")[0].replace(/[0-9]/g, "").split(/[._-]/)[0];
-      const displayName = firstName.charAt(0).toUpperCase() + firstName.slice(1);
-
-      const submissions = [
-        {
-          id: "TIR-" + Math.floor(40000 + Math.random() * 9000),
-          cycle: "TIR cohort 2026",
-          projectTitle: "Solar micro cold-storage for smallholder farms",
-          ts: Date.now() - 1000 * 60 * 60 * 24 * 12,
-          lastUpdate: Date.now() - 1000 * 60 * 60 * 24 * 3,
-          currentMilestone: "under_review",
-          outcome: null,
-          feedback: null,
-          answers: {
-            fullName: displayName + " Dedhia",
-            email: email,
-            phone: "+91 98765 43210",
-            org: "Independent",
-            degree: "Master's Degree",
-            hasTeam: "No — going solo for now",
-            problemDefined: "Yes — I can state it in one sentence",
-            problemStatement: "Smallholder farmers across India lose 20-30% of post-harvest yield to poor cold-chain access, and existing solutions cost 10x what a marginal farm can absorb.",
-            solutionSummary: "A decentralized, solar-powered micro cold-storage unit sized for a village cooperative (2-5 tonnes) that pays for itself in one harvest cycle through pooled economics.",
-            stage: "Prototype in the field",
-          },
-        },
-        {
-          id: "TIR-" + Math.floor(30000 + Math.random() * 9000),
-          cycle: "TIR cohort 2025",
-          projectTitle: "Edge-AI diagnostic for rural primary-care clinics",
-          ts: Date.now() - 1000 * 60 * 60 * 24 * 185,
-          lastUpdate: Date.now() - 1000 * 60 * 60 * 24 * 120,
-          currentMilestone: "decision",
-          lastReached: "interview",
-          outcome: "not_shortlisted",
-          feedback: "Strong technical fundamentals and a promising hardware angle. The reviewing panel felt the market pull wasn't clearly demonstrated — we'd encourage you to talk to 10 more prospective users and re-apply with concrete pilot commitments. We remember your name; keep us posted.",
-          answers: {
-            fullName: displayName + " Dedhia",
-            email: email,
-            phone: "+91 98765 43210",
-            org: "Independent",
-            degree: "Master's Degree",
-            problemStatement: "Rural primary-care clinics in Tier-3 towns lack on-site diagnostics — 40% of referrals end up being avoidable.",
-            stage: "Prototype in the field",
-          },
-        },
-        {
-          id: "TIR-" + Math.floor(20000 + Math.random() * 9000),
-          cycle: "TIR cohort 2024",
-          projectTitle: "Crop-insurance underwriting via satellite imagery",
-          ts: Date.now() - 1000 * 60 * 60 * 24 * 485,
-          lastUpdate: Date.now() - 1000 * 60 * 60 * 24 * 460,
-          currentMilestone: "submitted",
-          lastReached: "submitted",
-          outcome: "withdrawn",
-          feedback: "Applicant withdrew during the review stage citing personal commitments. File kept open; application was otherwise progressing well — re-encouraged to reapply.",
-          answers: {
-            fullName: displayName + " Dedhia",
-            email: email,
-            phone: "+91 98765 43210",
-            org: "IIT Bombay",
-            degree: "Master's Degree",
-            hasTeam: "Yes — I have co-founders",
-            stage: "Idea stage",
-          },
-        },
-      ];
-
-      localStorage.setItem(key, JSON.stringify(submissions));
-
-      try {
-        const users = JSON.parse(localStorage.getItem("tir:users") || "{}");
-        if (!users[email]) {
-          users[email] = { email, created: Date.now() - 1000 * 60 * 60 * 24 * 500 };
-          localStorage.setItem("tir:users", JSON.stringify(users));
-        }
-      } catch {}
-    });
-
-    localStorage.setItem(SEED_FLAG, "1");
-  }, []);
-
-  // Theme
-  useE(() => {
+  // ─── Theme application ───────────────────────────────────────
+  useEffect(() => {
     const theme = THEMES[config.theme] || THEMES.notebook;
     const root = document.documentElement;
     Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
-    const accents = { default: null, rust: "#c84a1a", olive: "#5a6b2a", ink: "#0a0a0a", plum: "#6a1a4a", forest: "#2a5a3a" };
+    const accents = {
+      default: null,
+      rust: "#c84a1a",
+      olive: "#5a6b2a",
+      ink: "#0a0a0a",
+      plum: "#6a1a4a",
+      forest: "#2a5a3a",
+    };
     if (config.accent && config.accent !== "default" && accents[config.accent]) {
       root.style.setProperty("--accent", accents[config.accent]);
     }
@@ -213,8 +135,8 @@ function App() {
     root.setAttribute("data-tone", config.tone);
   }, [config]);
 
-  // Tweaks message protocol
-  useE(() => {
+  // Tweaks message protocol (designer overlay).
+  useEffect(() => {
     const handler = (e) => {
       if (e.data?.type === "__activate_edit_mode") setTweaksOpen(true);
       if (e.data?.type === "__deactivate_edit_mode") setTweaksOpen(false);
@@ -224,124 +146,159 @@ function App() {
     return () => window.removeEventListener("message", handler);
   }, []);
 
-  // Protected-path redirect: unauthed users hitting /apply/profile, /apply/<section>,
-  // /apply/review, /apply/submitted get bounced to signin with ?next= preserved.
-  useE(() => {
-    const slug = pickPathFromLocation(location.pathname);
-    if (slug == null) return;
-    if (PROTECTED_PATHS.has(slug) && !user) {
-      const next = location.pathname + (location.search || "");
-      navigate(`/apply/signin?next=${encodeURIComponent(next)}`, { replace: true });
-    }
-  }, [location.pathname, user]);
+  // ─── Flat question list + current slot ───────────────────────
+  const flat = useMemo(() => flattenQuestions(SECTIONS, answers), [answers]);
+  const totalQ = flat.length;
+  const currentFQ = phase === PHASES.QUESTION && stepIdx < flat.length ? flat[stepIdx] : null;
 
-  // URL → phase sync (runs on mount and whenever the URL changes, e.g. browser back).
-  useE(() => {
-    const slug = pickPathFromLocation(location.pathname);
-    if (slug == null) return;
+  // ─── URL → phase/section sync ────────────────────────────────
+  //
+  // Fires ONLY when the URL pathname changes. The `application` and `locked`
+  // state transitions have their own effects below, so an inbound save
+  // response doesn't trip this effect and reset stepIdx back to zero
+  // (which was the Phase-7-post-launch bug that bounced users from the
+  // name question to the hasTeam question after every auto-save).
+  useEffect(() => {
+    const slug = pickSlug(location.pathname);
+    if (slug === null) return;
     urlSyncRef.current.applying = true;
-    if (slug === "signin") { if (phase !== PHASES.AUTH) setPhase(PHASES.AUTH); return; }
-    if (slug === "verify") { /* Phase 3 stub — no phase mapping yet */ return; }
-    if (slug === "profile") { if (user && phase !== PHASES.PROFILE) setPhase(PHASES.PROFILE); return; }
-    if (slug === "review")  { if (user && phase !== PHASES.REVIEW)  setPhase(PHASES.REVIEW);  return; }
-    if (slug === "submitted") { if (user && phase !== PHASES.DONE) setPhase(PHASES.DONE); return; }
-    if (slug === "support") { /* support is a modal, no phase change */ return; }
-    if (SECTION_SLUGS.includes(slug)) {
-      if (!user) return; // protected effect already redirecting
-      const idx = SECTION_SLUGS.indexOf(slug);
-      if (idx !== sectionIdx) setSectionIdx(idx);
-      if (phase !== PHASES.SECTION_INTRO && phase !== PHASES.QUESTION && phase !== PHASES.CELEBRATE) {
+
+    // Slug "" is handled by the dedicated /apply effect below — it needs to
+    // wait for the application to load before deciding the initial phase.
+    if (slug === "") return;
+
+    if (slug === "profile") {
+      setPhase(PHASES.PROFILE);
+      return;
+    }
+    if (slug === "review") {
+      setPhase(PHASES.REVIEW);
+      return;
+    }
+    if (slug === "submitted") {
+      setPhase(PHASES.DONE);
+      return;
+    }
+    if (SECTION_ORDER.includes(slug)) {
+      const idx = SECTION_ORDER.indexOf(slug);
+      // Only reset stepIdx when we've actually changed section. This is the
+      // fix: prior to the split, every save() → setRow() → application-dep
+      // effect → setStepIdx(firstQInSection) and the user lost their place.
+      if (idx !== sectionIdx) {
+        setSectionIdx(idx);
+        const firstQInSection = flat.findIndex((fq) => fq.sectionIdx === idx);
+        if (firstQInSection >= 0) setStepIdx(firstQInSection);
+      }
+      if (phase !== PHASES.QUESTION && phase !== PHASES.CELEBRATE) {
         setPhase(PHASES.SECTION_INTRO);
       }
+      return;
     }
+    // Unknown slug — handled by router-level 404.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
-  // Phase → URL push. When internal state changes (Next/Prev, auth success, etc.),
-  // reflect that in the URL so browser back/forward and deep-linking work.
-  useE(() => {
-    if (urlSyncRef.current.applying) { urlSyncRef.current.applying = false; return; }
-    const target = urlForPhase(phase, sectionIdx);
+  // /apply (empty slug) decides what the first screen is:
+  //
+  //   unauthed                       → WELCOME (public landing, Begin → signin)
+  //   authed, submitted              → DONE  (redirects to /apply/submitted)
+  //   authed, has draft answers      → RETURNING chooser
+  //   authed, no draft yet           → UPLOAD (CV upload is the first step)
+  //
+  // We can't decide until both auth rehydrate AND application fetch have
+  // resolved. `authLoading` covers the first; waiting for `application` to
+  // be non-null (or for the user to be null) covers the second.
+  useEffect(() => {
+    const slug = pickSlug(location.pathname);
+    if (slug !== "") return;
+    if (authLoading) return;
+
+    // Unauthed visitors land on the welcome screen.
+    if (!user) {
+      setPhase(PHASES.WELCOME);
+      return;
+    }
+    // Authed but application hasn't finished loading yet.
+    if (!application) return;
+
+    if (locked) {
+      setPhase(PHASES.DONE);
+      return;
+    }
+    const hasAny = answers && Object.keys(answers).length > 0;
+    setPhase(hasAny ? PHASES.RETURNING : PHASES.UPLOAD);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user, application, locked]);
+
+  // When the application flips to non-draft status mid-session (another
+  // device submitted, or the user did so via another tab), bounce any
+  // section URL to /apply/submitted.
+  useEffect(() => {
+    if (!locked) return;
+    const slug = pickSlug(location.pathname);
+    if (slug && SECTION_ORDER.includes(slug)) {
+      navigate("/apply/submitted", { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked]);
+
+  // ─── Phase/section → URL push ────────────────────────────────
+  useEffect(() => {
+    if (urlSyncRef.current.applying) {
+      urlSyncRef.current.applying = false;
+      return;
+    }
+    const target = urlForState(phase, sectionIdx);
     if (target && target !== location.pathname) {
       navigate(target, { replace: false });
     }
-  }, [phase, sectionIdx]);
+  }, [phase, sectionIdx, navigate, location.pathname]);
 
-  // Compute active flat questions (with conditional logic)
-  const flat = flattenQuestions(SECTIONS, answers);
-  const currentFQ = phase === PHASES.QUESTION && stepIdx < flat.length ? flat[stepIdx] : null;
-
-  const warmCopy = config.tone === "warm";
-  const totalSections = SECTIONS.length;
-
-  const startApp = () => setPhase(PHASES.AUTH);
-
-  const onAuthed = (u) => {
-    setUser(u);
-    // Respect ?next= so protected-route redirects land back on the intended page.
-    const nextParam = new URLSearchParams(location.search).get("next");
-    if (nextParam && nextParam.startsWith("/apply")) {
-      navigate(nextParam, { replace: true });
+  // ─── Navigation handlers ─────────────────────────────────────
+  //
+  // Clicking "Begin application" on the welcome screen can mean three things
+  // depending on state:
+  //   unauthed              → go to signin (preserves ?next=/apply)
+  //   authed, CV uploaded   → straight to first section
+  //   authed, no CV         → CV upload flow
+  //
+  // ReturningChoiceScreen has its own "Begin new" / "Resume" / "View past"
+  // buttons, handled below in onStartNew / onResumeDraft / onViewPast.
+  const startWizard = () => {
+    if (!user) {
+      navigate("/apply/signin?next=%2Fapply", { replace: false });
       return;
     }
-    if (u.mode === "login") {
-      setPhase(PHASES.RETURNING);
-    } else {
+    if (!resume.resume) {
       setPhase(PHASES.UPLOAD);
+      return;
     }
+    setSectionIdx(0);
+    setStepIdx(0);
+    setPhase(PHASES.SECTION_INTRO);
   };
 
-  const onResumeDraft = () => {
-    if (parsed && Object.keys(answers || {}).length > 0) {
-      setPhase(PHASES.QUESTION);
-    } else if (uploaded) {
-      setPhase(PHASES.REVIEW);
-    } else {
-      setPhase(PHASES.UPLOAD);
-    }
-  };
-
-  const onViewPastSubmission = (sub) => {
-    if (sub.answers) setAnswers(sub.answers);
-    setViewingSubmission(sub);
-    setPhase(PHASES.DONE);
-  };
-
-  const backFromPast = () => {
-    setViewingSubmission(null);
-    setPhase(PHASES.RETURNING);
-  };
-
+  // ReturningChoiceScreen handlers. The screen shows three tabs; each tab's
+  // primary action hits one of these.
   const onStartNew = () => {
-    ["tir:uploaded", "tir:parsed", "tir:answers", "tir:stepIdx", "tir:sectionIdx"].forEach(k => localStorage.removeItem(k));
-    setUploaded(null); setParsed(null); setAnswers({});
-    setSectionIdx(0); setStepIdx(0);
+    // Fresh slate — upload a new CV. The existing draft is preserved in the
+    // backend; we just route the user through the upload flow again.
     setPhase(PHASES.UPLOAD);
   };
-
-  const onUploaded = (u) => {
-    setUploaded(u);
-    setPhase(PHASES.PARSING);
+  const onResumeDraft = () => {
+    setSectionIdx(0);
+    setStepIdx(0);
+    setPhase(PHASES.SECTION_INTRO);
+  };
+  const onViewPast = () => {
+    // Past-applications view isn't wired to a backend endpoint yet (Phase 8+);
+    // placeholder just takes them into the current draft.
+    setSectionIdx(0);
+    setStepIdx(0);
+    setPhase(PHASES.SECTION_INTRO);
   };
 
-  const onParseDone = () => {
-    const p = simulateParse(user?.email);
-    setParsed(p);
-    setPhase(PHASES.REVIEW);
-  };
-
-  const onReviewDone = (fields) => {
-    const next = { ...answers };
-    if (fields.fullName) next.fullName = fields.fullName;
-    if (fields.email) next.email = fields.email;
-    if (fields.phone) next.phone = fields.phone;
-    if (fields.org) next.org = fields.org;
-    if (fields.degree) {
-      const d = fields.degree.toLowerCase();
-      if (d.includes("phd") || d.includes("doctor")) next.degree = "PhD";
-      else if (d.includes("master") || d.includes("msc") || d.includes("m.s")) next.degree = "Master's Degree";
-      else if (d.includes("bachelor") || d.includes("b.tech") || d.includes("bsc")) next.degree = "Bachelor's Degree";
-    }
-    setAnswers(next);
+  const skipUpload = () => {
     setSectionIdx(0);
     setStepIdx(0);
     setPhase(PHASES.SECTION_INTRO);
@@ -350,22 +307,17 @@ function App() {
   const goNextQuestion = () => {
     const cur = flat[stepIdx];
     const next = flat[stepIdx + 1];
+    if (!cur) return;
     if (!next) {
-      setPhase(PHASES.DONE);
+      // Reached the end of the flat list — proceed to review.
+      navigate("/apply/review");
       return;
     }
     if (next.sectionIdx !== cur.sectionIdx) {
-      const msgs = [
-        "Nice — basics are squared away.",
-        "The hard part: you framed the problem.",
-        "Solution articulated. Keep going.",
-        "Execution plan captured.",
-        "Evidence uploaded. Home stretch.",
-      ];
+      setCelebMsg(CELEBRATE_MESSAGES[cur.sectionIdx] || "Section complete.");
       setPhase(PHASES.CELEBRATE);
       setSectionIdx(next.sectionIdx);
       setStepIdx(stepIdx + 1);
-      window.__celebMsg = msgs[cur.sectionIdx] || "Section complete.";
       return;
     }
     setStepIdx(stepIdx + 1);
@@ -379,53 +331,103 @@ function App() {
     }
   };
 
-  const restart = () => {
-    if (!confirm("Clear everything and start over?")) return;
-    ["tir:phase", "tir:user", "tir:uploaded", "tir:parsed", "tir:answers", "tir:stepIdx", "tir:sectionIdx"].forEach(k => localStorage.removeItem(k));
-    setUser(null); setUploaded(null); setParsed(null); setAnswers({});
-    setSectionIdx(0); setStepIdx(0); setPhase(PHASES.WELCOME);
+  const goProfileFrom = () => {
+    setPrevPhase(phase);
+    setPhase(PHASES.PROFILE);
+  };
+  const backFromProfile = () => {
+    setPhase(prevPhase || PHASES.SECTION_INTRO);
+    setPrevPhase(null);
   };
 
-  const logout = () => {
-    ["tir:phase", "tir:user"].forEach(k => localStorage.removeItem(k));
-    setUser(null);
-    setPhase(PHASES.WELCOME);
+  const handleAnswerChange = (qid, value) => {
+    save({ [qid]: value });
   };
 
-  const [prevPhase, setPrevPhase] = useS(null);
-  const goProfileFrom = () => { setPrevPhase(phase); setPhase(PHASES.PROFILE); };
-  const backFromProfile = () => { setPhase(prevPhase || PHASES.RETURNING); setPrevPhase(null); };
-  const updateUser = (u) => setUser(u);
+  // Wizard upload/parse/review — thin wiring to the real hook.
+  const onUploadedReal = async (uploaded) => {
+    // UploadScreen passes { cv: { name, size, file }, linkedin, github }.
+    // Legacy shape was { cv: File } directly; handle both.
+    const file =
+      uploaded?.cv?.file instanceof File
+        ? uploaded.cv.file
+        : uploaded?.cv instanceof File
+          ? uploaded.cv
+          : null;
 
-  const setAnswer = (id, value) => setAnswers({ ...answers, [id]: value });
+    if (!file) {
+      pushToast({
+        kind: "error",
+        message: "Couldn't read the selected CV file. Try choosing it again.",
+      });
+      return;
+    }
 
-  // ===== Single-editor session lock for team applications =====
-  const teammateEmails = Array.isArray(answers.teammates)
-    ? answers.teammates.filter(m => m && m.email).map(m => m.email)
-    : [];
-  const sharedAppEmails = user?.email ? [user.email, ...teammateEmails] : [];
-  const lockActive = !!user && [PHASES.UPLOAD, PHASES.PARSING, PHASES.REVIEW, PHASES.SECTION_INTRO, PHASES.QUESTION, PHASES.CELEBRATE].includes(phase) && sharedAppEmails.length > 1;
-  const lock = useSessionLock({
-    sharedAppEmails,
-    currentUser: { email: user?.email, name: (answers.fullName || user?.email || "").split("@")[0].split(" ")[0] },
-    active: lockActive,
-  });
-
-  const handleSignOutFromKicked = () => {
-    lock.releaseLock();
-    logout();
+    setPhase(PHASES.PARSING);
+    try {
+      await resume.upload(file);
+      // Once the backend parse completes, resume.parsed ends up populated via
+      // the poll loop; the PARSING screen's onDone callback then advances to
+      // PARSE_REVIEW. If parsing fails, resume.error is set and we still move
+      // along — PARSE_REVIEW's render branch shows null parsed_data gracefully.
+    } catch (err) {
+      pushToast({
+        kind: "error",
+        message: err?.message || "Upload failed. Try again.",
+      });
+      // Back out of parsing since nothing is actually parsing.
+      setPhase(PHASES.UPLOAD);
+    }
   };
-  const handleReclaim = () => {
-    lock.takeLock();
+
+  const onReviewParsed = async () => {
+    try {
+      await resume.applyToApplication();
+      await refetch();
+      pushToast({ kind: "info", message: "Profile filled from your CV." });
+    } catch (err) {
+      pushToast({
+        kind: "error",
+        message: err?.message || "Couldn't apply parsed data.",
+      });
+    }
+    setPhase(PHASES.SECTION_INTRO);
+    setSectionIdx(0);
+    setStepIdx(0);
   };
 
-  // Keyboard
-  useE(() => {
+  const handleSubmit = async () => {
+    try {
+      const result = await submit();
+      pushToast({ kind: "info", message: "Submitted. Good luck!" });
+      if (result?.application_id) {
+        navigate("/apply/submitted");
+      }
+    } catch (err) {
+      if (err?.status === 422) {
+        pushToast({
+          kind: "error",
+          message: "Some fields need attention before submitting. See the review screen.",
+        });
+      } else {
+        pushToast({
+          kind: "error",
+          message: err?.message || "Submission failed.",
+        });
+      }
+    }
+  };
+
+  // Keyboard shortcuts (Enter advances) — unchanged from pre-Phase-7.
+  useEffect(() => {
     const handler = (e) => {
       if (e.target.tagName === "TEXTAREA") return;
-      if (e.target.tagName === "INPUT" && phase === PHASES.AUTH) return;
       if (e.key === "Enter" && !e.shiftKey) {
-        if (phase === PHASES.WELCOME) { e.preventDefault(); startApp(); return; }
+        if (phase === PHASES.WELCOME) {
+          e.preventDefault();
+          startWizard();
+          return;
+        }
         if (phase === PHASES.CELEBRATE) {
           e.preventDefault();
           setPhase(PHASES.SECTION_INTRO);
@@ -447,61 +449,30 @@ function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, currentFQ, answers, stepIdx]);
 
-  // Progress calculation
-  const totalQ = flat.length;
+  // ─── Progress figures ────────────────────────────────────────
+  const totalSections = SECTIONS.length;
+  const currentSection = currentFQ?.section || SECTIONS[sectionIdx];
   const progress = phase === PHASES.QUESTION ? stepIdx / Math.max(1, totalQ) : 0;
   const estMin = Math.max(1, Math.round((totalQ - stepIdx) * 0.9));
-  const currentSection = currentFQ?.section || SECTIONS[sectionIdx];
-
+  const warmCopy = config.tone === "warm";
   const showProgress = [PHASES.QUESTION, PHASES.SECTION_INTRO].includes(phase);
-
-  // Unknown /apply/<slug> → render the 404 screen inline (keeps App mounted
-  // so state isn't lost when the user navigates back).
-  const applySlug = pickPathFromLocation(location.pathname);
-  const isUnknownApplyPath = applySlug != null && applySlug !== "" && !KNOWN_APPLY_PATHS.has(applySlug);
-  if (isUnknownApplyPath) {
-    return (
-      <div className={`eir-root eir-theme-${config.theme}`}>
-        <div className="eir-bg" />
-        <div className="eir-frame">
-          <main className="eir-main">
-            <div className="eir-screen">
-              <div className="eir-coord eir-mono">
-                <span>ARTPARK / TIR.2026</span>
-                <span>404 · not found</span>
-              </div>
-              <div className="eir-welcome-body">
-                <h1 className="eir-welcome-title">Nothing here.</h1>
-                <p className="eir-welcome-lede">
-                  <code>{location.pathname}</code> doesn't point anywhere on the application portal.
-                </p>
-                <button className="eir-btn eir-btn-primary" onClick={() => navigate("/apply")}>
-                  <span>Back to application</span>
-                </button>
-              </div>
-            </div>
-          </main>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className={`eir-root eir-theme-${config.theme}`}>
       <div className="eir-bg" />
       <div className="eir-frame">
-        <Header config={config} user={user} onRestart={restart} onTweaks={() => setTweaksOpen(!tweaksOpen)} onLogout={logout} onProfile={goProfileFrom} phase={phase} />
+        <Header
+          config={config}
+          user={user}
+          onLogout={logout}
+          onProfile={goProfileFrom}
+          phase={phase}
+        />
 
-        {lockActive && lock.state === "active" && sharedAppEmails.length > 1 && (
-          <SessionLockBanner
-            currentUser={{ email: user?.email, name: (answers.fullName || user?.email || "").split("@")[0].split(" ")[0] }}
-            sharedAppEmails={sharedAppEmails}
-          />
-        )}
-
-        {showProgress && lock.state !== "kicked" && (
+        {showProgress && (
           <ProgressBar
             variant={config.progress}
             progress={progress}
@@ -515,69 +486,289 @@ function App() {
         )}
 
         <main className="eir-main">
-          {lockActive && lock.state === "kicked" ? (
-            <KickedScreen
-              kickedBy={lock.activeSession}
-              onSignOut={handleSignOutFromKicked}
-              onReclaim={handleReclaim}
+          {/* Loading only blocks when we're authed and waiting for data.
+              Unauthed visitors should see WELCOME immediately. */}
+          {user && loading && !application && <LoadingScreen />}
+
+          {phase === PHASES.WELCOME && (
+            <WelcomeScreen onStart={startWizard} warmCopy={warmCopy} />
+          )}
+          {phase === PHASES.RETURNING && user && (
+            <ReturningChoiceScreen
+              user={user}
+              hasDraft={!!application && Object.keys(answers || {}).length > 0}
+              draftProgress={
+                application && completion
+                  ? (completion.completion_pct ?? 0) / 100
+                  : 0
+              }
+              pastSubmissions={locked && application ? [application] : []}
+              onResume={onResumeDraft}
+              onViewPast={onViewPast}
+              onStartNew={onStartNew}
+              warmCopy={warmCopy}
             />
-          ) : (
-            <>
-              {phase === PHASES.WELCOME && <WelcomeScreen onStart={startApp} warmCopy={warmCopy} />}
-              {phase === PHASES.AUTH && <AuthScreen onAuthed={onAuthed} warmCopy={warmCopy} />}
-              {phase === PHASES.RETURNING && user && (
-                <ReturningChoiceScreen
-                  user={user}
-                  hasDraft={!!parsed && Object.keys(answers || {}).length > 0}
-                  draftProgress={flat.length ? stepIdx / flat.length : 0}
-                  pastSubmissions={(() => { try { return JSON.parse(localStorage.getItem(`tir:submissions:${user.email}`) || "[]"); } catch { return []; } })()}
-                  onResume={onResumeDraft}
-                  onViewPast={onViewPastSubmission}
-                  onStartNew={onStartNew}
-                  warmCopy={warmCopy}
-                />
-              )}
-              {phase === PHASES.UPLOAD && <UploadScreen onUploaded={onUploaded} warmCopy={warmCopy} />}
-              {phase === PHASES.PARSING && <ParsingScreen onDone={onParseDone} uploaded={uploaded || {}} />}
-              {phase === PHASES.REVIEW && parsed && <ParsedReviewScreen parsed={parsed} onContinue={onReviewDone} warmCopy={warmCopy} userEmail={user?.email} />}
-              {phase === PHASES.SECTION_INTRO && <SectionIntroScreen section={SECTIONS[sectionIdx]} onContinue={() => setPhase(PHASES.QUESTION)} />}
-              {phase === PHASES.CELEBRATE && <CelebrationScreen message={window.__celebMsg || "Section complete."} onContinue={() => setPhase(PHASES.SECTION_INTRO)} />}
-              {phase === PHASES.QUESTION && currentFQ && (
-                <QuestionView
-                  fq={currentFQ} total={totalQ} stepIdx={stepIdx}
-                  value={answers[currentFQ.q.id]}
-                  onChange={(v) => setAnswer(currentFQ.q.id, v)}
-                  onNext={goNextQuestion} onPrev={goPrevQuestion}
-                  canPrev={stepIdx > 0} warmCopy={warmCopy} answers={answers}
-                />
-              )}
-              {phase === PHASES.DONE && <DoneScreen answers={answers} onRestart={restart} submission={viewingSubmission} onBack={backFromPast} />}
-              {phase === PHASES.PROFILE && user && <ProfileScreen user={user} onBack={backFromProfile} onUpdate={updateUser} onLogout={logout} />}
-            </>
+          )}
+          {phase === PHASES.UPLOAD && (
+            <div>
+              <UploadScreen onUploaded={onUploadedReal} warmCopy={warmCopy} />
+              <div className="eir-upload-skip">
+                <button
+                  type="button"
+                  className="eir-link-btn eir-mono"
+                  onClick={skipUpload}
+                >
+                  skip for now — I'll fill it in manually ↗
+                </button>
+              </div>
+            </div>
+          )}
+          {phase === PHASES.PARSING && (
+            <ParsingScreen
+              onDone={() => setPhase(PHASES.PARSE_REVIEW)}
+              uploaded={{ cv: resume.resume?.original_filename || "your CV" }}
+            />
+          )}
+          {phase === PHASES.PARSE_REVIEW && (
+            resume.resume?.parsed_data ? (
+              <ParsedReviewScreen
+                parsed={buildParsedReviewPayload(resume.resume.parsed_data, user)}
+                onContinue={onReviewParsed}
+                warmCopy={warmCopy}
+                userEmail={user?.email}
+              />
+            ) : resume.parsing || resume.resume?.parse_status === "processing" ? (
+              <ParseStillRunningScreen onSkip={skipUpload} />
+            ) : (
+              <ParseFailedScreen
+                error={resume.resume?.parse_error || resume.error?.message}
+                onContinue={skipUpload}
+                onRetry={() => setPhase(PHASES.UPLOAD)}
+              />
+            )
+          )}
+          {phase === PHASES.SECTION_INTRO && currentSection && (
+            <SectionIntroScreen
+              section={currentSection}
+              onContinue={() => setPhase(PHASES.QUESTION)}
+            />
+          )}
+          {phase === PHASES.CELEBRATE && (
+            <CelebrationScreen
+              message={celebMsg || "Section complete."}
+              onContinue={() => setPhase(PHASES.SECTION_INTRO)}
+            />
+          )}
+          {phase === PHASES.QUESTION && currentFQ && (
+            <QuestionView
+              fq={currentFQ}
+              total={totalQ}
+              stepIdx={stepIdx}
+              value={answers[currentFQ.q.id]}
+              onChange={(v) => handleAnswerChange(currentFQ.q.id, v)}
+              onNext={goNextQuestion}
+              onPrev={goPrevQuestion}
+              canPrev={stepIdx > 0}
+              warmCopy={warmCopy}
+              answers={answers}
+              locked={locked}
+              saving={saving}
+            />
+          )}
+          {phase === PHASES.REVIEW && (
+            <ReviewSubmitPanel
+              answers={answers}
+              completion={completion}
+              onSubmit={handleSubmit}
+              locked={locked}
+              saving={saving}
+            />
+          )}
+          {phase === PHASES.DONE && application && (
+            <DoneScreen
+              answers={answers}
+              onRestart={() => navigate("/apply")}
+              submission={{
+                id: application.id,
+                ts: application.submitted_at
+                  ? new Date(application.submitted_at).getTime()
+                  : Date.now(),
+                currentMilestone: "submitted",
+                answers,
+              }}
+              onBack={() => navigate("/apply")}
+            />
+          )}
+          {phase === PHASES.PROFILE && user && (
+            <ProfileScreen
+              user={user}
+              onBack={backFromProfile}
+              onUpdate={() => {}}
+              onLogout={logout}
+            />
           )}
         </main>
 
-        {lockActive && lock.state === "pending-takeover" && (
-          <TakeoverPrompt
-            activeSession={lock.activeSession}
-            currentUser={{ email: user?.email }}
-            onTakeOver={handleReclaim}
-            onWait={() => { logout(); }}
-          />
-        )}
-
-        <Footer phase={phase} stepIdx={stepIdx} totalQ={totalQ} onPrev={goPrevQuestion} canPrev={phase === PHASES.QUESTION && stepIdx > 0} />
+        <Footer
+          phase={phase}
+          stepIdx={stepIdx}
+          totalQ={totalQ}
+          onPrev={goPrevQuestion}
+          canPrev={phase === PHASES.QUESTION && stepIdx > 0}
+          saving={saving}
+          locked={locked}
+        />
       </div>
 
-      <TweaksPanel open={tweaksOpen} onClose={() => setTweaksOpen(false)} config={config} setConfig={setConfig} user={user} />
+      <TweaksPanel
+        open={tweaksOpen}
+        onClose={() => setTweaksOpen(false)}
+        config={config}
+        setConfig={setConfig}
+        user={user}
+      />
       <SupportButton userEmail={user?.email} />
     </div>
   );
 }
 
-function Header({ config, user, onRestart, onTweaks, onLogout, onProfile, phase }) {
-  const theme = THEMES[config.theme];
-  const isAuthed = !!user;
+// ─── Sub-components ──────────────────────────────────────────────
+
+// Shape the backend's ParsedResumeSchema → the ParsedReviewScreen's expected
+// props ({fullName, email, phone, org, degree, _meta, _order}). Every field
+// referenced in _order MUST have a _meta entry with a `confidence` string
+// or the component dereferences `undefined.confidence` and crashes.
+function buildParsedReviewPayload(parsed, user) {
+  const fullName = parsed.full_name || "";
+  const email = parsed.email || user?.email || "";
+  const phone = parsed.phone || "";
+  // LLM returns `location` as a freeform string (e.g. "Bangalore, India") AND
+  // separately provides structured `work_experience` / `ventures`. For the
+  // "current organization" field, prefer the most recent employer; fall back
+  // to `location`.
+  const latestExperience =
+    Array.isArray(parsed.work_experience) && parsed.work_experience.length > 0
+      ? parsed.work_experience[0]
+      : null;
+  const org = latestExperience?.company || parsed.location || "";
+
+  // Map the latest education entry to one of our four degree options.
+  const topEducation =
+    Array.isArray(parsed.education) && parsed.education.length > 0
+      ? parsed.education[0]
+      : null;
+  const degreeRaw = (topEducation?.degree || "").toLowerCase();
+  let degree = "";
+  if (degreeRaw.includes("phd") || degreeRaw.includes("doctor")) {
+    degree = "PhD";
+  } else if (
+    degreeRaw.includes("master") || degreeRaw.includes("msc") || degreeRaw.includes("m.s") || degreeRaw.includes("m.tech")
+  ) {
+    degree = "Master's Degree";
+  } else if (
+    degreeRaw.includes("bachelor") || degreeRaw.includes("b.tech") || degreeRaw.includes("bsc") || degreeRaw.includes("b.e")
+  ) {
+    degree = "Bachelor's Degree";
+  } else if (degreeRaw) {
+    degree = "Self-taught / Other";
+  }
+
+  const confidence = (value, highCertainty) => {
+    if (!value) return "low";
+    return highCertainty ? "high" : "low";
+  };
+
+  return {
+    fullName,
+    email,
+    phone,
+    org,
+    degree,
+    _meta: {
+      fullName: { label: "full name", confidence: confidence(fullName, !!parsed.full_name) },
+      email: { label: "email", confidence: confidence(email, !!parsed.email) },
+      phone: { label: "phone number", confidence: confidence(phone, !!parsed.phone) },
+      org: {
+        label: "current organization",
+        confidence: confidence(org, !!latestExperience?.company),
+      },
+      degree: {
+        label: "highest degree",
+        confidence: confidence(degree, degreeRaw.length > 0),
+      },
+    },
+    _order: ["fullName", "email", "phone", "org", "degree"],
+  };
+}
+
+function LoadingScreen() {
+  return (
+    <div className="eir-screen">
+      <div className="eir-welcome-body">
+        <p className="eir-mono eir-dim">loading your application…</p>
+      </div>
+    </div>
+  );
+}
+
+function ParseStillRunningScreen({ onSkip }) {
+  return (
+    <div className="eir-screen">
+      <div className="eir-coord eir-mono">
+        <span>§ 01 · Professional Profile</span>
+        <span>parsing · in progress</span>
+      </div>
+      <div className="eir-welcome-body">
+        <h1 className="eir-welcome-title">Still reading your CV…</h1>
+        <p className="eir-welcome-lede">
+          OpenRouter is working through it — usually 10–30 seconds. You can
+          wait here or skip ahead and fill the basics in manually; parsed
+          data will flow in automatically once it's ready.
+        </p>
+        <div className="eir-q-actions">
+          <button className="eir-btn eir-btn-ghost" onClick={onSkip}>
+            <span>Skip — I'll fill it in manually</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ParseFailedScreen({ error, onContinue, onRetry }) {
+  return (
+    <div className="eir-screen">
+      <div className="eir-coord eir-mono">
+        <span>§ 01 · Professional Profile</span>
+        <span>parsing · couldn't read CV</span>
+      </div>
+      <div className="eir-welcome-body">
+        <h1 className="eir-welcome-title">We couldn't read that CV.</h1>
+        <p className="eir-welcome-lede">
+          Something went sideways in the parse step. You can upload a
+          different file or continue and fill the form in manually.
+        </p>
+        {error && (
+          <div className="eir-mono eir-block-reason" style={{ marginTop: "0.5rem" }}>
+            ↳ {String(error).slice(0, 200)}
+          </div>
+        )}
+        <div className="eir-q-actions">
+          <button className="eir-btn eir-btn-ghost" onClick={onRetry}>
+            <span>Upload a different file</span>
+          </button>
+          <button className="eir-btn eir-btn-primary" onClick={onContinue}>
+            <span>Continue — fill in manually</span>
+            <span className="eir-btn-key eir-mono">⏎</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Header({ config, user, onLogout, onProfile, phase }) {
+  const theme = THEMES[config.theme] || THEMES.minimal;
   const onProfilePage = phase === "profile";
   return (
     <header className="eir-header">
@@ -588,56 +779,69 @@ function Header({ config, user, onRestart, onTweaks, onLogout, onProfile, phase 
         </a>
         <span className="eir-header-sep" />
         <a href="/marketing.html" className="eir-brand" title="ARTPARK × IISc">
-          <img
-            src="/assets/iisc-logo-blue.png"
-            alt="Indian Institute of Science"
-            className="eir-brand-iisc"
-          />
+          <img src="/assets/iisc-logo-blue.png" alt="Indian Institute of Science" className="eir-brand-iisc" />
           <span className="eir-brand-divider" />
-          <img
-            src="/assets/artpark-logo.png"
-            alt="ARTPARK"
-            className="eir-brand-artpark"
-          />
+          <img src="/assets/artpark-logo.png" alt="ARTPARK" className="eir-brand-artpark" />
         </a>
       </div>
       <div className="eir-header-right">
         <div className="eir-mono eir-dim eir-theme-tag">{theme.tag}</div>
-        {isAuthed && !onProfilePage && (
+        {user && !onProfilePage && (
           <button className="eir-header-user eir-mono" onClick={onProfile} title="Profile settings">
-            <span className="eir-header-user-avatar">{(user.email[0] || "?").toUpperCase()}</span>
+            <span className="eir-header-user-avatar">{(user.email?.[0] || "?").toUpperCase()}</span>
             <span className="eir-header-user-email">{user.email}</span>
             <span className="eir-header-user-cog">⚙</span>
           </button>
         )}
-        {isAuthed && (
+        {user && (
           <button className="eir-chip-btn eir-mono eir-header-logout" onClick={onLogout} title="Sign out">
             sign out ↗
           </button>
-        )}
-        {!isAuthed && (
-          <button className="eir-chip-btn eir-mono" onClick={onRestart}>reset ↺</button>
         )}
       </div>
     </header>
   );
 }
 
-function Footer({ phase, stepIdx, totalQ, onPrev, canPrev }) {
+function Footer({ phase, stepIdx, totalQ, onPrev, canPrev, saving, locked }) {
   return (
     <footer className="eir-footer">
       <div className="eir-footer-left eir-mono eir-dim">
-        {phase === "question" && <>q.{(stepIdx + 1).toString().padStart(2, "0")} / {totalQ.toString().padStart(2, "0")}</>}
+        {phase === "question" && (
+          <>
+            q.{(stepIdx + 1).toString().padStart(2, "0")} / {totalQ.toString().padStart(2, "0")}
+          </>
+        )}
+        {saving === "saving" && <span className="eir-save-state"> · saving…</span>}
+        {saving === "saved" && <span className="eir-save-state is-ok"> · saved ✓</span>}
+        {saving === "error" && <span className="eir-save-state is-err"> · save failed</span>}
+        {locked && <span className="eir-save-state is-lock"> · locked (submitted)</span>}
       </div>
       <div className="eir-footer-nav">
-        <button className="eir-chip-btn eir-mono" onClick={onPrev} disabled={!canPrev}>← back</button>
-        <span className="eir-mono eir-dim">press <kbd>⏎</kbd> to continue</span>
+        <button className="eir-chip-btn eir-mono" onClick={onPrev} disabled={!canPrev}>
+          ← back
+        </button>
+        <span className="eir-mono eir-dim">
+          press <kbd>⏎</kbd> to continue
+        </span>
       </div>
     </footer>
   );
 }
 
-function QuestionView({ fq, total, stepIdx, value, onChange, onNext, onPrev, canPrev, warmCopy, answers }) {
+function QuestionView({
+  fq,
+  total,
+  stepIdx,
+  value,
+  onChange,
+  onNext,
+  onPrev: _onPrev,
+  canPrev: _canPrev,
+  warmCopy,
+  answers,
+  locked,
+}) {
   const { q, section, globalIdx } = fq;
   const answered = isAnswered(q, value);
   const blockReason = answered ? null : whyBlocked(q, value);
@@ -646,7 +850,8 @@ function QuestionView({ fq, total, stepIdx, value, onChange, onNext, onPrev, can
   let prompt = q.prompt;
   if (warmCopy && name) {
     if (q.id === "phone") prompt = `Thanks, ${name}. A phone number we can reach you on?`;
-    if (q.id === "problemDefined") prompt = `OK ${name} — is the problem you want to solve well-defined?`;
+    if (q.id === "problemDefined")
+      prompt = `OK ${name} — is the problem you want to solve well-defined?`;
     if (q.id === "stage") prompt = `${name}, how far along are you?`;
   }
 
@@ -674,11 +879,17 @@ function QuestionView({ fq, total, stepIdx, value, onChange, onNext, onPrev, can
         </div>
 
         <div className="eir-q-actions">
-          <button className={`eir-btn ${answered ? "eir-btn-primary" : "eir-btn-disabled"}`} onClick={onNext} disabled={!answered}>
-            <span>{stepIdx === total - 1 ? "Submit application" : "OK"}</span>
+          <button
+            className={`eir-btn ${answered && !locked ? "eir-btn-primary" : "eir-btn-disabled"}`}
+            onClick={onNext}
+            disabled={!answered || locked}
+          >
+            <span>{stepIdx === total - 1 ? "Review + submit" : "OK"}</span>
             <span className="eir-btn-key eir-mono">⏎</span>
           </button>
-          {answered ? (
+          {locked ? (
+            <span className="eir-mono eir-block-reason">↳ application already submitted</span>
+          ) : answered ? (
             <span className="eir-mono eir-dim">or press <kbd>Enter</kbd></span>
           ) : blockReason ? (
             <span className="eir-mono eir-block-reason">↳ {blockReason}</span>
@@ -691,5 +902,61 @@ function QuestionView({ fq, total, stepIdx, value, onChange, onNext, onPrev, can
   );
 }
 
-export default App;
-export { PHASES };
+function ReviewSubmitPanel({ answers, completion, onSubmit, locked, saving }) {
+  const entries = Object.entries(answers)
+    .filter(([_, v]) => v !== undefined && v !== null && v !== "")
+    .slice(0, 30);
+  const canSubmit = !locked && completion.completion_pct >= 100 && saving !== "saving";
+
+  return (
+    <div className="eir-screen eir-done">
+      <div className="eir-coord eir-mono">
+        <span>ARTPARK / TIR.2026</span>
+        <span>review · submit when ready</span>
+      </div>
+      <div className="eir-done-body">
+        <h2 className="eir-done-title">Review your application.</h2>
+        <p className="eir-done-lede">
+          You've completed <strong>{completion.completion_pct}%</strong>. Review your answers below,
+          then submit when you're ready.
+        </p>
+
+        {completion.missing_required_fields.length > 0 && (
+          <div className="eir-done-feedback">
+            <div className="eir-mono eir-dim eir-done-feedback-label">↳ still to fill</div>
+            <ul>
+              {completion.missing_required_fields.map((f) => (
+                <li key={f}>
+                  <code>{f}</code>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="eir-done-answers">
+          <div className="eir-mono eir-dim eir-done-answers-label">↳ what you've entered</div>
+          <dl className="eir-done-answers-list">
+            {entries.map(([k, v]) => (
+              <div key={k} className="eir-done-answer-row">
+                <dt className="eir-mono">{k}</dt>
+                <dd>{typeof v === "string" ? v : JSON.stringify(v)}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+
+        <div className="eir-q-actions">
+          <button
+            className={`eir-btn ${canSubmit ? "eir-btn-primary" : "eir-btn-disabled"}`}
+            disabled={!canSubmit}
+            onClick={onSubmit}
+          >
+            <span>Submit application</span>
+            <span className="eir-btn-key eir-mono">⏎</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,33 +1,78 @@
-// Route tree for the application portal.
+// Route tree. BrowserRouter is mounted in main.jsx so hooks like useNavigate
+// work in the providers above this component.
 //
-// We mount <App /> once under /apply/* so its state (phase, answers, user)
-// persists across URL changes. App reads useLocation() internally to drive:
-//   - URL → phase sync (landing on /apply/profile jumps to the profile screen)
-//   - phase → URL push (Next/Prev updates the URL so back/forward works)
-//   - protected-path redirects (unauthed users on /apply/profile → /apply/signin?next=…)
-//   - unknown /apply/<slug> → 404
+// Public routes (no auth required):
+//   /                      static marketing (via RootRedirect)
+//   /apply                 welcome screen; Begin button routes to signin
+//   /apply/signin          email OTP request
+//   /apply/verify          6-digit OTP entry
+//   /apply/support         support ticket form (anon-friendly)
 //
-// The /pages/ directory contains thin per-route component stubs that are wired
-// up in later phases (Phase 3 replaces SignInPage with a Supabase OTP flow, etc).
-// For Phase 0 they all render <App />, so we keep a single catch-all route here.
-//
-// See docs/ROUTING.md for the full route table.
+// Protected (redirect to /apply/signin?next=<path> if unauthed):
+//   /apply/basic, /apply/problem, /apply/solution, /apply/execution,
+//   /apply/evidence, /apply/declaration   wizard sections
+//   /apply/profile          profile settings
+//   /apply/review           pre-submission review
+//   /apply/submitted        post-submit receipt
 
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import App from "./App.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
-import { SECTIONS } from "./questions.jsx";
+import ProtectedRoute from "./pages/ProtectedRoute.jsx";
+import RootRedirect from "./pages/RootRedirect.jsx";
+import SignInPage from "./pages/SignInPage.jsx";
+import SupportPage from "./pages/SupportPage.jsx";
+import VerifyPage from "./pages/VerifyPage.jsx";
 
-export const SECTION_SLUGS = SECTIONS.map((s) => s.id);
+const SECTION_SLUGS = [
+  "basic",
+  "problem",
+  "solution",
+  "execution",
+  "evidence",
+  "declaration",
+];
 
-export default function AppRouter() {
+export default function AppRoutes() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Navigate to="/apply" replace />} />
-        <Route path="/apply/*" element={<App />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </BrowserRouter>
+    <Routes>
+      {/* Root → static marketing HTML */}
+      <Route path="/" element={<RootRedirect />} />
+
+      {/* Public auth + support pages */}
+      <Route path="/apply/signin" element={<SignInPage />} />
+      <Route path="/apply/verify" element={<VerifyPage />} />
+      <Route path="/apply/support" element={<SupportPage />} />
+
+      {/* /apply itself is public — unauthed users see the welcome screen */}
+      <Route path="/apply" element={<App />} />
+
+      {/* Protected wizard routes */}
+      {SECTION_SLUGS.map((slug) => (
+        <Route
+          key={slug}
+          path={`/apply/${slug}`}
+          element={
+            <ProtectedRoute>
+              <App />
+            </ProtectedRoute>
+          }
+        />
+      ))}
+      <Route
+        path="/apply/profile"
+        element={<ProtectedRoute><App /></ProtectedRoute>}
+      />
+      <Route
+        path="/apply/review"
+        element={<ProtectedRoute><App /></ProtectedRoute>}
+      />
+      <Route
+        path="/apply/submitted"
+        element={<ProtectedRoute><App /></ProtectedRoute>}
+      />
+
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
   );
 }
