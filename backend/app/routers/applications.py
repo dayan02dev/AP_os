@@ -79,22 +79,13 @@ ALWAYS_REQUIRED: list[str] = [
     "declaration_truthful", "declaration_ref_checks", "declaration_terms",
 ]
 
-# minWords from questions.jsx, per long-text field. Used at submit time only.
-LONG_TEXT_MIN_WORDS: dict[str, int] = {
-    "problem_describe":       60,
-    "problem_importance":     40,
-    "solution_describe":      60,
-    "solution_core_tech":     40,
-    "solution_ten_x":         40,
-    "solution_hurdles":       40,
-    "solution_moat":          40,
-    "solution_national_scale": 40,
-    "solution_customers":     40,
-    "execution_will_break":   30,
-    "execution_milestone":    30,
-    "execution_budget":       60,
-    "execution_failure":      30,
-}
+# Word-count minimums — intentionally empty for launch day. The presence
+# check (_is_filled) still rejects blank submissions, and reviewers can
+# manually down-rank applications with shallow answers. Re-introducing
+# these minimums is a future UX task: surface them *during* field entry
+# (with a live word counter) rather than only at submit time, so users
+# aren't surprised at the end of the wizard.
+LONG_TEXT_MIN_WORDS: dict[str, int] = {}
 
 # E.164-friendly — +?<7–15 digits>, optionally with spaces/hyphens/parens in between.
 _PHONE_RE = re.compile(r"^\+?[\d][\d\s\-\(\)]{5,19}$")
@@ -231,10 +222,16 @@ def _validate_submission(row: dict[str, Any]) -> tuple[list[str], list[dict[str,
     if email and not _EMAIL_RE.match(email.strip()):
         invalid.append({"field": "basic_email", "reason": "not a valid email address"})
 
+    # Video URL is optional — if the user typed a non-URL we treat it as
+    # if they left it blank rather than blocking submission. (Reviewers will
+    # simply not see a video link in that case.) Launch-day pragmatic choice;
+    # a proper fix surfaces URL validity live in the input component.
     video_url = row.get("evidence_video_url")
     if video_url and not _is_valid_http_url(video_url):
-        invalid.append({"field": "evidence_video_url",
-                        "reason": "must be a valid http(s) URL"})
+        log.info(
+            "submit: ignoring invalid evidence_video_url",
+            extra={"field": "evidence_video_url"},
+        )
 
     # Long-text word counts — only applied when the field is filled.
     for field, min_w in LONG_TEXT_MIN_WORDS.items():
