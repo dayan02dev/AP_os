@@ -36,7 +36,10 @@ from ..models.support import (
 )
 from ..services.email_service import EmailDeliveryError, get_email_service
 from ..supabase_client import get_admin_client
-from ..utils.rate_limit import limiter
+from ..utils.rate_limit import limiter, per_user_rate_limit
+
+# 60/min/user on GET /tickets/me (the authed listing endpoint).
+_rl_list_my_tickets = per_user_rate_limit("support-list-me", 60, 60)
 
 log = logging.getLogger(__name__)
 
@@ -211,6 +214,7 @@ async def create_ticket(
 @router.get(
     "/tickets/me",
     response_model=SupportTicketListResponse,
+    dependencies=[Depends(_rl_list_my_tickets)],
 )
 async def list_my_tickets(
     user: CurrentUser = Depends(get_current_user),

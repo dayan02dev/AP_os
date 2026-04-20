@@ -181,20 +181,21 @@ def test_me_returns_profile_when_authed(client, mock_supabase):
 # ─── Rate limit ────────────────────────────────────────────────────
 
 def test_rate_limit_request_otp(client, mock_supabase):
-    """1 OTP send per 30s per email — second send within the window → 429."""
+    """Phase 8 spec: 3 OTP sends per 15min per email — 4th in-window → 429."""
     anon, _admin = mock_supabase
     anon.auth.sign_in_with_otp.return_value = MagicMock()
 
-    # First send for this email succeeds.
-    res = client.post("/auth/request-otp", json={"email": "rl@example.com"})
-    assert res.status_code == 200
+    # First 3 sends succeed.
+    for _ in range(3):
+        res = client.post("/auth/request-otp", json={"email": "rl@example.com"})
+        assert res.status_code == 200
 
-    # Second send within 30s is over quota.
+    # 4th send within window is over quota.
     res = client.post("/auth/request-otp", json={"email": "rl@example.com"})
     assert res.status_code == 429
     assert "Retry-After" in res.headers
 
-    # A DIFFERENT email is not affected by another email's bucket.
+    # A DIFFERENT email has its own bucket.
     res = client.post("/auth/request-otp", json={"email": "other@example.com"})
     assert res.status_code == 200
 
