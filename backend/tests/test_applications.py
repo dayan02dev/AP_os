@@ -232,8 +232,12 @@ def test_patch_rejects_unknown_field(client, db):
 
 
 def test_patch_rejects_enum_mismatch(client, db):
+    # Phase-post-launch: basic_degree and basic_hear_about were relaxed
+    # from strict Literals to `str` so the UI can encode "Other: <text>"
+    # free-form answers. Use a still-strict enum (basic_has_team) to
+    # continue covering the Pydantic-validation-error path.
     db.rows[TEST_USER_ID] = _fresh_draft_row()
-    res = client.patch("/applications/me", json={"basic_degree": "Diploma"})
+    res = client.patch("/applications/me", json={"basic_has_team": "Maybe?"})
     assert res.status_code == 422
     assert res.json()["error"]["code"] == "validation_error"
 

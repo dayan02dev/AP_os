@@ -53,7 +53,12 @@ Rules:
 - "ventures" = startups founded or co-founded.
 - "summary" = 2-3 sentence objective snapshot.
 - Dates: prefer ISO "YYYY-MM" or plain "YYYY". Use "Present" for ongoing.
-- Do not invent fields. If unsure, return null."""
+- Do not invent fields. If unsure, return null.
+- Education entries: capture EVERY degree the candidate lists, not just the
+  most recent. The UI picks the highest rank (PhD > Master's > Bachelor's).
+  Preserve the original wording in `degree` ("M.Tech", "Master of Science",
+  "Ph.D.", "B.E.", etc.) rather than normalising — the frontend does the
+  normalisation and relies on the literal tokens to rank correctly."""
 
 
 class LLMParseError(RuntimeError):

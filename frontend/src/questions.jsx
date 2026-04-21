@@ -5,7 +5,7 @@
 const SECTIONS = [
   {
     id: "basic",
-    index: "02",
+    index: "01",
     label: "Basic Information",
     blurb: "Most of this was auto-filled from your CV. Take a moment to review.",
     questions: [
@@ -50,7 +50,7 @@ const SECTIONS = [
       {
         id: "degree",
         kind: "single",
-        prompt: "Highest technology degree achieved?",
+        prompt: "Highest degree achieved?",
         help: "Self-taught engineers with shipped work get equivalent weight — pick whatever's truthful.",
         options: ["Bachelor's Degree", "Master's Degree", "PhD", "Self-taught / Other"],
         cvAutoFill: true,
@@ -104,7 +104,7 @@ const SECTIONS = [
   },
   {
     id: "problem",
-    index: "03",
+    index: "02",
     label: "Problem & Importance",
     blurb: "The thing that pulled you in. What won't let you go.",
     questions: [
@@ -146,7 +146,7 @@ const SECTIONS = [
   },
   {
     id: "solution",
-    index: "04",
+    index: "03",
     label: "Your Solution",
     blurb: "How you're approaching it, and what makes your angle defensible.",
     questions: [
@@ -240,7 +240,7 @@ const SECTIONS = [
   },
   {
     id: "execution",
-    index: "05",
+    index: "04",
     label: "Execution Plan",
     blurb: "How you'll actually get it done.",
     questions: [
@@ -288,7 +288,7 @@ const SECTIONS = [
   },
   {
     id: "evidence",
-    index: "06",
+    index: "05",
     label: "Evidence",
     blurb: "Show, don't just tell.",
     questions: [
@@ -321,7 +321,7 @@ const SECTIONS = [
   },
   {
     id: "declaration",
-    index: "07",
+    index: "06",
     label: "Declaration",
     blurb: "Last step. Just a few confirmations.",
     questions: [
@@ -334,7 +334,7 @@ const SECTIONS = [
           { key: "truthful", label: "I confirm the information I've submitted is true and relevant to the questions asked." },
           { key: "refChecks", label: "I consent to reference checks." },
           { key: "terms", label: "I agree to the program terms and data policy." },
-          { key: "newsletter", label: "I'd like to receive newsletters and future communication from ARTPARK." },
+          { key: "newsletter", label: "I'd like to receive updates on my application's progress." },
         ],
         required: true,
       },

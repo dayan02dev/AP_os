@@ -94,7 +94,7 @@ function WelcomeScreen({ onStart, warmCopy }) {
         <div className="eir-welcome-meta">
           <div className="eir-welcome-stat"><div className="eir-mono eir-dim">duration</div><div className="eir-welcome-stat-val">45–60 min</div></div>
           <div className="eir-welcome-stat"><div className="eir-mono eir-dim">sections</div><div className="eir-welcome-stat-val">06</div></div>
-          <div className="eir-welcome-stat"><div className="eir-mono eir-dim">auto-filled</div><div className="eir-welcome-stat-val">~60%</div></div>
+          <div className="eir-welcome-stat"><div className="eir-mono eir-dim">auto-fill</div><div className="eir-welcome-stat-val">from CV</div></div>
           <div className="eir-welcome-stat"><div className="eir-mono eir-dim">deadline</div><div className="eir-welcome-stat-val">22 may</div></div>
         </div>
         <button className="eir-btn eir-btn-primary" onClick={onStart}>
@@ -106,12 +106,12 @@ function WelcomeScreen({ onStart, warmCopy }) {
   );
 }
 
-function SectionIntroScreen({ section, onContinue }) {
+function SectionIntroScreen({ section, onContinue, totalSections = 6 }) {
   return (
     <div className="eir-screen eir-section-intro">
       <div className="eir-coord eir-mono">
         <span>section {section.index}</span>
-        <span>of 07</span>
+        <span>of {String(totalSections).padStart(2, "0")}</span>
       </div>
       <div className="eir-section-intro-body">
         <div className="eir-section-intro-index">{section.index}</div>

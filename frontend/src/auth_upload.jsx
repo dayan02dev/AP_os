@@ -208,10 +208,19 @@ function getStatusLabel(sub) {
 }
 
 // Shown after login. Three tabs: start new / continue draft / past applications.
-function ReturningChoiceScreen({ user, hasDraft, draftProgress, pastSubmissions, onResume, onViewPast, onStartNew, warmCopy }) {
+function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, pastSubmissions, onResume, onViewPast, onStartNew, warmCopy }) {
   // Pick a sensible default tab: if draft exists, show Continue; else if past subs, show Past; else Start
   const defaultTab = hasDraft ? "continue" : (pastSubmissions.length > 0 ? "past" : "start");
   const [tab, setTab] = useAS(defaultTab);
+
+  // Prefer the real name (from profiles.full_name or the CV-filled
+  // basic_full_name). Fall back to the email local-part only when we
+  // genuinely don't know a name yet — and even then, title-case it so
+  // "rohanss24" shows as "Rohanss24" rather than a lowercase handle.
+  const displayName =
+    applicantName?.trim() ||
+    user.full_name?.trim() ||
+    ((email) => email?.split("@")[0]?.replace(/^./, (c) => c.toUpperCase()))(user.email);
 
   return (
     <div className="eir-screen eir-returning">
@@ -224,7 +233,7 @@ function ReturningChoiceScreen({ user, hasDraft, draftProgress, pastSubmissions,
           <span className="eir-dot-live" /> welcome back
         </div>
         <h1 className="eir-welcome-title">
-          {warmCopy ? <>Good to see you, <em>{user.email.split("@")[0]}</em>.</> : "What would you like to do?"}
+          {warmCopy ? <>Good to see you, <em>{displayName}</em>.</> : "What would you like to do?"}
         </h1>
 
         {/* Three-tab nav */}
@@ -427,7 +436,7 @@ function UploadScreen({ onUploaded, warmCopy }) {
           {warmCopy ? <>Let's start with the <em>easy</em> part.</> : "Upload your profile"}
         </h2>
         <p className="eir-q-help">
-          Drop in your CV and we'll auto-fill about 60% of the application. You'll review everything before anything gets submitted.
+          Drop in your CV and we'll auto-fill what we can. You'll review everything before anything gets submitted.
         </p>
 
         <div
@@ -554,15 +563,21 @@ function ParsedReviewScreen({ parsed, onContinue, warmCopy, userEmail }) {
   const [fields, setFields] = useAS(parsed);
   const update = (k, v) => setFields((f) => ({ ...f, [k]: v }));
 
+  // Count how many actually came back from the LLM so we can show a real
+  // "N fields populated" number rather than a stale hard-coded 12.
+  const populatedCount = (parsed._order || []).filter((k) => {
+    const v = parsed[k];
+    return v !== undefined && v !== null && String(v).trim() !== "";
+  }).length;
+
   return (
     <div className="eir-screen eir-review">
       <div className="eir-coord eir-mono">
-        <span>§ 01 · Professional Profile</span>
-        <span>review · 12 fields populated</span>
+        <span>ARTPARK / TIR.2026</span>
+        <span>review · {populatedCount} fields populated</span>
       </div>
       <div className="eir-review-body">
         <div className="eir-q-index eir-mono">
-          <span className="eir-q-index-num">02</span>
           <span className="eir-q-index-arrow">→</span>
           <span className="eir-q-optional">review</span>
         </div>

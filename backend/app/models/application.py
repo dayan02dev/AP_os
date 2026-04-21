@@ -46,14 +46,17 @@ HasTeamValue = Literal[
     "No — going solo for now",
 ]
 
-DegreeValue = Literal[
-    "Bachelor's Degree",
-    "Master's Degree",
-    "PhD",
-    "Self-taught / Other",
-]
+# Degree + hearAbout used to be strict Literals; post-launch feedback asked
+# for an "Other — please specify" text capture on both. The frontend now
+# encodes those as `"Other: <free text>"` (or `"Self-taught / Other: …"`),
+# so the backend accepts any string. A matching migration (001_initial_schema.sql)
+# drops the CHECK constraints on these two columns. Pre-defined options
+# kept as hints below for reference / future UI use.
+DegreeValue = str
+_DEGREE_OPTIONS = ("Bachelor's Degree", "Master's Degree", "PhD", "Self-taught / Other")
 
-HearAboutValue = Literal[
+HearAboutValue = str
+_HEAR_ABOUT_OPTIONS = (
     "Referral from friend/colleague",
     "IISc faculty or staff",
     "Social media (LinkedIn, Twitter, etc.)",
@@ -62,7 +65,7 @@ HearAboutValue = Literal[
     "Partner organization",
     "News article or press",
     "Other",
-]
+)
 
 ProblemDefinedValue = Literal[
     "Yes, clearly defined",

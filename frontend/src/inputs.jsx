@@ -69,23 +69,75 @@ function LongInput({ q, value, onChange, autoFocus }) {
   );
 }
 
+// Options ending in "Other" (or containing "/ Other") open a text input
+// when picked — the free text is encoded as `"<option>: <text>"` and
+// decoded back on render. Matches: "Other", "Self-taught / Other",
+// "Something else — Other", etc.
+function _isOtherOption(opt) {
+  return /(?:^|[\s/])Other\s*$/i.test(opt || "");
+}
+
+// Return { baseOpt, freeText } for a stored value. If the value exactly
+// equals one of the options, baseOpt = that option, freeText = "". If it
+// starts with one of the "Other"-flavoured options followed by ":", split.
+function _splitOtherValue(value, options) {
+  if (!value) return { baseOpt: "", freeText: "" };
+  if (options.includes(value)) return { baseOpt: value, freeText: "" };
+  for (const opt of options) {
+    if (_isOtherOption(opt) && value.startsWith(`${opt}:`)) {
+      return { baseOpt: opt, freeText: value.slice(opt.length + 1).trim() };
+    }
+  }
+  // Unknown stored string → leave base empty so the user re-picks.
+  return { baseOpt: "", freeText: "" };
+}
+
 function SingleInput({ q, value, onChange }) {
+  const { baseOpt, freeText } = _splitOtherValue(value, q.options);
+
+  const pick = (opt) => {
+    if (_isOtherOption(opt)) {
+      // Picking "Other" with no text yet stores just the option so the
+      // completion check still sees this field as "filled". As soon as
+      // they type, the value becomes "Other: <text>".
+      onChange(opt);
+    } else {
+      onChange(opt);
+    }
+  };
+
+  const updateFreeText = (text) => {
+    const trimmed = text.trim();
+    onChange(trimmed ? `${baseOpt}: ${trimmed}` : baseOpt);
+  };
+
   return (
     <div className="eir-options">
       {q.options.map((opt, i) => {
         const letter = String.fromCharCode(65 + i);
-        const selected = value === opt;
+        const selected = baseOpt === opt;
         return (
-          <button
-            key={opt}
-            type="button"
-            className={`eir-option ${selected ? "is-selected" : ""}`}
-            onClick={() => onChange(opt)}
-          >
-            <span className="eir-option-key">{letter}</span>
-            <span className="eir-option-label">{opt}</span>
-            <span className="eir-option-check">{selected ? "●" : "○"}</span>
-          </button>
+          <div key={opt}>
+            <button
+              type="button"
+              className={`eir-option ${selected ? "is-selected" : ""}`}
+              onClick={() => pick(opt)}
+            >
+              <span className="eir-option-key">{letter}</span>
+              <span className="eir-option-label">{opt}</span>
+              <span className="eir-option-check">{selected ? "●" : "○"}</span>
+            </button>
+            {selected && _isOtherOption(opt) && (
+              <input
+                type="text"
+                className="eir-input eir-input-other"
+                placeholder="Please specify…"
+                value={freeText}
+                onChange={(e) => updateFreeText(e.target.value)}
+                autoFocus
+              />
+            )}
+          </div>
         );
       })}
     </div>

@@ -346,6 +346,79 @@ export default function App() {
     }
   };
 
+  // Back-navigation that works from any phase of the wizard, not just
+  // question pages. Maps each phase to its sensible "previous" target so
+  // users never hit a dead back-button.
+  const goBackUniversal = () => {
+    if (phase === PHASES.QUESTION) {
+      // First question of the whole wizard → drop back to that section's intro.
+      if (stepIdx === 0) {
+        setPhase(PHASES.SECTION_INTRO);
+        return;
+      }
+      const prev = flat[stepIdx - 1];
+      // Crossing a section boundary — show the CELEBRATE screen for the
+      // section we're leaving (same as forward flow, mirrored).
+      if (prev.sectionIdx !== sectionIdx) {
+        setPhase(PHASES.QUESTION);
+      }
+      setStepIdx(stepIdx - 1);
+      setSectionIdx(prev.sectionIdx);
+      return;
+    }
+    if (phase === PHASES.SECTION_INTRO) {
+      // Section 1 intro → back to the CV parse-review (if resume on file)
+      //   otherwise to the upload screen. Section N intro (N>1) → back to
+      //   the last question of section N-1.
+      if (sectionIdx === 0) {
+        setPhase(resume.resume ? PHASES.PARSE_REVIEW : PHASES.UPLOAD);
+        return;
+      }
+      const prevSectionLastFQ = [...flat].reverse().find((fq) => fq.sectionIdx === sectionIdx - 1);
+      if (prevSectionLastFQ) {
+        setPhase(PHASES.QUESTION);
+        setStepIdx(prevSectionLastFQ.globalIdx);
+        setSectionIdx(prevSectionLastFQ.sectionIdx);
+      }
+      return;
+    }
+    if (phase === PHASES.CELEBRATE) {
+      // Mid-wizard celebration → back to the last question of the just-finished section.
+      setPhase(PHASES.QUESTION);
+      return;
+    }
+    if (phase === PHASES.REVIEW) {
+      // From review → last question.
+      if (totalQ > 0) {
+        const last = flat[totalQ - 1];
+        setPhase(PHASES.QUESTION);
+        setStepIdx(totalQ - 1);
+        setSectionIdx(last.sectionIdx);
+      }
+      return;
+    }
+    if (phase === PHASES.PARSE_REVIEW) {
+      setPhase(PHASES.UPLOAD);
+      return;
+    }
+    if (phase === PHASES.PARSING) {
+      setPhase(PHASES.UPLOAD);
+      return;
+    }
+  };
+
+  // Back button is available on any wizard phase that has a sensible
+  // predecessor. Welcome / Returning / Upload / Done / Profile all have
+  // their own nav (or are the starting point), so no back button there.
+  const canGoBackUniversal = [
+    PHASES.QUESTION,
+    PHASES.SECTION_INTRO,
+    PHASES.CELEBRATE,
+    PHASES.REVIEW,
+    PHASES.PARSE_REVIEW,
+    PHASES.PARSING,
+  ].includes(phase) && !(phase === PHASES.SECTION_INTRO && sectionIdx === 0 && !resume.resume);
+
   const goProfileFrom = () => {
     setPrevPhase(phase);
     setPhase(PHASES.PROFILE);
@@ -525,6 +598,7 @@ export default function App() {
           {phase === PHASES.RETURNING && user && (
             <ReturningChoiceScreen
               user={user}
+              applicantName={application?.basic_full_name || user?.full_name}
               hasDraft={!!application && Object.keys(answers || {}).length > 0}
               draftProgress={
                 application && completion
@@ -559,6 +633,13 @@ export default function App() {
             />
           )}
           {phase === PHASES.PARSE_REVIEW && (
+            // Priority order matters here: a successful parse takes precedence
+            // over any transient "still loading" / error signal so the user
+            // never sees a spurious failure screen flash before the results
+            // render. ParseFailedScreen is *only* shown when the backend has
+            // actually stamped parse_status=failed OR we caught a direct
+            // upload-time error — NOT when parsed_data simply hasn't arrived
+            // yet (that's "still running").
             resume.resume?.parsed_data ? (
               <ParsedReviewScreen
                 parsed={buildParsedReviewPayload(resume.resume.parsed_data, user)}
@@ -566,14 +647,16 @@ export default function App() {
                 warmCopy={warmCopy}
                 userEmail={user?.email}
               />
-            ) : resume.parsing || resume.resume?.parse_status === "processing" ? (
-              <ParseStillRunningScreen onSkip={skipUpload} />
-            ) : (
+            ) : resume.resume?.parse_status === "failed" ? (
               <ParseFailedScreen
-                error={resume.resume?.parse_error || resume.error?.message}
+                error={resume.resume.parse_error || resume.error?.message}
                 onContinue={skipUpload}
                 onRetry={() => setPhase(PHASES.UPLOAD)}
               />
+            ) : (
+              // Default while we wait for the poll to resolve — covers
+              // parsing/processing/pending/unknown states. Never misleading.
+              <ParseStillRunningScreen onSkip={skipUpload} />
             )
           )}
           {phase === PHASES.SECTION_INTRO && currentSection && (
@@ -642,8 +725,8 @@ export default function App() {
           phase={phase}
           stepIdx={stepIdx}
           totalQ={totalQ}
-          onPrev={goPrevQuestion}
-          canPrev={phase === PHASES.QUESTION && stepIdx > 0}
+          onPrev={goBackUniversal}
+          canPrev={canGoBackUniversal}
           saving={saving}
           locked={locked}
         />
@@ -681,25 +764,41 @@ function buildParsedReviewPayload(parsed, user) {
       : null;
   const org = latestExperience?.company || parsed.location || "";
 
-  // Map the latest education entry to one of our four degree options.
-  const topEducation =
-    Array.isArray(parsed.education) && parsed.education.length > 0
-      ? parsed.education[0]
-      : null;
-  const degreeRaw = (topEducation?.degree || "").toLowerCase();
+  // Map the education list to one of our four degree options. Previous
+  // logic only looked at education[0], which gave wrong answers when the
+  // resume listed entries oldest-first (Bachelor's before Master's). Now
+  // we scan every entry and return the highest rank found.
+  const classifyDegree = (rawStr) => {
+    const s = (rawStr || "").toLowerCase();
+    if (!s) return null;
+    if (s.includes("phd") || s.includes("ph.d") || s.includes("doctor") || s.includes("d.phil")) return "PhD";
+    if (
+      s.includes("master") || s.includes("msc") || s.includes("m.s") ||
+      s.includes("m.tech") || s.includes("mtech") || s.includes("mba") ||
+      s.includes("m.e.") || s.includes("m.a.") || s.includes("post-graduate") || s.includes("postgraduate")
+    ) return "Master's Degree";
+    if (
+      s.includes("bachelor") || s.includes("b.tech") || s.includes("btech") ||
+      s.includes("bsc") || s.includes("b.sc") || s.includes("b.e.") ||
+      s.includes("b.a.") || s.includes("b.com") || s.includes("undergrad")
+    ) return "Bachelor's Degree";
+    return "Self-taught / Other";
+  };
+  const DEGREE_RANK = { "PhD": 3, "Master's Degree": 2, "Bachelor's Degree": 1, "Self-taught / Other": 0 };
+  const eduList = Array.isArray(parsed.education) ? parsed.education : [];
+  // Classify every education entry (degree + field combined so e.g. a row
+  // with degree="Master of Science" and field="Computer Science" is still
+  // recognised, and a row with degree="B.Tech" followed by "M.Tech in AI"
+  // correctly picks M.Tech).
   let degree = "";
-  if (degreeRaw.includes("phd") || degreeRaw.includes("doctor")) {
-    degree = "PhD";
-  } else if (
-    degreeRaw.includes("master") || degreeRaw.includes("msc") || degreeRaw.includes("m.s") || degreeRaw.includes("m.tech")
-  ) {
-    degree = "Master's Degree";
-  } else if (
-    degreeRaw.includes("bachelor") || degreeRaw.includes("b.tech") || degreeRaw.includes("bsc") || degreeRaw.includes("b.e")
-  ) {
-    degree = "Bachelor's Degree";
-  } else if (degreeRaw) {
-    degree = "Self-taught / Other";
+  let degreeRaw = "";
+  for (const e of eduList) {
+    const combined = `${e?.degree || ""} ${e?.field || ""}`;
+    const cls = classifyDegree(combined);
+    if (cls && (!degree || DEGREE_RANK[cls] > DEGREE_RANK[degree])) {
+      degree = cls;
+      degreeRaw = combined.trim();
+    }
   }
 
   const confidence = (value, highCertainty) => {
