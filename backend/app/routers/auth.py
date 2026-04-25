@@ -233,17 +233,19 @@ async def refresh(request: Request, payload: RefreshRequest):
     except Exception as exc:
         # Expired / rotated / missing refresh tokens are normal client state,
         # not server faults — log at INFO without a traceback so ERROR-level
-        # alerts only fire on genuinely unexpected failures.
+        # alerts only fire on genuinely unexpected failures. gotrue surfaces
+        # all of these as AuthApiError; httpx 4xx counts too.
+        cls = type(exc).__name__
         msg = str(exc)
-        is_token_invalid = (
-            "Refresh Token Not Found" in msg
-            or "refresh_token" in msg.lower()
-            or "400" in msg
+        is_expected = (
+            "AuthApiError" in cls
+            or "AuthError" in cls
+            or "HTTPStatusError" in cls
         )
-        if is_token_invalid:
+        if is_expected:
             log.info(
                 "auth.refresh rejected by supabase",
-                extra={"ref": req_id, "err": msg.splitlines()[0][:200]},
+                extra={"ref": req_id, "err": msg[:200], "exc_cls": cls},
             )
         else:
             log.exception("auth.refresh supabase call failed", extra={"ref": req_id})
