@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTPARK · Programs · From lab to product</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --artblue: #3213b7;
+  --artblue-deep: #1f0a8a;
+  --artlight: #aafcf0;
+  --artblack: #242424;
+  --artwhite: #efefef;
+  --accent-coral: #FF5A5F;
+  --accent-amber: #FFB703;
+  --accent-green: #2F6F62;
+  --accent-violet: #6B5CFF;
+  --ink: #242424;
+  --ink-soft: #4a4a52;
+  --ink-dim: #8a8a92;
+  --line: #e3e3e8;
+  --line-strong: #c8c8d0;
+  --paper: #ffffff;
+  --paper-soft: #f6f6f8;
+  --font-display: "Trebuchet MS", "Lucida Grande", Tahoma, sans-serif;
+  --font-body: "Open Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: "Open Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--paper);
+  font-size: 20px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Beta banner ===== */
+.beta-bar {
+  position: sticky; top: 0; z-index: 110;
+  background: var(--artblack);
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 17px; letter-spacing: 0.02em;
+  padding: 16px 32px;
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  text-align: center;
+}
+.beta-bar .tag {
+  background: var(--artlight); color: var(--artblue);
+  font-weight: 700; padding: 4px 12px;
+  letter-spacing: 0.16em; font-size: 14px;
+  text-transform: uppercase;
+}
+.beta-bar .msg { color: rgba(255,255,255,0.85); }
+
+/* ===== Header ===== */
+.site-header {
+  position: sticky; top: 44px; z-index: 100;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.site-header-inner {
+  max-width: 1280px; margin: 0 auto;
+  padding: 16px 32px;
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+}
+.lockup { display: flex; align-items: center; gap: 18px; }
+.lockup img { height: 40px; width: auto; display: block; }
+.lockup img.iisc { height: 56px; }
+.lockup .divider { width: 1px; height: 36px; background: var(--line-strong); }
+.nav-right { display: flex; align-items: center; gap: 8px; }
+.nav-link {
+  font-family: var(--font-display);
+  font-size: 14px; font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink); text-decoration: none;
+  padding: 10px 14px;
+}
+.nav-link:hover { color: var(--artblue); }
+.btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 14px 26px;
+  font-family: var(--font-display);
+  font-weight: 700; font-size: 18px;
+  border: none; cursor: pointer; text-decoration: none;
+  letter-spacing: 0.01em; border-radius: 2px;
+  transition: transform 150ms, box-shadow 150ms, background 150ms, border-color 150ms, color 150ms;
+}
+.btn-primary { background: var(--artblue); color: #fff; }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(50,19,182,0.25); }
+.btn-primary .arrow { transition: transform 200ms; }
+.btn-primary:hover .arrow { transform: translateX(4px); }
+.btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--line-strong); }
+.btn-ghost:hover { border-color: var(--artblue); color: var(--artblue); }
+.btn-light { background: var(--artlight); color: var(--artblue); }
+.btn-light:hover { background: #fff; }
+
+/* ===== Hero ===== */
+.hero {
+  position: relative; overflow: hidden;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+.hero-photo-bg {
+  position: absolute; inset: 0;
+  background-image: url('assets/hero-robotics.png');
+  background-size: cover;
+  background-position: center 40%;
+  z-index: 0;
+}
+.hero-photo-bg::after {
+  content: "";
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(90deg,
+      rgba(255,255,255,0.88) 0%,
+      rgba(255,255,255,0.74) 35%,
+      rgba(255,255,255,0.35) 65%,
+      rgba(255,255,255,0.05) 100%),
+    linear-gradient(180deg,
+      rgba(255,255,255,0.05) 0%,
+      rgba(255,255,255,0) 40%,
+      rgba(255,255,255,0.1) 100%);
+}
+.hero-inner {
+  max-width: 1280px; margin: 0 auto;
+  padding: 96px 32px 56px;
+  position: relative; z-index: 1;
+}
+.hero .eyebrow { background: rgba(255,255,255,0.8); backdrop-filter: blur(4px); }
+.paths { background: rgba(246,246,248,0.92); backdrop-filter: blur(6px); }
+.hero-eyebrow-wrap { margin-bottom: 24px; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--artblue);
+  padding: 6px 14px;
+  border: 1px solid var(--artblue);
+  border-radius: 2px;
+}
+.eyebrow .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--artblue);
+  animation: pulse 1.8s infinite;
+}
+@keyframes pulse { 0%,100% {opacity:1} 50% {opacity:0.3} }
+
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(52px, 6.8vw, 88px);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+  margin: 0 0 28px;
+  color: var(--ink);
+  text-wrap: balance;
+  max-width: 20ch;
+}
+.hero h1 .hl { background: var(--artlight); color: var(--artblue); padding: 0 8px; font-weight: 800; }
+.hero h1 .blue { color: var(--artblue); }
+.hero-lede {
+  font-size: 20px; line-height: 1.6;
+  color: var(--ink-soft);
+  max-width: 68ch;
+  margin: 0 0 48px;
+  text-wrap: pretty;
+}
+
+/* ===== Paths variants wrapper ===== */
+.paths-wrap {
+  position: relative;
+  margin-top: 8px;
+  border: 1px solid rgba(50,19,182,0.18);
+  padding: 28px 32px 32px;
+  overflow: hidden;
+  /* Layered: blueprint grid + soft radial tint + warm paper base */
+  background-color: #f7f5ef;
+  background-image:
+    radial-gradient(1100px 380px at 12% 0%, rgba(50,19,182,0.10), transparent 60%),
+    radial-gradient(900px 420px at 92% 110%, rgba(107,92,255,0.10), transparent 60%),
+    linear-gradient(to right, rgba(50,19,182,0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(50,19,182,0.07) 1px, transparent 1px);
+  background-size: auto, auto, 40px 40px, 40px 40px;
+  background-position: 0 0, 0 0, 0 0, 0 0;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.8) inset,
+    0 24px 48px -28px rgba(50,19,182,0.25);
+}
+/* Corner registration marks — architectural drawing feel */
+.paths-wrap::before,
+.paths-wrap::after {
+  content: "";
+  position: absolute;
+  width: 18px; height: 18px;
+  border: 1.5px solid rgba(50,19,182,0.35);
+  pointer-events: none;
+}
+.paths-wrap::before { top: 10px; left: 10px; border-right: none; border-bottom: none; }
+.paths-wrap::after  { bottom: 10px; right: 10px; border-left: none; border-top: none; }
+.paths-svg { display: block; width: 100%; height: auto; max-height: 440px; position: relative; z-index: 1; }
+
+/* ===== Legacy Path diagram (kept for reference — no longer used) ===== */
+.paths {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  background: var(--paper-soft);
+  padding: 40px;
+  position: relative;
+}
+.paths-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 24px; margin-bottom: 28px; flex-wrap: wrap;
+}
+.paths-head .label {
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.paths-head .title {
+  font-family: var(--font-display);
+  font-size: 15px; font-weight: 600;
+  color: var(--ink);
+}
+.paths-diagram {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(260px, 2fr) auto minmax(180px, 1fr);
+  align-items: center; gap: 16px;
+}
+.path-node {
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  padding: 18px 20px;
+  min-height: 96px;
+  display: flex; flex-direction: column; justify-content: center; gap: 4px;
+}
+.path-node .trl {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.path-node .name {
+  font-family: var(--font-display);
+  font-size: 16px; font-weight: 700;
+  letter-spacing: -0.01em; color: var(--ink);
+}
+.path-node .sub {
+  font-size: 12px; color: var(--ink-soft);
+}
+.path-node.origin {
+  background: var(--artblack); color: #fff; border-color: var(--artblack);
+}
+.path-node.origin .trl { color: rgba(255,255,255,0.55); }
+.path-node.origin .name { color: var(--artlight); }
+.path-node.origin .sub { color: rgba(255,255,255,0.8); }
+.path-node.destination {
+  background: var(--artblue); color: #fff; border-color: var(--artblue);
+}
+.path-node.destination .trl { color: rgba(255,255,255,0.55); }
+.path-node.destination .name { color: #fff; }
+.path-node.destination .sub { color: rgba(255,255,255,0.85); }
+.path-track {
+  display: grid; grid-template-rows: 1fr 1fr; gap: 14px;
+}
+.path-track-node {
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  padding: 14px 16px;
+  display: flex; align-items: center; gap: 14px;
+  position: relative;
+  transition: border-color 200ms, box-shadow 200ms;
+}
+.path-track-node .track-tag {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+.path-track-node.tir { border-left: 4px solid var(--artblue); }
+.path-track-node.tir .track-tag { background: var(--artlight); color: var(--artblue); }
+.path-track-node.sip { border-left: 4px solid var(--accent-violet); }
+.path-track-node.sip .track-tag { background: rgba(107,92,255,0.12); color: var(--accent-violet); }
+.path-track-node .track-name {
+  font-family: var(--font-display);
+  font-weight: 700; font-size: 14px;
+  color: var(--ink); letter-spacing: -0.005em;
+}
+.path-track-node .track-sub {
+  font-size: 12px; color: var(--ink-soft);
+  margin-top: 2px;
+}
+.path-arrow {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--line-strong);
+  font-family: var(--font-mono); font-size: 20px;
+  position: relative;
+}
+.path-arrow.fork {
+  flex-direction: column; gap: 6px; height: 100%;
+}
+.path-arrow.fork::before,
+.path-arrow.fork::after {
+  content: ""; display: block;
+  width: 28px; height: 1px; background: var(--line-strong);
+  background-image: linear-gradient(to right, var(--line-strong) 50%, transparent 50%);
+  background-size: 6px 1px;
+}
+.path-arrow.fork::before { transform: rotate(-18deg) translateY(-6px); }
+.path-arrow.fork::after { transform: rotate(18deg) translateY(6px); }
+.path-arrow.merge {
+  flex-direction: column; gap: 6px;
+}
+.path-arrow svg { color: var(--artblue); }
+
+/* ===== Track cards (main choice) ===== */
+.tracks-block { padding: 88px 32px; max-width: 1280px; margin: 0 auto; }
+.tracks-head { margin-bottom: 48px; display: grid; grid-template-columns: 280px 1fr; gap: 48px; align-items: baseline; }
+.block-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--artblue);
+  padding-top: 6px;
+  border-top: 2px solid var(--artblue);
+  display: inline-block;
+}
+.block-title {
+  font-family: var(--font-display);
+  font-size: clamp(38px, 4.6vw, 60px);
+  line-height: 1.05; letter-spacing: -0.02em;
+  font-weight: 700; margin: 0; text-wrap: balance;
+}
+.tracks-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+}
+.track {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  padding: 36px 36px 32px;
+  display: flex; flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+.track::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0;
+  height: 6px;
+}
+.track.tir::before { background: var(--artblue); }
+.track.sip::before { background: var(--accent-violet); }
+.track-tag-row {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 24px;
+}
+.track-pill {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  padding: 4px 10px;
+}
+.track.tir .track-pill { background: var(--artlight); color: var(--artblue); }
+.track.sip .track-pill { background: rgba(107,92,255,0.12); color: var(--accent-violet); }
+.track-status {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-dim);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.track-status .led {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent-green);
+  animation: pulse 1.8s infinite;
+}
+.track-status.upcoming .led { background: var(--accent-amber); }
+.track h2 {
+  font-family: var(--font-display);
+  font-size: clamp(32px, 3.4vw, 44px);
+  line-height: 1.08; letter-spacing: -0.02em;
+  font-weight: 700; margin: 0 0 8px;
+  text-wrap: balance;
+}
+.track-subhead {
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-bottom: 16px;
+}
+.track-lede {
+  color: var(--ink-soft); font-size: 20px; line-height: 1.6;
+  margin: 0 0 24px; text-wrap: pretty;
+}
+.track-specs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+  border-top: 1px solid var(--line);
+  margin: 8px 0 24px;
+}
+.track-spec {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.track-spec:nth-child(odd) { padding-right: 16px; border-right: 1px solid var(--line); }
+.track-spec:nth-child(even) { padding-left: 16px; }
+.track-spec .k {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-dim); margin-bottom: 4px;
+}
+.track-spec .v {
+  font-family: var(--font-display);
+  font-size: 19px; font-weight: 700;
+  color: var(--ink); line-height: 1.3;
+}
+.track.tir .track-spec .v.hl { color: var(--artblue); }
+.track.sip .track-spec .v.hl { color: var(--accent-violet); }
+.track-cta-row {
+  display: flex; gap: 12px; flex-wrap: wrap; margin-top: auto;
+  padding-top: 8px;
+}
+.track.sip .btn-primary { background: var(--accent-violet); }
+.track.sip .btn-primary:hover { box-shadow: 0 8px 24px rgba(107,92,255,0.3); }
+
+/* ===== Countdown timer (SIP) ===== */
+.countdown {
+  background: var(--artblack);
+  color: #fff;
+  margin: 0 -36px 24px;
+  padding: 20px 36px;
+  position: relative;
+  overflow: hidden;
+}
+.countdown::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.countdown > * { position: relative; z-index: 1; }
+.countdown-label {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.countdown-label .led {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent-amber);
+  animation: pulse 1.8s infinite;
+}
+.countdown-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.cd-cell {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 10px 8px;
+  text-align: center;
+}
+.cd-val {
+  font-family: var(--font-display);
+  font-weight: 700; font-size: clamp(32px, 3.6vw, 44px);
+  line-height: 1; color: var(--artlight);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.cd-unit {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: rgba(255,255,255,0.6); margin-top: 6px;
+}
+.countdown-target {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.08em;
+  color: rgba(255,255,255,0.7);
+}
+
+/* ===== Comparison table ===== */
+.compare-block { padding: 88px 32px; background: var(--paper-soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.compare-inner { max-width: 1280px; margin: 0 auto; }
+.compare-table {
+  margin-top: 40px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  display: grid;
+  grid-template-columns: 1.2fr 1.4fr 1.4fr;
+}
+.cmp-cell {
+  padding: 22px 26px;
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  font-size: 18px;
+  line-height: 1.6;
+}
+.cmp-cell:nth-child(3n) { border-right: none; }
+.cmp-row-last { border-bottom: none; }
+.cmp-head {
+  background: var(--paper-soft);
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-dim);
+  padding-top: 18px; padding-bottom: 18px;
+  position: sticky; top: 72px; z-index: 2;
+}
+.cmp-head.tir-head { color: var(--artblue); }
+.cmp-head.sip-head { color: var(--accent-violet); }
+.cmp-head strong {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 700; font-size: 22px;
+  letter-spacing: -0.01em;
+  margin-top: 4px;
+  color: var(--ink);
+}
+.cmp-dim {
+  font-family: var(--font-display);
+  font-weight: 700; font-size: 19px;
+  color: var(--ink);
+  background: var(--paper-soft);
+}
+.cmp-dim .note {
+  display: block; font-family: var(--font-body); font-weight: 400;
+  font-size: 12.5px; color: var(--ink-dim);
+  margin-top: 4px;
+}
+.cmp-val { color: var(--ink-soft); }
+.cmp-val strong { color: var(--ink); font-weight: 600; }
+.cmp-val .good, .cmp-val .bad, .cmp-val .meh {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 2px 8px; margin-right: 8px; margin-bottom: 4px;
+}
+.cmp-val .good { background: rgba(47,111,98,0.12); color: var(--accent-green); }
+.cmp-val .bad { background: rgba(255,90,95,0.12); color: var(--accent-coral); }
+.cmp-val .meh { background: rgba(255,183,3,0.18); color: #a67300; }
+
+/* ===== Pros / Cons ===== */
+.proscons-block { padding: 88px 32px; max-width: 1280px; margin: 0 auto; }
+.proscons-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+  margin-top: 40px;
+}
+.pc-card {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 32px;
+}
+.pc-card.tir { border-top: 6px solid var(--artblue); }
+.pc-card.sip { border-top: 6px solid var(--accent-violet); }
+.pc-card h3 {
+  font-family: var(--font-display);
+  font-size: 24px; font-weight: 700;
+  line-height: 1.15;
+  margin: 0 0 6px; letter-spacing: -0.01em;
+}
+.pc-card .sub {
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-dim); margin-bottom: 20px;
+}
+.pc-list { list-style: none; padding: 0; margin: 0 0 20px; }
+.pc-list li {
+  padding: 12px 0 12px 26px;
+  position: relative;
+  font-size: 18px; color: var(--ink-soft);
+  border-bottom: 1px dashed var(--line);
+}
+.pc-list li:last-child { border-bottom: none; }
+.pc-list.pros li::before {
+  content: "+"; position: absolute; left: 0; top: 10px;
+  color: var(--accent-green); font-weight: 700; font-family: var(--font-mono);
+}
+.pc-list.cons li::before {
+  content: "−"; position: absolute; left: 0; top: 10px;
+  color: var(--accent-coral); font-weight: 700; font-family: var(--font-mono);
+}
+.pc-divider {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-dim);
+  margin: 20px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+/* ===== Waitlist ===== */
+.waitlist-block {
+  padding: 88px 32px;
+  background: var(--artblue);
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+}
+.waitlist-block::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+.waitlist-inner {
+  max-width: 1000px; margin: 0 auto;
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 48px;
+  align-items: center;
+}
+.waitlist-block .block-eyebrow {
+  color: var(--artlight); border-color: var(--artlight);
+}
+.waitlist-block h2 {
+  font-family: var(--font-display);
+  font-size: clamp(38px, 4.6vw, 56px);
+  line-height: 1.08; letter-spacing: -0.02em;
+  font-weight: 700; margin: 16px 0 16px;
+  text-wrap: balance;
+}
+.waitlist-block h2 em { font-style: normal; background: var(--artlight); color: var(--artblue); padding: 0 8px; }
+.waitlist-block p { color: rgba(255,255,255,0.85); font-size: 18px; line-height: 1.6; margin: 0; max-width: 40ch; }
+.waitlist-form {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.18);
+  padding: 28px;
+  backdrop-filter: blur(6px);
+}
+.waitlist-form label {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: rgba(255,255,255,0.7); display: block;
+  margin-bottom: 6px; margin-top: 16px;
+}
+.waitlist-form label:first-child { margin-top: 0; }
+.waitlist-form input, .waitlist-form select {
+  width: 100%; background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff; padding: 12px 14px;
+  font-family: var(--font-body); font-size: 14px;
+  border-radius: 2px; outline: none;
+  transition: border-color 200ms;
+}
+.waitlist-form input::placeholder { color: rgba(255,255,255,0.45); }
+.waitlist-form input:focus, .waitlist-form select:focus { border-color: var(--artlight); }
+.waitlist-form .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.waitlist-form .submit-row {
+  margin-top: 22px; display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  flex-wrap: wrap;
+}
+.waitlist-form .submit-note {
+  font-family: var(--font-mono); font-size: 11px;
+  color: rgba(255,255,255,0.6); letter-spacing: 0.06em;
+}
+.waitlist-form .btn-light { background: var(--artlight); color: var(--artblue); }
+.waitlist-form .btn-light:hover { background: #fff; transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+.waitlist-thanks {
+  display: none;
+  padding: 20px;
+  background: rgba(170,252,240,0.15);
+  border: 1px solid var(--artlight);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+.waitlist-form.submitted .waitlist-thanks { display: block; }
+.waitlist-form.submitted > *:not(.waitlist-thanks) { display: none; }
+
+/* ===== FAQ ===== */
+.faq-block { padding: 88px 32px; background: var(--paper); border-top: 1px solid var(--line); }
+.faq-inner { max-width: 900px; margin: 0 auto; }
+.faq-tabs { display: flex; gap: 6px; margin: 32px 0 16px; flex-wrap: wrap; }
+.faq-tab {
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  background: var(--paper); border: 1px solid var(--line-strong);
+  padding: 8px 14px; cursor: pointer;
+  color: var(--ink-soft);
+  transition: background 150ms, color 150ms, border-color 150ms;
+}
+.faq-tab:hover { color: var(--artblue); border-color: var(--artblue); }
+.faq-tab.active { background: var(--artblue); color: #fff; border-color: var(--artblue); }
+details.faq {
+  border-bottom: 1px solid var(--line-strong);
+  padding: 20px 0;
+}
+details.faq summary {
+  font-family: var(--font-display);
+  font-weight: 700; font-size: 22px;
+  cursor: pointer;
+  list-style: none;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px;
+  color: var(--ink);
+}
+details.faq summary::-webkit-details-marker { display: none; }
+details.faq summary::after {
+  content: "+"; font-family: var(--font-mono);
+  font-size: 20px; color: var(--artblue);
+  transition: transform 200ms; flex-shrink: 0;
+}
+details.faq[open] summary::after { content: "−"; }
+details.faq .faq-tag {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 2px 8px; margin-right: 10px;
+  vertical-align: middle;
+}
+details.faq[data-track="tir"] .faq-tag { background: var(--artlight); color: var(--artblue); }
+details.faq[data-track="sip"] .faq-tag { background: rgba(107,92,255,0.12); color: var(--accent-violet); }
+details.faq[data-track="both"] .faq-tag { background: var(--paper-soft); color: var(--ink-dim); }
+details.faq .ans {
+  margin-top: 14px;
+  color: var(--ink-soft);
+  font-size: 18px; line-height: 1.65;
+  max-width: 72ch;
+}
+details.faq.hidden { display: none; }
+
+/* ===== Beta note ===== */
+.beta-note-block {
+  padding: 72px 32px;
+  background: var(--paper-soft);
+  border-top: 1px solid var(--line);
+}
+.beta-note-inner {
+  max-width: 1000px; margin: 0 auto;
+  display: grid; grid-template-columns: auto 1fr; gap: 32px; align-items: start;
+}
+.beta-badge-lg {
+  font-family: var(--font-mono);
+  font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase;
+  background: var(--artblack); color: var(--artlight);
+  padding: 10px 16px;
+  white-space: nowrap;
+}
+.beta-note h3 {
+  font-family: var(--font-display);
+  font-size: 28px; font-weight: 700; margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+.beta-note p { color: var(--ink-soft); font-size: 18px; line-height: 1.65; margin: 0 0 12px; max-width: 68ch; }
+.beta-note .muted { color: var(--ink-dim); font-size: 13px; font-family: var(--font-mono); letter-spacing: 0.04em; }
+
+/* ===== Footer ===== */
+.site-footer {
+  background: var(--artblack);
+  color: rgba(255,255,255,0.7);
+  padding: 48px 32px 32px;
+}
+.footer-inner {
+  max-width: 1280px; margin: 0 auto;
+  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 48px;
+}
+.footer-brand img { height: 36px; margin-bottom: 16px; filter: brightness(0) invert(1); }
+.footer-brand p { font-size: 13px; max-width: 36ch; line-height: 1.6; }
+.footer-col h4 {
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: #fff; margin: 0 0 16px;
+}
+.footer-col a {
+  display: block;
+  color: rgba(255,255,255,0.7);
+  text-decoration: none;
+  font-size: 14px; padding: 4px 0;
+}
+.footer-col a:hover { color: var(--artlight); }
+.footer-bot {
+  max-width: 1280px; margin: 40px auto 0;
+  padding-top: 24px;
+  border-top: 1px solid rgba(255,255,255,0.15);
+  display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+  font-size: 12px;
+  font-family: var(--font-mono); letter-spacing: 0.05em;
+  color: rgba(255,255,255,0.5);
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 1040px) {
+  .paths-diagram {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .path-arrow.fork, .path-arrow.merge { transform: rotate(90deg); margin: 4px 0; }
+  .path-arrow.fork::before, .path-arrow.fork::after { width: 40px; }
+}
+@media (max-width: 960px) {
+  .hero-inner { padding: 56px 24px 32px; }
+  .tracks-head { grid-template-columns: 1fr; gap: 20px; }
+  .tracks-grid { grid-template-columns: 1fr; }
+  .compare-table { grid-template-columns: 1fr; }
+  .cmp-cell { border-right: none; }
+  .cmp-cell:nth-child(3n) { border-right: none; }
+  .cmp-head { position: static; }
+  .proscons-grid { grid-template-columns: 1fr; }
+  .waitlist-inner { grid-template-columns: 1fr; gap: 32px; }
+  .footer-inner { grid-template-columns: 1fr 1fr; gap: 32px; }
+  .beta-note-inner { grid-template-columns: 1fr; gap: 16px; }
+  .tracks-block, .compare-block, .proscons-block, .waitlist-block, .faq-block { padding: 56px 24px; }
+  .nav-right .nav-link:not(.cta) { display: none; }
+  .site-header-inner { padding: 12px 20px; }
+  .lockup img { height: 32px; }
+  .lockup img.iisc { height: 44px; }
+  .paths { padding: 24px; }
+  .countdown { margin: 0 -36px 24px; }
+}
+@media (max-width: 560px) {
+  .footer-inner { grid-template-columns: 1fr; }
+  .lockup .divider { display: none; }
+  .lockup { gap: 10px; }
+  .track-specs { grid-template-columns: 1fr; }
+  .track-spec:nth-child(odd) { padding-right: 0; border-right: none; }
+  .track-spec:nth-child(even) { padding-left: 0; }
+  .countdown-grid { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .cd-cell { padding: 8px 4px; }
+  .waitlist-form .form-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="beta-bar">
+  <span class="tag">Beta</span>
+  <span class="msg">ARTPARK Programs is in beta — expect refinements to eligibility, terms, and process in due course as we aim to build a renowned innovation hub.</span>
+</div>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <div class="lockup">
+      <img class="iisc" src="assets/iisc-logo-blue.png" alt="Indian Institute of Science">
+      <img src="assets/artpark-logo.png" alt="ARTPARK">
+    </div>
+    <nav class="nav-right">
+      <a href="#tracks" class="nav-link">Tracks</a>
+      <a href="#compare" class="nav-link">Compare</a>
+      <a href="#faq" class="nav-link">FAQ</a>
+      <a href="/2026" class="btn btn-primary">
+        <span>Apply to TIR</span>
+        <span class="arrow">→</span>
+      </a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="hero-photo-bg"></div>
+  <div class="hero-inner">
+    <div class="hero-eyebrow-wrap">
+      <span class="eyebrow"><span class="dot"></span>Programs · 2026 · Two paths</span>
+    </div>
+    <h1>
+      From <span class="hl">lab-proven</span> research to <span class="blue">step-change products.</span>
+    </h1>
+    <p class="hero-lede">
+      ARTPARK supports deep-tech translation along two distinct paths. Early-stage technologists come in through the <strong>Technology Innovators in Residence (TIR)</strong> program to mature their IP; incorporated startups with a pitch-ready proposition enter through the <strong>Startup Incubation Program (SIP)</strong> for direct investment and acceleration. Pick the path that matches where you are today.
+    </p>
+
+    <!-- Path diagram · Swimlanes -->
+    <div class="paths-wrap" id="paths-wrap" data-variant="swimlanes">
+      <!-- A · Swimlanes (SVG) -->
+      <div class="paths-variant paths-swimlanes" data-v="swimlanes">
+        <svg viewBox="0 0 1280 460" preserveAspectRatio="xMidYMid meet" class="paths-svg" role="img" aria-label="Two swimlanes from lab-proven research to step-change product">
+          <defs>
+            <marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker>
+          </defs>
+          <!-- Origin -->
+          <g transform="translate(20,155)">
+            <rect width="260" height="150" fill="#242424"/>
+            <text x="26" y="52" fill="#aafcf0" font-family="Trebuchet MS" font-weight="700" font-size="26">Lab-proven</text>
+            <text x="26" y="86" fill="#aafcf0" font-family="Trebuchet MS" font-weight="700" font-size="26">research</text>
+            <text x="26" y="124" fill="rgba(255,255,255,0.75)" font-family="Open Sans" font-size="16">TRL 3 · validated</text>
+          </g>
+          <!-- TIR lane: origin right edge at x=280, card left at x=440 -->
+          <g color="#3213b7">
+            <path d="M280,200 C360,200 360,95 440,95" stroke="#3213b7" stroke-width="3" fill="none" marker-end="url(#arrA)"/>
+            <rect x="440" y="35" width="440" height="130" fill="#ffffff" stroke="#3213b7" stroke-width="2"/>
+            <text x="464" y="72" fill="#3213b7" font-family="Open Sans" font-weight="700" font-size="15" letter-spacing="2">TRACK 01 · TIR</text>
+            <text x="464" y="108" fill="#242424" font-family="Trebuchet MS" font-weight="700" font-size="24">Residency · mature the tech</text>
+            <text x="464" y="140" fill="#4a4a52" font-family="Open Sans" font-size="16">12 months · on-campus · ₹25L–1 Cr</text>
+          </g>
+          <!-- SIP lane -->
+          <g color="#6B5CFF">
+            <path d="M280,260 C360,260 360,375 440,375" stroke="#6B5CFF" stroke-width="3" fill="none" stroke-dasharray="6 4" marker-end="url(#arrA)"/>
+            <rect x="440" y="315" width="440" height="130" fill="#ffffff" stroke="#6B5CFF" stroke-width="2"/>
+            <text x="464" y="352" fill="#6B5CFF" font-family="Open Sans" font-weight="700" font-size="15" letter-spacing="2">TRACK 02 · SIP</text>
+            <text x="464" y="388" fill="#242424" font-family="Trebuchet MS" font-weight="700" font-size="24">Invest · scale the startup</text>
+            <text x="464" y="420" fill="#4a4a52" font-family="Open Sans" font-size="16">Direct equity · flexible · TRL 4+</text>
+          </g>
+          <!-- Converging: cards end at x=880, destination begins at x=1000 -->
+          <path d="M880,100 C940,100 940,230 1000,230" stroke="#3213b7" stroke-width="3" fill="none" marker-end="url(#arrA)" color="#3213b7"/>
+          <path d="M880,380 C940,380 940,230 1000,230" stroke="#6B5CFF" stroke-width="3" fill="none" stroke-dasharray="6 4" marker-end="url(#arrA)" color="#6B5CFF"/>
+          <!-- Destination -->
+          <g transform="translate(1000,155)">
+            <rect width="260" height="150" fill="#3213b7"/>
+            <text x="26" y="52" fill="#fff" font-family="Trebuchet MS" font-weight="700" font-size="26">Step-change</text>
+            <text x="26" y="86" fill="#fff" font-family="Trebuchet MS" font-weight="700" font-size="26">product</text>
+            <text x="26" y="124" fill="#aafcf0" font-family="Open Sans" font-size="16">Deployed · funded</text>
+          </g>
+        </svg>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- TRACK CARDS -->
+<section id="tracks" class="tracks-block">
+  <div class="tracks-head">
+    <span class="block-eyebrow">Choose your track</span>
+    <h2 class="block-title">Two programs. One destination. Pick where you are today.</h2>
+  </div>
+
+  <div class="tracks-grid">
+
+    <!-- TIR CARD -->
+    <div class="track tir">
+      <div class="track-tag-row">
+        <span class="track-pill">Track 01 · TIR</span>
+        <span class="track-status"><span class="led"></span>Applications open</span>
+      </div>
+      <h2>Technology Innovator <br>in Residence</h2>
+      <div class="track-subhead">For researchers · TRL 3 · Pre-company</div>
+      <p class="track-lede">
+        You've identified a step-change technology problem and validated a core piece of IP in the lab. Assumptions and risks remain — TIR gives you 12 months, funding, and infrastructure at IISc to retire those risks and incorporate.
+      </p>
+      <div class="track-specs">
+        <div class="track-spec">
+          <div class="k">Funding</div>
+          <div class="v hl">Up to ₹1 Cr/yr</div>
+        </div>
+        <div class="track-spec">
+          <div class="k">Initial kickoff</div>
+          <div class="v">₹25L at 0% equity</div>
+        </div>
+        <div class="track-spec">
+          <div class="k">Duration</div>
+          <div class="v">12 months on-campus</div>
+        </div>
+        <div class="track-spec">
+          <div class="k">TRL target</div>
+          <div class="v">TRL 3 → TRL 4</div>
+        </div>
+      </div>
+      <div class="track-cta-row">
+        <a href="/2026" class="btn btn-primary">
+          <span>Apply to TIR</span>
+          <span class="arrow">→</span>
+        </a>
+        <a href="/2026#program" class="btn btn-ghost">See full brief</a>
+      </div>
+    </div>
+
+    <!-- SIP CARD with TIMER -->
+    <div class="track sip">
+      <div class="track-tag-row">
+        <span class="track-pill">Track 02 · SIP</span>
+        <span class="track-status upcoming"><span class="led"></span>Opens 22 May 2026</span>
+      </div>
+
+      <!-- COUNTDOWN -->
+      <div class="countdown" role="timer" aria-live="polite">
+        <div class="countdown-label"><span class="led"></span>Applications open in</div>
+        <div class="countdown-grid">
+          <div class="cd-cell"><div class="cd-val" id="cd-days">--</div><div class="cd-unit">Days</div></div>
+          <div class="cd-cell"><div class="cd-val" id="cd-hours">--</div><div class="cd-unit">Hours</div></div>
+          <div class="cd-cell"><div class="cd-val" id="cd-mins">--</div><div class="cd-unit">Minutes</div></div>
+          <div class="cd-cell"><div class="cd-val" id="cd-secs">--</div><div class="cd-unit">Seconds</div></div>
+        </div>
+        <div class="countdown-target">Target: 22 May 2026 · 12:00 IST</div>
+      </div>
+
+      <h2>Startup <br>Incubation Program</h2>
+      <div class="track-subhead">For registered startups · TRL 4+ · Pitch-ready</div>
+      <p class="track-lede">
+        You run an incorporated Indian startup with a working team, a pitch investors can engage with, and a technology de-risked to TRL 4 or above. SIP gives you direct capital, customer pipeline, and ARTPARK's scale-up infrastructure to move from demonstrated to deployed.
+      </p>
+      <div class="track-specs">
+        <div class="track-spec">
+          <div class="k">Engagement</div>
+          <div class="v hl">Direct investment</div>
+        </div>
+        <div class="track-spec">
+          <div class="k">Entity required</div>
+          <div class="v">Registered Indian startup</div>
+        </div>
+        <div class="track-spec">
+          <div class="k">Duration</div>
+          <div class="v">Up to 18 months</div>
+        </div>
+        <div class="track-spec">
+          <div class="k">TRL entry</div>
+          <div class="v">TRL 4 or higher</div>
+        </div>
+      </div>
+      <div class="track-cta-row">
+        <a href="#waitlist" class="btn btn-primary">
+          <span>Join the waitlist</span>
+          <span class="arrow">→</span>
+        </a>
+        <a href="#compare" class="btn btn-ghost">Compare tracks</a>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- COMPARISON TABLE -->
+<section id="compare" class="compare-block">
+  <div class="compare-inner">
+    <div class="tracks-head">
+      <span class="block-eyebrow">Side-by-side</span>
+      <h2 class="block-title">Which path fits you right now?</h2>
+    </div>
+    <div class="compare-table">
+      <!-- header row -->
+      <div class="cmp-cell cmp-head">Dimension</div>
+      <div class="cmp-cell cmp-head tir-head">Track 01<strong>TIR</strong></div>
+      <div class="cmp-cell cmp-head sip-head">Track 02<strong>SIP</strong></div>
+
+      <!-- rows -->
+      <div class="cmp-cell cmp-dim">Stage of maturity<span class="note">Technology readiness level at entry</span></div>
+      <div class="cmp-cell cmp-val"><strong>TRL 3</strong> — lab/in-house validated. Core risks still open.</div>
+      <div class="cmp-cell cmp-val"><strong>TRL 4+</strong> — ARTPARK- or independently-demonstrated technology.</div>
+
+      <div class="cmp-cell cmp-dim">Entity required<span class="note">Who applies</span></div>
+      <div class="cmp-cell cmp-val">Individual or team of up to 3. <strong>No company required</strong> at apply.</div>
+      <div class="cmp-cell cmp-val"><strong>Incorporated Indian startup</strong> (Pvt Ltd, DPIIT-recognized preferred).</div>
+
+      <div class="cmp-cell cmp-dim">Funding structure<span class="note">Capital and equity</span></div>
+      <div class="cmp-cell cmp-val"><strong>₹25L</strong> for the first 6 months, with up to <strong>₹1 Cr/yr</strong> thereafter.</div>
+      <div class="cmp-cell cmp-val"><strong>Direct equity investment</strong> on negotiated terms, sized to the round. Follow-on pathways.</div>
+
+      <div class="cmp-cell cmp-dim">IP ownership<span class="note">Who owns what you build</span></div>
+      <div class="cmp-cell cmp-val">Prior IP retained by owners. <strong>New IP during TIR owned by ARTPARK</strong>, exclusively licensed to the spin-out.</div>
+      <div class="cmp-cell cmp-val"><strong>Startup retains IP.</strong> Standard investor rights apply.</div>
+
+      <div class="cmp-cell cmp-dim">Time commitment<span class="note">What you sign up for</span></div>
+      <div class="cmp-cell cmp-val"><strong>Full-time, on-campus</strong> at ARTPARK, IISc Bangalore. NOC required if affiliated.</div>
+      <div class="cmp-cell cmp-val"><strong>Flexible</strong>. Founders continue running their company; ARTPARK is an investor + enabler.</div>
+
+      <div class="cmp-cell cmp-dim">Best for<span class="note">The archetype this is designed for</span></div>
+      <div class="cmp-cell cmp-val cmp-row-last">Researchers translating a hard technology into product reality. Pre-company. IP-heavy.</div>
+      <div class="cmp-cell cmp-val cmp-row-last">Founders with traction and a pitch, needing capital + ARTPARK's infra to scale a deep-tech startup.</div>
+    </div>
+  </div>
+</section>
+
+<!-- PROS / CONS -->
+<section class="proscons-block">
+  <div class="tracks-head">
+    <span class="block-eyebrow">Pros &amp; cons</span>
+    <h2 class="block-title">An honest look at the trade-offs.</h2>
+  </div>
+  <div class="proscons-grid">
+
+    <div class="pc-card tir">
+      <h3>Technology Innovation and Residency</h3>
+      <div class="sub">For pre-company researchers</div>
+      <div class="pc-divider">Pros</div>
+      <ul class="pc-list pros">
+        <li>Non-dilutive first ₹25L — you keep 100% while you de-risk.</li>
+        <li>Lab, sensor, and manufacturing infra at IISc you'd never afford alone.</li>
+        <li>Structured 12-month arc with mentorship from researchers, industry, and investors.</li>
+        <li>Clear graduation pathway into ARTPARK's incubation + follow-on investment.</li>
+        <li>No need to have incorporated or raised — an idea and TRL 3 IP is enough.</li>
+      </ul>
+      <div class="pc-divider">Cons</div>
+      <ul class="pc-list cons">
+        <li>New IP generated during TIR sits with ARTPARK (licensed to you on spin-out).</li>
+        <li>Full-time, on-campus commitment — hard to combine with an existing role without an NOC.</li>
+        <li>Post-kickoff funding comes with equity (1% per ₹50L + 1% for space).</li>
+        <li>Longer runway to revenue than a direct-to-startup path.</li>
+      </ul>
+    </div>
+
+    <div class="pc-card sip">
+      <h3>Startup Incubation Program</h3>
+      <div class="sub">For incorporated startups</div>
+      <div class="pc-divider">Pros</div>
+      <ul class="pc-list pros">
+        <li>Direct investment — sized to your round, not a fixed grant.</li>
+        <li>You retain your IP and control the company.</li>
+        <li>Flexible engagement — keep running your startup, on your schedule.</li>
+        <li>Access to ARTPARK's customer, government, and corporate pipeline.</li>
+        <li>Faster path to revenue and scale for already-demonstrated tech.</li>
+      </ul>
+      <div class="pc-divider">Cons</div>
+      <ul class="pc-list cons">
+        <li>Bar is higher — you need a registered entity, team, pitch, and TRL 4+ tech.</li>
+        <li>Investment is dilutive from day one; terms are negotiated, not standard.</li>
+        <li>Less hand-holding than TIR — ARTPARK acts as investor + enabler, not residency host.</li>
+        <li>Program in beta — the first cohort may see process refinements mid-flight.</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+<!-- WAITLIST -->
+<section id="waitlist" class="waitlist-block">
+  <div class="waitlist-inner">
+    <div>
+      <span class="block-eyebrow">SIP · Waitlist</span>
+      <h2>Be first in line when <em>SIP</em> opens.</h2>
+      <p>Applications for the inaugural Startup Incubation Program cohort open on 22 May 2026 at 12:00 IST. Drop your details and we'll email you the moment the form goes live — plus a pre-read on eligibility, timelines, and typical ticket sizes.</p>
+    </div>
+    <form class="waitlist-form" id="waitlist-form" onsubmit="event.preventDefault(); this.classList.add('submitted');">
+      <label for="wl-name">Name</label>
+      <input id="wl-name" type="text" placeholder="Your full name" required="">
+      <div class="form-row">
+        <div>
+          <label for="wl-email">Work email</label>
+          <input id="wl-email" type="email" placeholder="you@startup.com" required="">
+        </div>
+        <div>
+          <label for="wl-startup">Startup name</label>
+          <input id="wl-startup" type="text" placeholder="Startup Pvt Ltd" required="">
+        </div>
+      </div>
+      <label for="wl-stage">Current stage</label>
+      <select id="wl-stage" required="">
+        <option value="">Select your stage</option>
+        <option>Incorporated · pre-revenue</option>
+        <option>Incorporated · early revenue</option>
+        <option>Raised seed / pre-Series A</option>
+        <option>Series A or later</option>
+      </select>
+      <div class="submit-row">
+        <span class="submit-note">We'll only email you about SIP.</span>
+        <button type="submit" class="btn btn-light">
+          <span>Notify me</span>
+          <span class="arrow">→</span>
+        </button>
+      </div>
+      <div class="waitlist-thanks">✓ You're on the list. We'll email you on 22 May.</div>
+    </form>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" class="faq-block">
+  <div class="faq-inner">
+    <div class="tracks-head">
+      <span class="block-eyebrow">FAQ</span>
+      <h2 class="block-title">Answers to the questions we get most.</h2>
+    </div>
+    <div class="faq-tabs" role="tablist">
+      <button class="faq-tab active" data-filter="all">All 16</button>
+      <button class="faq-tab" data-filter="tir">TIR</button>
+      <button class="faq-tab" data-filter="sip">SIP</button>
+      <button class="faq-tab" data-filter="both">Both</button>
+    </div>
+
+    <details class="faq" data-track="both" open="">
+      <summary><span><span class="faq-tag">Both</span>Which track should I apply to?</span></summary>
+      <div class="ans">If your IP is at <strong>TRL 3</strong> and you haven't (or don't plan to yet) incorporated, apply to <strong>TIR</strong>. If you're already a <strong>registered Indian startup</strong> with a team, a pitch, and a technology at TRL 4+, join the <strong>SIP</strong> waitlist. When in doubt, apply to TIR — we can fast-track strong teams across.</div>
+    </details>
+
+    <details class="faq" data-track="tir">
+      <summary><span><span class="faq-tag">TIR</span>Would I be paid a stipend during the TIR period?</summary></span>
+      <div class="ans">Yes — indirectly. The ₹25L initial grant (0% equity, 6 months) is structured to cover reasonable founder stipends, prototyping costs, travel, and direct project expenses. You decide the internal allocation; ARTPARK reviews it as part of the milestone plan, not line-by-line.</div>
+    </details>
+
+    <details class="faq" data-track="tir">
+      <summary><span><span class="faq-tag">TIR</span>How much salary can I expect during the TIR period?</span></summary>
+      <div class="ans">ARTPARK provides a stipend to the founding team members. Based on benchmarks around capabilities as well as experience, the stipend can vary. Founders typically draw a <strong>market-reasonable stipend</strong> from the grant (₹1.5L–₹3L/month range is common). Remember this is part of the overall budget allocated for the innovation project.</div>
+    </details>
+
+    <details class="faq" data-track="tir">
+      <summary><span><span class="faq-tag">TIR</span>Who owns the IP we create during TIR?</span></summary>
+      <div class="ans">Any <strong>prior IP</strong> you bring belongs to the original owners. <strong>New IP created during the TIR</strong> belongs to ARTPARK, but is <em>exclusively licensed or transferred</em> to you when you incorporate the spin-out. Final terms are agreed in writing with shortlisted teams.</div>
+    </details>
+
+    <details class="faq" data-track="tir">
+      <summary><span><span class="faq-tag">TIR</span>What's the minimum TRL I need to apply for TIR?</span></summary>
+      <div class="ans">Your key USP IP should be at <strong>TRL 3</strong> — lab or in-house validated. Over 12 months you'll mature it to TRL 4 (ARTPARK-demonstrated), alongside identifying product-market-fit and customers.</div>
+    </details>
+
+    <details class="faq" data-track="tir">
+      <summary><span><span class="faq-tag">TIR</span>Can I apply as a team, and what if I'm affiliated elsewhere?</span></summary>
+      <div class="ans">Yes — teams of up to 3 founders are encouraged. You must commit full-time on-campus during the residency; if you're affiliated with a university, lab, or company, a <strong>No-Objection Certificate</strong> is required before you join.</div>
+    </details>
+
+    <details class="faq" data-track="tir">
+      <summary><span><span class="faq-tag">TIR</span>What happens after the 12 months?</span></summary>
+      <div class="ans">High-performing TIRs progress into ARTPARK's incubation program with follow-on equity investment pathways for the spin-out. In exceptional cases the residency can be extended by up to 12 months.</div>
+    </details>
+
+    <details class="faq" data-track="sip">
+      <summary><span><span class="faq-tag">SIP</span>When exactly do SIP applications open?</span></summary>
+      <div class="ans">Applications open on <strong>22 May 2026 at 12:00 IST</strong>. The live countdown at the top of this page is the source of truth. Join the waitlist and we'll email you a link the moment the form is live.</div>
+    </details>
+
+    <details class="faq" data-track="sip">
+      <summary><span><span class="faq-tag">SIP</span>Do I need to be incorporated to apply for SIP?</span></summary>
+      <div class="ans">Yes. SIP is for <strong>incorporated Indian startups</strong> — typically Private Limited companies. DPIIT-recognition is preferred but not strictly required. If you're pre-incorporation, TIR is the right door.</div>
+    </details>
+
+    <details class="faq" data-track="sip">
+      <summary><span><span class="faq-tag">SIP</span>What stage and TRL does SIP expect?</span></summary>
+      <div class="ans">You should have a <strong>working team, a pitch investors can engage with, and technology at TRL 4 or above</strong> — independently or ARTPARK-demonstrated. Early revenue or LOIs from customers strengthen the application but are not hard requirements.</div>
+    </details>
+
+    <details class="faq" data-track="sip">
+      <summary><span><span class="faq-tag">SIP</span>How is SIP funding structured? What's the ticket size?</span></summary>
+      <div class="ans">SIP is a <strong>direct equity investment</strong> — not a fixed grant. Ticket size is sized to your round, with terms negotiated per deal. First-cohort ranges, typical investor rights, and co-invest pathways will be shared with shortlisted teams. As this is the inaugural cohort in beta, ranges will be refined based on applicant profiles.</div>
+    </details>
+
+    <details class="faq" data-track="sip">
+      <summary><span><span class="faq-tag">SIP</span>Does ARTPARK take IP rights in SIP?</span></summary>
+      <div class="ans">No. <strong>The startup retains its IP.</strong> Standard investor rights (information, governance, pro-rata) apply — but IP ownership stays with the company, unlike TIR where new IP is ARTPARK-owned during residency.</div>
+    </details>
+
+    <details class="faq" data-track="sip">
+      <summary><span><span class="faq-tag">SIP</span>Do SIP startups need to relocate or be on-campus?</span></summary>
+      <div class="ans">Yes — ARTPARK relies on ecosystems feeding off each other. While other startups from Robotics and AI are encouraged to apply, barring some selective cases where a remote arrangement makes sense, most SIP startups would be encouraged to be <strong>full-time and working from ARTPARK's Garage Facility</strong>.</div>
+    </details>
+
+    <details class="faq" data-track="both">
+      <summary><span><span class="faq-tag">Both</span>Can a TIR alumnus apply directly to SIP later?</span></summary>
+      <div class="ans">Yes — and it's a common pathway. TIRs who incorporate and hit TRL 4+ during or after residency are natural SIP candidates, and would be allowed to <strong>pitch in future Investment Committees</strong> once they achieve the desired goals.</div>
+    </details>
+
+    <details class="faq" data-track="both">
+      <summary><span><span class="faq-tag">Both</span>What sectors do ARTPARK programs prioritise?</span></summary>
+      <div class="ans">AI, robotics, novel materials, sensors, mechatronics, manufacturing, and cyber-physical systems — applied to manufacturing, space, health, agriculture, defence, and similar critical sectors. Pure SaaS or consumer-app plays are not a fit.</div>
+    </details>
+
+    <details class="faq" data-track="both">
+      <summary><span><span class="faq-tag">Both</span>Can I apply to both programs together?</span></summary>
+      <div class="ans">Each person is expected to apply to <strong>one program only</strong>. Duplicate applications would be traced and removed by our AI engine.</div>
+    </details>
+
+    <details class="faq" data-track="both">
+      <summary><span><span class="faq-tag">Both</span>What happens if at the end of TIR tenure I'm unable to graduate to SIP?</span></summary>
+      <div class="ans">We're generally quite supportive of the people we back — if you've achieved all the milestones, we'll try our best to support you forward. If you end up not getting funded through our pathway, you can <strong>license the IP</strong> and aim to raise funds externally in parallel.</div>
+    </details>
+
+  </div>
+</section>
+
+<!-- BETA NOTE -->
+<section class="beta-note-block">
+  <div class="beta-note-inner">
+    <div class="beta-badge-lg">Beta · 2026</div>
+    <div class="beta-note">
+      <h3>A note on beta mode.</h3>
+      <p>
+        ARTPARK Programs — and specifically the Startup Incubation Program — is running its first cohort in beta. Eligibility criteria, funding ranges, timelines, IP and equity mechanics, and the selection process itself will continue to be refined based on what we learn with the inaugural cohort.
+      </p>
+      <p>
+        Anything you see on this page is our current best thinking and will be communicated in detail, in writing, with shortlisted teams before any commitment. If you spot something unclear or feel a term deserves a second look, we want to hear from you.
+      </p>
+      <p class="muted">Questions, feedback, or edge cases → <a href="mailto:programs@artpark.in" style="color:var(--artblue); text-decoration: underline;">programs@artpark.in</a></p>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <img src="assets/artpark-logo.png" alt="ARTPARK">
+      <p>ARTPARK (AI &amp; Robotics Technology Park) is a not-for-profit Section-8 company at the Indian Institute of Science, Bangalore, committed to building and deploying AI &amp; Robotics technologies for <strong>Society, Economy, and Sovereignty</strong>.</p>
+    </div>
+    <div class="footer-col">
+      <h4>Programs</h4>
+      <a href="/2026">TIR</a>
+      <a href="#tracks">SIP</a>
+      <a href="#compare">Compare</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <div class="footer-col">
+      <h4>Apply</h4>
+      <a href="/2026">TIR application</a>
+      <a href="#waitlist">SIP waitlist</a>
+      <a href="mailto:programs@artpark.in">Contact</a>
+    </div>
+    <div class="footer-col">
+      <h4>ARTPARK</h4>
+      <a href="#">About</a>
+      <a href="#">Ventures</a>
+      <a href="#">Research</a>
+      <a href="#">Press</a>
+    </div>
+  </div>
+  <div class="footer-bot">
+    <span>© 2026 ARTPARK · AI &amp; Robotics Technology Park @ IISc</span>
+    <span>Programs · Beta · v0.1</span>
+  </div>
+</footer>
+
+<script>
+// ===== Countdown =====
+(function(){
+  // 22 May 2026, 12:00 IST = 06:30 UTC
+  const target = new Date('2026-05-22T06:30:00Z').getTime();
+  const elDays = document.getElementById('cd-days');
+  const elHours = document.getElementById('cd-hours');
+  const elMins = document.getElementById('cd-mins');
+  const elSecs = document.getElementById('cd-secs');
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function tick(){
+    const now = Date.now();
+    let diff = target - now;
+    if (diff <= 0) {
+      elDays.textContent = '00';
+      elHours.textContent = '00';
+      elMins.textContent = '00';
+      elSecs.textContent = '00';
+      // Flip the status pill if we're past the target
+      const status = document.querySelector('.track.sip .track-status');
+      if (status) {
+        status.classList.remove('upcoming');
+        status.innerHTML = '<span class="led"></span>Applications open';
+      }
+      return;
+    }
+    const d = Math.floor(diff / 86400000); diff -= d * 86400000;
+    const h = Math.floor(diff / 3600000); diff -= h * 3600000;
+    const m = Math.floor(diff / 60000); diff -= m * 60000;
+    const s = Math.floor(diff / 1000);
+    elDays.textContent = pad(d);
+    elHours.textContent = pad(h);
+    elMins.textContent = pad(m);
+    elSecs.textContent = pad(s);
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+
+// ===== FAQ tabs =====
+(function(){
+  const tabs = document.querySelectorAll('.faq-tab');
+  const items = document.querySelectorAll('details.faq');
+  const countEls = { all: items.length, tir: 0, sip: 0, both: 0 };
+  items.forEach(i => { countEls[i.dataset.track] = (countEls[i.dataset.track] || 0) + 1; });
+  tabs.forEach(t => {
+    const f = t.dataset.filter;
+    if (f !== 'all') t.textContent = t.textContent + ' · ' + countEls[f];
+    t.addEventListener('click', () => {
+      tabs.forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      items.forEach(i => {
+        if (f === 'all' || i.dataset.track === f) i.classList.remove('hidden');
+        else i.classList.add('hidden');
+      });
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

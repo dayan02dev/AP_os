@@ -925,12 +925,13 @@ function Header({ config, user, onLogout, onProfile, phase }) {
   const onProfilePage = phase === "profile";
   const navigate = useNavigate();
   // Authed users get an in-app link to their dashboard; anon users go to
-  // the marketing landing page. The brand mark mirrors that — clicking it
-  // shouldn't dump a logged-in applicant out to /2026.
-  const homeHref = user ? "/apply" : "/2026";
+  // the ARTPARK programs landing (which fans out to TIR or SIP). The brand
+  // mark mirrors that — clicking it shouldn't dump a logged-in applicant
+  // out to the public site.
+  const homeHref = user ? "/apply" : "/";
   const homeLabel = user ? "my application" : "home";
   const onHomeClick = (e) => {
-    if (!user) return; // anon: let the browser follow the /2026 redirect
+    if (!user) return; // anon: let the browser follow the / → programs.html rewrite
     e.preventDefault();
     navigate("/apply");
   };
