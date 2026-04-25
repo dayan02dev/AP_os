@@ -508,9 +508,24 @@ export default function App() {
     }
   };
 
-  const onReviewParsed = async () => {
+  const onReviewParsed = async (editedFields) => {
     try {
+      // Step 1: backend copies parsed_data → applications row for any
+      // currently-NULL columns. Catches the case where the user didn't
+      // touch a field but the parser DID extract a value.
       await resume.applyToApplication();
+      // Step 2: persist the user's actual edits from the review screen.
+      // applyToApplication only fills NULL columns, so without this step
+      // any change the user made on the review screen would be silently
+      // dropped. Filter to non-empty so we don't overwrite the parsed
+      // values with blanks.
+      if (editedFields && typeof editedFields === "object") {
+        const patch = {};
+        for (const [k, v] of Object.entries(editedFields)) {
+          if (typeof v === "string" && v.trim()) patch[k] = v.trim();
+        }
+        if (Object.keys(patch).length > 0) save(patch);
+      }
       await refetch();
       pushToast({ kind: "info", message: "Profile filled from your CV." });
     } catch (err) {

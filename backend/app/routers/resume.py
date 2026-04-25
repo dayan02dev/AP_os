@@ -333,29 +333,40 @@ async def apply_parsed_to_application(current_user: dict = Depends(get_current_u
         if profile_patch:
             admin.table("profiles").update(profile_patch).eq("id", user_id).execute()
 
+    # Multi-app: scope to the OPEN DRAFT specifically. Without the
+    # status filter, .limit(1) could pick a submitted row (in which
+    # case the status guard below would skip every field — that was
+    # the "auto-fill not working after a re-submission" bug). Order
+    # by created_at desc so we deterministically pick the newest
+    # draft if there's ever more than one in flight.
     app_res = (
-        admin.table("applications").select("*").eq("user_id", user_id).limit(1).execute()
+        admin.table("applications")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("status", "draft")
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
     )
     app_rows = app_res.data or []
     if not app_rows:
         skipped.extend(f"applications.{col}" for _, col in APPLICATION_MAP)
     else:
         app_row = app_rows[0]
-        if app_row.get("status") != "draft":
-            skipped.extend(f"applications.{col}" for _, col in APPLICATION_MAP)
-        else:
-            app_patch: dict[str, Any] = {}
-            for src, dest in APPLICATION_MAP:
-                val = parsed.get(src)
-                if val and not app_row.get(dest):
-                    app_patch[dest] = val
-                    applied.append(f"applications.{dest}")
-                else:
-                    skipped.append(f"applications.{dest}")
-            if app_patch:
-                admin.table("applications").update(app_patch).eq(
-                    "user_id", user_id
-                ).execute()
+        app_patch: dict[str, Any] = {}
+        for src, dest in APPLICATION_MAP:
+            val = parsed.get(src)
+            if val and not app_row.get(dest):
+                app_patch[dest] = val
+                applied.append(f"applications.{dest}")
+            else:
+                skipped.append(f"applications.{dest}")
+        if app_patch:
+            # Update by row id so we can never accidentally mutate a
+            # submitted row that shares this user_id.
+            admin.table("applications").update(app_patch).eq(
+                "id", app_row["id"]
+            ).execute()
 
     for k in UNMAPPED_PARSED_KEYS:
         if parsed.get(k):
