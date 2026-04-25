@@ -1,6 +1,6 @@
 // Auth (register/login) + CV upload + parsing animation screens
 
-import { useState as useAS, useEffect as useAE, useRef as useAR } from "react";
+import { Fragment, useState as useAS, useEffect as useAE, useRef as useAR } from "react";
 import { validateEmail, isPasswordValid, EmailInput, PasswordInput } from "./validators.jsx";
 
 // Tiny "registered users" store in localStorage so login/register can check each other
@@ -368,7 +368,7 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
                               : mi <= progress.currentIdx;
                             const isCurrent = !progress.isTerminal && mi === progress.currentIdx;
                             return (
-                              <React.Fragment key={m.key}>
+                              <Fragment key={m.key}>
                                 <span
                                   className={`eir-ret-pipe-dot ${reached ? "is-reached" : ""} ${isCurrent ? "is-current" : ""} ${progress.isTerminal && mi === progress.currentIdx ? "is-terminal" : ""}`}
                                   title={m.label}
@@ -376,7 +376,7 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
                                 {mi < MILESTONES.length - 1 && (
                                   <span className={`eir-ret-pipe-line ${mi < progress.currentIdx ? "is-reached" : ""}`} />
                                 )}
-                              </React.Fragment>
+                              </Fragment>
                             );
                           })}
                         </div>
