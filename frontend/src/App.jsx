@@ -216,9 +216,17 @@ export default function App() {
   // /apply (empty slug) decides what the first screen is:
   //
   //   unauthed                       → WELCOME (public landing, Begin → signin)
-  //   authed, submitted              → DONE  (redirects to /apply/submitted)
+  //   authed, submitted              → RETURNING chooser (Past tab pre-selected
+  //                                    via ReturningChoiceScreen's defaultTab
+  //                                    logic; user clicks the past card to see
+  //                                    the receipt at /apply/submitted)
   //   authed, has draft answers      → RETURNING chooser
   //   authed, no draft yet           → UPLOAD (CV upload is the first step)
+  //
+  // Previously locked users were trapped on PHASES.DONE — they had no way
+  // back to a dashboard view of their submission. Routing them to RETURNING
+  // gives them the central "Start new / Continue / Past applications" view
+  // they expect when they come back after submitting.
   //
   // We can't decide until both auth rehydrate AND application fetch have
   // resolved. `authLoading` covers the first; waiting for `application` to
@@ -237,7 +245,7 @@ export default function App() {
     if (!application) return;
 
     if (locked) {
-      setPhase(PHASES.DONE);
+      setPhase(PHASES.RETURNING);
       return;
     }
     const hasAny = answers && Object.keys(answers).length > 0;
@@ -306,11 +314,11 @@ export default function App() {
     setPhase(PHASES.SECTION_INTRO);
   };
   const onViewPast = () => {
-    // Past-applications view isn't wired to a backend endpoint yet (Phase 8+);
-    // placeholder just takes them into the current draft.
-    setSectionIdx(0);
-    setStepIdx(0);
-    setPhase(PHASES.SECTION_INTRO);
+    // Click on a past-submission card → show the receipt view for that
+    // application. Currently each user has at most one application
+    // (UNIQUE(user_id) on the table) so there's no per-card identity to
+    // pass through — DoneScreen reads from the live `application` state.
+    setPhase(PHASES.DONE);
   };
 
   const skipUpload = () => {
@@ -599,13 +607,30 @@ export default function App() {
             <ReturningChoiceScreen
               user={user}
               applicantName={application?.basic_full_name || user?.full_name}
-              hasDraft={!!application && Object.keys(answers || {}).length > 0}
+              hasDraft={!locked && !!application && Object.keys(answers || {}).length > 0}
               draftProgress={
                 application && completion
                   ? (completion.completion_pct ?? 0) / 100
                   : 0
               }
-              pastSubmissions={locked && application ? [application] : []}
+              pastSubmissions={
+                // The Past-applications tab expects a richer shape than the
+                // raw DB row: {id, ts, cycle, projectTitle, currentMilestone,
+                // answers}. Build it from the submitted application so the
+                // tab renders properly (status pill, milestone pipeline,
+                // submitted-on date, project title preview).
+                locked && application && application.submitted_at
+                  ? [{
+                      id: application.id,
+                      ts: new Date(application.submitted_at).getTime(),
+                      cycle: "TIR.2026",
+                      projectTitle: application.solution_describe?.slice(0, 80) || "",
+                      currentMilestone: application.current_milestone || "submitted",
+                      feedback: application.reviewer_feedback || null,
+                      answers,
+                    }]
+                  : []
+              }
               onResume={onResumeDraft}
               onViewPast={onViewPast}
               onStartNew={onStartNew}
@@ -898,15 +923,26 @@ function ParseFailedScreen({ error, onContinue, onRetry }) {
 function Header({ config, user, onLogout, onProfile, phase }) {
   const theme = THEMES[config.theme] || THEMES.minimal;
   const onProfilePage = phase === "profile";
+  const navigate = useNavigate();
+  // Authed users get an in-app link to their dashboard; anon users go to
+  // the marketing landing page. The brand mark mirrors that — clicking it
+  // shouldn't dump a logged-in applicant out to /2026.
+  const homeHref = user ? "/apply" : "/2026";
+  const homeLabel = user ? "my application" : "home";
+  const onHomeClick = (e) => {
+    if (!user) return; // anon: let the browser follow the /2026 redirect
+    e.preventDefault();
+    navigate("/apply");
+  };
   return (
     <header className="eir-header">
       <div className="eir-header-left">
-        <a href="/2026" className="eir-home-link eir-mono" title="Back to home">
+        <a href={homeHref} onClick={onHomeClick} className="eir-home-link eir-mono" title={user ? "Back to my application" : "Back to home"}>
           <span className="eir-home-arrow">←</span>
-          <span className="eir-home-label">home</span>
+          <span className="eir-home-label">{homeLabel}</span>
         </a>
         <span className="eir-header-sep" />
-        <a href="/2026" className="eir-brand" title="ARTPARK × IISc">
+        <a href={homeHref} onClick={onHomeClick} className="eir-brand" title="ARTPARK × IISc">
           <img src="/assets/iisc-logo-blue.png" alt="Indian Institute of Science" className="eir-brand-iisc" />
           <span className="eir-brand-divider" />
           <img src="/assets/artpark-logo.png" alt="ARTPARK" className="eir-brand-artpark" />
@@ -1030,6 +1066,14 @@ function QuestionView({
   );
 }
 
+// Flat lookup: question-id → its prompt string. Built once from SECTIONS so
+// the review panel can show "Do you have a co-founder or team?" instead of
+// the bare answer key "hasTeam" (which renders as "hasteam" under mono).
+const QUESTION_PROMPTS = SECTIONS.reduce((acc, s) => {
+  for (const q of s.questions) acc[q.id] = q.prompt;
+  return acc;
+}, {});
+
 function ReviewSubmitPanel({ answers, completion, onSubmit, locked, saving }) {
   const entries = Object.entries(answers)
     .filter(([_, v]) => v !== undefined && v !== null && v !== "")
@@ -1043,10 +1087,12 @@ function ReviewSubmitPanel({ answers, completion, onSubmit, locked, saving }) {
         <span>review · submit when ready</span>
       </div>
       <div className="eir-done-body">
-        <h2 className="eir-done-title">Review your application.</h2>
+        <h2 className="eir-done-title">Ready to submit?</h2>
         <p className="eir-done-lede">
-          You've completed <strong>{completion.completion_pct}%</strong>. Review your answers below,
-          then submit when you're ready.
+          Take one last look — once submitted, you can't edit.
+          {completion.completion_pct < 100 && (
+            <> You've filled <strong>{completion.completion_pct}%</strong> so far.</>
+          )}
         </p>
 
         {completion.missing_required_fields.length > 0 && (
@@ -1067,7 +1113,7 @@ function ReviewSubmitPanel({ answers, completion, onSubmit, locked, saving }) {
           <dl className="eir-done-answers-list">
             {entries.map(([k, v]) => (
               <div key={k} className="eir-done-answer-row">
-                <dt className="eir-mono">{k}</dt>
+                <dt className="eir-review-label">{QUESTION_PROMPTS[k] || k}</dt>
                 <dd>{typeof v === "string" ? v : JSON.stringify(v)}</dd>
               </div>
             ))}
