@@ -230,8 +230,23 @@ async def refresh(request: Request, payload: RefreshRequest):
     try:
         anon = get_anon_client()
         result = anon.auth.refresh_session(payload.refresh_token)
-    except Exception:
-        log.exception("auth.refresh supabase call failed", extra={"ref": req_id})
+    except Exception as exc:
+        # Expired / rotated / missing refresh tokens are normal client state,
+        # not server faults — log at INFO without a traceback so ERROR-level
+        # alerts only fire on genuinely unexpected failures.
+        msg = str(exc)
+        is_token_invalid = (
+            "Refresh Token Not Found" in msg
+            or "refresh_token" in msg.lower()
+            or "400" in msg
+        )
+        if is_token_invalid:
+            log.info(
+                "auth.refresh rejected by supabase",
+                extra={"ref": req_id, "err": msg.splitlines()[0][:200]},
+            )
+        else:
+            log.exception("auth.refresh supabase call failed", extra={"ref": req_id})
         return _error(status.HTTP_401_UNAUTHORIZED, "refresh_failed",
                       "Refresh token is invalid or expired.")
 

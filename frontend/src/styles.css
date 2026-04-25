@@ -677,6 +677,21 @@ kbd {
   max-width: 52ch;
   text-wrap: pretty;
 }
+.eir-q-help-list { margin: 0 0 28px; max-width: 60ch; }
+.eir-q-help-list .eir-q-help-intro {
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-size: 15px;
+}
+.eir-q-help-list ul {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.eir-q-help-list ul li { margin-bottom: 6px; }
 
 .eir-q-input-wrap { margin: 0 0 28px; }
 

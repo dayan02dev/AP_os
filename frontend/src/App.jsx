@@ -568,7 +568,6 @@ export default function App() {
   const progress = phase === PHASES.QUESTION ? stepIdx / Math.max(1, totalQ) : 0;
   const estMin = Math.max(1, Math.round((totalQ - stepIdx) * 0.9));
   const warmCopy = config.tone === "warm";
-  const showProgress = [PHASES.QUESTION, PHASES.SECTION_INTRO].includes(phase);
 
   return (
     <div className={`eir-root eir-theme-${config.theme}`}>
@@ -581,19 +580,6 @@ export default function App() {
           onProfile={goProfileFrom}
           phase={phase}
         />
-
-        {showProgress && (
-          <ProgressBar
-            variant={config.progress}
-            progress={progress}
-            currentStep={stepIdx}
-            totalSteps={totalQ}
-            sectionLabel={currentSection?.label || ""}
-            sectionIndex={sectionIdx}
-            totalSections={totalSections}
-            estMin={estMin}
-          />
-        )}
 
         <main className="eir-main">
           {/* Loading only blocks when we're authed and waiting for data.
@@ -1038,6 +1024,16 @@ function QuestionView({
 
         <h2 className="eir-q-prompt">{prompt}</h2>
         {q.help && <p className="eir-q-help">{q.help}</p>}
+        {q.helpItems && q.helpItems.length > 0 && (
+          <div className="eir-q-help eir-q-help-list">
+            {q.helpIntro && <p className="eir-q-help-intro"><strong>{q.helpIntro}</strong></p>}
+            <ul>
+              {q.helpItems.map((item, i) => (
+                <li key={i}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="eir-q-input-wrap">
           <QuestionInput q={q} value={value} onChange={onChange} autoFocus />

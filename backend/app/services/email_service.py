@@ -37,6 +37,7 @@ Operational notes:
 from __future__ import annotations
 
 import logging
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -140,6 +141,16 @@ class EmailService:
                 extra={"to": to, "subject": subject, "err": str(exc)},
             )
             raise EmailDeliveryError(f"Resend request failed: {exc}") from exc
+
+        # Resend caps free-tier sends at 2/sec. Support tickets fan out to
+        # staff + submitter back-to-back, which trips the limit. One retry
+        # with a small sleep clears the bucket without surfacing as ERROR.
+        if response.status_code == 429:
+            time.sleep(0.7)
+            try:
+                response = self._http.post(_RESEND_URL, json=payload, headers=headers)
+            except httpx.RequestError as exc:
+                raise EmailDeliveryError(f"Resend request failed: {exc}") from exc
 
         if response.status_code >= 400:
             # Pull the structured error from Resend's JSON body if present

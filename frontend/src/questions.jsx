@@ -142,7 +142,12 @@ const SECTIONS = [
         // Greeting prompt: addresses the applicant by first name. Falls back
         // to "there" until fullName is filled.
         prompt: (a) => `OK ${((a && a.fullName) || "there").split(" ")[0]} — what specific "critical problem" in your chosen sector are you solving?`,
-        help: "Please make sure you answer these questions as part of your response: Who is feeling the pain because it's unsolved? Can you quantify it — market size, urgency, human cost, environmental impact? Why is now the right time, and how does solving it contribute to India's transformation and global competitiveness?",
+        helpIntro: "Please make sure your answer covers:",
+        helpItems: [
+          "Who is feeling the pain because it's unsolved?",
+          "Can you quantify it — market size, urgency, human cost, environmental impact?",
+          "Why is now the right time, and how does solving it contribute to India's transformation and global competitiveness?",
+        ],
         placeholder: "Smallholder farmers lack access to real-time soil intelligence, leading to 20–30% yield loss despite increased fertilizer usage. India has 140M+ hectares of farmland, and inefficient input usage drives ₹1.2L Cr annual losses plus environmental degradation. Now is the time because low-cost edge sensing + on-device ML has crossed the cost threshold for rural deployment…",
         maxChars: 2000,
         minWords: 80,
@@ -182,7 +187,11 @@ const SECTIONS = [
         id: "coreTech",
         kind: "long",
         prompt: "What's the core technology that makes this special and hard to replicate?",
-        help: "Please make sure you answer these questions as part of your response: What is the specific lab-proven research or cutting-edge advance (in AI, Robotics, Mechatronics, etc.) you intend to translate? What is the \"unfair advantage\" — is it protected by a patent, a unique design or insight, or a proprietary dataset that others cannot easily replicate?",
+        helpIntro: "Please make sure your answer covers:",
+        helpItems: [
+          "What is the specific lab-proven research or cutting-edge advance (in AI, Robotics, Mechatronics, etc.) you intend to translate?",
+          "What is the \"unfair advantage\" — is it protected by a patent, a unique design or insight, or a proprietary dataset that others cannot easily replicate?",
+        ],
         placeholder: "A magnetic-induction soil sensor architecture (patent pending) combined with an adaptive calibration algorithm trained on a proprietary dataset of 10,000+ Indian soil samples across 7 agro-climatic zones — neither the hardware design nor the dataset can be replicated without years of fieldwork…",
         maxChars: 2000,
         minWords: 60,
