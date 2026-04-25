@@ -252,12 +252,12 @@ function DoneScreen({ answers, onRestart, submission, onBack }) {
 
         {!isPast && (
           <div className="eir-done-next">
-            <div className="eir-mono eir-dim">what happens next</div>
+            <div className="eir-mono eir-dim">what happens next?</div>
             <ol>
               <li>We read and discuss as a cohort committee.</li>
-              <li>Shortlisted applicants are notified around 29 June 2026.</li>
+              <li>Shortlisted applicants are notified around 22 June.</li>
               <li>Interviews take place in the first week of July.</li>
-              <li>Residency begins 22 July 2026.</li>
+              <li>Residency begins 15 July 2026.</li>
             </ol>
           </div>
         )}

@@ -22,7 +22,7 @@ const SECTIONS = [
   {
     id: "basic",
     index: "01",
-    label: "Basic Information",
+    label: "Basic Details",
     blurb: "Most of this was auto-filled from your CV. Take a moment to review.",
     questions: [
       // Contact + background first — these are the fields the resume parser
@@ -66,7 +66,7 @@ const SECTIONS = [
       {
         id: "degree",
         kind: "single",
-        prompt: "Highest degree achieved?",
+        prompt: "Highest technology degree achieved?",
         help: "Self-taught engineers with shipped work get equivalent weight — pick whatever's truthful.",
         options: ["Bachelor's Degree", "Master's Degree", "PhD", "Self-taught / Other"],
         cvAutoFill: true,
@@ -156,13 +156,9 @@ const SECTIONS = [
       {
         id: "problemDefined",
         kind: "single",
-        prompt: "Is the problem you want to solve well-defined?",
-        help: "Honest answers help us place you in the right track.",
-        options: [
-          "Yes, clearly defined",
-          "Partially defined",
-          "Still exploring the problem space",
-        ],
+        prompt: "Do you think the problem you want to solve is well-defined?",
+        help: "Honest answers help us support you better.",
+        options: ["Yes", "No"],
         required: true,
       },
     ],
@@ -170,7 +166,7 @@ const SECTIONS = [
   {
     id: "solution",
     index: "03",
-    label: "Your Solution",
+    label: "What's your solution and technology?",
     blurb: "How you're approaching it, and what makes your angle defensible.",
     questions: [
       {
@@ -217,8 +213,8 @@ const SECTIONS = [
   {
     id: "execution",
     index: "04",
-    label: "Execution Plan",
-    blurb: "What's your roadmap?",
+    label: "What's your roadmap?",
+    blurb: "What does success look like, and what stands in your way?",
     questions: [
       // Bucket 3: stage moves here from solution. DB column stays
       // `solution_stage` so existing data still loads — this is a UI placement
@@ -234,6 +230,8 @@ const SECTIONS = [
           "Simulations completed",
           "Lab demos / proof of concept",
           "Prototype built",
+          "Pilot-ready product",
+          "Deployed in real setting with real users",
         ],
         required: true,
       },
@@ -254,28 +252,18 @@ const SECTIONS = [
         id: "milestone",
         kind: "long",
         prompt: "What are the most critical milestone(s) you aim to achieve during this residency?",
-        help: "What does a successful deployment look like? One or two sharp outcomes beat a vague roadmap. Share quarterly milestones tied to specific outcomes and budgets. You can attach supporting docs in the next step.",
+        help: "What does a successful deployment look like? One or two sharp outcomes beat a vague roadmap. Share quarterly milestones tied to specific outcomes and budgets. You can also upload a PDF/XLS on the Evidence step.",
         placeholder: "Q1: bench-validated prototype. Q2: closed-loop pilot with 3 partner sites. Q3: 100-unit field deployment with measured uptime ≥ 95%…",
         maxChars: 2000,
         minWords: 60,
         required: true,
       },
-      // Bucket 3: optional file attach for the milestone question. Backed
-      // by the milestone-files bucket + execution_milestone_files JSONB
-      // column. The MilestoneFilesInput component talks directly to the
-      // /applications/me/milestone-files endpoints — values are NOT echoed
-      // through the regular PATCH /me save (PATCH_EXCLUDE in fieldMap.js).
-      {
-        id: "milestoneFiles",
-        kind: "milestoneFiles",
-        prompt: "Supporting docs for your milestones (optional).",
-        help: "Up to 3 files, 5 MiB each. PDF / XLS / XLSX / CSV / PNG / JPG. Quarterly plans, budget breakdowns, prototype photos, anything that sharpens the milestone above.",
-        maxFiles: 3,
-        maxMB: 5,
-        accept: ".pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg",
-        required: false,
-        optional: true,
-      },
+      // The dedicated milestone-files question was folded into the
+      // Evidence section per the latest spec — applicants attach
+      // supporting PDF/XLS docs on the same screen as their evidence
+      // files. The execution_milestone_files JSONB column + storage
+      // bucket are kept intact so prior submissions still render their
+      // attachments; only the wizard UI surface for it is gone.
       // Bucket 3: replaces `budget` (a free-text essay question). Required.
       {
         id: "infrastructure",

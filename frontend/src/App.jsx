@@ -62,7 +62,7 @@ const CELEBRATE_MESSAGES = [
   "Nice — basics are squared away.",
   "The hard part: you framed the problem.",
   "Solution articulated. Keep going.",
-  "Execution plan captured.",
+  "Evidence. Show, don't just tell.",
   "Evidence uploaded. Home stretch.",
 ];
 

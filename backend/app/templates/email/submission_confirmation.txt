@@ -1,15 +1,15 @@
 {% extends "base.txt" %}
-{% block content %}Dear {{ applicant_name }},
+{% block content %}Thank you, {{ applicant_name }}.
 
-We've received your ARTPARK EIR application. Our cohort committee reads every single one — you'll hear back within 10 working days, whatever the outcome.
+We've received your application. Our team reads every single one — you'll hear back from us by the agreed deadline, whatever the outcome.
 
 Application ID: {{ application_id }}
 
-What happens next
-  1. We read and discuss each application as a cohort committee.
+What happens next?
+  1. We read and discuss as a cohort committee.
   2. Shortlisted applicants are notified around 22 June.
   3. Interviews take place in the first week of July.
-  4. Residency begins 15 July.
+  4. Residency begins 15 July 2026.
 
 If you need to reach us, reply to this email or open a support ticket through the portal.
 

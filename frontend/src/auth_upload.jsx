@@ -436,7 +436,14 @@ function UploadScreen({ onUploaded, warmCopy }) {
           {warmCopy ? <>Let's start with the <em>easy</em> part.</> : "Upload your profile"}
         </h2>
         <p className="eir-q-help">
-          Drop in your CV and we'll auto-fill what we can. You'll review everything before anything gets submitted.
+          Drop in your CV, LinkedIn profile and GitHub and we'll auto-fill about
+          30% of the application. You'll review everything before anything gets
+          submitted.
+        </p>
+        <p className="eir-q-help eir-dim" style={{ marginTop: -16 }}>
+          ↳ Tip: prefer typing? You can also download a Word document of all the
+          questions, fill it offline, and upload it to auto-populate your answers
+          (coming shortly).
         </p>
 
         <div
