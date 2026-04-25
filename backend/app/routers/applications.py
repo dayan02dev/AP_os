@@ -559,25 +559,31 @@ async def submit_application(
             f"Application is already {row.get('status')}.",
         )
 
+    # Soft validation — log what's missing for analytics, but do NOT
+    # block the submit. Per product call, applicants can ship at any
+    # completion %; the reviewer sees "not provided" for empty fields.
     missing, invalid = _validate_submission(row)
     if missing or invalid:
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={
-                "error": {
-                    "code": "submission_invalid",
-                    "message": "Application is not ready to submit.",
-                },
+        log.info(
+            "applications.submit accepted with gaps",
+            extra={
+                "request_id": req_id,
+                "user_id": user_id,
                 "missing_fields": sorted(set(missing)),
                 "invalid_fields": invalid,
+                "completion_pct": row.get("completion_pct"),
             },
         )
+
+    # Compute the snapshot completion_pct from the current row so we
+    # don't lie and stamp 100% on a partial submission.
+    snapshot_pct, _ = _completion_pct(row)
 
     # Flip status — submitted_at is stamped by the DB trigger.
     try:
         submitted = _update_application(row["id"], {
             "status": "submitted",
-            "completion_pct": 100,
+            "completion_pct": snapshot_pct,
         })
     except Exception:
         log.exception("applications.submit update failed",

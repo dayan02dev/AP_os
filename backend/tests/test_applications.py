@@ -257,18 +257,18 @@ def test_patch_after_submit_returns_409(client, db):
 
 # ─── SUBMIT ────────────────────────────────────────────────────────
 
-def test_submit_missing_required_returns_422(client, db):
+def test_submit_with_gaps_succeeds(client, db):
+    """Soft-validation policy: applicants can submit at any completion %.
+    Backend logs missing fields for analytics but does NOT 422 the
+    request — empty fields surface as 'not provided' to the reviewer."""
     db.rows[TEST_USER_ID] = _fresh_draft_row()
     res = client.post("/applications/me/submit")
-    assert res.status_code == 422
+    assert res.status_code == 200, res.text
     body = res.json()
-    assert body["error"]["code"] == "submission_invalid"
-    # Every declaration is unticked, so they must all be flagged missing.
-    assert "declaration_truthful" in body["missing_fields"]
-    assert "declaration_ref_checks" in body["missing_fields"]
-    assert "declaration_terms" in body["missing_fields"]
-    # Several required text fields are empty too.
-    assert "basic_full_name" in body["missing_fields"]
+    assert body["ok"] is True
+    # Status flipped even though the row is mostly empty.
+    assert db.rows[TEST_USER_ID]["status"] == "submitted"
+    assert db.rows[TEST_USER_ID]["submitted_at"] is not None
 
 
 def _build_submittable_row() -> dict:

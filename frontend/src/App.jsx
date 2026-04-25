@@ -1141,7 +1141,12 @@ function ReviewSubmitPanel({ answers, completion, onSubmit, locked, saving }) {
   const entries = Object.entries(answers)
     .filter(([_, v]) => v !== undefined && v !== null && v !== "")
     .slice(0, 30);
-  const canSubmit = !locked && completion.completion_pct >= 100 && saving !== "saving";
+  // Submission is allowed at any completion %; the missing-fields list
+  // and the percentage hint are purely informational. Only block while
+  // a save is in flight (so we don't race against the debounced PATCH)
+  // or once the row is already submitted.
+  const incomplete = completion.completion_pct < 100;
+  const canSubmit = !locked && saving !== "saving";
 
   return (
     <div className="eir-screen eir-done">
@@ -1153,14 +1158,14 @@ function ReviewSubmitPanel({ answers, completion, onSubmit, locked, saving }) {
         <h2 className="eir-done-title">Ready to submit?</h2>
         <p className="eir-done-lede">
           Take one last look — once submitted, you can't edit.
-          {completion.completion_pct < 100 && (
-            <> You've filled <strong>{completion.completion_pct}%</strong> so far.</>
+          {incomplete && (
+            <> You've filled <strong>{completion.completion_pct}%</strong> so far. You can still submit — empty fields will be marked "not provided" for the reviewer.</>
           )}
         </p>
 
         {completion.missing_required_fields.length > 0 && (
           <div className="eir-done-feedback">
-            <div className="eir-mono eir-dim eir-done-feedback-label">↳ still to fill</div>
+            <div className="eir-mono eir-dim eir-done-feedback-label">↳ still empty (you can still submit)</div>
             <ul>
               {completion.missing_required_fields.map((f) => (
                 <li key={f}>
