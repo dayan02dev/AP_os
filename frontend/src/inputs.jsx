@@ -4,34 +4,74 @@ import { useState, useRef, useEffect } from "react";
 import { ApiError, apiCall } from "./lib/api.js";
 import { EmailInput as EnhancedEmailInput, validateEmail } from "./validators.jsx";
 
+// Phone-number pattern accepted as "valid": at least 7 digits, allows
+// +, spaces, dashes, parentheses. Letters are stripped on input so the
+// user can't type them in the first place; the regex below is used to
+// flag the red-shadow state once the user has typed enough to evaluate.
+const PHONE_VALID_RE = /^\+?[\d\s\-()]{7,}$/;
+
 function ShortInput({ q, value, onChange, autoFocus }) {
   const ref = useRef(null);
+  const [touched, setTouched] = useState(false);
   useEffect(() => { if (autoFocus && ref.current) ref.current.focus(); }, [autoFocus]);
+
+  const isPhone = q.id === "phone" || q.kind === "phone";
+
+  const handleChange = (raw) => {
+    if (isPhone) {
+      // Strip anything that isn't a digit, +, space, -, (, ). Keeps the
+      // user from typing letters at all rather than telling them off
+      // after the fact.
+      const cleaned = raw.replace(/[^\d+\-()\s]/g, "");
+      onChange(cleaned);
+    } else {
+      onChange(raw);
+    }
+  };
+
+  const text = value || "";
+  const phoneInvalid =
+    isPhone && touched && text.trim().length > 0 && !PHONE_VALID_RE.test(text);
+  const cls = `eir-input${phoneInvalid ? " eir-input-invalid" : ""}`;
+
   return (
     <input
       ref={ref}
-      type="text"
-      className="eir-input"
-      value={value || ""}
-      onChange={(e) => onChange(e.target.value)}
+      type={isPhone ? "tel" : "text"}
+      inputMode={isPhone ? "tel" : undefined}
+      className={cls}
+      value={text}
+      onChange={(e) => handleChange(e.target.value)}
+      onBlur={() => setTouched(true)}
       placeholder={q.placeholder || "Type your answer…"}
-      autoComplete="off"
+      autoComplete={isPhone ? "tel" : "off"}
+      aria-invalid={phoneInvalid || undefined}
     />
   );
 }
 
 function EmailQuestionInput({ q, value, onChange, autoFocus }) {
   const ref = useRef(null);
+  const [touched, setTouched] = useState(false);
   useEffect(() => { if (autoFocus && ref.current) ref.current.focus(); }, [autoFocus]);
+
+  const text = value || "";
+  // Show the red-shadow only after the user has interacted (blur) so we
+  // don't shout at them while they're still typing.
+  const invalid = touched && text.trim().length > 0 && !validateEmail(text).valid;
+  const cls = `eir-input${invalid ? " eir-input-invalid" : ""}`;
+
   return (
     <input
       ref={ref}
       type="email"
-      className="eir-input"
-      value={value || ""}
+      className={cls}
+      value={text}
       onChange={(e) => onChange(e.target.value)}
+      onBlur={() => setTouched(true)}
       placeholder={q.placeholder}
       autoComplete="email"
+      aria-invalid={invalid || undefined}
     />
   );
 }
@@ -586,8 +626,11 @@ function isAnswered(q, value) {
   if (q.optional) return true;
   switch (q.kind) {
     case "short":
+      if (!(value && value.trim().length > 0)) return false;
+      if (q.id === "phone" && !PHONE_VALID_RE.test(value.trim())) return false;
+      return true;
     case "email":
-      return !!(value && value.trim().length > 0);
+      return !!(value && value.trim().length > 0 && validateEmail(value).valid);
     case "long":
       if (!value || !value.trim()) return false;
       return true;
@@ -613,8 +656,16 @@ function whyBlocked(q, value) {
   if (q.optional) return null;
   switch (q.kind) {
     case "short":
+      if (!value || !value.trim()) return "this field is required";
+      // Phone fields use kind="short" but get format-validated so the
+      // applicant doesn't get to advance with "abc" in the box.
+      if (q.id === "phone" && !PHONE_VALID_RE.test(value.trim())) {
+        return "enter a valid phone number (digits only)";
+      }
+      return null;
     case "email":
       if (!value || !value.trim()) return "this field is required";
+      if (!validateEmail(value).valid) return "enter a valid email like name@domain.com";
       return null;
     case "long": {
       if (!value || !value.trim()) return "please write your response to continue";

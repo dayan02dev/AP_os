@@ -723,6 +723,17 @@ kbd {
 }
 .eir-input:focus { border-bottom-color: var(--accent); }
 .eir-input::placeholder { color: var(--ink-dim); opacity: 0.7; }
+
+/* Format-invalid state — red shadow underneath the input border so the
+   applicant gets immediate feedback when they typed an email without an
+   '@' or a phone number that doesn't look like one. Triggered after the
+   input loses focus the first time (so we don't shout while they type). */
+.eir-input-invalid,
+.eir-input.eir-input-invalid {
+  border-bottom-color: #c4341a;
+  box-shadow: 0 4px 14px -8px rgba(196, 52, 26, 0.55);
+}
+.eir-input-invalid:focus { border-bottom-color: #c4341a; }
 /* "Other — please specify" follow-up input, shown inline right under the
    selected option. Slightly smaller + indented so it reads as a
    continuation of the option, not a new question. */
@@ -899,6 +910,15 @@ kbd {
   text-transform: uppercase;
 }
 .eir-footer-nav { display: flex; align-items: center; gap: 14px; }
+
+/* Slim footer — only the save/lock badge, no nav, no breadcrumb. Used
+   while the wizard is active so the question screen owns the visual
+   weight and the footer is just a subtle saving-state indicator. */
+.eir-footer-slim {
+  border-top: none;
+  padding-top: 8px;
+  justify-content: flex-start;
+}
 
 /* =========== Theme tweaks — theme-specific overrides =========== */
 

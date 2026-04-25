@@ -613,6 +613,22 @@ export default function App() {
           phase={phase}
         />
 
+        {/* Section progress only on the section-intro hand-off — gives the
+            applicant a sense of where they are in the 6-section arc without
+            cluttering every question screen (which has its own §/Q.NN line). */}
+        {phase === PHASES.SECTION_INTRO && (
+          <ProgressBar
+            variant="section"
+            progress={progress}
+            currentStep={stepIdx}
+            totalSteps={totalQ}
+            sectionLabel={currentSection?.label || ""}
+            sectionIndex={sectionIdx}
+            totalSections={totalSections}
+            estMin={estMin}
+          />
+        )}
+
         <main className="eir-main">
           {/* Loading only blocks when we're authed and waiting for data.
               Unauthed visitors should see WELCOME immediately. */}
@@ -793,15 +809,7 @@ export default function App() {
           )}
         </main>
 
-        <Footer
-          phase={phase}
-          stepIdx={stepIdx}
-          totalQ={totalQ}
-          onPrev={goBackUniversal}
-          canPrev={canGoBackUniversal}
-          saving={saving}
-          locked={locked}
-        />
+        <Footer saving={saving} locked={locked} />
       </div>
 
       <TweaksPanel
@@ -1015,27 +1023,21 @@ function Header({ config, user, onLogout, onProfile, phase }) {
   );
 }
 
-function Footer({ phase, stepIdx, totalQ, onPrev, canPrev, saving, locked }) {
+// Footer was a full row with `q.NN/NN`, save state, a back button, and
+// "press ⏎ to continue". The back button + Enter hint duplicated affordances
+// already on the question screen and felt like UI clutter. This shrinks the
+// footer to just the save/lock indicator (an unobtrusive bottom-left line),
+// which is genuinely useful and doesn't compete with the question.
+function Footer({ saving, locked }) {
+  if (!saving && !locked) return null;
+  if (saving === "idle" && !locked) return null;
   return (
-    <footer className="eir-footer">
+    <footer className="eir-footer eir-footer-slim">
       <div className="eir-footer-left eir-mono eir-dim">
-        {phase === "question" && (
-          <>
-            q.{(stepIdx + 1).toString().padStart(2, "0")} / {totalQ.toString().padStart(2, "0")}
-          </>
-        )}
-        {saving === "saving" && <span className="eir-save-state"> · saving…</span>}
-        {saving === "saved" && <span className="eir-save-state is-ok"> · saved ✓</span>}
-        {saving === "error" && <span className="eir-save-state is-err"> · save failed</span>}
-        {locked && <span className="eir-save-state is-lock"> · locked (submitted)</span>}
-      </div>
-      <div className="eir-footer-nav">
-        <button className="eir-chip-btn eir-mono" onClick={onPrev} disabled={!canPrev}>
-          ← back
-        </button>
-        <span className="eir-mono eir-dim">
-          press <kbd>⏎</kbd> to continue
-        </span>
+        {saving === "saving" && <span className="eir-save-state">saving…</span>}
+        {saving === "saved" && <span className="eir-save-state is-ok">saved ✓</span>}
+        {saving === "error" && <span className="eir-save-state is-err">save failed</span>}
+        {locked && <span className="eir-save-state is-lock">locked · submitted</span>}
       </div>
     </footer>
   );
@@ -1059,7 +1061,10 @@ function QuestionView({
   const blockReason = answered ? null : whyBlocked(q, value);
   const name = (answers.fullName || "").split(" ")[0];
 
-  let prompt = q.prompt;
+  // Some prompts are functions (a) => "OK ${first} — ..." so they can
+  // greet the applicant by name. Resolve them here, otherwise React
+  // renders the function reference and the prompt disappears.
+  let prompt = typeof q.prompt === "function" ? q.prompt(answers) : q.prompt;
   if (warmCopy && name) {
     if (q.id === "phone") prompt = `Thanks, ${name}. A phone number we can reach you on?`;
     if (q.id === "problemDefined")
