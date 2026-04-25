@@ -106,7 +106,7 @@ const SECTIONS = [
     id: "problem",
     index: "02",
     label: "Problem & Importance",
-    blurb: "The thing that pulled you in. What won't let you go.",
+    blurb: "The thing that pulled you in. What won't let you go. Clarity beats jargon — imagine you're telling a brilliant friend from an adjacent technology field.",
     questions: [
       {
         id: "problemDefined",

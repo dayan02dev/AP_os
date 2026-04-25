@@ -88,11 +88,11 @@ function WelcomeScreen({ onStart, warmCopy }) {
         </h1>
         <p className="eir-welcome-lede">
           {warmCopy
-            ? "A short, honest conversation — not a form. We'll start by parsing your CV to save you time, then walk through 6 sections together. Plan for about 45–60 minutes of focused work."
-            : "Intake questionnaire for the 2026 TIR cohort. 6 sections, auto-filled where possible. Est. 45–60 minutes."}
+            ? "A short, honest conversation — not a form. We'll start by parsing your CV to save you time, then walk through 6 sections together. Plan for about 60–90 minutes of focused work."
+            : "Intake questionnaire for the 2026 TIR cohort. 6 sections, auto-filled where possible. Est. 60–90 minutes."}
         </p>
         <div className="eir-welcome-meta">
-          <div className="eir-welcome-stat"><div className="eir-mono eir-dim">duration</div><div className="eir-welcome-stat-val">45–60 min</div></div>
+          <div className="eir-welcome-stat"><div className="eir-mono eir-dim">duration</div><div className="eir-welcome-stat-val">60–90 min</div></div>
           <div className="eir-welcome-stat"><div className="eir-mono eir-dim">sections</div><div className="eir-welcome-stat-val">06</div></div>
           <div className="eir-welcome-stat"><div className="eir-mono eir-dim">auto-fill</div><div className="eir-welcome-stat-val">from CV</div></div>
           <div className="eir-welcome-stat"><div className="eir-mono eir-dim">deadline</div><div className="eir-welcome-stat-val">22 may</div></div>
@@ -162,7 +162,7 @@ function DoneScreen({ answers, onRestart, submission, onBack }) {
   const milestoneTimingHints = {
     submitted: "application received",
     under_review: "committee reading now",
-    shortlisted: "expected by 22 Jun",
+    shortlisted: "expected by 29 Jun",
     interview: "first week of July",
     decision: "by mid-July",
   };
@@ -189,7 +189,7 @@ function DoneScreen({ answers, onRestart, submission, onBack }) {
             ? (progress?.isTerminal
                 ? (feedback ? "This application reached a final outcome. Here's the reviewer feedback and everything you submitted." : "This application reached a final outcome. Here's everything you submitted.")
                 : "This application is live. Track its progress through the review pipeline below.")
-            : "We've received your application. Our team reads every single one — you'll hear back from us in 10 working days, whatever the outcome."}
+            : "We've received your application. Our team reads every single one — you'll hear back from us by the agreed deadline, whatever the outcome."}
         </p>
 
         {/* Milestone pipeline — past submissions only */}
@@ -255,20 +255,24 @@ function DoneScreen({ answers, onRestart, submission, onBack }) {
             <div className="eir-mono eir-dim">what happens next</div>
             <ol>
               <li>We read and discuss as a cohort committee.</li>
-              <li>Shortlisted applicants are notified around 22 June.</li>
+              <li>Shortlisted applicants are notified around 29 June 2026.</li>
               <li>Interviews take place in the first week of July.</li>
-              <li>Residency begins 15 July 2026.</li>
+              <li>Residency begins 22 July 2026.</li>
             </ol>
           </div>
         )}
 
-        {!isPast && (
-          <div className="eir-q-actions">
+        <div className="eir-q-actions">
+          {isPast ? (
+            <button className="eir-btn eir-btn-primary" onClick={onBack || onRestart}>
+              <span>← back to applications</span>
+            </button>
+          ) : (
             <button className="eir-btn eir-btn-ghost" onClick={onRestart}>
               <span>Back to my applications</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
