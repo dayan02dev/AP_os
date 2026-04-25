@@ -132,8 +132,14 @@ def db(monkeypatch):
         state.rows[user_id] = new
         return copy.deepcopy(new)
 
-    def fake_update(user_id: str, patch: dict):
-        row = state.rows.get(user_id)
+    def fake_update(application_id: str, patch: dict):
+        # Multi-app: callers pass the row id, not the user_id. Find the row
+        # whose id matches (the in-memory store is still keyed by user_id
+        # because the test only ever holds one row per user).
+        row = next(
+            (r for r in state.rows.values() if r.get("id") == application_id),
+            None,
+        )
         if row is None:
             raise RuntimeError("update before insert")
         row.update(patch)

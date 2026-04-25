@@ -75,12 +75,20 @@ def _new_request_id() -> str:
 
 
 def _fetch_draft_application(user_id: str) -> dict[str, Any] | None:
-    """Return the user's draft application row, or None if missing/locked."""
+    """Return the user's open draft, or None.
+
+    Multi-app: scope to status='draft' so attachments only ever land on
+    the in-flight application — submitted rows are immutable. Newest
+    first in case the partial-unique invariant is briefly violated under
+    a race (the .limit(1) keeps us deterministic).
+    """
     res = (
         get_admin_client()
         .table("applications")
         .select("id, status, execution_milestone_files")
         .eq("user_id", user_id)
+        .eq("status", "draft")
+        .order("created_at", desc=True)
         .limit(1)
         .execute()
     )

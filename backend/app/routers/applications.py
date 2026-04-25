@@ -280,16 +280,39 @@ def _validate_submission(row: dict[str, Any]) -> tuple[list[str], list[dict[str,
 # ─── DB access (small helpers so tests can monkey-patch) ─────────────
 
 def _fetch_application(user_id: str) -> dict[str, Any] | None:
+    """Return the user's open draft, or None if they have no draft.
+
+    Multi-app: a user can have many submitted rows but at most one draft
+    (enforced by the partial-unique index applications_one_draft_per_user).
+    Filtering by status='draft' here means submitted history is invisible
+    to the wizard — the wizard always operates on the open draft.
+    """
     res = (
         get_admin_client()
         .table("applications")
         .select("*")
         .eq("user_id", user_id)
+        .eq("status", "draft")
+        .order("created_at", desc=True)
         .limit(1)
         .execute()
     )
     rows = res.data or []
     return rows[0] if rows else None
+
+
+def _fetch_submitted_applications(user_id: str) -> list[dict[str, Any]]:
+    """All non-draft applications for this user, newest first."""
+    res = (
+        get_admin_client()
+        .table("applications")
+        .select("*")
+        .eq("user_id", user_id)
+        .neq("status", "draft")
+        .order("submitted_at", desc=True)
+        .execute()
+    )
+    return res.data or []
 
 
 def _create_draft(user_id: str) -> dict[str, Any]:
@@ -305,12 +328,15 @@ def _create_draft(user_id: str) -> dict[str, Any]:
     return rows[0]
 
 
-def _update_application(user_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+def _update_application(application_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+    """Update by row id. Multi-app means we can no longer use user_id as
+    the WHERE clause (it would touch all the user's rows including
+    submitted ones). Callers must pass the id of the row to mutate."""
     res = (
         get_admin_client()
         .table("applications")
         .update(patch)
-        .eq("user_id", user_id)
+        .eq("id", application_id)
         .execute()
     )
     rows = res.data or []
@@ -467,7 +493,7 @@ async def patch_application(
     patch_dict["completion_pct"] = new_pct
 
     try:
-        updated = _update_application(user_id, patch_dict)
+        updated = _update_application(current_row["id"], patch_dict)
     except Exception:
         log.exception("applications.patch update failed",
                       extra={"request_id": req_id, "user_id": user_id})
@@ -549,7 +575,7 @@ async def submit_application(
 
     # Flip status — submitted_at is stamped by the DB trigger.
     try:
-        submitted = _update_application(user_id, {
+        submitted = _update_application(row["id"], {
             "status": "submitted",
             "completion_pct": 100,
         })
@@ -595,6 +621,30 @@ async def submit_application(
         application_id=submitted["id"],
         submitted_at=submitted_at_dt,
     )
+
+
+@router.get(
+    "/me/submitted",
+    response_model=list[ApplicationRead],
+    dependencies=[Depends(_rl_get)],
+)
+async def list_submitted_applications(current_user: dict = Depends(get_current_user)):
+    """Return the caller's submitted (non-draft) applications, newest first.
+
+    Powers the "Past applications" tab. Read-only — submissions are frozen
+    once the status moves off draft.
+    """
+    user_id = current_user["user_id"]
+    try:
+        rows = _fetch_submitted_applications(user_id)
+    except Exception:
+        log.exception("applications.list_submitted failed", extra={"user_id": user_id})
+        return _error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "fetch_failed",
+            "Could not load past applications.",
+        )
+    return [ApplicationRead.model_validate(r) for r in rows]
 
 
 @router.get(

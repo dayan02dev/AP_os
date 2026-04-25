@@ -29,6 +29,9 @@ export function ApplicationProvider({ children }) {
   // `row` is the raw DB shape (keys like basic_full_name).
   // `answers` is the UI shape (keys like fullName) — derived via fieldMap.
   const [row, setRow] = useState(null);
+  // Submitted applications history (multi-app). Loaded lazily via
+  // refreshSubmitted() — usually when ReturningChoiceScreen mounts.
+  const [submittedApps, setSubmittedApps] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [savingState, setSavingState] = useState("idle");
@@ -42,10 +45,14 @@ export function ApplicationProvider({ children }) {
   const debounceRef = useRef(null);
   const locked = row ? row.status !== "draft" : false;
 
-  // Rehydrate on auth.
+  // Rehydrate on auth. Loads the open draft (the backend auto-creates one
+  // if none exists, so first-time users get an empty form) AND the user's
+  // submitted history in parallel — the latter powers the Past tab on
+  // ReturningChoiceScreen.
   useEffect(() => {
     if (!isAuthed) {
       setRow(null);
+      setSubmittedApps([]);
       setCompletion({ completion_pct: 0, missing_required_fields: [], current_section: null });
       return undefined;
     }
@@ -54,9 +61,13 @@ export function ApplicationProvider({ children }) {
     setError(null);
     async function load() {
       try {
-        const r = await api.get("/applications/me");
+        const [r, past] = await Promise.all([
+          api.get("/applications/me"),
+          api.get("/applications/me/submitted").catch(() => []),
+        ]);
         if (cancelled) return;
         setRow(r);
+        setSubmittedApps(Array.isArray(past) ? past : []);
         setCompletion({
           completion_pct: r.completion_pct ?? 0,
           missing_required_fields: [],
@@ -173,12 +184,26 @@ export function ApplicationProvider({ children }) {
     await flushNow();
     try {
       const result = await api.post("/applications/me/submit", null);
-      // Refetch so status / submitted_at land in local state.
+      // Multi-app: GET /applications/me would auto-create a NEW empty
+      // draft now (the just-submitted row no longer matches status='draft'),
+      // which would clobber the DoneScreen state. Patch the existing row
+      // locally so `locked` flips and DoneScreen renders, and refresh the
+      // submitted-history list so the Past tab includes this submission.
+      setRow((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "submitted",
+              submitted_at: result?.submitted_at || new Date().toISOString(),
+              completion_pct: 100,
+            }
+          : prev,
+      );
       try {
-        const fresh = await api.get("/applications/me");
-        setRow(fresh);
+        const past = await api.get("/applications/me/submitted");
+        setSubmittedApps(Array.isArray(past) ? past : []);
       } catch {
-        /* ignore */
+        /* ignore — the Past tab will reload on next mount */
       }
       return result;
     } catch (err) {
@@ -186,6 +211,46 @@ export function ApplicationProvider({ children }) {
       throw err;
     }
   }, [flushNow]);
+
+  // Multi-app: explicitly start a fresh application. Hits GET /me which
+  // auto-creates a new draft (because the previous one is now submitted),
+  // and refreshes the submitted list so the prior application shows up
+  // in the Past tab. Caller is responsible for resetting wizard phase.
+  const startNew = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [fresh, past] = await Promise.all([
+        api.get("/applications/me"),
+        api.get("/applications/me/submitted").catch(() => []),
+      ]);
+      setRow(fresh);
+      setSubmittedApps(Array.isArray(past) ? past : []);
+      setCompletion({
+        completion_pct: fresh.completion_pct ?? 0,
+        missing_required_fields: [],
+        current_section: fresh.current_section ?? null,
+      });
+      return fresh;
+    } catch (err) {
+      setError(err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const refreshSubmitted = useCallback(async () => {
+    try {
+      const past = await api.get("/applications/me/submitted");
+      const list = Array.isArray(past) ? past : [];
+      setSubmittedApps(list);
+      return list;
+    } catch (err) {
+      setError(err);
+      return [];
+    }
+  }, []);
 
   const fetchCompletion = useCallback(async () => {
     try {
@@ -216,9 +281,12 @@ export function ApplicationProvider({ children }) {
     error,
     locked,
     completion,
+    submittedApps,
     save,
     flushNow,
     submit,
+    startNew,
+    refreshSubmitted,
     fetchCompletion,
     refetch: async () => {
       try {

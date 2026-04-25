@@ -37,7 +37,7 @@ import { useApplication } from "./hooks/useApplication.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
 import { useResume } from "./hooks/useResume.js";
 import { useToast } from "./hooks/useToast.jsx";
-import { SECTION_ORDER } from "./lib/fieldMap.js";
+import { SECTION_ORDER, collapseFromRow } from "./lib/fieldMap.js";
 
 const PHASES = {
   WELCOME: "welcome",
@@ -114,8 +114,19 @@ export default function App() {
   const urlSyncRef = useRef({ applying: false });
 
   const { user, logout, loading: authLoading } = useAuth();
-  const { application, answers, loading, saving, locked, save, submit, refetch, completion } =
-    useApplication();
+  const {
+    application,
+    answers,
+    loading,
+    saving,
+    locked,
+    save,
+    submit,
+    refetch,
+    completion,
+    submittedApps,
+    startNew,
+  } = useApplication();
   const resume = useResume();
   const { push: pushToast } = useToast();
 
@@ -126,6 +137,10 @@ export default function App() {
   const [stepIdx, setStepIdx] = useState(0);
   const [celebMsg, setCelebMsg] = useState("");
   const [prevPhase, setPrevPhase] = useState(null);
+  // Multi-app: which submitted application to display in DoneScreen.
+  // Null means "show the current/just-submitted application" (default
+  // post-submit). Set by clicking a card on the Past tab.
+  const [viewingApp, setViewingApp] = useState(null);
 
   // ─── Theme application ───────────────────────────────────────
   useEffect(() => {
@@ -303,9 +318,21 @@ export default function App() {
 
   // ReturningChoiceScreen handlers. The screen shows three tabs; each tab's
   // primary action hits one of these.
-  const onStartNew = () => {
-    // Fresh slate — upload a new CV. The existing draft is preserved in the
-    // backend; we just route the user through the upload flow again.
+  const onStartNew = async () => {
+    // Multi-app: if the current `application` is a submitted row (locked),
+    // ask the backend for a fresh draft. The partial-unique index means
+    // GET /me will auto-create one when no draft exists, so a single
+    // refetch is enough. For an already-empty draft (locked=false) we
+    // skip the round-trip and just walk the user through upload again.
+    if (locked) {
+      try {
+        await startNew();
+      } catch {
+        /* error already captured in hook state; let the UI surface it */
+      }
+    }
+    setSectionIdx(0);
+    setStepIdx(0);
     setPhase(PHASES.UPLOAD);
   };
   const onResumeDraft = () => {
@@ -313,11 +340,16 @@ export default function App() {
     setStepIdx(0);
     setPhase(PHASES.SECTION_INTRO);
   };
-  const onViewPast = () => {
-    // Click on a past-submission card → show the receipt view for that
-    // application. Currently each user has at most one application
-    // (UNIQUE(user_id) on the table) so there's no per-card identity to
-    // pass through — DoneScreen reads from the live `application` state.
+  const onViewPast = (entry) => {
+    // Multi-app: each card carries an `id` matching a row in submittedApps.
+    // Look up the full DB row so DoneScreen can render that specific
+    // submission's data, not the current draft. If no match (e.g. just-
+    // submitted flow with no entry passed), fall back to the live row.
+    const match =
+      entry && Array.isArray(submittedApps)
+        ? submittedApps.find((r) => r.id === entry.id)
+        : null;
+    setViewingApp(match || null);
     setPhase(PHASES.DONE);
   };
 
@@ -600,22 +632,44 @@ export default function App() {
                   : 0
               }
               pastSubmissions={
-                // The Past-applications tab expects a richer shape than the
-                // raw DB row: {id, ts, cycle, projectTitle, currentMilestone,
-                // answers}. Build it from the submitted application so the
-                // tab renders properly (status pill, milestone pipeline,
-                // submitted-on date, project title preview).
-                locked && application && application.submitted_at
-                  ? [{
+                // Multi-app: build the Past tab list from submittedApps
+                // (every non-draft row the user owns), newest-first. Each
+                // entry maps to ReturningChoiceScreen's expected shape:
+                // {id, ts, cycle, projectTitle, currentMilestone, answers}.
+                // The current `application` is only included if it's a
+                // just-submitted row that hasn't yet been pulled into the
+                // submittedApps cache (post-submit refresh races).
+                (() => {
+                  const past = (submittedApps || []).map((r) => ({
+                    id: r.id,
+                    ts: r.submitted_at
+                      ? new Date(r.submitted_at).getTime()
+                      : Date.now(),
+                    cycle: r.cycle || "TIR.2026",
+                    projectTitle: r.solution_describe?.slice(0, 80) || "",
+                    currentMilestone: r.current_milestone || "submitted",
+                    feedback: r.reviewer_feedback || null,
+                    answers: collapseFromRow(r),
+                  }));
+                  if (
+                    locked &&
+                    application?.submitted_at &&
+                    !past.some((p) => p.id === application.id)
+                  ) {
+                    past.unshift({
                       id: application.id,
                       ts: new Date(application.submitted_at).getTime(),
-                      cycle: "TIR.2026",
-                      projectTitle: application.solution_describe?.slice(0, 80) || "",
-                      currentMilestone: application.current_milestone || "submitted",
+                      cycle: application.cycle || "TIR.2026",
+                      projectTitle:
+                        application.solution_describe?.slice(0, 80) || "",
+                      currentMilestone:
+                        application.current_milestone || "submitted",
                       feedback: application.reviewer_feedback || null,
                       answers,
-                    }]
-                  : []
+                    });
+                  }
+                  return past;
+                })()
               }
               onResume={onResumeDraft}
               onViewPast={onViewPast}
@@ -707,21 +761,28 @@ export default function App() {
               saving={saving}
             />
           )}
-          {phase === PHASES.DONE && application && (
-            <DoneScreen
-              answers={answers}
-              onRestart={() => navigate("/apply")}
-              submission={{
-                id: application.id,
-                ts: application.submitted_at
-                  ? new Date(application.submitted_at).getTime()
-                  : Date.now(),
-                currentMilestone: "submitted",
-                answers,
-              }}
-              onBack={() => navigate("/apply")}
-            />
-          )}
+          {phase === PHASES.DONE && (viewingApp || application) && (() => {
+            const target = viewingApp || application;
+            const targetAnswers = viewingApp ? collapseFromRow(viewingApp) : answers;
+            return (
+              <DoneScreen
+                answers={targetAnswers}
+                onRestart={() => navigate("/apply")}
+                submission={{
+                  id: target.id,
+                  ts: target.submitted_at
+                    ? new Date(target.submitted_at).getTime()
+                    : Date.now(),
+                  currentMilestone: target.current_milestone || "submitted",
+                  answers: targetAnswers,
+                }}
+                onBack={() => {
+                  setViewingApp(null);
+                  navigate("/apply");
+                }}
+              />
+            );
+          })()}
           {phase === PHASES.PROFILE && user && (
             <ProfileScreen
               user={user}

@@ -55,7 +55,7 @@ describe("useApplication", () => {
       .mockImplementationOnce(() =>
         Promise.resolve(jsonResponse(200, { id: "u1", email: "u@x.com" })),
       )
-      // /applications/me (initial fetch)
+      // /applications/me (initial fetch — current draft)
       .mockImplementationOnce(() =>
         Promise.resolve(
           jsonResponse(200, {
@@ -68,7 +68,9 @@ describe("useApplication", () => {
             updated_at: "2026-04-19T00:00:00Z",
           }),
         ),
-      );
+      )
+      // /applications/me/submitted (initial fetch — past submissions)
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(200, [])));
 
     const onReady = (app) => {
       appRef.current = app;
@@ -120,9 +122,9 @@ describe("useApplication", () => {
       timeout: 2500,
     });
 
-    // Count fetches after mount: 1 auth/me + 1 get/me + 1 patch = 3 total.
-    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
-    const patchCall = globalThis.fetch.mock.calls[2];
+    // Count fetches after mount: 1 auth/me + 1 get/me + 1 get submitted + 1 patch = 4 total.
+    expect(globalThis.fetch).toHaveBeenCalledTimes(4);
+    const patchCall = globalThis.fetch.mock.calls[3];
     expect(patchCall[1].method).toBe("PATCH");
     // The coalesced body should be the LAST value, not the first two.
     expect(JSON.parse(patchCall[1].body)).toMatchObject({
