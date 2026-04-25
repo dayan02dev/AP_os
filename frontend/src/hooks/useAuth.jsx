@@ -57,6 +57,27 @@ export function AuthProvider({ children }) {
     return newUser;
   }, []);
 
+  const signInWithPassword = useCallback(async (email, password) => {
+    setError(null);
+    const newUser = await auth.signInWithPassword(email, password);
+    setUser(newUser);
+    return newUser;
+  }, []);
+
+  const setPassword = useCallback(async (password) => {
+    setError(null);
+    await auth.setPassword(password);
+    // Refresh /me so the password_set flag updates immediately — callers
+    // that route based on it (e.g. SetPasswordPage redirecting to /apply)
+    // shouldn't see a stale `false` for the rest of the session.
+    try {
+      const me = await auth.getMe();
+      setUser(me);
+    } catch (err) {
+      setError(err);
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     await auth.logout();
     setUser(null);
@@ -69,6 +90,8 @@ export function AuthProvider({ children }) {
     isAuthed: !!user,
     requestOtp,
     verifyOtp,
+    signInWithPassword,
+    setPassword,
     logout: signOut,
     refreshMe: async () => {
       try {

@@ -14,12 +14,14 @@
 //   /apply/profile          profile settings
 //   /apply/review           pre-submission review
 //   /apply/submitted        post-submit receipt
+//   /apply/set-password     first-time password setup / reset (Phase B)
 
 import { Route, Routes } from "react-router-dom";
 import App from "./App.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
 import ProtectedRoute from "./pages/ProtectedRoute.jsx";
 import RootRedirect from "./pages/RootRedirect.jsx";
+import SetPasswordPage from "./pages/SetPasswordPage.jsx";
 import SignInPage from "./pages/SignInPage.jsx";
 import SupportPage from "./pages/SupportPage.jsx";
 import VerifyPage from "./pages/VerifyPage.jsx";
@@ -70,6 +72,10 @@ export default function AppRoutes() {
       <Route
         path="/apply/submitted"
         element={<ProtectedRoute><App /></ProtectedRoute>}
+      />
+      <Route
+        path="/apply/set-password"
+        element={<ProtectedRoute><SetPasswordPage /></ProtectedRoute>}
       />
 
       <Route path="*" element={<NotFoundPage />} />

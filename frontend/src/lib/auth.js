@@ -30,6 +30,30 @@ export async function verifyOtp(email, token) {
 }
 
 /**
+ * Sign in with email + password. Same return contract as verifyOtp:
+ * saves the session and returns the user summary on success.
+ */
+export async function signInWithPassword(email, password) {
+  const result = await api.post("/auth/sign-in-password", { email, password });
+  if (!result || !result.access_token || !result.refresh_token) {
+    throw new Error("sign-in-password response missing tokens");
+  }
+  saveSession({
+    access_token: result.access_token,
+    refresh_token: result.refresh_token,
+  });
+  return result.user;
+}
+
+/**
+ * Set or change the password for the currently-authenticated user.
+ * Bearer token is attached automatically by the api wrapper.
+ */
+export async function setPassword(password) {
+  return api.post("/auth/set-password", { password });
+}
+
+/**
  * Current profile (GET /auth/me). Assumes a session exists.
  */
 export async function getMe() {

@@ -1,6 +1,9 @@
 // Profile settings screen — edit name, email, password, phone, org
 
 import { useState as usePS, useEffect as usePE } from "react";
+import { ApiError } from "./lib/api.js";
+import * as authApi from "./lib/auth.js";
+import { useAuth } from "./hooks/useAuth.jsx";
 import { isPasswordValid, PasswordInput } from "./validators.jsx";
 
 function ProfileScreen({ user, onBack, onUpdate, onLogout }) {
@@ -50,14 +53,40 @@ function ProfileScreen({ user, onBack, onUpdate, onLogout }) {
     setTimeout(() => setSavedFlash(""), 2400);
   };
 
-  const changePassword = (e) => {
+  const { setPassword: ctxSetPassword } = useAuth();
+  const changePassword = async (e) => {
     e?.preventDefault();
     setErr("");
     if (!currentPass) return setErr("Enter your current password.");
     if (!isPasswordValid(newPass)) return setErr("New password doesn't meet all the requirements.");
     if (newPass !== confirmPass) return setErr("New passwords don't match.");
 
-    // Demo: any current password accepted (we don't actually store them)
+    // Verify the current password by actually signing in with it. This is
+    // the closest we can get to "Require current password when updating"
+    // without that Supabase setting being on — if the user typo'd their
+    // current password, the signin will fail and we abort before mutating.
+    // Note: this consumes a slot of the per-email sign-in rate limit.
+    try {
+      await authApi.signInWithPassword(user.email, currentPass);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return setErr("Current password is incorrect.");
+      }
+      if (err instanceof ApiError && err.status === 429) {
+        return setErr("Too many attempts. Try again in a few minutes.");
+      }
+      return setErr(err?.message || "Couldn't verify current password.");
+    }
+
+    try {
+      await ctxSetPassword(newPass);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422) {
+        return setErr(err.message || "New password doesn't meet the requirements.");
+      }
+      return setErr(err?.message || "Couldn't update password. Try again.");
+    }
+
     setCurrentPass(""); setNewPass(""); setConfirmPass("");
     setSavedFlash("Password updated.");
     setTimeout(() => setSavedFlash(""), 2400);

@@ -1,9 +1,14 @@
 // VerifyPage — 6-digit OTP entry. Client-side resend cooldown of 30s.
-// On success: navigate to ?next= (if safe) or /apply.
+//
+// On success, the next page depends on three flags:
+//   - ?reset=1            → forgot-password flow → /apply/set-password?reset=1
+//   - user has no password (password_set=false) → /apply/set-password (initial)
+//   - otherwise          → ?next= (if safe) or /apply
 
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
+import * as authApi from "../lib/auth.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 
@@ -17,6 +22,7 @@ export default function VerifyPage() {
 
   const email = (params.get("email") || "").trim().toLowerCase();
   const nextParam = params.get("next") || "";
+  const resetMode = params.get("reset") === "1";
   // Dev shortcut: `?code=NNNNNN` pre-fills the OTP. Used by the
   // backend/scripts/dev_get_otp.py one-click URL so you can jump straight
   // into the wizard without typing the code manually.
@@ -51,8 +57,32 @@ export default function VerifyPage() {
       setVerifying(true);
       try {
         await verifyOtp(email, code);
-        const target =
-          nextParam && nextParam.startsWith("/apply/") ? nextParam : "/apply";
+        // Decide where to go next:
+        //   resetMode → forgot-password → force set-password with reset hint
+        //   otherwise → check whether the user already has a password; if
+        //     not, force them through SetPasswordPage so first-time users
+        //     end up password-protected. /auth/me carries the flag.
+        let target;
+        if (resetMode) {
+          target = "/apply/set-password?reset=1";
+        } else {
+          let hasPassword = true;
+          try {
+            const me = await authApi.getMe();
+            hasPassword = !!me?.password_set;
+          } catch {
+            // If /me fails we fall through to the regular target — the
+            // SetPasswordPage isn't a hard requirement on every signin.
+          }
+          if (!hasPassword) {
+            target = "/apply/set-password";
+          } else {
+            target =
+              nextParam && nextParam.startsWith("/apply/")
+                ? nextParam
+                : "/apply";
+          }
+        }
         navigate(target, { replace: true });
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
@@ -66,7 +96,7 @@ export default function VerifyPage() {
         setVerifying(false);
       }
     },
-    [code, email, navigate, nextParam, verifyOtp],
+    [code, email, navigate, nextParam, resetMode, verifyOtp],
   );
 
   const onResend = useCallback(async () => {

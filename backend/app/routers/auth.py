@@ -36,7 +36,9 @@ from ..deps import get_current_user
 from ..models.auth import (
     OTPRequest,
     OTPVerify,
+    PasswordSignIn,
     RefreshRequest,
+    SetPassword,
     SimpleOK,
     TokenResponse,
     UserInfo,
@@ -67,6 +69,18 @@ _REQUEST_OTP_WINDOW_S = 15 * 60  # per 15 minutes per email
 
 _VERIFY_OTP_MAX = 5              # 5 attempts (success or fail — brute-force defence)
 _VERIFY_OTP_WINDOW_S = 15 * 60   # per 15 minutes per email
+
+# Password-auth: 5 attempts per 15 minutes per email. Anything tighter would
+# punish legitimate users on a typo; anything looser would let a botnet brute
+# force a single account given enough emails to spread across.
+_PWD_SIGNIN_MAX = 5
+_PWD_SIGNIN_WINDOW_S = 15 * 60
+
+# Set-password is per-user (Bearer-keyed) — 5/hour is plenty for the legitimate
+# "set initial password" + "change password" flows and stops a stolen-token
+# attacker from rotating credentials at speed.
+_SET_PASSWORD_MAX = 5
+_SET_PASSWORD_WINDOW_S = 60 * 60
 
 
 def _reset_email_rate_limits() -> None:
@@ -246,13 +260,35 @@ async def logout(current_user: dict = Depends(get_current_user)):
     return SimpleOK(ok=True)
 
 
+def _password_set_for(user_id: str) -> bool:
+    """Read `app_metadata.password_set` from auth.users for this user.
+
+    We stamp this flag in /auth/set-password rather than poking at the
+    encrypted_password column directly. Supabase doesn't expose the column
+    on its admin API (and rightly so), and a custom SQL function or schema
+    column would mean another migration. The metadata flag is the cleanest
+    no-migration signal.
+    """
+    try:
+        admin = get_admin_client()
+        res = admin.auth.admin.get_user_by_id(user_id)
+        user = getattr(res, "user", None) or res
+        meta = getattr(user, "app_metadata", None) or {}
+        return bool(meta.get("password_set", False))
+    except Exception:
+        # Failing closed (return False) means a transient admin-API blip
+        # would re-prompt the user to set a password. Annoying but harmless.
+        log.warning("password_set lookup failed", extra={"user_id": user_id})
+        return False
+
+
 @router.get(
     "/me",
     response_model=UserMe,
     dependencies=[Depends(per_user_rate_limit("auth-me", 120, 60))],
 )
 async def me(current_user: dict = Depends(get_current_user)):
-    """Return the caller's profiles row."""
+    """Return the caller's profiles row + password_set flag."""
     req_id = _new_request_id()
     try:
         res = (
@@ -274,8 +310,168 @@ async def me(current_user: dict = Depends(get_current_user)):
             f"Unable to load profile (ref {req_id}).",
         )
 
+    password_set = _password_set_for(current_user["user_id"])
+
     rows = res.data or []
     if not rows:
         # Edge case: auth user exists but handle_new_user trigger didn't fire.
-        return UserMe(id=current_user["user_id"], email=current_user["email"])
-    return UserMe.model_validate(rows[0])
+        return UserMe(
+            id=current_user["user_id"],
+            email=current_user["email"],
+            password_set=password_set,
+        )
+    row = {**rows[0], "password_set": password_set}
+    return UserMe.model_validate(row)
+
+
+# ─── Password sign-in (Phase B) ─────────────────────────────────
+#
+# Sign in with email + password. Returns the same TokenResponse shape as
+# /auth/verify-otp so the frontend can use one onSuccess code path.
+#
+# Same anti-enumeration response policy as request-otp: any failure mode
+# (no such email, wrong password, no password set) returns the same generic
+# 401, so an attacker can't tell which.
+@router.post("/sign-in-password", response_model=TokenResponse)
+async def sign_in_password(payload: PasswordSignIn, request: Request):
+    email = payload.email.lower().strip()
+    # Per-email bucket — a single email being hammered with bad passwords
+    # gets locked, but the limit doesn't cross-pollinate across users (so
+    # one applicant's typo storm doesn't block their colleague).
+    check_and_record("sign-in-password", email, _PWD_SIGNIN_MAX, _PWD_SIGNIN_WINDOW_S)
+
+    req_id = _new_request_id()
+    try:
+        anon = get_anon_client()
+        result = anon.auth.sign_in_with_password(
+            {"email": email, "password": payload.password}
+        )
+    except Exception as exc:
+        log.info(
+            "auth.sign-in-password failed",
+            extra={"auth_event": "password_signin_failed", "ref": req_id,
+                   "email_hash": hash(email)},
+        )
+        if _is_supabase_rate_limit(exc):
+            return _error(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "rate_limited",
+                "Too many sign-in attempts. Try again in a few minutes.",
+            )
+        # Generic 401 for "invalid credentials", "user not found", and "no
+        # password set on this account" — frontend renders one message.
+        return _error(
+            status.HTTP_401_UNAUTHORIZED,
+            "invalid_credentials",
+            "Invalid email or password.",
+        )
+
+    session = getattr(result, "session", None)
+    user = getattr(result, "user", None)
+    if session is None or user is None:
+        return _error(
+            status.HTTP_401_UNAUTHORIZED,
+            "invalid_credentials",
+            "Invalid email or password.",
+        )
+
+    # Audit the successful signin — same shape as verify-otp's audit row.
+    try:
+        get_admin_client().table("audit_logs").insert(
+            {
+                "user_id": user.id,
+                "action": "auth.password_signin",
+                "metadata": {"request_id": req_id},
+                "ip_address": request.client.host if request.client else None,
+                "user_agent": request.headers.get("user-agent"),
+            }
+        ).execute()
+    except Exception:
+        log.warning("auth.password-signin audit insert failed",
+                    extra={"ref": req_id, "user_id": user.id})
+
+    return TokenResponse(
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        user=UserInfo(id=user.id, email=user.email),
+    )
+
+
+# ─── Set / change password (Phase B) ────────────────────────────
+#
+# Sets the password for the currently-authenticated user (Bearer required).
+# Uses the admin client to update the password and stamp `app_metadata.
+# password_set = true` so /auth/me can report the flag without a SQL
+# function or schema change.
+#
+# The "Secure password change" Supabase setting requires the user to have
+# logged in within the last 24h (session-recency check happens server-side
+# inside Supabase) — meaning a stolen long-lived refresh token alone can't
+# rotate the password. After 24h, the user must re-OTP first.
+@router.post(
+    "/set-password",
+    response_model=SimpleOK,
+    dependencies=[Depends(per_user_rate_limit("auth-set-password",
+                                              _SET_PASSWORD_MAX,
+                                              _SET_PASSWORD_WINDOW_S))],
+)
+async def set_password(
+    payload: SetPassword,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["user_id"]
+    req_id = _new_request_id()
+
+    try:
+        admin = get_admin_client()
+        # Merge with existing app_metadata so we don't blow away anything
+        # else that might land there in the future.
+        existing = admin.auth.admin.get_user_by_id(user_id)
+        existing_user = getattr(existing, "user", None) or existing
+        prev_meta = dict(getattr(existing_user, "app_metadata", None) or {})
+        prev_meta["password_set"] = True
+
+        admin.auth.admin.update_user_by_id(
+            user_id,
+            {"password": payload.password, "app_metadata": prev_meta},
+        )
+    except Exception as exc:
+        log.exception(
+            "auth.set-password failed",
+            extra={"auth_event": "set_password_failed", "ref": req_id,
+                   "user_id": user_id},
+        )
+        msg = str(exc).lower()
+        # Supabase rejects weak passwords with a 422 / "weak_password" code.
+        # Translate to a 422 the frontend can show inline next to the field.
+        if "weak" in msg or "password" in msg and "must" in msg:
+            return _error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "weak_password",
+                "Password doesn't meet the strength requirements. "
+                "It must be at least 8 characters with upper- and lower-case "
+                "letters, a digit, and a symbol.",
+            )
+        return _error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "set_password_failed",
+            f"Could not update password (ref {req_id}).",
+        )
+
+    # Audit the change — matches the OTP/password-signin audit shape.
+    try:
+        get_admin_client().table("audit_logs").insert(
+            {
+                "user_id": user_id,
+                "action": "auth.password_set",
+                "metadata": {"request_id": req_id},
+                "ip_address": request.client.host if request.client else None,
+                "user_agent": request.headers.get("user-agent"),
+            }
+        ).execute()
+    except Exception:
+        log.warning("auth.set-password audit insert failed",
+                    extra={"ref": req_id, "user_id": user_id})
+
+    return SimpleOK(ok=True, message="Password updated.")
