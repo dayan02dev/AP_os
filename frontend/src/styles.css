@@ -2884,3 +2884,249 @@ kbd {
 .eir-done-tl-item:not(.is-reached) .eir-done-tl-desc {
   color: var(--ink-dim);
 }
+
+
+/* =========================================================
+   Responsive — Phase B+. The main layout is desktop-first;
+   this block scales it down to tablet (≤768px) and phone
+   (≤480px). Targets 44px+ tap targets, single-column grids,
+   horizontal-scroll where stacking would lose context, and
+   safe-area insets for notched phones.
+   ========================================================= */
+
+/* Make horizontal-overflowing children safe on narrow viewports
+   without changing the desktop layout. */
+@media (max-width: 768px) {
+  html, body { overflow-x: hidden; }
+
+  /* Frame — already 16/18 padding; tighten further for portrait phones */
+  .eir-frame {
+    padding: 14px 16px 96px;
+    gap: 18px;
+  }
+
+  /* ===== Header ===== */
+  /* Wrap the brand row but keep the home button + sign-out controls
+     visually paired. Drop the divider, IISc logo, and theme tag —
+     the ARTPARK mark alone is enough on small screens. */
+  .eir-header {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding-bottom: 12px;
+  }
+  .eir-header-left { gap: 10px; flex: 1 1 auto; min-width: 0; }
+  .eir-header-right { gap: 8px; }
+  .eir-home-link {
+    padding: 8px 10px;
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+  }
+  .eir-header-sep { display: none; }
+  .eir-brand { gap: 8px; min-width: 0; }
+  .eir-brand-iisc { height: 32px; }
+  .eir-brand-artpark { height: 30px; }
+  .eir-brand-divider { height: 26px; }
+  .eir-theme-tag { display: none; }
+
+  /* Truncate the user email chip so it doesn't push sign-out off-screen */
+  .eir-header-user { padding: 6px 8px; max-width: 180px; min-width: 0; }
+  .eir-header-user-email {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 110px;
+  }
+
+  /* ===== Welcome / titles ===== */
+  .eir-welcome-title { font-size: clamp(34px, 9vw, 56px); margin-bottom: 18px; }
+  .eir-welcome-lede { font-size: 16px; margin-bottom: 28px; }
+
+  /* ===== Section intro ===== */
+  .eir-section-intro-body { padding: 24px 0; }
+  .eir-section-intro-index { font-size: clamp(72px, 22vw, 140px); }
+  .eir-section-intro-title { font-size: clamp(28px, 7vw, 44px); }
+
+  /* ===== Question screens ===== */
+  .eir-q-prompt { font-size: clamp(24px, 6vw, 36px) !important; }
+  .eir-q-help { font-size: 14px; }
+  .eir-q-input-wrap { margin-bottom: 22px; }
+  .eir-q-actions { flex-wrap: wrap; gap: 10px; }
+
+  /* Inputs and textareas — bump font-size to ≥16px so iOS Safari
+     doesn't auto-zoom on focus. */
+  .eir-input,
+  .eir-textarea,
+  .eir-input-inline { font-size: 16px; }
+  .eir-otp-input { font-size: 22px; letter-spacing: 0.5em; }
+
+  /* Single/multi-select option cards: bigger tap area, slightly
+     less horizontal padding so long labels still fit. */
+  .eir-option {
+    padding: 14px 14px;
+    font-size: 15px;
+    gap: 10px;
+    min-height: 52px;
+  }
+  .eir-option:hover { transform: none; }
+
+  /* "Other → text input" inline field: drop the 44px indent so it
+     uses the full row width on phones. */
+  .eir-input-other { margin-left: 0; max-width: 100%; }
+
+  /* ===== Buttons ===== */
+  /* Primary actions go full-width on phones (typical mobile pattern).
+     The keyboard-shortcut chip is hidden — physical keyboard isn't
+     the primary input on touch. */
+  .eir-btn { width: 100%; justify-content: center; padding: 14px 16px; min-height: 48px; }
+  .eir-btn-key { display: none; }
+  .eir-q-actions .eir-btn:not(:only-child) { width: auto; flex: 1 1 auto; }
+
+  /* ===== Done / submitted screen ===== */
+  .eir-done-stamp {
+    transform: none;
+    margin: 0 auto 20px;
+  }
+  .eir-done-title { font-size: clamp(30px, 7vw, 48px); }
+  .eir-done-lede { font-size: 16px; }
+
+  /* Milestone timeline — drop the indent so the line + body share
+     the available width. */
+  .eir-done-timeline-list { padding-left: 0; }
+  .eir-done-tl-head { flex-wrap: wrap; gap: 4px; }
+  .eir-done-tl-title { font-size: 14px; }
+
+  /* Answers grid: was a desktop key/value 2-col, now a stacked
+     label-on-top-of-value layout (already at 560px — keep as-is). */
+
+  /* ===== Returning user dashboard ===== */
+  /* Tabs already drop labels at 560px. Cards become full-width. */
+  .eir-tabs-nav { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
+  .eir-tabs-item { flex: 1 0 auto; min-width: 88px; }
+  .eir-tabs-panel { padding: 0; }
+  .eir-ret-card { padding: 18px 16px; }
+  .eir-ret-card-head { flex-wrap: wrap; gap: 8px; }
+  .eir-ret-card-title { font-size: 16px; line-height: 1.4; }
+  .eir-ret-pipeline { flex-wrap: wrap; }
+
+  /* ===== Profile screen ===== */
+  /* The 2-column grid in profile becomes 1-col on phones. */
+  .eir-profile-grid2 { grid-template-columns: 1fr !important; gap: 16px; }
+  .eir-profile-section { padding: 18px 0; }
+  .eir-profile-section-title { font-size: 18px; }
+
+  /* ===== Auth (signin / verify / set-password) ===== */
+  .eir-auth-body { padding: 8px 0; }
+  .eir-auth-form { max-width: 100%; }
+
+  /* ===== Footer ===== */
+  .eir-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding-top: 12px;
+    font-size: 10.5px;
+  }
+  .eir-footer-nav { width: 100%; justify-content: flex-end; }
+
+  /* ===== Section progress bar (6 segments) ===== */
+  /* Tighten so 6 segments fit on a phone without wrapping; drop the
+     numeric labels under each segment to save vertical space. */
+  .eir-pb-sections {
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+  }
+  .eir-pb-seg-label { display: none; }
+
+  /* ===== Upload zone ===== */
+  .eir-upload-drop,
+  .eir-filedrop { padding: 28px 16px; }
+
+  /* ===== Coordinate / breadcrumb header line ===== */
+  .eir-coord {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    font-size: 10px;
+  }
+  .eir-coord::before, .eir-coord::after { display: none; }
+}
+
+/* Smaller breakpoint — tight phones in portrait. Strip the home label
+   text (icon arrow only), drop "sign out" word for the arrow, etc. */
+@media (max-width: 480px) {
+  .eir-frame { padding: 12px 12px 88px; }
+
+  /* Header: just an arrow for HOME, just the brand mark, ellipsis email */
+  .eir-home-label { display: none; }
+  .eir-home-link {
+    padding: 8px 10px;
+    min-width: 36px;
+    justify-content: center;
+  }
+  .eir-brand-iisc { height: 26px; }
+  .eir-brand-artpark { height: 26px; }
+  .eir-brand-divider { display: none; }
+
+  .eir-header-user { max-width: 132px; }
+  .eir-header-user-email { max-width: 70px; }
+  .eir-header-user-cog { display: none; }
+
+  .eir-header-logout {
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+
+  /* Big titles: clamp aggressively */
+  .eir-welcome-title { font-size: clamp(28px, 10vw, 42px); }
+  .eir-done-title { font-size: clamp(26px, 8vw, 38px); }
+  .eir-section-intro-index { font-size: clamp(64px, 28vw, 110px); }
+
+  /* Welcome stats: stack to single col */
+  .eir-welcome-meta { grid-template-columns: 1fr 1fr; row-gap: 14px; padding: 14px 0; }
+  .eir-welcome-stat { padding: 0 12px; }
+  .eir-welcome-stat-val { font-size: 22px; }
+
+  /* Stamp scaling */
+  .eir-done-stamp { padding: 14px 18px; }
+  .eir-done-stamp-id { font-size: 18px; }
+
+  /* Profile danger row stacks */
+  .eir-profile-danger-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .eir-profile-danger-row .eir-btn { width: 100%; }
+
+  /* Tabs: minimum tap target */
+  .eir-tabs-item { padding: 12px 8px; min-width: 64px; }
+
+  /* Coord line tiny */
+  .eir-coord { font-size: 9.5px; letter-spacing: 0.08em; }
+}
+
+/* Honour user's explicit safe-area insets on iOS notched devices. The
+   frame already pads heavily; we just bump the bottom-pad so the FAB-
+   style fixed footer doesn't overlap the home indicator. */
+@supports (padding: max(0px)) {
+  @media (max-width: 768px) {
+    .eir-frame {
+      padding-bottom: max(96px, env(safe-area-inset-bottom));
+      padding-left: max(16px, env(safe-area-inset-left));
+      padding-right: max(16px, env(safe-area-inset-right));
+    }
+  }
+}
+
+/* Reduced-motion users: kill non-essential transforms and transitions.
+   The hover/focus animations elsewhere in the file aren't critical for
+   feedback — clear focus rings already do the job. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
