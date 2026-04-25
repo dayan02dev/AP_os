@@ -65,16 +65,21 @@ WRITABLE_FIELDS: set[str] = set(ApplicationUpdate.model_fields.keys())
 ALWAYS_REQUIRED: list[str] = [
     # basic
     "basic_has_team", "basic_full_name", "basic_phone", "basic_email",
-    "basic_org", "basic_degree", "basic_incubators", "basic_hear_about",
-    # problem
-    "problem_defined",
-    # solution
-    "solution_stage", "solution_describe", "solution_core_tech", "solution_ten_x",
-    "solution_hurdles", "solution_moat", "solution_national_scale", "solution_customers",
-    # execution
-    "execution_will_break", "execution_milestone", "execution_budget", "execution_failure",
-    # evidence (deck is required; files + video are optional)
-    "evidence_deck",
+    "basic_org", "basic_degree",
+    # Bucket 3: replaced `basic_incubators` (single open-text) with the
+    # two-step `incubator_association` (Yes/No) + conditional `incubator_details`.
+    "basic_incubator_association",
+    "basic_hear_about",
+    # problem — manager's spec asks problemDescribe always (no longer gated).
+    "problem_defined", "problem_describe",
+    # solution — manager's spec drops tenX/hurdles/moat/nationalScale/customers
+    # in favour of a single optional `contrarian_insight`. stage stays in
+    # the DB column under solution_* but is rendered in the Execution section.
+    "solution_stage", "solution_describe", "solution_core_tech",
+    # execution — manager's spec drops `budget` and `evidence_deck`, adds
+    # `infrastructure` as a required column. `failure` was required in the
+    # pre-spec wizard but is optional in the new spec, so it leaves this list.
+    "execution_milestone", "execution_infrastructure",
     # declarations (newsletter is optional)
     "declaration_truthful", "declaration_ref_checks", "declaration_terms",
 ]
@@ -158,9 +163,15 @@ def _required_fields(row: dict[str, Any]) -> list[str]:
     if row.get("basic_has_team") == "Yes — I have co-founders":
         required.append("basic_teammates")
 
-    pd = row.get("problem_defined")
-    if pd and not pd.startswith("Still exploring"):
-        required.extend(["problem_describe", "problem_importance"])
+    # Bucket 3: incubator details only required if user said Yes.
+    if row.get("basic_incubator_association") == "Yes":
+        required.append("basic_incubator_details")
+
+    # Bucket 3: willBreak (the technical-hurdles question, stored in
+    # execution_will_break) is asked only when stage isn't "Still exploring".
+    stage = row.get("solution_stage")
+    if stage and stage != "Still exploring":
+        required.append("execution_will_break")
 
     return required
 

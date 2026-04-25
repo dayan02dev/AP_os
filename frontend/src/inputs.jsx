@@ -1,6 +1,7 @@
 // Input components for the TIR application
 
 import { useState, useRef, useEffect } from "react";
+import { ApiError, apiCall } from "./lib/api.js";
 import { EmailInput as EnhancedEmailInput, validateEmail } from "./validators.jsx";
 
 function ShortInput({ q, value, onChange, autoFocus }) {
@@ -222,6 +223,162 @@ function FilesInput({ q, value, onChange }) {
   );
 }
 
+// MilestoneFilesInput — backed by the /applications/me/milestone-files
+// endpoints. The `value` prop is the JSONB array stored on the application
+// row; onChange is called with the latest server-confirmed list after each
+// upload/delete so the parent stays in sync without redundant PATCH writes.
+//
+// Files go straight to the private 'milestone-files' bucket via the backend
+// (multipart upload). No signed-URL dance — for ~3 files × 5 MiB it's
+// simpler and the bucket is RLS-locked anyway.
+function MilestoneFilesInput({ q, value, onChange }) {
+  const inputRef = useRef(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [busyFor, setBusyFor] = useState(null); // file_uuid being deleted, or "upload"
+  const [err, setErr] = useState(null);
+
+  const files = Array.isArray(value) ? value : [];
+  const maxFiles = q.maxFiles || 3;
+  const maxBytes = (q.maxMB || 5) * 1024 * 1024;
+  const remaining = maxFiles - files.length;
+
+  const handleFiles = async (fileList) => {
+    setErr(null);
+    if (busy) return;
+    const incoming = Array.from(fileList || []).slice(0, remaining);
+    if (incoming.length === 0) return;
+
+    let latest = files;
+    for (const f of incoming) {
+      if (f.size > maxBytes) {
+        setErr(`${f.name} exceeds ${q.maxMB || 5} MiB.`);
+        continue;
+      }
+      setBusy(true);
+      setBusyFor("upload");
+      try {
+        const fd = new FormData();
+        fd.append("file", f);
+        const result = await apiCall("/applications/me/milestone-files", {
+          method: "POST",
+          body: fd,
+          timeoutMs: 60_000,
+        });
+        latest = result.files || latest;
+        onChange(latest);
+      } catch (e) {
+        if (e instanceof ApiError) {
+          if (e.code === "file_cap_reached") setErr(`You can attach at most ${maxFiles} files.`);
+          else if (e.code === "too_large") setErr(`${f.name} exceeds the size limit.`);
+          else if (e.code === "unsupported_media") setErr(`${f.name} — file type not allowed.`);
+          else if (e.code === "application_locked") setErr("Application is already submitted.");
+          else setErr(e.message || "Upload failed.");
+        } else {
+          setErr(e?.message || "Upload failed.");
+        }
+        break;
+      } finally {
+        setBusy(false);
+        setBusyFor(null);
+      }
+    }
+  };
+
+  const removeFile = async (file_uuid) => {
+    if (busy) return;
+    setErr(null);
+    setBusy(true);
+    setBusyFor(file_uuid);
+    try {
+      const result = await apiCall(
+        `/applications/me/milestone-files/${encodeURIComponent(file_uuid)}`,
+        { method: "DELETE" },
+      );
+      onChange(result.files || []);
+    } catch (e) {
+      setErr(e?.message || "Couldn't remove file.");
+    } finally {
+      setBusy(false);
+      setBusyFor(null);
+    }
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (remaining > 0 && !busy) handleFiles(e.dataTransfer.files);
+  };
+
+  return (
+    <div className="eir-filedrop-wrap">
+      <div
+        className={`eir-filedrop ${dragOver ? "is-drag" : ""} ${files.length ? "has-file" : ""} ${remaining === 0 || busy ? "is-disabled" : ""}`}
+        onDragOver={(e) => {
+          if (remaining === 0 || busy) return;
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        onClick={() => {
+          if (remaining > 0 && !busy) inputRef.current?.click();
+        }}
+        style={remaining === 0 || busy ? { opacity: 0.6, cursor: "not-allowed" } : undefined}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          hidden
+          multiple
+          accept={q.accept}
+          onChange={(e) => handleFiles(e.target.files)}
+          disabled={remaining === 0 || busy}
+        />
+        <div className="eir-filedrop-icon">
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.25">
+            <rect x="6" y="4" width="20" height="24" />
+            <path d="M16 12 V24 M10 18 L16 12 L22 18" />
+          </svg>
+        </div>
+        <div className="eir-filedrop-main">
+          {busyFor === "upload"
+            ? "Uploading…"
+            : remaining === 0
+              ? `${maxFiles} of ${maxFiles} files attached`
+              : `Drop files here, or click to browse · ${remaining} of ${maxFiles} slots left`}
+        </div>
+        <div className="eir-filedrop-meta eir-mono">
+          {(q.accept || ".pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg").replace(/\./g, "")} · max {q.maxMB || 5} MiB each
+        </div>
+      </div>
+      {err && <div className="eir-mono eir-block-reason" style={{ marginTop: 10 }}>↳ {err}</div>}
+      {files.length > 0 && (
+        <div className="eir-file-list">
+          {files.map((f) => {
+            const isBusyHere = busy && busyFor === f.file_uuid;
+            return (
+              <div key={f.file_uuid} className="eir-file-row">
+                <span className="eir-mono eir-file-ok">✓</span>
+                <span className="eir-file-name">{f.name}</span>
+                <span className="eir-mono eir-dim">{Math.round((f.size || 0) / 1024)} KB</span>
+                <button
+                  className="eir-file-x"
+                  onClick={() => removeFile(f.file_uuid)}
+                  disabled={busy}
+                  title="Remove"
+                >
+                  {isBusyHere ? "…" : "✕"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DeclarationsInput({ q, value, onChange }) {
   const v = value || {};
   const toggle = (key) => onChange({ ...v, [key]: !v[key] });
@@ -418,6 +575,7 @@ function QuestionInput(props) {
     case "single": return <SingleInput {...props} />;
     case "multi": return <MultiInput {...props} />;
     case "files": return <FilesInput {...props} />;
+    case "milestoneFiles": return <MilestoneFilesInput {...props} />;
     case "declarations": return <DeclarationsInput {...props} />;
     case "teamInvite": return <TeamInviteInput {...props} />;
     default: return <div>unknown: {props.q.kind}</div>;
@@ -438,6 +596,10 @@ function isAnswered(q, value) {
     case "files":
       if (q.multi) return Array.isArray(value) && value.length > 0;
       return !!value;
+    case "milestoneFiles":
+      // Always considered "answered" — it's optional per the manager spec.
+      // q.optional short-circuits above; this branch is here for symmetry.
+      return true;
     case "declarations":
       return q.items.filter(i => i.key !== "newsletter").every(i => value && value[i.key]);
     case "teamInvite":
@@ -464,6 +626,8 @@ function whyBlocked(q, value) {
     case "files":
       if (q.multi) return (Array.isArray(value) && value.length > 0) ? null : "upload at least one file";
       return value ? null : "upload a file to continue";
+    case "milestoneFiles":
+      return null;
     case "declarations": {
       const missing = q.items.filter(i => i.key !== "newsletter" && !(value && value[i.key]));
       if (missing.length === 0) return null;
@@ -480,6 +644,6 @@ function whyBlocked(q, value) {
 
 export {
   ShortInput, EmailQuestionInput, LongInput, SingleInput, MultiInput,
-  FilesInput, DeclarationsInput, TeamInviteInput,
+  FilesInput, MilestoneFilesInput, DeclarationsInput, TeamInviteInput,
   QuestionInput, isAnswered, whyBlocked,
 };

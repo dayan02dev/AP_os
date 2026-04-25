@@ -28,7 +28,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from .config import settings
-from .routers import admin, applications, auth, health, resume, support
+from .routers import admin, applications, auth, health, milestone_files, resume, support
 from .utils.logging import configure_logging, request_id_var
 from .utils.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
 from .utils.rate_limit import limiter
@@ -125,6 +125,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(applications.router)
+app.include_router(milestone_files.router)
 app.include_router(resume.router)
 app.include_router(support.router)
 app.include_router(admin.router)

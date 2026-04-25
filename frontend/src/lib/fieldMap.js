@@ -17,34 +17,45 @@ export const QUESTION_TO_COLUMN = Object.freeze({
   email: "basic_email",
   org: "basic_org",
   degree: "basic_degree",
-  incubators: "basic_incubators",
+  incubators: "basic_incubators", // legacy — kept so old draft rows still load
+  // Bucket 3: replaces `incubators` with a Yes/No + conditional details pair.
+  incubatorAssociation: "basic_incubator_association",
+  incubatorDetails: "basic_incubator_details",
   hearAbout: "basic_hear_about",
 
   // Section 03 — problem
   problemDefined: "problem_defined",
   problemDescribe: "problem_describe",
-  problemImportance: "problem_importance",
+  problemImportance: "problem_importance", // legacy
 
   // Section 04 — solution
   stage: "solution_stage",
   solutionDescribe: "solution_describe",
   coreTech: "solution_core_tech",
-  tenX: "solution_ten_x",
-  hurdles: "solution_hurdles",
-  moat: "solution_moat",
-  nationalScale: "solution_national_scale",
-  customers: "solution_customers",
+  tenX: "solution_ten_x",                   // legacy
+  hurdles: "solution_hurdles",              // legacy
+  moat: "solution_moat",                    // legacy
+  nationalScale: "solution_national_scale", // legacy
+  customers: "solution_customers",          // legacy
+  // Bucket 3: contrarian-insight question, optional.
+  contrarianInsight: "solution_contrarian_insight",
 
   // Section 05 — execution
   willBreak: "execution_will_break",
   milestone: "execution_milestone",
-  budget: "execution_budget",
+  budget: "execution_budget",  // legacy — replaced by `infrastructure`
   failure: "execution_failure",
+  // Bucket 3: infrastructure replaces budget; hwSwIntegration is new optional;
+  // milestoneFiles is the JSONB array of attached files (managed by the
+  // /applications/me/milestone-files endpoints, not by PATCH /me).
+  infrastructure: "execution_infrastructure",
+  hwSwIntegration: "execution_hwsw_integration",
+  milestoneFiles: "execution_milestone_files",
 
   // Section 06 — evidence
   evidenceFiles: "evidence_files",
   video: "evidence_video_url",
-  deck: "evidence_deck",
+  deck: "evidence_deck", // legacy — pitch-deck question removed in new spec
 
   // Section 07 — declaration: handled by the declaration helpers below.
 });
@@ -64,6 +75,15 @@ const DECLARATION_KEY_TO_COLUMN = Object.freeze({
 /**
  * Convert {questionId: value} updates into a {dbColumn: value} patch body.
  * `declarations` is expanded into four booleans.
+ *
+ * Note on `milestoneFiles`: the JSONB column is normally written by the
+ * dedicated /applications/me/milestone-files endpoints (multipart upload).
+ * Including it here means the regular PATCH echoes the latest array back
+ * during the optimistic local update — keeping the wizard in sync without
+ * a refetch. The trade-off: if two tabs are open and one uploads a file,
+ * the other can clobber the JSONB with its stale list on the next save.
+ * Acceptable for the applicant flow (single tab is typical); evaluators
+ * use the service-role client and won't hit this path.
  */
 export function expandForPatch(updates) {
   const patch = {};

@@ -1,6 +1,22 @@
-// ARTPARK TIR Application — question schema matching the official spec.
+// ARTPARK TIR Application — question schema (Bucket 3, manager spec).
 // Section 1 (Professional Profile) is handled by the PRE-QUESTION upload step.
 // Section 2 Basic Info fields are tagged as cvAutoFill so they show a "parsed" chip.
+//
+// Bucket 3 changes vs. previous schema:
+//   • basic: replaced single `incubators` field with two-step
+//     `incubatorAssociation` (Yes/No) + conditional `incubatorDetails`.
+//   • problem: removed `problemImportance` (folded into `problemDescribe`);
+//     `problemDescribe` is now always asked first, ungated by problemDefined.
+//   • solution: removed tenX, hurdles, moat, nationalScale, customers; added
+//     optional `contrarianInsight`.
+//   • execution: `stage` moves here from solution (with greeting prompt);
+//     `willBreak` becomes conditional on stage; `budget` removed; new required
+//     `infrastructure`; new optional `hwSwIntegration`; `milestone` keeps its
+//     own follow-up `milestoneFiles` question (optional file uploads).
+//   • evidence: removed `deck` (pitch deck no longer collected).
+//
+// Phase A polish PRESERVED: section indices 01–06 (not 02–07), "Highest
+// degree" (not "Highest technology degree"), softened newsletter copy.
 
 const SECTIONS = [
   {
@@ -56,13 +72,25 @@ const SECTIONS = [
         cvAutoFill: true,
         required: true,
       },
+      // Bucket 3: two-step incubator capture.
       {
-        id: "incubators",
-        kind: "short",
-        prompt: "Any other incubators or accelerators — past or present?",
-        help: "Write 'None' if not. Note: DST rules prevent companies from drawing DST grants from multiple sources.",
-        placeholder: "e.g. None / IIT Madras Incubation Cell",
+        id: "incubatorAssociation",
+        kind: "single",
+        prompt: "Are you currently (or have you been) associated with any other incubator or accelerator?",
+        help: "There are many incubators and accelerators, and they all add value in different ways. We need to understand any prior association — especially any funding or grants — because of DST overlap rules.",
+        options: ["No", "Yes"],
         required: true,
+      },
+      {
+        id: "incubatorDetails",
+        kind: "long",
+        prompt: "Tell us more about your incubator/accelerator association.",
+        help: "Names, dates, any funding or grants received, and the nature of support (mentorship, infrastructure, equity, etc.). Note: DST rules prevent companies from drawing DST grants from multiple sources.",
+        placeholder: "e.g. IIT Madras Incubation Cell — 2024, ₹10L seed grant, equity-free…",
+        maxChars: 800,
+        minWords: 20,
+        required: true,
+        conditional: (a) => a.incubatorAssociation === "Yes",
       },
       {
         id: "hearAbout",
@@ -109,6 +137,18 @@ const SECTIONS = [
     blurb: "The thing that pulled you in. What won't let you go. Clarity beats jargon — imagine you're telling a brilliant friend from an adjacent technology field.",
     questions: [
       {
+        id: "problemDescribe",
+        kind: "long",
+        // Greeting prompt: addresses the applicant by first name. Falls back
+        // to "there" until fullName is filled.
+        prompt: (a) => `OK ${((a && a.fullName) || "there").split(" ")[0]} — what specific "critical problem" in your chosen sector are you solving?`,
+        help: "Please make sure you answer these questions as part of your response: Who is feeling the pain because it's unsolved? Can you quantify it — market size, urgency, human cost, environmental impact? Why is now the right time, and how does solving it contribute to India's transformation and global competitiveness?",
+        placeholder: "Smallholder farmers lack access to real-time soil intelligence, leading to 20–30% yield loss despite increased fertilizer usage. India has 140M+ hectares of farmland, and inefficient input usage drives ₹1.2L Cr annual losses plus environmental degradation. Now is the time because low-cost edge sensing + on-device ML has crossed the cost threshold for rural deployment…",
+        maxChars: 2000,
+        minWords: 80,
+        required: true,
+      },
+      {
         id: "problemDefined",
         kind: "single",
         prompt: "Is the problem you want to solve well-defined?",
@@ -120,28 +160,6 @@ const SECTIONS = [
         ],
         required: true,
       },
-      {
-        id: "problemDescribe",
-        kind: "long",
-        prompt: "Describe the problem. Why is now the right time to solve it?",
-        help: "Be as specific as you can. Who feels the pain? How often? What's different about today?",
-        placeholder: "Smallholder farmers lack access to real-time soil intelligence, leading to 20–30% yield loss despite increased fertilizer usage…",
-        maxChars: 1000,
-        minWords: 60,
-        required: true,
-        conditional: (a) => a.problemDefined && !a.problemDefined.startsWith("Still exploring"),
-      },
-      {
-        id: "problemImportance",
-        kind: "long",
-        prompt: "Why is this important to solve?",
-        help: "Quantify where you can — market size, urgency, human cost, environmental impact.",
-        placeholder: "India has 140M+ hectares of farmland. Inefficient input usage leads to ₹1.2L Cr annual losses and environmental degradation…",
-        maxChars: 1000,
-        minWords: 40,
-        required: true,
-        conditional: (a) => a.problemDefined && !a.problemDefined.startsWith("Still exploring"),
-      },
     ],
   },
   {
@@ -151,90 +169,39 @@ const SECTIONS = [
     blurb: "How you're approaching it, and what makes your angle defensible.",
     questions: [
       {
-        id: "stage",
-        kind: "single",
-        prompt: "How far along are you?",
-        help: "No wrong answer — we run tracks for every stage.",
-        options: [
-          "Still exploring problem area",
-          "Literature / research stage",
-          "Simulations completed",
-          "Lab demos / proof-of-concept",
-          "Prototype built",
-          "Pilot-ready product",
-          "Deployed in real setting with real users",
-        ],
-        required: true,
-      },
-      {
         id: "solutionDescribe",
         kind: "long",
-        prompt: "Explain your proposed solution and how it connects to the problem.",
-        help: "Clarity beats jargon. Imagine you're telling a brilliant friend from an adjacent field.",
-        placeholder: "We are building a low-cost IoT soil sensor network with AI-based nutrient prediction…",
-        maxChars: 1500,
-        minWords: 60,
+        prompt: "Describe your solution. Does it represent a 10× improvement (on technological, economic or operational metrics) — rather than an incremental gain — over existing state-of-the-art solutions? How so?",
+        help: "As we build for the future, we want to back long-term step-change innovation. The bigger the impact, the more excited we are.",
+        placeholder: "We're building a low-cost IoT soil sensor network with on-device ML for nutrient prediction. Sensor cost drops from ₹15,000 to ₹1,200 and accuracy improves 3× through adaptive calibration — turning what was a per-farm capital expense into a per-acre operating cost…",
+        maxChars: 2000,
+        minWords: 80,
         required: true,
       },
       {
         id: "coreTech",
         kind: "long",
-        prompt: "What's the core technology innovation at the heart of it?",
-        help: "The specific laboratory-proven research or cutting-edge advance you intend to translate.",
-        placeholder: "Magnetic induction sensor and algorithms that are more accurate because of…",
-        maxChars: 1500,
-        minWords: 40,
+        prompt: "What's the core technology that makes this special and hard to replicate?",
+        help: "Please make sure you answer these questions as part of your response: What is the specific lab-proven research or cutting-edge advance (in AI, Robotics, Mechatronics, etc.) you intend to translate? What is the \"unfair advantage\" — is it protected by a patent, a unique design or insight, or a proprietary dataset that others cannot easily replicate?",
+        placeholder: "A magnetic-induction soil sensor architecture (patent pending) combined with an adaptive calibration algorithm trained on a proprietary dataset of 10,000+ Indian soil samples across 7 agro-climatic zones — neither the hardware design nor the dataset can be replicated without years of fieldwork…",
+        maxChars: 2000,
+        minWords: 60,
         required: true,
       },
+      // Bucket 3: replaces tenX/hurdles/moat/nationalScale/customers with a
+      // single optional "contrarian belief" question. Answers in the dropped
+      // five columns are preserved on already-submitted apps but no longer
+      // collected from new applicants.
       {
-        id: "tenX",
+        id: "contrarianInsight",
         kind: "long",
-        prompt: "How is this a 10× improvement — not an incremental one?",
-        help: "Quantify the jump. Incremental gains rarely survive translation; 10× ones can.",
-        placeholder: "Reduces sensor cost from ₹15,000 to ₹1,200 while improving accuracy by 3× through adaptive calibration…",
+        prompt: "What do you believe about your field that most experts disagree with?",
+        help: "Share a contrarian belief, or a genuinely rare insight most experts don't think about. We're looking for sharp, well-formed thinking — not just a hot take.",
+        placeholder: "Most of the field assumes…, but our work suggests…",
         maxChars: 1500,
-        minWords: 40,
-        required: true,
-      },
-      {
-        id: "hurdles",
-        kind: "long",
-        prompt: "What are the primary technical hurdles between lab and real-world deployment?",
-        help: "We want to see you've thought about dirt, rain, bad networks, breaking things.",
-        placeholder: "Handling soil variability, temperature drift, and sensor degradation over long-term deployment…",
-        maxChars: 1500,
-        minWords: 40,
-        required: true,
-      },
-      {
-        id: "moat",
-        kind: "long",
-        prompt: "What's your unfair advantage? Why is it difficult to replicate?",
-        help: "Dataset, IP, team, distribution, insight — pick the strongest one and make it real.",
-        placeholder: "Proprietary dataset from 10,000+ soil samples combined with patented sensor architecture…",
-        maxChars: 1500,
-        minWords: 40,
-        required: true,
-      },
-      {
-        id: "nationalScale",
-        kind: "long",
-        prompt: "How does this contribute to national transformation — and the path to being globally competitive?",
-        help: "Scale thinking. Where does this go over 5–10 years?",
-        placeholder: "Starting with India's agri sector, expanding to Southeast Asia and Africa with similar soil conditions…",
-        maxChars: 1500,
-        minWords: 40,
-        required: true,
-      },
-      {
-        id: "customers",
-        kind: "long",
-        prompt: "Who are your customers, and why will they pay?",
-        help: "Economic or operational value proposition. Be concrete about who holds the budget.",
-        placeholder: "Farmers save ₹5,000 per acre annually on fertilizer, achieving ROI within one crop cycle…",
-        maxChars: 1500,
-        minWords: 40,
-        required: true,
+        minWords: 0,
+        required: false,
+        optional: true,
       },
     ],
   },
@@ -242,47 +209,95 @@ const SECTIONS = [
     id: "execution",
     index: "04",
     label: "Execution Plan",
-    blurb: "How you'll actually get it done.",
+    blurb: "What's your roadmap?",
     questions: [
+      // Bucket 3: stage moves here from solution. DB column stays
+      // `solution_stage` so existing data still loads — this is a UI placement
+      // change, not a column rename.
+      {
+        id: "stage",
+        kind: "single",
+        prompt: (a) => `${((a && a.fullName) || "there").split(" ")[0]}, how far along are you?`,
+        help: "No wrong answer — this just helps us help you better.",
+        options: [
+          "Still exploring",
+          "Literature / research stage",
+          "Simulations completed",
+          "Lab demos / proof of concept",
+          "Prototype built",
+        ],
+        required: true,
+      },
       {
         id: "willBreak",
         kind: "long",
-        prompt: "What are the top 2–3 things that will break moving from lab to real world?",
-        help: "Practical risk awareness. No pretending everything will work.",
-        placeholder: "Sensor calibration drift, connectivity issues in rural areas, and physical wear-and-tear…",
+        prompt: "What are the primary technical hurdles you need to overcome?",
+        help: "Environmental noise, edge cases, material fatigue, latency, etc. What are the top 2–3 things that will break moving from the lab to the real world?",
+        placeholder: "Sensor calibration drift in dusty environments, ROS-to-firmware latency at the edge, and physical wear-and-tear on actuators…",
         maxChars: 1000,
         minWords: 30,
         required: true,
+        // Bucket 3: not asked when applicant is still exploring — the question
+        // presupposes a concrete solution.
+        conditional: (a) => a.stage && a.stage !== "Still exploring",
       },
       {
         id: "milestone",
         kind: "long",
-        prompt: "What's the most critical milestone during this residency? What does success look like?",
-        help: "One or two sharp outcomes beats a vague roadmap.",
-        placeholder: "Deploy 100 pilot units across 3 states with validated performance benchmarks…",
-        maxChars: 1000,
-        minWords: 30,
-        required: true,
-      },
-      {
-        id: "budget",
-        kind: "long",
-        prompt: "Budget for the year — with justification and milestones.",
-        help: "Quarterly milestones tied to line-item spend. You can also upload a PDF/XLS on the Evidence step.",
-        placeholder: "Total ₹45L over 12 months. Q1–Q2 (₹20L): hardware R&D…",
+        prompt: "What are the most critical milestone(s) you aim to achieve during this residency?",
+        help: "What does a successful deployment look like? One or two sharp outcomes beat a vague roadmap. Share quarterly milestones tied to specific outcomes and budgets. You can attach supporting docs in the next step.",
+        placeholder: "Q1: bench-validated prototype. Q2: closed-loop pilot with 3 partner sites. Q3: 100-unit field deployment with measured uptime ≥ 95%…",
         maxChars: 2000,
         minWords: 60,
+        required: true,
+      },
+      // Bucket 3: optional file attach for the milestone question. Backed
+      // by the milestone-files bucket + execution_milestone_files JSONB
+      // column. The MilestoneFilesInput component talks directly to the
+      // /applications/me/milestone-files endpoints — values are NOT echoed
+      // through the regular PATCH /me save (PATCH_EXCLUDE in fieldMap.js).
+      {
+        id: "milestoneFiles",
+        kind: "milestoneFiles",
+        prompt: "Supporting docs for your milestones (optional).",
+        help: "Up to 3 files, 5 MiB each. PDF / XLS / XLSX / CSV / PNG / JPG. Quarterly plans, budget breakdowns, prototype photos, anything that sharpens the milestone above.",
+        maxFiles: 3,
+        maxMB: 5,
+        accept: ".pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg",
+        required: false,
+        optional: true,
+      },
+      // Bucket 3: replaces `budget` (a free-text essay question). Required.
+      {
+        id: "infrastructure",
+        kind: "long",
+        prompt: "What specific advanced infrastructure or facilities are essential for your success during this residency?",
+        help: "E.g., high-performance computing, specialized sensors, rapid prototyping labs, anechoic chambers, wet labs, robotics testbeds.",
+        placeholder: "GPU cluster for training perception models, a 6-DOF motion-capture arena, and CNC + 3D-printing for weekly hardware iterations…",
+        maxChars: 1000,
+        minWords: 25,
         required: true,
       },
       {
         id: "failure",
         kind: "long",
-        prompt: "Tell us about a time a research direction or prototype failed significantly.",
-        help: "How did you pivot? What did it teach you about the path to commercialization? Deep tech rewards delayed gratification — we want to see you've done the time.",
-        placeholder: "In 2022, our first sensor architecture couldn't survive monsoon humidity. We…",
-        maxChars: 500,
+        prompt: "Tell us about a significant research direction or prototype failure — how did you pivot, and what did it teach you about commercialization?",
+        help: "Optional. Deep tech rewards delayed gratification — we want to see you've done the time.",
+        placeholder: "In 2022, our first sensor architecture couldn't survive monsoon humidity. We pivoted to a sealed module after talking to 12 field operators…",
+        maxChars: 1000,
         minWords: 30,
-        required: true,
+        optional: true,
+      },
+      // Bucket 3: new optional question.
+      {
+        id: "hwSwIntegration",
+        kind: "long",
+        prompt: "How do you manage complex hardware-software integration?",
+        help: "Optional. Tell us about a time you had to troubleshoot a system in which physical and digital components interacted unexpectedly.",
+        placeholder: "Our control loop was fine in sim but oscillated on hardware — turned out to be a 12 ms I²C jitter we only caught with a logic analyzer…",
+        maxChars: 1000,
+        minWords: 30,
+        optional: true,
       },
     ],
   },
@@ -309,14 +324,8 @@ const SECTIONS = [
         placeholder: "https://www.loom.com/share/…",
         optional: true,
       },
-      {
-        id: "deck",
-        kind: "files",
-        prompt: "Your 6-slide pitch.",
-        help: "Problem → Solution → Core Tech → Customers → Milestones & Budget → Why You. PDF or PPT, max 10MB.",
-        accept: ".pdf,.ppt,.pptx",
-        required: true,
-      },
+      // Bucket 3: pitch-deck question removed per manager spec. Old
+      // submissions retain `evidence_deck`; new applicants don't see it.
     ],
   },
   {
@@ -334,6 +343,7 @@ const SECTIONS = [
           { key: "truthful", label: "I confirm the information I've submitted is true and relevant to the questions asked." },
           { key: "refChecks", label: "I consent to reference checks." },
           { key: "terms", label: "I agree to the program terms and data policy." },
+          // Phase A polish PRESERVED — softened newsletter copy.
           { key: "newsletter", label: "I'd like to receive updates on my application's progress." },
         ],
         required: true,

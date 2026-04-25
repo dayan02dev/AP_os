@@ -46,6 +46,8 @@ HasTeamValue = Literal[
     "No — going solo for now",
 ]
 
+IncubatorAssociationValue = Literal["Yes", "No"]
+
 # Degree + hearAbout used to be strict Literals; post-launch feedback asked
 # for an "Other — please specify" text capture on both. The frontend now
 # encodes those as `"Other: <free text>"` (or `"Self-taught / Other: …"`),
@@ -108,6 +110,11 @@ class ApplicationUpdate(BaseModel):
     basic_org: str | None = Field(default=None, max_length=_MAX_ORG)
     basic_degree: DegreeValue | None = None
     basic_incubators: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
+    # Bucket 3 (manager spec): two-step incubator capture replaces the single
+    # `basic_incubators` field. Old column kept so already-submitted apps stay
+    # readable; new wizard writes to the new pair.
+    basic_incubator_association: IncubatorAssociationValue | None = None
+    basic_incubator_details: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
     basic_hear_about: HearAboutValue | None = None
 
     # ── Section 03 · Problem & Importance ──
@@ -124,12 +131,22 @@ class ApplicationUpdate(BaseModel):
     solution_moat: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
     solution_national_scale: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
     solution_customers: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
+    # Bucket 3: contrarian-insight question, optional.
+    solution_contrarian_insight: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
 
     # ── Section 05 · Execution Plan ──
     execution_will_break: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
     execution_milestone: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
     execution_budget: str | None = Field(default=None, max_length=_MAX_XLONG_TEXT)
     execution_failure: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
+    # Bucket 3: infrastructure replaces budget in the new spec; hwsw_integration
+    # is a new optional question. milestone_files is the JSONB array of
+    # {file_uuid, path, name, size, mime, uploaded_at} entries written by
+    # /applications/me/milestone-files. The 3-file cap is enforced at DB level
+    # (CHECK constraint in 004_milestone_files_storage.sql).
+    execution_infrastructure: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
+    execution_hwsw_integration: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
+    execution_milestone_files: list[dict[str, Any]] | None = Field(default=None, max_length=3)
 
     # ── Section 06 · Evidence ──
     evidence_files: list[dict[str, Any]] | None = Field(default=None, max_length=_MAX_FILES)
