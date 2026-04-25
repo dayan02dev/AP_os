@@ -23,6 +23,7 @@ export default function VerifyPage() {
   const email = (params.get("email") || "").trim().toLowerCase();
   const nextParam = params.get("next") || "";
   const resetMode = params.get("reset") === "1";
+  const signupMode = params.get("signup") === "1";
   // Dev shortcut: `?code=NNNNNN` pre-fills the OTP. Used by the
   // backend/scripts/dev_get_otp.py one-click URL so you can jump straight
   // into the wizard without typing the code manually.
@@ -135,13 +136,26 @@ export default function VerifyPage() {
           <div className="eir-screen eir-auth">
             <div className="eir-coord eir-mono">
               <span>ARTPARK / TIR.2026</span>
-              <span>verify · 6-digit code</span>
+              <span>
+                {signupMode
+                  ? "sign up · verify email"
+                  : resetMode
+                    ? "reset password · verify email"
+                    : "verify · 6-digit code"}
+              </span>
             </div>
             <form className="eir-auth-body" onSubmit={onSubmit}>
               <h1 className="eir-welcome-title">Check your email.</h1>
               <p className="eir-welcome-lede">
                 We just sent a 6-digit code to <strong>{email || "your address"}</strong>.
                 Enter it below — the code expires in 10 minutes.
+                {signupMode && (
+                  <>
+                    {" "}
+                    Once verified, you'll choose a password — that's what
+                    you'll use to sign in next time.
+                  </>
+                )}
               </p>
 
               <div className="eir-q-input-wrap">

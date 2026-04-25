@@ -1,14 +1,15 @@
-// SignInPage — Phase B: email + password (primary) with an OTP fallback
-// for first-time signups and forgot-password.
+// SignInPage — for existing applicants returning with a password.
 //
 // Flow:
 //   - User types email + password → "Sign in" → /auth/sign-in-password
-//   - User types email only → "Email me a 6-digit code instead" → OTP
-//   - "Forgot password?" link → same OTP flow, with reset hint passed
-//     through so VerifyPage can route to /apply/set-password afterward.
+//   - "Email me a 6-digit code instead" → OTP fallback (covers users who
+//     started with OTP and never set a password yet)
+//   - "Forgot password?" link → same OTP flow, with ?reset=1 hint so
+//     VerifyPage routes to /apply/set-password afterward
+//   - "Sign up" link → /apply/signup for new applicants
 
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
@@ -111,8 +112,7 @@ export default function SignInPage() {
             <form className="eir-auth-body" onSubmit={onPasswordSubmit}>
               <h1 className="eir-welcome-title">Sign in to continue.</h1>
               <p className="eir-welcome-lede">
-                Enter your email and password. New here? Leave the password
-                blank and click <em>Email me a 6-digit code</em>.
+                Enter your email and password to pick up where you left off.
               </p>
 
               <div className="eir-q-input-wrap">
@@ -187,6 +187,26 @@ export default function SignInPage() {
                 >
                   forgot password? ↗
                 </button>
+              </div>
+
+              <div
+                className="eir-auth-alt eir-mono"
+                style={{
+                  marginTop: 22,
+                  paddingTop: 18,
+                  borderTop: "1px dashed var(--line)",
+                }}
+              >
+                New to ARTPARK?{" "}
+                <Link
+                  to={
+                    nextParam
+                      ? `/apply/signup?next=${encodeURIComponent(nextParam)}`
+                      : "/apply/signup"
+                  }
+                >
+                  Create an account ↗
+                </Link>
               </div>
 
               <div className="eir-welcome-foot eir-mono eir-dim" style={{ marginTop: 24 }}>

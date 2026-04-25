@@ -4,7 +4,8 @@
 // Public routes (no auth required):
 //   /                      static marketing (via RootRedirect)
 //   /apply                 welcome screen; Begin button routes to signin
-//   /apply/signin          email OTP request
+//   /apply/signin          email + password (existing users)
+//   /apply/signup          email-only signup → OTP → set-password
 //   /apply/verify          6-digit OTP entry
 //   /apply/support         support ticket form (anon-friendly)
 //
@@ -23,6 +24,7 @@ import ProtectedRoute from "./pages/ProtectedRoute.jsx";
 import RootRedirect from "./pages/RootRedirect.jsx";
 import SetPasswordPage from "./pages/SetPasswordPage.jsx";
 import SignInPage from "./pages/SignInPage.jsx";
+import SignUpPage from "./pages/SignUpPage.jsx";
 import SupportPage from "./pages/SupportPage.jsx";
 import VerifyPage from "./pages/VerifyPage.jsx";
 
@@ -43,6 +45,7 @@ export default function AppRoutes() {
 
       {/* Public auth + support pages */}
       <Route path="/apply/signin" element={<SignInPage />} />
+      <Route path="/apply/signup" element={<SignUpPage />} />
       <Route path="/apply/verify" element={<VerifyPage />} />
       <Route path="/apply/support" element={<SupportPage />} />
 
