@@ -15,9 +15,12 @@ function ProgressBar({ variant, progress, currentStep, totalSteps, sectionLabel,
             </div>
           ))}
         </div>
+        {/* Section label removed — its leading "§" symbol collided with
+            the absolute-positioned "01" segment label below the bar, and
+            the section name was already shown by the section intro
+            screen the bar accompanies. Just keep the progress meta. */}
         <div className="eir-pb-meta eir-mono">
-          <span>§ {sectionLabel}</span>
-          <span className="eir-dim">— {pct}% · ~{estMin} min left</span>
+          <span className="eir-dim">{pct}% · ~{estMin} min left</span>
         </div>
       </div>
     );
