@@ -154,7 +154,9 @@ const SECTIONS = [
       {
         id: "problemDefined",
         kind: "single",
-        prompt: "Do you think the problem you want to solve is well-defined?",
+        // Greeting prompt: "OK <first> — Do you think ...". Falls back to
+        // "OK there — ..." until fullName is filled.
+        prompt: (a) => `OK ${((a && a.fullName) || "there").split(" ")[0]} — Do you think the problem you want to solve is well-defined?`,
         help: "Honest answers help us support you better.",
         options: ["Yes", "No"],
         required: true,
