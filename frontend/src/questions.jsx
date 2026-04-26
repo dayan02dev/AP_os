@@ -132,8 +132,8 @@ const SECTIONS = [
   {
     id: "problem",
     index: "02",
-    label: "Problem & Importance",
-    blurb: "The thing that pulled you in. What won't let you go. Clarity beats jargon — imagine you're telling a brilliant friend from an adjacent technology field.",
+    label: "What problem do you want to solve passionately?",
+    blurb: "Clarity beats jargon — imagine you are telling a brilliant friend from an adjacent technology field.",
     questions: [
       {
         id: "problemDescribe",
@@ -166,13 +166,17 @@ const SECTIONS = [
     id: "solution",
     index: "03",
     label: "What's your solution and technology?",
-    blurb: "How you're approaching it, and what makes your angle defensible.",
+    blurb: "How you are solving the problem, and what makes your approach special.",
     questions: [
       {
         id: "solutionDescribe",
         kind: "long",
-        prompt: "Describe your solution. Does it represent a 10× improvement (on technological, economic or operational metrics) — rather than an incremental gain — over existing state-of-the-art solutions? How so?",
-        help: "As we build for the future, we want to back long-term step-change innovation. The bigger the impact, the more excited we are.",
+        prompt: "Describe your solution.",
+        helpIntro: "Make sure you cover:",
+        helpItems: [
+          "Does it represent a 10× improvement (on technological, economic or operational metrics) — rather than just an incremental gain — over existing state-of-the-art solutions? How so?",
+        ],
+        help: "We want to back big step-change innovations that shape the future. The larger the potential impact, the more excited we are.",
         placeholder: "We're building a low-cost IoT soil sensor network with on-device ML for nutrient prediction. Sensor cost drops from ₹15,000 to ₹1,200 and accuracy improves 3× through adaptive calibration — turning what was a per-farm capital expense into a per-acre operating cost…",
         maxChars: 2000,
         minWords: 80,
@@ -184,8 +188,8 @@ const SECTIONS = [
         prompt: "What's the core technology that makes this special and hard to replicate?",
         helpIntro: "Please make sure your answer covers:",
         helpItems: [
-          "What is the specific lab-proven research or cutting-edge advance (in AI, Robotics, Mechatronics, etc.) you intend to translate?",
-          "What is the \"unfair advantage\" — is it protected by a patent, a unique design or insight, or a proprietary dataset that others cannot easily replicate?",
+          "What is the specific lab-proven research or cutting-edge scientific / technological advance that you intend to translate?",
+          "What is your \"unfair advantage\" — is it protected by a patent, a unique design or insight, or a proprietary dataset that others cannot easily replicate?",
         ],
         placeholder: "A magnetic-induction soil sensor architecture (patent pending) combined with an adaptive calibration algorithm trained on a proprietary dataset of 10,000+ Indian soil samples across 7 agro-climatic zones — neither the hardware design nor the dataset can be replicated without years of fieldwork…",
         maxChars: 2000,
@@ -199,8 +203,8 @@ const SECTIONS = [
       {
         id: "contrarianInsight",
         kind: "long",
-        prompt: "What do you believe about your field that most experts disagree with?",
-        help: "Share a contrarian belief, or a genuinely rare insight most experts don't think about. We're looking for sharp, well-formed thinking — not just a hot take.",
+        prompt: "Share a genuinely rare insight in your field of expertise that most people in that field haven't thought about.",
+        help: "It could even be a contrarian view that most experts disagree with. We are looking for sharp, well-formed thinking — not just a 'hot take.'",
         placeholder: "Most of the field assumes…, but our work suggests…",
         maxChars: 1500,
         minWords: 0,
@@ -238,7 +242,7 @@ const SECTIONS = [
         id: "willBreak",
         kind: "long",
         prompt: "What are the primary technical hurdles you need to overcome?",
-        help: "Environmental noise, edge cases, material fatigue, latency, etc. What are the top 2–3 things that will break moving from the lab to the real world?",
+        help: "Share the top 2–3 things that will break moving from the lab to the real world. (Edge cases, material fatigue, latency, defect rate, etc.)",
         placeholder: "Sensor calibration drift in dusty environments, ROS-to-firmware latency at the edge, and physical wear-and-tear on actuators…",
         maxChars: 1000,
         minWords: 30,
@@ -268,7 +272,7 @@ const SECTIONS = [
         id: "infrastructure",
         kind: "long",
         prompt: "What specific advanced infrastructure or facilities are essential for your success during this residency?",
-        help: "E.g., high-performance computing, specialized sensors, rapid prototyping labs, anechoic chambers, wet labs, robotics testbeds.",
+        help: "For example: high-performance computing, specialized sensors, rapid prototyping labs, anechoic chambers, wet labs, robotics testbeds.",
         placeholder: "GPU cluster for training perception models, a 6-DOF motion-capture arena, and CNC + 3D-printing for weekly hardware iterations…",
         maxChars: 1000,
         minWords: 25,

@@ -88,11 +88,11 @@ function WelcomeScreen({ onStart, warmCopy }) {
         </h1>
         <p className="eir-welcome-lede">
           {warmCopy
-            ? "A short, honest conversation — not a form. We'll start by parsing your CV to save you time, then walk through 6 sections together. Plan for about 60–90 minutes of focused work."
-            : "Intake questionnaire for the 2026 TIR cohort. 6 sections, auto-filled where possible. Est. 60–90 minutes."}
+            ? "A short, honest conversation — not a form. We'll start by parsing your CV to save you time, then walk through 6 sections together. Plan for 3–4 hours of focused work."
+            : "Intake questionnaire for the 2026 TIR cohort. 6 sections, auto-filled where possible. Plan for 3–4 hours."}
         </p>
         <div className="eir-welcome-meta">
-          <div className="eir-welcome-stat"><div className="eir-mono eir-dim">duration</div><div className="eir-welcome-stat-val">60–90 min</div></div>
+          <div className="eir-welcome-stat"><div className="eir-mono eir-dim">duration</div><div className="eir-welcome-stat-val">3–4 hrs</div></div>
           <div className="eir-welcome-stat"><div className="eir-mono eir-dim">sections</div><div className="eir-welcome-stat-val">06</div></div>
           <div className="eir-welcome-stat"><div className="eir-mono eir-dim">auto-fill</div><div className="eir-welcome-stat-val">from CV</div></div>
           <div className="eir-welcome-stat"><div className="eir-mono eir-dim">deadline</div><div className="eir-welcome-stat-val">22 may</div></div>

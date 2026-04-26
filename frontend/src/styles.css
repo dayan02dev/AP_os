@@ -658,6 +658,8 @@ kbd {
   margin-left: auto;
 }
 .eir-q-required { border-color: var(--accent); color: var(--accent); }
+/* Optional pill — green so applicants can quickly tell what they can skip. */
+.eir-q-optional { border-color: #2f9e4f; color: #2f9e4f; }
 
 .eir-q-prompt {
   font-family: var(--font-serif);

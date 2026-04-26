@@ -1104,7 +1104,6 @@ function QuestionView({
         </div>
 
         <h2 className="eir-q-prompt">{prompt}</h2>
-        {q.help && <p className="eir-q-help">{q.help}</p>}
         {q.helpItems && q.helpItems.length > 0 && (
           <div className="eir-q-help eir-q-help-list">
             {q.helpIntro && <p className="eir-q-help-intro"><strong>{q.helpIntro}</strong></p>}
@@ -1115,6 +1114,7 @@ function QuestionView({
             </ul>
           </div>
         )}
+        {q.help && <p className="eir-q-help">{q.help}</p>}
 
         <div className="eir-q-input-wrap">
           <QuestionInput q={q} value={value} onChange={onChange} autoFocus />

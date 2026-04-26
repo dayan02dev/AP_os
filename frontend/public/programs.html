@@ -862,50 +862,63 @@ details.faq.hidden { display: none; }
       From <span class="hl">lab-proven</span> research to <span class="blue">step-change products.</span>
     </h1>
     <p class="hero-lede">
-      ARTPARK supports deep-tech translation along two distinct paths. Early-stage technologists come in through the <strong>Technology Innovators in Residence (TIR)</strong> program to mature their IP; incorporated startups with a pitch-ready proposition enter through the <strong>Startup Incubation Program (SIP)</strong> for direct investment and acceleration. Pick the path that matches where you are today.
+      ARTPARK supports deep-tech translation in two phases. Early-stage technologists come in through the <strong>Technology Innovators in Residence (TIR)</strong> program to discover market and build early prototypes; incorporated startups graduate into <strong>Investment + Venture Building Support</strong> to win investment, mature their tech and run pilots. The destination is the same — escape velocity.
     </p>
 
-    <!-- Path diagram · Swimlanes -->
+    <!-- Path diagram · Sequential flow (TIR → Investment + VBS → Escape velocity) -->
     <div class="paths-wrap" id="paths-wrap" data-variant="swimlanes">
-      <!-- A · Swimlanes (SVG) -->
       <div class="paths-variant paths-swimlanes" data-v="swimlanes">
-        <svg viewBox="0 0 1280 460" preserveAspectRatio="xMidYMid meet" class="paths-svg" role="img" aria-label="Two swimlanes from lab-proven research to step-change product">
+        <svg viewBox="0 0 1280 460" preserveAspectRatio="xMidYMid meet" class="paths-svg" role="img" aria-label="Sequential flow from Technology Innovators in Residence through Investment + Venture Building Support to escape velocity">
           <defs>
-            <marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker>
+            <marker id="arrSeq" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#b8b3c9"/></marker>
           </defs>
-          <!-- Origin -->
-          <g transform="translate(20,155)">
-            <rect width="260" height="150" fill="#242424"/>
-            <text x="26" y="52" fill="#aafcf0" font-family="Trebuchet MS" font-weight="700" font-size="26">Lab-proven</text>
-            <text x="26" y="86" fill="#aafcf0" font-family="Trebuchet MS" font-weight="700" font-size="26">research</text>
-            <text x="26" y="124" fill="rgba(255,255,255,0.75)" font-family="Open Sans" font-size="16">TRL 3 · validated</text>
+
+          <!-- ─── Stage 1: Technology Innovators in Residence ─── -->
+          <!-- Header text above the box -->
+          <text x="20"  y="44"  fill="#242424" font-family="Open Sans" font-weight="700" font-size="18"><tspan font-weight="700">For innovators</tspan><tspan font-weight="400"> with lab-proven,</tspan></text>
+          <text x="20"  y="68"  fill="#242424" font-family="Open Sans" font-size="18">differentiated technologies that they</text>
+          <text x="20"  y="92"  fill="#242424" font-family="Open Sans" font-size="18">believe could be immensely useful</text>
+
+          <!-- Purple box -->
+          <g transform="translate(20,120)">
+            <rect width="400" height="270" fill="#3213b7"/>
+            <text x="24" y="56"  fill="#fff" font-family="Trebuchet MS" font-weight="700" font-size="24">Technology Innovators in</text>
+            <text x="24" y="86"  fill="#fff" font-family="Trebuchet MS" font-weight="700" font-size="24">Residence</text>
+            <text x="24" y="128" fill="#fff" font-family="Open Sans" font-size="16">Discover which market to target and</text>
+            <text x="24" y="150" fill="#fff" font-family="Open Sans" font-size="16">what product to build. Develop early</text>
+            <text x="24" y="172" fill="#fff" font-family="Open Sans" font-size="16">prototypes. Get ready to startup.</text>
+            <text x="24" y="226" fill="#fff" font-family="Open Sans" font-size="16">Typical entry point: TRL 2-3</text>
           </g>
-          <!-- TIR lane: origin right edge at x=280, card left at x=440 -->
-          <g color="#3213b7">
-            <path d="M280,200 C360,200 360,95 440,95" stroke="#3213b7" stroke-width="3" fill="none" marker-end="url(#arrA)"/>
-            <rect x="440" y="35" width="440" height="130" fill="#ffffff" stroke="#3213b7" stroke-width="2"/>
-            <text x="464" y="72" fill="#3213b7" font-family="Open Sans" font-weight="700" font-size="15" letter-spacing="2">TRACK 01 · TIR</text>
-            <text x="464" y="108" fill="#242424" font-family="Trebuchet MS" font-weight="700" font-size="24">Residency · mature the tech</text>
-            <text x="464" y="140" fill="#4a4a52" font-family="Open Sans" font-size="16">12 months · on-campus · ₹25L–1 Cr</text>
+
+          <!-- Arrow 1 → -->
+          <path d="M428,255 L490,255" stroke="#b8b3c9" stroke-width="6" fill="none" marker-end="url(#arrSeq)"/>
+
+          <!-- ─── Stage 2: Investment + Venture Building Support ─── -->
+          <text x="500" y="44"  fill="#242424" font-family="Open Sans" font-weight="700" font-size="18"><tspan font-weight="700">For startups</tspan><tspan font-weight="400"> that have a prototype</tspan></text>
+          <text x="500" y="68"  fill="#242424" font-family="Open Sans" font-size="18">with differentiated technology and</text>
+          <text x="500" y="92"  fill="#242424" font-family="Open Sans" font-size="18">some sense for their product-market fit</text>
+
+          <g transform="translate(500,120)">
+            <rect width="400" height="270" fill="#3213b7"/>
+            <text x="24" y="56"  fill="#fff" font-family="Trebuchet MS" font-weight="700" font-size="24">Investment + Venture Building</text>
+            <text x="24" y="86"  fill="#fff" font-family="Trebuchet MS" font-weight="700" font-size="24">Support</text>
+            <text x="24" y="128" fill="#fff" font-family="Open Sans" font-size="16">Win investment, build your venture,</text>
+            <text x="24" y="150" fill="#fff" font-family="Open Sans" font-size="16">mature your technology, collaborate</text>
+            <text x="24" y="172" fill="#fff" font-family="Open Sans" font-size="16">with customers, and conduct pilots.</text>
+            <text x="24" y="226" fill="#fff" font-family="Open Sans" font-size="16">Typical entry point: TRL 4-5</text>
           </g>
-          <!-- SIP lane -->
-          <g color="#6B5CFF">
-            <path d="M280,260 C360,260 360,375 440,375" stroke="#6B5CFF" stroke-width="3" fill="none" stroke-dasharray="6 4" marker-end="url(#arrA)"/>
-            <rect x="440" y="315" width="440" height="130" fill="#ffffff" stroke="#6B5CFF" stroke-width="2"/>
-            <text x="464" y="352" fill="#6B5CFF" font-family="Open Sans" font-weight="700" font-size="15" letter-spacing="2">TRACK 02 · SIP</text>
-            <text x="464" y="388" fill="#242424" font-family="Trebuchet MS" font-weight="700" font-size="24">Invest · scale the startup</text>
-            <text x="464" y="420" fill="#4a4a52" font-family="Open Sans" font-size="16">Direct equity · flexible · TRL 4+</text>
-          </g>
-          <!-- Converging: cards end at x=880, destination begins at x=1000 -->
-          <path d="M880,100 C940,100 940,230 1000,230" stroke="#3213b7" stroke-width="3" fill="none" marker-end="url(#arrA)" color="#3213b7"/>
-          <path d="M880,380 C940,380 940,230 1000,230" stroke="#6B5CFF" stroke-width="3" fill="none" stroke-dasharray="6 4" marker-end="url(#arrA)" color="#6B5CFF"/>
-          <!-- Destination -->
-          <g transform="translate(1000,155)">
-            <rect width="260" height="150" fill="#3213b7"/>
-            <text x="26" y="52" fill="#fff" font-family="Trebuchet MS" font-weight="700" font-size="26">Step-change</text>
-            <text x="26" y="86" fill="#fff" font-family="Trebuchet MS" font-weight="700" font-size="26">product</text>
-            <text x="26" y="124" fill="#aafcf0" font-family="Open Sans" font-size="16">Deployed · funded</text>
-          </g>
+
+          <!-- Arrow 2 → -->
+          <path d="M908,255 L970,255" stroke="#b8b3c9" stroke-width="6" fill="none" marker-end="url(#arrSeq)"/>
+
+          <!-- ─── Stage 3: Achieve escape velocity (no box, just text) ─── -->
+          <text x="985" y="180" fill="#3213b7" font-family="Trebuchet MS" font-weight="700" font-size="22">Achieve escape</text>
+          <text x="985" y="208" fill="#3213b7" font-family="Trebuchet MS" font-weight="700" font-size="22">velocity <tspan font-weight="400" font-family="Open Sans" font-size="16">with proven</tspan></text>
+          <text x="985" y="232" fill="#3213b7" font-family="Open Sans" font-size="16">product-market fit,</text>
+          <text x="985" y="254" fill="#3213b7" font-family="Open Sans" font-size="16">robust technology,</text>
+          <text x="985" y="276" fill="#3213b7" font-family="Open Sans" font-size="16">well-rounded team,</text>
+          <text x="985" y="298" fill="#3213b7" font-family="Open Sans" font-size="16">first customers and</text>
+          <text x="985" y="320" fill="#3213b7" font-family="Open Sans" font-size="16">early revenues</text>
         </svg>
       </div>
 
