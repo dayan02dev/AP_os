@@ -77,7 +77,7 @@ class OpenRouterClient:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://artpark.online",
-            "X-Title": "ARTPARK EIR",
+            "X-Title": "ARTPARK TIR",
         }
 
     def _payload(self, raw_text: str) -> dict[str, Any]:

@@ -197,7 +197,7 @@ class EmailService:
         )
         return self.send_raw(
             to=[to],
-            subject="ARTPARK EIR — Your application has been received",
+            subject="ARTPARK TIR — Your application has been received",
             html=html,
             text=text,
         )

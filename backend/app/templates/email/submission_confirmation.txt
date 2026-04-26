@@ -13,5 +13,5 @@ What happens next?
 
 If you need to reach us, reply to this email or open a support ticket through the portal.
 
-— The ARTPARK EIR team
+— The ARTPARK TIR team
 {% endblock %}

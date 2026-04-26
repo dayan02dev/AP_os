@@ -79,7 +79,7 @@ else:
 
 # ─── App ────────────────────────────────────────────────────────
 app = FastAPI(
-    title="ARTPARK EIR API",
+    title="ARTPARK TIR API",
     version=settings.app_version,
     # Disable the OpenAPI UI in production — the docs surface is nonzero
     # attack area; we'll serve it through admin auth later if needed.
