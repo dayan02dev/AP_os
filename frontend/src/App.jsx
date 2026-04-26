@@ -773,6 +773,7 @@ export default function App() {
             <SectionIntroScreen
               section={currentSection}
               onContinue={() => setPhase(PHASES.QUESTION)}
+              onBack={canGoBackUniversal ? goBackUniversal : null}
             />
           )}
           {phase === PHASES.CELEBRATE && (
@@ -804,6 +805,7 @@ export default function App() {
               onSubmit={handleSubmit}
               locked={locked}
               saving={saving}
+              onBack={canGoBackUniversal ? goBackUniversal : null}
             />
           )}
           {phase === PHASES.DONE && (viewingApp || application) && (() => {
@@ -1079,8 +1081,8 @@ function QuestionView({
   value,
   onChange,
   onNext,
-  onPrev: _onPrev,
-  canPrev: _canPrev,
+  onPrev,
+  canPrev,
   warmCopy,
   answers,
   locked,
@@ -1137,6 +1139,15 @@ function QuestionView({
         </div>
 
         <div className="eir-q-actions">
+          {canPrev && (
+            <button
+              type="button"
+              className="eir-btn eir-btn-ghost"
+              onClick={onPrev}
+            >
+              <span>← Back</span>
+            </button>
+          )}
           <button
             className={`eir-btn ${answered && !locked ? "eir-btn-primary" : "eir-btn-disabled"}`}
             onClick={onNext}
@@ -1168,7 +1179,7 @@ const QUESTION_PROMPTS = SECTIONS.reduce((acc, s) => {
   return acc;
 }, {});
 
-function ReviewSubmitPanel({ answers, completion, onSubmit, locked, saving }) {
+function ReviewSubmitPanel({ answers, completion, onSubmit, locked, saving, onBack }) {
   const entries = Object.entries(answers)
     .filter(([_, v]) => v !== undefined && v !== null && v !== "")
     .slice(0, 30);
@@ -1220,6 +1231,15 @@ function ReviewSubmitPanel({ answers, completion, onSubmit, locked, saving }) {
         </div>
 
         <div className="eir-q-actions">
+          {onBack && (
+            <button
+              type="button"
+              className="eir-btn eir-btn-ghost"
+              onClick={onBack}
+            >
+              <span>← Back</span>
+            </button>
+          )}
           <button
             className={`eir-btn ${canSubmit ? "eir-btn-primary" : "eir-btn-disabled"}`}
             disabled={!canSubmit}

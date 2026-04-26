@@ -106,7 +106,7 @@ function WelcomeScreen({ onStart, warmCopy }) {
   );
 }
 
-function SectionIntroScreen({ section, onContinue, totalSections = 6 }) {
+function SectionIntroScreen({ section, onContinue, onBack, totalSections = 6 }) {
   return (
     <div className="eir-screen eir-section-intro">
       <div className="eir-coord eir-mono">
@@ -117,9 +117,16 @@ function SectionIntroScreen({ section, onContinue, totalSections = 6 }) {
         <div className="eir-section-intro-index">{section.index}</div>
         <h2 className="eir-section-intro-title">{section.label}</h2>
         <p className="eir-section-intro-blurb">{section.blurb}</p>
-        <button className="eir-btn eir-btn-primary" onClick={onContinue}>
-          <span>Continue</span><span className="eir-btn-key eir-mono">⏎</span>
-        </button>
+        <div className="eir-q-actions">
+          {onBack && (
+            <button type="button" className="eir-btn eir-btn-ghost" onClick={onBack}>
+              <span>← Back</span>
+            </button>
+          )}
+          <button className="eir-btn eir-btn-primary" onClick={onContinue}>
+            <span>Continue</span><span className="eir-btn-key eir-mono">⏎</span>
+          </button>
+        </div>
       </div>
     </div>
   );
