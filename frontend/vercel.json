@@ -4,11 +4,11 @@
   "installCommand": "npm install",
   "framework": "vite",
   "rewrites": [
-    { "source": "/2026", "destination": "/marketing.html" },
     { "source": "/((?!assets/|.*\\..*).*)", "destination": "/app.html" }
   ],
   "redirects": [
-    { "source": "/marketing.html", "destination": "/2026", "permanent": true },
+    { "source": "/2026", "destination": "/apply", "permanent": false },
+    { "source": "/marketing.html", "destination": "/apply", "permanent": false },
     { "source": "/programs.html", "destination": "/", "permanent": true },
     { "source": "/app.html", "destination": "/apply", "permanent": true }
   ],

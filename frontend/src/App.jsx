@@ -1096,9 +1096,11 @@ function QuestionView({
   let prompt = typeof q.prompt === "function" ? q.prompt(answers) : q.prompt;
   if (warmCopy && name) {
     if (q.id === "phone") prompt = `Thanks, ${name}. A phone number we can reach you on?`;
-    if (q.id === "problemDefined")
-      prompt = `OK ${name} — is the problem you want to solve well-defined?`;
     if (q.id === "stage") prompt = `${name}, how far along are you?`;
+    // problemDefined intentionally not overridden — the spec wording
+    // ("Do you think the problem you want to solve is well-defined?")
+    // already reads like a friendly question; rewriting it to "OK <name>
+    // — is the problem ..." dropped the "Do you think" framing.
   }
 
   return (
