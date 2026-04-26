@@ -6,6 +6,10 @@ function ProgressBar({ variant, progress, currentStep, totalSteps, sectionLabel,
   const pct = Math.round(progress * 100);
 
   if (variant === "section") {
+    // Bare segment bar — section label and progress meta both removed
+    // per design call: the section title is already prominent on the
+    // intro screen the bar sits above, and the % / min-left counter
+    // duplicated info that didn't earn the visual weight.
     return (
       <div className="eir-pb eir-pb-section">
         <div className="eir-pb-sections">
@@ -14,13 +18,6 @@ function ProgressBar({ variant, progress, currentStep, totalSteps, sectionLabel,
               <span className="eir-mono eir-pb-seg-label">{(i + 1).toString().padStart(2, "0")}</span>
             </div>
           ))}
-        </div>
-        {/* Section label removed — its leading "§" symbol collided with
-            the absolute-positioned "01" segment label below the bar, and
-            the section name was already shown by the section intro
-            screen the bar accompanies. Just keep the progress meta. */}
-        <div className="eir-pb-meta eir-mono">
-          <span className="eir-dim">{pct}% · ~{estMin} min left</span>
         </div>
       </div>
     );
