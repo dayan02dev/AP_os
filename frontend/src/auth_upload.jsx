@@ -518,9 +518,16 @@ function ParsingScreen({ onDone, uploaded }) {
     { label: "done", sub: "12 fields populated" },
   ];
 
+  // Animate the visual ladder of steps. Pause at the last step instead of
+  // calling onDone — the parent (App.jsx) is responsible for advancing
+  // phase only once the backend's parse_status is actually 'completed' or
+  // 'failed'. Otherwise the wizard could move to PARSE_REVIEW before the
+  // new resume has finished parsing, in which case `resume.resume` still
+  // holds the *previous* session's CV and ParsedReviewScreen displays
+  // stale data.
   useAE(() => {
-    if (step >= steps.length) { onDone(); return; }
-    const t = setTimeout(() => setStep((s) => s + 1), step === steps.length - 1 ? 700 : 520);
+    if (step >= steps.length - 1) return undefined;
+    const t = setTimeout(() => setStep((s) => s + 1), 520);
     return () => clearTimeout(t);
   }, [step]);
 

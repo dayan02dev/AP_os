@@ -80,6 +80,13 @@ export function useResume() {
     async (file) => {
       setError(null);
       setUploading(true);
+      // Clear any stale resume in state BEFORE the new upload starts.
+      // Without this, downstream components (ParsedReviewScreen) can read
+      // .parsed_data from the previous session's CV during the window
+      // between "user clicked upload" and "backend returned" — leading to
+      // the previous applicant's data being displayed for the new resume.
+      setResume(null);
+      setParsing(true);
       try {
         const formData = new FormData();
         formData.append("file", file);
@@ -88,12 +95,14 @@ export function useResume() {
         });
         setResume(response);
         if (response.parse_status === "pending" || response.parse_status === "processing") {
-          setParsing(true);
           pollUntilDone();
+        } else {
+          setParsing(false);
         }
         return response;
       } catch (err) {
         setError(err);
+        setParsing(false);
         throw err;
       } finally {
         setUploading(false);

@@ -280,6 +280,20 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked]);
 
+  // While we're on the PARSING screen, advance to PARSE_REVIEW the moment
+  // the backend's parse_status reaches a terminal state. The ParsingScreen
+  // itself no longer self-advances — that was bug #1 in the "stale CV
+  // data" report (animation finished in 4s; backend parse takes longer;
+  // PARSE_REVIEW rendered with the *previous* session's resume.parsed_data
+  // before the new upload returned).
+  useEffect(() => {
+    if (phase !== PHASES.PARSING) return;
+    const status = resume.resume?.parse_status;
+    if (status === "completed" || status === "failed") {
+      setPhase(PHASES.PARSE_REVIEW);
+    }
+  }, [phase, resume.resume?.parse_status]);
+
   // ─── Phase/section → URL push ────────────────────────────────
   useEffect(() => {
     if (urlSyncRef.current.applying) {
