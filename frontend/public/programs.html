@@ -40,8 +40,8 @@ body {
   font-family: var(--font-body);
   color: var(--ink);
   background: var(--paper);
-  font-size: 20px;
-  line-height: 1.6;
+  font-size: 16px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -80,21 +80,19 @@ body {
 .lockup img { height: 40px; width: auto; display: block; }
 .lockup img.iisc { height: 56px; }
 .lockup .divider { width: 1px; height: 36px; background: var(--line-strong); }
-.nav-right { display: flex; align-items: center; gap: 8px; }
+.nav-right { display: flex; align-items: center; gap: 18px; }
 .nav-link {
-  font-family: var(--font-display);
-  font-size: 14px; font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink); text-decoration: none;
-  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-soft); text-decoration: none;
+  padding: 8px 12px;
 }
 .nav-link:hover { color: var(--artblue); }
 .btn {
   display: inline-flex; align-items: center; gap: 10px;
-  padding: 14px 26px;
+  padding: 12px 22px;
   font-family: var(--font-display);
-  font-weight: 700; font-size: 18px;
+  font-weight: 600; font-size: 14px;
   border: none; cursor: pointer; text-decoration: none;
   letter-spacing: 0.01em; border-radius: 2px;
   transition: transform 150ms, box-shadow 150ms, background 150ms, border-color 150ms, color 150ms;
@@ -161,8 +159,8 @@ body {
 
 .hero h1 {
   font-family: var(--font-display);
-  font-size: clamp(52px, 6.8vw, 88px);
-  line-height: 1.02;
+  font-size: clamp(44px, 6vw, 80px);
+  line-height: 1.05;
   letter-spacing: -0.025em;
   font-weight: 700;
   margin: 0 0 28px;
@@ -173,7 +171,7 @@ body {
 .hero h1 .hl { background: var(--artlight); color: var(--artblue); padding: 0 8px; font-weight: 800; }
 .hero h1 .blue { color: var(--artblue); }
 .hero-lede {
-  font-size: 20px; line-height: 1.6;
+  font-size: 18px; line-height: 1.6;
   color: var(--ink-soft);
   max-width: 68ch;
   margin: 0 0 48px;
@@ -212,6 +210,100 @@ body {
 .paths-wrap::before { top: 10px; left: 10px; border-right: none; border-bottom: none; }
 .paths-wrap::after  { bottom: 10px; right: 10px; border-left: none; border-top: none; }
 .paths-svg { display: block; width: 100%; height: auto; max-height: 440px; position: relative; z-index: 1; }
+
+/* ===== Sequential flow chart (HTML/CSS replacement for SVG so it stacks on mobile) ===== */
+.flow-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  gap: 18px;
+  align-items: stretch;
+  position: relative;
+  z-index: 1;
+}
+.flow-stage { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.flow-header {
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--ink);
+  margin: 0;
+}
+.flow-header strong { font-weight: 700; }
+.flow-card {
+  background: var(--artblue);
+  color: #fff;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  border-radius: 2px;
+}
+.flow-card h3 {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 1.6vw, 22px);
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 16px;
+}
+.flow-card p {
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0 0 14px;
+  color: rgba(255,255,255,0.95);
+}
+.flow-card .flow-trl {
+  margin-top: auto;
+  margin-bottom: 0;
+  font-weight: 500;
+}
+.flow-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #b8b3c9;
+  font-size: 28px;
+  font-weight: 400;
+  user-select: none;
+  /* Sit roughly mid-card vertically by adding the same top margin as the
+     header text uses on the stages — keeps the arrow visually centered
+     against the purple cards, not the full grid row. */
+  padding-top: 110px;
+}
+.flow-stage-text {
+  padding-top: 110px;
+  padding-left: 4px;
+}
+.flow-final-title {
+  color: var(--artblue);
+  font-family: var(--font-display);
+  font-size: clamp(18px, 1.6vw, 22px);
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0;
+  display: block;
+}
+.flow-final-soft {
+  display: inline;
+  font-weight: 400;
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--artblue);
+}
+
+@media (max-width: 880px) {
+  .flow-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .flow-arrow {
+    padding-top: 0;
+    transform: rotate(90deg);
+    height: 32px;
+  }
+  .flow-stage-text { padding-top: 0; padding-left: 0; }
+  .flow-card { padding: 20px; }
+  .flow-card h3 { font-size: 18px; margin-bottom: 12px; }
+}
 
 /* ===== Legacy Path diagram (kept for reference — no longer used) ===== */
 .paths {
@@ -868,62 +960,44 @@ details.faq.hidden { display: none; }
     </p>
 
     <!-- Path diagram · Sequential flow (TIR → Investment + VBS → Escape velocity) -->
-    <div class="paths-wrap" id="paths-wrap" data-variant="swimlanes">
-      <div class="paths-variant paths-swimlanes" data-v="swimlanes">
-        <svg viewBox="0 0 1280 460" preserveAspectRatio="xMidYMid meet" class="paths-svg" role="img" aria-label="Sequential flow from Technology Innovators in Residence through Investment + Venture Building Support to escape velocity">
-          <defs>
-            <marker id="arrSeq" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#b8b3c9"/></marker>
-          </defs>
+    <!-- Built as HTML/CSS so it stacks vertically on mobile — an SVG-with-fixed-
+         viewBox version was unreadable on phones. -->
+    <div class="paths-wrap">
+      <div class="flow-grid" role="img" aria-label="Sequential flow from Technology Innovators in Residence through Investment + Venture Building Support to escape velocity">
 
-          <!-- ─── Stage 1: Technology Innovators in Residence ─── -->
-          <!-- Header text above the box -->
-          <text x="20"  y="44"  fill="#242424" font-family="Open Sans" font-weight="700" font-size="18"><tspan font-weight="700">For innovators</tspan><tspan font-weight="400"> with lab-proven,</tspan></text>
-          <text x="20"  y="68"  fill="#242424" font-family="Open Sans" font-size="18">differentiated technologies that they</text>
-          <text x="20"  y="92"  fill="#242424" font-family="Open Sans" font-size="18">believe could be immensely useful</text>
+        <!-- Stage 1 -->
+        <div class="flow-stage">
+          <p class="flow-header"><strong>For innovators</strong> with lab-proven, differentiated technologies that they believe could be immensely useful</p>
+          <div class="flow-card">
+            <h3>Technology Innovators in Residence</h3>
+            <p>Discover which market to target and what product to build. Develop early prototypes. Get ready to startup.</p>
+            <p class="flow-trl">Typical entry point: TRL 2-3</p>
+          </div>
+        </div>
 
-          <!-- Purple box -->
-          <g transform="translate(20,120)">
-            <rect width="400" height="270" fill="#3213b7"/>
-            <text x="24" y="56"  fill="#fff" font-family="Trebuchet MS" font-weight="700" font-size="24">Technology Innovators in</text>
-            <text x="24" y="86"  fill="#fff" font-family="Trebuchet MS" font-weight="700" font-size="24">Residence</text>
-            <text x="24" y="128" fill="#fff" font-family="Open Sans" font-size="16">Discover which market to target and</text>
-            <text x="24" y="150" fill="#fff" font-family="Open Sans" font-size="16">what product to build. Develop early</text>
-            <text x="24" y="172" fill="#fff" font-family="Open Sans" font-size="16">prototypes. Get ready to startup.</text>
-            <text x="24" y="226" fill="#fff" font-family="Open Sans" font-size="16">Typical entry point: TRL 2-3</text>
-          </g>
+        <div class="flow-arrow" aria-hidden="true">▶</div>
 
-          <!-- Arrow 1 → -->
-          <path d="M428,255 L490,255" stroke="#b8b3c9" stroke-width="6" fill="none" marker-end="url(#arrSeq)"/>
+        <!-- Stage 2 -->
+        <div class="flow-stage">
+          <p class="flow-header"><strong>For startups</strong> that have a prototype with differentiated technology and some sense for their product-market fit</p>
+          <div class="flow-card">
+            <h3>Investment + Venture Building Support</h3>
+            <p>Win investment, build your venture, mature your technology, collaborate with customers, and conduct pilots.</p>
+            <p class="flow-trl">Typical entry point: TRL 4-5</p>
+          </div>
+        </div>
 
-          <!-- ─── Stage 2: Investment + Venture Building Support ─── -->
-          <text x="500" y="44"  fill="#242424" font-family="Open Sans" font-weight="700" font-size="18"><tspan font-weight="700">For startups</tspan><tspan font-weight="400"> that have a prototype</tspan></text>
-          <text x="500" y="68"  fill="#242424" font-family="Open Sans" font-size="18">with differentiated technology and</text>
-          <text x="500" y="92"  fill="#242424" font-family="Open Sans" font-size="18">some sense for their product-market fit</text>
+        <div class="flow-arrow" aria-hidden="true">▶</div>
 
-          <g transform="translate(500,120)">
-            <rect width="400" height="270" fill="#3213b7"/>
-            <text x="24" y="56"  fill="#fff" font-family="Trebuchet MS" font-weight="700" font-size="24">Investment + Venture Building</text>
-            <text x="24" y="86"  fill="#fff" font-family="Trebuchet MS" font-weight="700" font-size="24">Support</text>
-            <text x="24" y="128" fill="#fff" font-family="Open Sans" font-size="16">Win investment, build your venture,</text>
-            <text x="24" y="150" fill="#fff" font-family="Open Sans" font-size="16">mature your technology, collaborate</text>
-            <text x="24" y="172" fill="#fff" font-family="Open Sans" font-size="16">with customers, and conduct pilots.</text>
-            <text x="24" y="226" fill="#fff" font-family="Open Sans" font-size="16">Typical entry point: TRL 4-5</text>
-          </g>
+        <!-- Stage 3 — text only, no box -->
+        <div class="flow-stage flow-stage-text">
+          <p class="flow-final-title">
+            Achieve escape velocity
+            <span class="flow-final-soft"> with proven product-market fit, robust technology, well-rounded team, first customers and early revenues</span>
+          </p>
+        </div>
 
-          <!-- Arrow 2 → -->
-          <path d="M908,255 L970,255" stroke="#b8b3c9" stroke-width="6" fill="none" marker-end="url(#arrSeq)"/>
-
-          <!-- ─── Stage 3: Achieve escape velocity (no box, just text) ─── -->
-          <text x="985" y="180" fill="#3213b7" font-family="Trebuchet MS" font-weight="700" font-size="22">Achieve escape</text>
-          <text x="985" y="208" fill="#3213b7" font-family="Trebuchet MS" font-weight="700" font-size="22">velocity <tspan font-weight="400" font-family="Open Sans" font-size="16">with proven</tspan></text>
-          <text x="985" y="232" fill="#3213b7" font-family="Open Sans" font-size="16">product-market fit,</text>
-          <text x="985" y="254" fill="#3213b7" font-family="Open Sans" font-size="16">robust technology,</text>
-          <text x="985" y="276" fill="#3213b7" font-family="Open Sans" font-size="16">well-rounded team,</text>
-          <text x="985" y="298" fill="#3213b7" font-family="Open Sans" font-size="16">first customers and</text>
-          <text x="985" y="320" fill="#3213b7" font-family="Open Sans" font-size="16">early revenues</text>
-        </svg>
       </div>
-
     </div>
   </div>
 </section>
