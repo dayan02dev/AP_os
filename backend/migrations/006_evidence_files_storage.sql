@@ -25,18 +25,21 @@
 begin;
 
 -- ─────────────────────────────────────────────────────────────
--- 1. Soft cap on the existing evidence_files JSONB array.
---    Each entry: { file_uuid, path, name, size, mime, uploaded_at }
+-- 1. evidence_files JSONB cap is enforced at the application
+--    layer (routers/evidence_files.py: _MAX_FILES_PER_APP = 5)
+--    rather than via a CHECK constraint, because legacy rows
+--    pre-storage held arbitrary {name,size,type} entries from
+--    the inert FilesInput component and would trip a strict
+--    DB-level size check. The shape (must be array) is still
+--    enforced loosely — anything else is fine.
+--
+--    If you want to ratchet this up later: clean legacy rows
+--    first (UPDATE applications SET evidence_files='[]' WHERE
+--    jsonb_array_length(evidence_files) > 5 AND status='submitted'
+--    is false…), THEN add the CHECK without NOT VALID.
 -- ─────────────────────────────────────────────────────────────
 alter table public.applications
   drop constraint if exists applications_evidence_files_cap;
-alter table public.applications
-  add constraint applications_evidence_files_cap
-  check (
-    evidence_files is null
-    or jsonb_typeof(evidence_files) = 'array'
-    and jsonb_array_length(evidence_files) <= 5
-  );
 
 -- ─────────────────────────────────────────────────────────────
 -- 2. Create the private 'evidence-files' bucket.
