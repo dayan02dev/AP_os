@@ -358,9 +358,42 @@ async def apply_template_to_application(current_user: dict = Depends(get_current
                 "status", "draft"
             ).execute()
         except Exception as exc:
-            log.error("template apply update failed",
-                      extra={"user_id": user_id, "app_id": app_id, "err": str(exc)})
-            raise HTTPException(status_code=500, detail="Could not apply template.") from exc
+            # CHECK constraints on legacy columns occasionally drift from
+            # the wizard copy (e.g. problem_defined accepted 'Yes, clearly
+            # defined' historically; the wizard now writes 'Yes'). Rather
+            # than fail the whole apply on the first 23514, retry one
+            # field at a time and demote violators to missing_answers so
+            # the applicant can fill them manually in the wizard.
+            err_str = str(exc)
+            log.warning(
+                "template bulk apply rejected, retrying per-field",
+                extra={"user_id": user_id, "app_id": app_id, "err": err_str},
+            )
+            applied.clear()
+            new_skipped: list[str] = []
+            new_missing: list[str] = list(missing)
+            for col, val in patch.items():
+                try:
+                    admin.table("applications").update({col: val}).eq(
+                        "id", app_id
+                    ).eq("status", "draft").execute()
+                    applied.append(col)
+                except Exception as col_exc:
+                    log.warning(
+                        "template per-field apply rejected",
+                        extra={"user_id": user_id, "app_id": app_id,
+                               "column": col, "err": str(col_exc)},
+                    )
+                    # Column-level failure → surface as missing so the
+                    # wizard prompts the applicant for it normally.
+                    qid = next(
+                        (q for q, c in QUESTION_TO_APPLICATION_COLUMN.items() if c == col),
+                        col,
+                    )
+                    if qid not in new_missing:
+                        new_missing.append(qid)
+            skipped = list(skipped) + new_skipped
+            missing = new_missing
 
     try:
         admin.table("application_templates").update(
