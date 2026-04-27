@@ -954,7 +954,7 @@ function ParseStillRunningScreen({ onSkip }) {
   return (
     <div className="eir-screen">
       <div className="eir-coord eir-mono">
-        <span>§ 01 · Professional Profile</span>
+        <span>01 · Professional Profile</span>
         <span>parsing · in progress</span>
       </div>
       <div className="eir-welcome-body">
@@ -978,7 +978,7 @@ function ParseFailedScreen({ error, onContinue, onRetry }) {
   return (
     <div className="eir-screen">
       <div className="eir-coord eir-mono">
-        <span>§ 01 · Professional Profile</span>
+        <span>01 · Professional Profile</span>
         <span>parsing · couldn't read CV</span>
       </div>
       <div className="eir-welcome-body">
@@ -1108,7 +1108,7 @@ function QuestionView({
   return (
     <div className="eir-screen eir-question" key={globalIdx}>
       <div className="eir-coord eir-mono">
-        <span>§ {section.index} · {section.label}</span>
+        <span>{section.index} · {section.label}</span>
         <span>q.{(stepIdx + 1).toString().padStart(2, "0")} of {total}</span>
       </div>
 

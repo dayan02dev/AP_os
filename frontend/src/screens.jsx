@@ -65,7 +65,7 @@ function ProgressBar({ variant, progress, currentStep, totalSteps, sectionLabel,
         <div className="eir-pb-bar-fill" style={{ width: `${pct}%` }} />
       </div>
       <div className="eir-pb-meta eir-mono">
-        <span>§ {sectionLabel}</span>
+        <span>{sectionLabel}</span>
         <span className="eir-dim">{pct}% · {(currentStep + 1)}/{totalSteps} · ~{estMin} min</span>
       </div>
     </div>

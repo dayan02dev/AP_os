@@ -423,7 +423,7 @@ function UploadScreen({ onUploaded, warmCopy }) {
   return (
     <div className="eir-screen eir-upload">
       <div className="eir-coord eir-mono">
-        <span>§ 01 · Professional Profile</span>
+        <span>01 · Professional Profile</span>
         <span>step 1 of 2</span>
       </div>
       <div className="eir-upload-body">
@@ -534,7 +534,7 @@ function ParsingScreen({ onDone, uploaded }) {
   return (
     <div className="eir-screen eir-parsing">
       <div className="eir-coord eir-mono">
-        <span>§ 01 · Professional Profile</span>
+        <span>01 · Professional Profile</span>
         <span>parsing</span>
       </div>
       <div className="eir-parsing-body">

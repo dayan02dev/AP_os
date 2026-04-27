@@ -98,13 +98,6 @@ function LongInput({ q, value, onChange, autoFocus }) {
         <span className="eir-mono eir-dim">
           {wordCount.toString().padStart(3, "0")} words
         </span>
-        {sweetSpot > 0 && (
-          <span className={`eir-mono eir-softtip ${inSweetSpot ? "is-met" : ""}`}>
-            {inSweetSpot
-              ? `✓ solid length — the kind reviewers tend to notice`
-              : `↳ tip: answers over ~${sweetSpot} words tend to stand out`}
-          </span>
-        )}
       </div>
     </div>
   );
