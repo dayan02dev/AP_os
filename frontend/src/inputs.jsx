@@ -202,33 +202,122 @@ function MultiInput({ q, value, onChange }) {
   );
 }
 
-function FilesInput({ q, value, onChange }) {
+// EvidenceFilesInput — backed by /applications/me/evidence-files. Same
+// contract as MilestoneFilesInput: `value` is the JSONB array stored on
+// applications.evidence_files; onChange is called with the latest
+// server-confirmed list after each upload/delete so the parent stays in
+// sync without redundant PATCH writes.
+//
+// Files go straight to the private 'evidence-files' bucket via the
+// backend; admins can sign URLs against it later from the dashboard.
+function EvidenceFilesInput({ q, value, onChange }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
-  const multi = q.multi;
-  const files = multi ? (Array.isArray(value) ? value : []) : (value ? [value] : []);
+  const [busy, setBusy] = useState(false);
+  const [busyFor, setBusyFor] = useState(null);
+  const [err, setErr] = useState(null);
 
-  const handleFiles = (fileList) => {
-    const arr = Array.from(fileList).map((f) => ({ name: f.name, size: f.size, type: f.type }));
-    if (multi) onChange([...(Array.isArray(value) ? value : []), ...arr]);
-    else onChange(arr[0] || null);
+  // Defensive: pre-bucket-3 evidence rows hold bare {name,size,type}
+  // entries without file_uuid. We render them but don't allow deletion
+  // via this UI (no file_uuid to address) — they're frozen artefacts
+  // from before storage was wired up.
+  const files = Array.isArray(value) ? value : [];
+  const maxFiles = q.maxFiles || 5;
+  const maxBytes = (q.maxMB || 10) * 1024 * 1024;
+  const remaining = maxFiles - files.length;
+
+  const handleFiles = async (fileList) => {
+    setErr(null);
+    if (busy) return;
+    const incoming = Array.from(fileList || []).slice(0, remaining);
+    if (incoming.length === 0) return;
+
+    let latest = files;
+    for (const f of incoming) {
+      if (f.size > maxBytes) {
+        setErr(`${f.name} exceeds ${q.maxMB || 10} MiB.`);
+        continue;
+      }
+      setBusy(true);
+      setBusyFor("upload");
+      try {
+        const fd = new FormData();
+        fd.append("file", f);
+        const result = await apiCall("/applications/me/evidence-files", {
+          method: "POST",
+          body: fd,
+          timeoutMs: 60_000,
+        });
+        latest = result.files || latest;
+        onChange(latest);
+      } catch (e) {
+        if (e instanceof ApiError) {
+          if (e.code === "file_cap_reached") setErr(`You can attach at most ${maxFiles} files.`);
+          else if (e.code === "too_large") setErr(`${f.name} exceeds the size limit.`);
+          else if (e.code === "unsupported_media") setErr(`${f.name} — file type not allowed.`);
+          else if (e.code === "application_locked") setErr("Application is already submitted.");
+          else setErr(e.message || "Upload failed.");
+        } else {
+          setErr(e?.message || "Upload failed.");
+        }
+        break;
+      } finally {
+        setBusy(false);
+        setBusyFor(null);
+      }
+    }
   };
 
-  const removeAt = (i) => {
-    if (multi) onChange(files.filter((_, idx) => idx !== i));
-    else onChange(null);
+  const removeFile = async (file_uuid) => {
+    if (!file_uuid || busy) return;
+    setErr(null);
+    setBusy(true);
+    setBusyFor(file_uuid);
+    try {
+      const result = await apiCall(
+        `/applications/me/evidence-files/${encodeURIComponent(file_uuid)}`,
+        { method: "DELETE" },
+      );
+      onChange(result.files || []);
+    } catch (e) {
+      setErr(e?.message || "Couldn't remove file.");
+    } finally {
+      setBusy(false);
+      setBusyFor(null);
+    }
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (remaining > 0 && !busy) handleFiles(e.dataTransfer.files);
   };
 
   return (
     <div className="eir-filedrop-wrap">
       <div
-        className={`eir-filedrop ${dragOver ? "is-drag" : ""} ${files.length ? "has-file" : ""}`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        className={`eir-filedrop ${dragOver ? "is-drag" : ""} ${files.length ? "has-file" : ""} ${remaining === 0 || busy ? "is-disabled" : ""}`}
+        onDragOver={(e) => {
+          if (remaining === 0 || busy) return;
+          e.preventDefault();
+          setDragOver(true);
+        }}
         onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
-        onClick={() => inputRef.current?.click()}
+        onDrop={onDrop}
+        onClick={() => {
+          if (remaining > 0 && !busy) inputRef.current?.click();
+        }}
+        style={remaining === 0 || busy ? { opacity: 0.6, cursor: "not-allowed" } : undefined}
       >
-        <input ref={inputRef} type="file" hidden multiple={multi} accept={q.accept} onChange={(e) => handleFiles(e.target.files)} />
+        <input
+          ref={inputRef}
+          type="file"
+          hidden
+          multiple
+          accept={q.accept}
+          onChange={(e) => handleFiles(e.target.files)}
+          disabled={remaining === 0 || busy}
+        />
         <div className="eir-filedrop-icon">
           <svg width="28" height="28" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.25">
             <rect x="6" y="4" width="20" height="24" />
@@ -236,20 +325,41 @@ function FilesInput({ q, value, onChange }) {
           </svg>
         </div>
         <div className="eir-filedrop-main">
-          Drop {multi ? "files" : "a file"} here, or <u>click to browse</u>
+          {busyFor === "upload"
+            ? "Uploading…"
+            : remaining === 0
+              ? `${maxFiles} of ${maxFiles} files attached`
+              : `Drop files here, or click to browse · ${remaining} of ${maxFiles} slots left`}
         </div>
-        <div className="eir-filedrop-meta eir-mono">accepted: {(q.accept || "any").replace(/\./g, "")}</div>
+        <div className="eir-filedrop-meta eir-mono">
+          {(q.accept || ".pdf,.png,.jpg,.jpeg,.doc,.docx").replace(/\./g, "")} · max {q.maxMB || 10} MiB each
+        </div>
       </div>
+      {err && <div className="eir-mono eir-block-reason" style={{ marginTop: 10 }}>↳ {err}</div>}
       {files.length > 0 && (
         <div className="eir-file-list">
-          {files.map((f, i) => (
-            <div key={i} className="eir-file-row">
-              <span className="eir-mono eir-file-ok">✓</span>
-              <span className="eir-file-name">{f.name}</span>
-              <span className="eir-mono eir-dim">{Math.round(f.size / 1024)} KB</span>
-              <button className="eir-file-x" onClick={() => removeAt(i)}>✕</button>
-            </div>
-          ))}
+          {files.map((f, i) => {
+            const isBusyHere = busy && busyFor === f.file_uuid;
+            return (
+              <div key={f.file_uuid || `legacy-${i}`} className="eir-file-row">
+                <span className="eir-mono eir-file-ok">✓</span>
+                <span className="eir-file-name">{f.name}</span>
+                <span className="eir-mono eir-dim">{Math.round((f.size || 0) / 1024)} KB</span>
+                {f.file_uuid ? (
+                  <button
+                    className="eir-file-x"
+                    onClick={() => removeFile(f.file_uuid)}
+                    disabled={busy}
+                    title="Remove"
+                  >
+                    {isBusyHere ? "…" : "✕"}
+                  </button>
+                ) : (
+                  <span className="eir-mono eir-dim" title="legacy entry">—</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -607,7 +717,7 @@ function QuestionInput(props) {
     case "long": return <LongInput {...props} />;
     case "single": return <SingleInput {...props} />;
     case "multi": return <MultiInput {...props} />;
-    case "files": return <FilesInput {...props} />;
+    case "files": return <EvidenceFilesInput {...props} />;
     case "milestoneFiles": return <MilestoneFilesInput {...props} />;
     case "declarations": return <DeclarationsInput {...props} />;
     case "teamInvite": return <TeamInviteInput {...props} />;
@@ -688,6 +798,6 @@ function whyBlocked(q, value) {
 
 export {
   ShortInput, EmailQuestionInput, LongInput, SingleInput, MultiInput,
-  FilesInput, MilestoneFilesInput, DeclarationsInput, TeamInviteInput,
+  EvidenceFilesInput, MilestoneFilesInput, DeclarationsInput, TeamInviteInput,
   QuestionInput, isAnswered, whyBlocked,
 };

@@ -774,6 +774,15 @@ body {
 }
 .waitlist-form .btn-light { background: var(--artlight); color: var(--artblue); }
 .waitlist-form .btn-light:hover { background: #fff; transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+.waitlist-error {
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #ffb4b4;
+  letter-spacing: 0.04em;
+  min-height: 16px;
+}
+.waitlist-error:empty { display: none; }
 .waitlist-thanks {
   display: none;
   padding: 20px;
@@ -1221,21 +1230,21 @@ details.faq.hidden { display: none; }
       <h2>Be first in line when <em>SIP</em> opens.</h2>
       <p>Applications for the inaugural Startup Incubation Program cohort open on 22 May 2026 at 12:00 IST. Drop your details and we'll email you the moment the form goes live — plus a pre-read on eligibility, timelines, and typical ticket sizes.</p>
     </div>
-    <form class="waitlist-form" id="waitlist-form" onsubmit="event.preventDefault(); this.classList.add('submitted');">
+    <form class="waitlist-form" id="waitlist-form" novalidate>
       <label for="wl-name">Name</label>
-      <input id="wl-name" type="text" placeholder="Your full name" required="">
+      <input id="wl-name" name="name" type="text" placeholder="Your full name" required="" autocomplete="name">
       <div class="form-row">
         <div>
           <label for="wl-email">Work email</label>
-          <input id="wl-email" type="email" placeholder="you@startup.com" required="">
+          <input id="wl-email" name="email" type="email" placeholder="you@startup.com" required="" autocomplete="email">
         </div>
         <div>
           <label for="wl-startup">Startup name</label>
-          <input id="wl-startup" type="text" placeholder="Startup Pvt Ltd" required="">
+          <input id="wl-startup" name="startup_name" type="text" placeholder="Startup Pvt Ltd" required="" autocomplete="organization">
         </div>
       </div>
       <label for="wl-stage">Current stage</label>
-      <select id="wl-stage" required="">
+      <select id="wl-stage" name="current_stage" required="">
         <option value="">Select your stage</option>
         <option>Incorporated · pre-revenue</option>
         <option>Incorporated · early revenue</option>
@@ -1244,13 +1253,69 @@ details.faq.hidden { display: none; }
       </select>
       <div class="submit-row">
         <span class="submit-note">We'll only email you about SIP.</span>
-        <button type="submit" class="btn btn-light">
-          <span>Notify me</span>
+        <button type="submit" class="btn btn-light" id="wl-submit">
+          <span id="wl-submit-label">Notify me</span>
           <span class="arrow">→</span>
         </button>
       </div>
+      <div class="waitlist-error" id="wl-error" role="alert" aria-live="polite"></div>
       <div class="waitlist-thanks">✓ You're on the list. We'll email you on 22 May.</div>
     </form>
+    <script>
+      (function () {
+        var API_BASE = "https://api.artpark.info";
+        var form = document.getElementById("waitlist-form");
+        var btn = document.getElementById("wl-submit");
+        var label = document.getElementById("wl-submit-label");
+        var errBox = document.getElementById("wl-error");
+        if (!form) return;
+
+        form.addEventListener("submit", async function (ev) {
+          ev.preventDefault();
+          errBox.textContent = "";
+
+          var payload = {
+            name: form.elements["name"].value.trim(),
+            email: form.elements["email"].value.trim(),
+            startup_name: form.elements["startup_name"].value.trim(),
+            current_stage: form.elements["current_stage"].value,
+            source: "programs_page",
+          };
+          if (!payload.name || !payload.email || !payload.startup_name || !payload.current_stage) {
+            errBox.textContent = "Please fill every field.";
+            return;
+          }
+
+          btn.disabled = true;
+          label.textContent = "Saving…";
+          try {
+            var res = await fetch(API_BASE + "/sip/waitlist", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            if (res.ok) {
+              form.classList.add("submitted");
+              return;
+            }
+            var msg = "Couldn't save your details. Please try again.";
+            try {
+              var body = await res.json();
+              if (body && body.detail) {
+                msg = typeof body.detail === "string" ? body.detail : msg;
+              }
+            } catch (_) { /* ignore parse errors */ }
+            if (res.status === 429) msg = "Too many attempts — please wait a few minutes.";
+            errBox.textContent = msg;
+          } catch (_) {
+            errBox.textContent = "Network error. Check your connection and try again.";
+          } finally {
+            btn.disabled = false;
+            label.textContent = "Notify me";
+          }
+        });
+      })();
+    </script>
   </div>
 </section>
 
