@@ -227,12 +227,38 @@ async def parse_template(
 
     # 2. Split into per-question anchor blocks.
     blocks = _extract_anchor_blocks(full_text)
-    if not blocks:
-        raise TemplateParseError(
-            "no_anchors_detected",
-            "We couldn't find the answer markers (>>> ANSWER Q9 START >>> …). "
-            "Don't delete or rename the marker lines in the template.",
+
+    # Fallback: if the applicant uploaded a doc without our anchor markers
+    # (a re-typed copy, a Google-Docs export that mangled them, or a
+    # different sample file), hand the whole document to Gemini and let it
+    # locate each answer. The output schema is identical so the rest of
+    # the pipeline doesn't care which path produced the dict. We require
+    # at least 3 anchor matches before trusting the deterministic path —
+    # 1–2 stray matches usually mean the markers are partially corrupted
+    # and the freeform pass will give a better answer.
+    if len(blocks) < 3:
+        log.info(
+            "template anchor extraction sparse, falling back to freeform LLM",
+            extra={"user_id": user_id, "anchor_count": len(blocks)},
         )
+        try:
+            normalised = await OpenRouterClient().extract_template_answers_freeform(
+                full_text, user_id=user_id,
+            )
+        except LLMParseError as exc:
+            # If the LLM fallback also fails, surface the friendlier
+            # "no_anchors_detected" message so the UI can advise the
+            # applicant to re-download the template.
+            if not blocks:
+                raise TemplateParseError(
+                    "no_anchors_detected",
+                    "We couldn't find any of the answer markers in this file, "
+                    "and the fallback parser couldn't extract answers either. "
+                    "Please download the template above and fill answers between "
+                    "the >>> ANSWER QN START >>> markers.",
+                ) from exc
+            raise TemplateParseError("llm_normalization_failed", str(exc)) from exc
+        return {qid: normalised.get(qid) for qid in QUESTION_IDS}
 
     # 3. For Q10 / Q14, fold checkbox state in by position.
     #    Q10 has 2 options (Yes/No) → checkbox indices [0, 1]

@@ -290,6 +290,108 @@ Rules:
 
     _TEMPLATE_REQUIRED_KEYS = {f"Q{i}" for i in range(9, 20)}
 
+    # Fallback when the deterministic anchor parser found no markers (or
+    # too few) — happens when an applicant uploads a different .docx, a
+    # Google Docs export that mangled the markers, or a hand-typed
+    # response. We hand the whole document to Gemini with the question
+    # text and ask it to extract answers from the surrounding prose.
+    _TEMPLATE_FREEFORM_SYSTEM_PROMPT = """You receive the full plain text
+of an application document and a list of 11 questions (Q9–Q19). Your job
+is to find the applicant's answer to each question inside the document
+and return it.
+
+Document layout you should expect:
+- The questions usually appear as headings (e.g. "Q9   ·   REQUIRED")
+  followed by question prompts.
+- Answers may be inline (right under each question) or grouped together
+  at the end of the document in question order.
+- Two questions are multiple-choice: Q10 (Yes / No) and Q14 (one of:
+  Still exploring, Literature / research stage, Simulations completed,
+  Lab demos / proof of concept, Prototype built, Pilot-ready product,
+  Deployed in real setting with real users). For these, emit the exact
+  canonical option string the applicant chose.
+
+Return STRICT JSON — no prose, no markdown — with these keys exactly:
+{"Q9":  string|null, "Q10": string|null, "Q11": string|null,
+ "Q12": string|null, "Q13": string|null, "Q14": string|null,
+ "Q15": string|null, "Q16": string|null, "Q17": string|null,
+ "Q18": string|null, "Q19": string|null}
+
+Rules:
+- Q10 → "Yes" or "No" or null.
+- Q14 → one of the 7 stage strings exactly, or null.
+- Other Qs → the applicant's answer as-is (whitespace-trimmed). Strip
+  any question prompt text or instruction lines that crept into the
+  answer.
+- If you cannot identify an answer with reasonable confidence, return
+  null. Never guess. Never hallucinate.
+- Never return the question prompt itself as an answer.
+- Never paraphrase, summarise, translate, or shorten.
+"""
+
+    async def extract_template_answers_freeform(
+        self,
+        document_text: str,
+        *,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Whole-document fallback when anchor extraction yields nothing.
+
+        `document_text` should be the full UTF-8 text of the .docx or PDF
+        (already concatenated). We send it as the user message; Gemini
+        does the heavy lifting of locating each answer.
+
+        Output shape matches the anchor path: {Q9..Q19: str|None}.
+        """
+        if not self.api_key:
+            raise LLMParseError("OPENROUTER_API_KEY is not configured")
+
+        # Hard cap on input — Gemini Flash bills per token and a runaway
+        # template (e.g. someone pasting their CV in) shouldn't blow the
+        # latency budget. 30k chars ≈ 7-8k tokens; plenty for an honest
+        # response while bounding worst-case behaviour.
+        if len(document_text) > 30000:
+            document_text = document_text[:30000].rstrip() + "\n[TRUNCATED]"
+
+        prompt_payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": self._TEMPLATE_FREEFORM_SYSTEM_PROMPT},
+                {"role": "user", "content": document_text},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.0,
+        }
+        headers = self._headers()
+        last_err: Exception | None = None
+
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as http:
+            for attempt in range(1, MAX_ATTEMPTS + 1):
+                try:
+                    resp = await http.post(OPENROUTER_URL, headers=headers, json=prompt_payload)
+                except httpx.HTTPError as exc:
+                    last_err = exc
+                    if attempt < MAX_ATTEMPTS:
+                        await asyncio.sleep(2 ** (attempt - 1))
+                        continue
+                    raise LLMParseError(
+                        f"network error after {attempt} attempts: {exc}"
+                    ) from exc
+
+                if resp.status_code in RETRY_STATUS and attempt < MAX_ATTEMPTS:
+                    await asyncio.sleep(2 ** (attempt - 1))
+                    continue
+
+                if resp.status_code >= 400:
+                    raise LLMParseError(
+                        f"openrouter returned {resp.status_code}: {resp.text[:500]}"
+                    )
+
+                # Reuse the anchor-path response parser — schema is identical.
+                return self._parse_template_response(resp.json(), user_id=user_id)
+
+        raise LLMParseError(f"exhausted retries: {last_err}")
+
     def _parse_template_response(
         self, body: dict[str, Any], *, user_id: str | None,
     ) -> dict[str, Any]:
