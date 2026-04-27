@@ -192,15 +192,10 @@ kbd {
   height: 22px;
   background: var(--line);
 }
-.eir-brand { display: flex; align-items: center; gap: 14px; cursor: pointer; text-decoration: none; color: inherit; }
-.eir-brand-iisc { height: 44px; width: auto; display: block; }
+.eir-brand { display: flex; align-items: center; gap: 16px; cursor: pointer; text-decoration: none; color: inherit; }
+.eir-brand-iisc { height: 56px; width: auto; display: block; }
 .eir-brand-artpark { height: 40px; width: auto; display: block; }
 /* IISc blue logo + ARTPARK black logo work on every theme — no inversion needed */
-.eir-brand-divider {
-  width: 1px; height: 36px;
-  background: var(--line-strong);
-  flex-shrink: 0;
-}
 .eir-brand-mark {
   color: var(--ink);
   display: flex;
@@ -2959,10 +2954,9 @@ kbd {
     letter-spacing: 0.08em;
   }
   .eir-header-sep { display: none; }
-  .eir-brand { gap: 8px; min-width: 0; }
-  .eir-brand-iisc { height: 32px; }
+  .eir-brand { gap: 10px; min-width: 0; }
+  .eir-brand-iisc { height: 40px; }
   .eir-brand-artpark { height: 30px; }
-  .eir-brand-divider { height: 26px; }
   .eir-theme-tag { display: none; }
 
   /* Truncate the user email chip so it doesn't push sign-out off-screen */
@@ -3099,9 +3093,8 @@ kbd {
     min-width: 36px;
     justify-content: center;
   }
-  .eir-brand-iisc { height: 26px; }
+  .eir-brand-iisc { height: 34px; }
   .eir-brand-artpark { height: 26px; }
-  .eir-brand-divider { display: none; }
 
   .eir-header-user { max-width: 132px; }
   .eir-header-user-email { max-width: 70px; }

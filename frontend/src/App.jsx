@@ -1031,7 +1031,6 @@ function Header({ config, user, onLogout, onProfile, phase }) {
         <span className="eir-header-sep" />
         <a href={homeHref} onClick={onHomeClick} className="eir-brand" title="ARTPARK × IISc">
           <img src="/assets/iisc-logo-blue.png" alt="Indian Institute of Science" className="eir-brand-iisc" />
-          <span className="eir-brand-divider" />
           <img src="/assets/artpark-logo.png" alt="ARTPARK" className="eir-brand-artpark" />
         </a>
       </div>
