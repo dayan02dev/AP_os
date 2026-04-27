@@ -70,19 +70,30 @@ _HEAR_ABOUT_OPTIONS = (
 )
 
 ProblemDefinedValue = Literal[
+    # Current wizard options
+    "Yes",
+    "No",
+    # Legacy values preserved so already-submitted rows still validate
+    # when read back by GET /applications/me. Without this, Pydantic
+    # rejects the row at deserialisation and the wizard fails to load.
     "Yes, clearly defined",
     "Partially defined",
     "Still exploring the problem space",
 ]
 
 SolutionStageValue = Literal[
-    "Still exploring problem area",
+    # Current wizard options
+    "Still exploring",
     "Literature / research stage",
     "Simulations completed",
-    "Lab demos / proof-of-concept",
+    "Lab demos / proof of concept",
     "Prototype built",
     "Pilot-ready product",
     "Deployed in real setting with real users",
+    # Legacy spellings preserved for older drafts (mirrors the DB
+    # constraint relaxation in 009_fix_legacy_check_constraints.sql).
+    "Still exploring problem area",
+    "Lab demos / proof-of-concept",
 ]
 
 ApplicationStatusValue = Literal[
