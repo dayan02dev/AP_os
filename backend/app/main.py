@@ -30,6 +30,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from .config import settings
 from .routers import (
     admin,
+    application_templates,
     applications,
     auth,
     evidence_files,
@@ -138,6 +139,7 @@ app.include_router(applications.router)
 app.include_router(milestone_files.router)
 app.include_router(evidence_files.router)
 app.include_router(resume.router)
+app.include_router(application_templates.router)
 app.include_router(support.router)
 app.include_router(waitlist.router)
 app.include_router(admin.router)

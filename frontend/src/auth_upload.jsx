@@ -2,6 +2,12 @@
 
 import { Fragment, useState as useAS, useEffect as useAE, useRef as useAR } from "react";
 import { validateEmail, isPasswordValid, EmailInput, PasswordInput } from "./validators.jsx";
+import { useTemplate } from "./hooks/useTemplate.js";
+
+// Static template URL with a cache-bust query string. Bump the `v=` value
+// whenever the .docx in /public/templates/ changes so old browser cache
+// entries get invalidated.
+const TEMPLATE_DOWNLOAD_URL = "/templates/ARTPARK_TIR_Application_Template.docx?v=1";
 
 // Tiny "registered users" store in localStorage so login/register can check each other
 const USERS_KEY = "tir:users";
@@ -420,6 +426,41 @@ function UploadScreen({ onUploaded, warmCopy }) {
 
   const submit = () => { if (cv) onUploaded({ cv, linkedin, github }); };
 
+  return _renderUpload({
+    cv, linkedin, github, drag, inputRef, warmCopy,
+    setCv, setLinkedin, setGithub, setDrag, handleFile, submit,
+  });
+}
+
+function _renderUpload({
+  cv, linkedin, github, drag, inputRef, warmCopy,
+  setCv, setLinkedin, setGithub, setDrag, handleFile, submit,
+}) {
+  const tplInputRef = useAR(null);
+  const [tplDrag, setTplDrag] = useAS(false);
+  const [tplToast, setTplToast] = useAS(null);
+
+  const tpl = useTemplate({
+    onApplied: (result) => {
+      const filled = (result?.applied_fields || []).length;
+      const skipped = (result?.skipped_fields || []).length;
+      const missing = (result?.missing_answers || []).length;
+      const parts = [`Pre-filled ${filled} field${filled === 1 ? "" : "s"}`];
+      if (skipped) parts.push(`${skipped} kept (you'd already typed them)`);
+      if (missing) parts.push(`${missing} couldn't be read — fill them in the wizard`);
+      setTplToast(parts.join(" · "));
+    },
+  });
+
+  const handleTplFile = (file) => {
+    if (!file) return;
+    setTplToast(null);
+    tpl.upload(file).catch(() => { /* error surfaces via tpl.error */ });
+  };
+
+  const tplStatus = tpl.template?.parse_status;
+  const tplBusy = tpl.uploading || tpl.parsing || tpl.applying;
+
   return (
     <div className="eir-screen eir-upload">
       <div className="eir-coord eir-mono">
@@ -441,9 +482,9 @@ function UploadScreen({ onUploaded, warmCopy }) {
           submitted.
         </p>
         <p className="eir-q-help eir-dim" style={{ marginTop: -16 }}>
-          ↳ Tip: prefer typing? You can also download a Word document of all the
-          questions, fill it offline, and upload it to auto-populate your answers
-          (coming shortly).
+          ↳ Tip: prefer typing? Download the Word template below, fill it
+          offline, and upload it to auto-populate Q9–Q19. You'll still review
+          everything before submitting.
         </p>
 
         <div
@@ -475,6 +516,89 @@ function UploadScreen({ onUploaded, warmCopy }) {
               </div>
               <button className="eir-file-clear eir-mono" onClick={(e) => { e.stopPropagation(); setCv(null); }}>replace ↺</button>
             </>
+          )}
+        </div>
+
+        {/* Offline template — second auto-fill mechanism, complements CV */}
+        <div className="eir-template-block">
+          <div className="eir-template-row">
+            <div className="eir-template-text">
+              <div className="eir-template-title eir-mono">offline template · optional</div>
+              <div className="eir-template-blurb">
+                Prefer typing in Word or Google Docs? Download the template,
+                fill Q9–Q19 at your own pace, then upload it to auto-fill the
+                wizard.
+              </div>
+            </div>
+            <a
+              className="eir-btn eir-btn-ghost eir-template-dl"
+              href={TEMPLATE_DOWNLOAD_URL}
+              download
+            >
+              <span>Download template (.docx)</span>
+              <span className="eir-mono">↓</span>
+            </a>
+          </div>
+
+          <div
+            className={`eir-filedrop eir-template-drop ${tplDrag ? "is-drag" : ""} ${tplStatus === "completed" ? "has-file" : ""} ${tplBusy ? "is-disabled" : ""}`}
+            onDragOver={(e) => { if (tplBusy) return; e.preventDefault(); setTplDrag(true); }}
+            onDragLeave={() => setTplDrag(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setTplDrag(false);
+              if (!tplBusy) handleTplFile(e.dataTransfer.files[0]);
+            }}
+            onClick={() => { if (!tplBusy) tplInputRef.current?.click(); }}
+            style={tplBusy ? { opacity: 0.6, cursor: "not-allowed" } : undefined}
+          >
+            <input
+              ref={tplInputRef}
+              type="file"
+              hidden
+              accept=".docx,.pdf"
+              onChange={(e) => handleTplFile(e.target.files[0])}
+              disabled={tplBusy}
+            />
+            {tpl.uploading && (
+              <div className="eir-filedrop-main">Uploading filled template…</div>
+            )}
+            {!tpl.uploading && tpl.parsing && (
+              <div className="eir-filedrop-main">Reading your answers…</div>
+            )}
+            {!tpl.uploading && !tpl.parsing && tpl.applying && (
+              <div className="eir-filedrop-main">Pre-filling the wizard…</div>
+            )}
+            {!tplBusy && tplStatus !== "completed" && (
+              <>
+                <div className="eir-filedrop-main">
+                  Drop your filled template here, or <u>click to browse</u>
+                </div>
+                <div className="eir-filedrop-meta eir-mono">.docx (preferred) or .pdf · max 10 MiB</div>
+              </>
+            )}
+            {!tplBusy && tplStatus === "completed" && (
+              <div className="eir-file-chip">
+                <span className="eir-mono eir-file-ok">✓ parsed</span>
+                <span className="eir-file-name">{tpl.template?.original_filename || "template"}</span>
+                <span className="eir-mono eir-dim">replace ↺</span>
+              </div>
+            )}
+          </div>
+
+          {tpl.error && (
+            <div className="eir-mono eir-block-reason eir-template-err">
+              ↳ {tpl.error?.message || "We couldn't read that template — make sure the answer markers are intact and try again."}
+            </div>
+          )}
+          {tplStatus === "failed" && !tpl.error && (
+            <div className="eir-mono eir-block-reason eir-template-err">
+              ↳ {tpl.template?.parse_error || "Parse failed."} You can still
+              continue — the wizard works manually.
+            </div>
+          )}
+          {tplToast && (
+            <div className="eir-mono eir-template-ok">↳ {tplToast}</div>
           )}
         </div>
 
