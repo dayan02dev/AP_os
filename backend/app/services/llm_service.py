@@ -365,21 +365,33 @@ Rules:
         headers = self._headers()
         last_err: Exception | None = None
 
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as http:
-            for attempt in range(1, MAX_ATTEMPTS + 1):
+        # Tighter retry budget than the resume parser. Lambda timeout is
+        # 29s — the bigger freeform prompt takes 5–10s on its own, plus
+        # 3 retries × exponential waits used to push us past the ceiling
+        # whenever OpenRouter throttled us. Cap at 2 attempts with a flat
+        # 1-second wait — enough to clear most spurious 429s without
+        # risking a Mangum/API-Gateway timeout.
+        FREEFORM_ATTEMPTS = 2
+        FREEFORM_BACKOFF_S = 1.0
+        # And a tighter HTTP timeout per individual attempt — if Gemini
+        # hangs we want to bail in time to surface a friendly error.
+        per_attempt_timeout = 18.0
+
+        async with httpx.AsyncClient(timeout=per_attempt_timeout) as http:
+            for attempt in range(1, FREEFORM_ATTEMPTS + 1):
                 try:
                     resp = await http.post(OPENROUTER_URL, headers=headers, json=prompt_payload)
                 except httpx.HTTPError as exc:
                     last_err = exc
-                    if attempt < MAX_ATTEMPTS:
-                        await asyncio.sleep(2 ** (attempt - 1))
+                    if attempt < FREEFORM_ATTEMPTS:
+                        await asyncio.sleep(FREEFORM_BACKOFF_S)
                         continue
                     raise LLMParseError(
                         f"network error after {attempt} attempts: {exc}"
                     ) from exc
 
-                if resp.status_code in RETRY_STATUS and attempt < MAX_ATTEMPTS:
-                    await asyncio.sleep(2 ** (attempt - 1))
+                if resp.status_code in RETRY_STATUS and attempt < FREEFORM_ATTEMPTS:
+                    await asyncio.sleep(FREEFORM_BACKOFF_S)
                     continue
 
                 if resp.status_code >= 400:

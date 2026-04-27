@@ -344,14 +344,17 @@ async def apply_template_to_application(current_user: dict = Depends(get_current
     missing: list[str] = []
     patch: dict[str, Any] = {}
 
+    # Overwrite semantics (deliberate): when an applicant uploads a
+    # filled template, they're expressing intent to apply those answers.
+    # The earlier NULL-only behaviour preserved garbage stubs from prior
+    # editing sessions and confused users who saw their parsed answers
+    # ignored. We DO still skip writes when the parsed value is empty
+    # (LLM couldn't read it) — those go into missing_answers so the
+    # wizard prompts the applicant manually.
     for qid, dest_col in QUESTION_TO_APPLICATION_COLUMN.items():
         val = parsed.get(qid)
         if not val:
             missing.append(qid)
-            continue
-        existing = app_row.get(dest_col)
-        if existing not in (None, ""):
-            skipped.append(dest_col)
             continue
         # Last-line guards: enum-shaped columns get the same allowed-value
         # checks the wizard imposes. If the LLM returned a stage that
