@@ -410,7 +410,7 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
   );
 }
 
-function UploadScreen({ onUploaded, warmCopy }) {
+function UploadScreen({ onUploaded, warmCopy, onTemplateApplied }) {
   const [cv, setCv] = useAS(null);
   const [linkedin, setLinkedin] = useAS("");
   const [github, setGithub] = useAS("");
@@ -429,12 +429,14 @@ function UploadScreen({ onUploaded, warmCopy }) {
   return _renderUpload({
     cv, linkedin, github, drag, inputRef, warmCopy,
     setCv, setLinkedin, setGithub, setDrag, handleFile, submit,
+    onTemplateApplied,
   });
 }
 
 function _renderUpload({
   cv, linkedin, github, drag, inputRef, warmCopy,
   setCv, setLinkedin, setGithub, setDrag, handleFile, submit,
+  onTemplateApplied,
 }) {
   const tplInputRef = useAR(null);
   const [tplDrag, setTplDrag] = useAS(false);
@@ -449,6 +451,12 @@ function _renderUpload({
       if (skipped) parts.push(`${skipped} kept (you'd already typed them)`);
       if (missing) parts.push(`${missing} couldn't be read — fill them in the wizard`);
       setTplToast(parts.join(" · "));
+      // Tell the parent to refetch the application so the wizard's
+      // local answers map picks up the just-applied values. Without
+      // this hook the user has to refresh to see anything change.
+      if (onTemplateApplied) {
+        try { onTemplateApplied(result); } catch { /* swallow */ }
+      }
     },
   });
 

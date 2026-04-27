@@ -724,7 +724,28 @@ export default function App() {
           )}
           {phase === PHASES.UPLOAD && (
             <div>
-              <UploadScreen onUploaded={onUploadedReal} warmCopy={warmCopy} />
+              <UploadScreen
+                onUploaded={onUploadedReal}
+                warmCopy={warmCopy}
+                onTemplateApplied={async (result) => {
+                  // Pull the freshly-written columns back into the wizard
+                  // state so the user sees their answers populated.
+                  await refetch();
+                  const filled = (result?.applied_fields || []).length;
+                  const missing = (result?.missing_answers || []).length;
+                  if (filled > 0) {
+                    pushToast({
+                      kind: "info",
+                      message: `Pre-filled ${filled} field${filled === 1 ? "" : "s"} from your template${missing ? ` · ${missing} couldn't be read` : ""}.`,
+                    });
+                  } else if (missing > 0) {
+                    pushToast({
+                      kind: "info",
+                      message: "Template uploaded but no new answers were applied. You can edit them in the wizard.",
+                    });
+                  }
+                }}
+              />
               <div className="eir-upload-skip">
                 <button
                   type="button"

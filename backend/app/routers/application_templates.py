@@ -255,12 +255,25 @@ async def _parse_inline(
     dependencies=[Depends(_rl_get_me)],
 )
 async def get_my_latest_template(current_user: dict = Depends(get_current_user)):
+    """Latest template scoped to the *current* open draft.
+
+    Multi-submission: an applicant who's already submitted one application
+    and is starting a new draft should see a fresh upload state — not the
+    template they uploaded for the previous round. We filter by
+    application_id = <current draft's id> so the previous-cycle row is
+    never surfaced. If there's no open draft, return 404 too — the upload
+    UI then shows the empty state and refuses uploads gracefully.
+    """
     user_id = current_user["user_id"]
+    draft_id = _fetch_draft_application_id(user_id)
+    if not draft_id:
+        raise HTTPException(status_code=404, detail="No draft application.")
     res = (
         get_admin_client()
         .table("application_templates")
         .select("*")
         .eq("user_id", user_id)
+        .eq("application_id", draft_id)
         .order("created_at", desc=True)
         .limit(1)
         .execute()
@@ -282,24 +295,6 @@ async def apply_template_to_application(current_user: dict = Depends(get_current
     user_id = current_user["user_id"]
     admin = get_admin_client()
 
-    parsed_res = (
-        admin.table("application_templates")
-        .select("id, parsed_data, parse_status")
-        .eq("user_id", user_id)
-        .eq("parse_status", "completed")
-        .order("created_at", desc=True)
-        .limit(1)
-        .execute()
-    )
-    rows = parsed_res.data or []
-    if not rows or not rows[0].get("parsed_data"):
-        raise HTTPException(
-            status_code=404,
-            detail="No completed template parse found. Upload a filled template first.",
-        )
-    template_id = rows[0]["id"]
-    parsed: dict[str, Any] = rows[0]["parsed_data"]
-
     # Multi-app: scope to the OPEN draft so we never write into a
     # previously-submitted (immutable) application.
     app_res = (
@@ -319,6 +314,30 @@ async def apply_template_to_application(current_user: dict = Depends(get_current
         )
     app_row = app_rows[0]
     app_id = app_row["id"]
+
+    # Latest completed template *for this draft*. Without the
+    # application_id filter, an applicant on a fresh new draft after a
+    # previous submission would have a stale template-row from the prior
+    # cycle picked up here, and we'd backfill the new draft with old
+    # answers — surprising. Each draft gets its own template lifecycle.
+    parsed_res = (
+        admin.table("application_templates")
+        .select("id, parsed_data, parse_status")
+        .eq("user_id", user_id)
+        .eq("application_id", app_id)
+        .eq("parse_status", "completed")
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = parsed_res.data or []
+    if not rows or not rows[0].get("parsed_data"):
+        raise HTTPException(
+            status_code=404,
+            detail="No completed template parse found for this application. Upload a filled template first.",
+        )
+    template_id = rows[0]["id"]
+    parsed: dict[str, Any] = rows[0]["parsed_data"]
 
     applied: list[str] = []
     skipped: list[str] = []
