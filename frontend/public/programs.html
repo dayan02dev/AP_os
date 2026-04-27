@@ -879,7 +879,7 @@ details.faq.hidden { display: none; }
 }
 .footer-inner {
   max-width: 1280px; margin: 0 auto;
-  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr;
+  display: grid; grid-template-columns: 2fr 1.4fr 1.4fr;
   gap: 48px;
 }
 .footer-brand img { height: 36px; margin-bottom: 16px; filter: brightness(0) invert(1); }
@@ -1039,7 +1039,7 @@ details.faq.hidden { display: none; }
   <div class="tracks-grid">
 
     <!-- TIR CARD -->
-    <div class="track tir">
+    <div id="tir-track" class="track tir">
       <div class="track-tag-row">
         <span class="track-pill">Track 01 · TIR</span>
         <span class="track-status"><span class="led"></span>Applications open</span>
@@ -1069,7 +1069,7 @@ details.faq.hidden { display: none; }
       </div>
       <div class="track-cta-row">
         <a href="/tir" class="btn btn-primary">
-          <span>Apply to TIR</span>
+          <span>Learn more</span>
           <span class="arrow">→</span>
         </a>
         <a href="/apply" class="btn btn-ghost">Begin application</a>
@@ -1077,7 +1077,7 @@ details.faq.hidden { display: none; }
     </div>
 
     <!-- SIP CARD with TIMER -->
-    <div class="track sip">
+    <div id="sip-track" class="track sip">
       <div class="track-tag-row">
         <span class="track-pill">Track 02 · SIP</span>
         <span class="track-status upcoming"><span class="led"></span>Opens 22 May 2026</span>
@@ -1446,23 +1446,16 @@ details.faq.hidden { display: none; }
     </div>
     <div class="footer-col">
       <h4>Programs</h4>
-      <a href="/tir">TIR</a>
-      <a href="#tracks">SIP</a>
+      <a href="#tir-track">Translation Innovation Residency (TIR)</a>
+      <a href="#sip-track">Startup Incubation Program (SIP)</a>
       <a href="#compare">Compare</a>
       <a href="#faq">FAQ</a>
     </div>
     <div class="footer-col">
       <h4>Apply</h4>
-      <a href="/apply">TIR application</a>
-      <a href="#waitlist">SIP waitlist</a>
-      <a href="mailto:programs@artpark.in">Contact</a>
-    </div>
-    <div class="footer-col">
-      <h4>ARTPARK</h4>
-      <a href="#">About</a>
-      <a href="#">Ventures</a>
-      <a href="#">Research</a>
-      <a href="#">Press</a>
+      <a href="/apply">Translation Innovation Residency (TIR) application</a>
+      <a href="#waitlist">Startup Incubation Program (SIP) waitlist</a>
+      <a href="mailto:contact@artpark.in">Contact</a>
     </div>
   </div>
   <div class="footer-bot">
