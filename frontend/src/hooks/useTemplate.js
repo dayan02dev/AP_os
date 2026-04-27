@@ -12,13 +12,18 @@
 //                    initial auto-apply failed for some reason.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, UPLOAD_TIMEOUT_MS } from "../lib/api.js";
-import { loadSession } from "../lib/session.js";
+import { api, UPLOAD_TIMEOUT_MS } from "../lib/api.js";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 10;
 
 export function useTemplate({ onApplied } = {}) {
+  // Local state only: the upload widget always starts empty when a user
+  // lands on it. The previous template (and its parsed answers) live in
+  // the DB and have already been applied to the application row, so
+  // there's nothing to recover into the UI — pre-populating the widget
+  // with a stale "✓ parsed" chip just confused users who clicked
+  // "Start new application" expecting a clean slate.
   const [tpl, setTpl] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [parsing, setParsing] = useState(false);
@@ -26,23 +31,6 @@ export function useTemplate({ onApplied } = {}) {
   const [applyResult, setApplyResult] = useState(null);
   const [error, setError] = useState(null);
   const pollTimerRef = useRef(null);
-
-  // Pull the latest existing template on mount so a returning user sees
-  // their previous parse status without re-uploading.
-  useEffect(() => {
-    if (!loadSession()) return;
-    let cancelled = false;
-    api
-      .get("/application-templates/me")
-      .then((latest) => {
-        if (!cancelled) setTpl(latest);
-      })
-      .catch((err) => {
-        if (err instanceof ApiError && err.status === 404) return;
-        // non-404: leave tpl null; UI just shows the empty state.
-      });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(
     () => () => {
