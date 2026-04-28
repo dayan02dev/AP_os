@@ -11,6 +11,19 @@ import httpx
 
 from ..config import settings
 
+# OpenRouter supports a `models` array on the request body — if the
+# primary model returns a transient error (429, 503), OpenRouter
+# automatically falls through to the next model on the list. Each
+# model has its own upstream quota, so this is the simplest mitigation
+# against the free-tier rate limits we keep hitting on Gemini Flash.
+# Order: cheapest/best JSON-mode first, then progressively wider nets.
+# Keep this list short — every entry adds latency on a primary failure.
+FALLBACK_MODELS = [
+    "google/gemini-flash-1.5",
+    "google/gemini-flash-1.5-8b",
+]
+
+
 # Q14 is the "how far along are you?" stage selector. Its options are
 # duplicated here because the LLM normaliser needs them, AND apply-to-
 # application validates Q14 before writing into solution_stage. Keep
@@ -99,6 +112,11 @@ class OpenRouterClient:
     def _payload(self, raw_text: str) -> dict[str, Any]:
         return {
             "model": self.model,
+            # OpenRouter routes through `models[0]` first, transparently
+            # retries with the next model on 429/503. Lets one prompt
+            # absorb a free-tier rate-limit on Gemini-Flash-2 without
+            # surfacing as a parse failure.
+            "models": [self.model, *FALLBACK_MODELS],
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": raw_text},
@@ -243,6 +261,7 @@ Rules:
 
         prompt_payload = {
             "model": self.model,
+            "models": [self.model, *FALLBACK_MODELS],
             "messages": [
                 {"role": "system", "content": self._TEMPLATE_SYSTEM_PROMPT},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
@@ -355,6 +374,7 @@ Rules:
 
         prompt_payload = {
             "model": self.model,
+            "models": [self.model, *FALLBACK_MODELS],
             "messages": [
                 {"role": "system", "content": self._TEMPLATE_FREEFORM_SYSTEM_PROMPT},
                 {"role": "user", "content": document_text},
