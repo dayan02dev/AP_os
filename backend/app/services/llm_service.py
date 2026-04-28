@@ -14,16 +14,14 @@ from ..config import settings
 # OpenRouter supports a `models` array on the request body — if the
 # primary model returns a transient error (429, 503), OpenRouter
 # automatically falls through to the next model on the list. The free
-# Gemini tier was getting throttled in waves and the within-Google
-# fallbacks were sharing that pool, so route the fallbacks through
-# different providers entirely (OpenAI, Anthropic) — separate upstream
-# quotas mean a Google outage doesn't take parsing down with it.
-# All three support strict JSON mode and are cheap enough that the
-# user's $20 OpenRouter credit covers ~thousands of requests each.
+# Gemini tier was getting throttled in waves and within-Google fallbacks
+# share that pool, so route fallbacks through different providers
+# entirely — separate upstream quotas mean a Google outage doesn't
+# take parsing down with it. Both fallbacks support strict JSON mode.
+# OpenRouter caps `models` at 3 entries total, so primary + 2 fallbacks.
 FALLBACK_MODELS = [
     "openai/gpt-4o-mini",
     "anthropic/claude-3-5-haiku",
-    "google/gemini-flash-1.5",
 ]
 
 
