@@ -8,8 +8,31 @@ import logging
 from typing import Any
 
 import httpx
+from json_repair import repair_json
 
 from ..config import settings
+
+
+def _loads_with_repair(content: str) -> Any:
+    """json.loads with a json-repair fallback.
+
+    Gemini 2.5 Flash occasionally emits *almost*-valid JSON under load:
+    unescaped quotes inside long strings, dropped closing braces, or a
+    stray trailing comma. We've seen this surface as a JSONDecodeError
+    on field positions like char 3739 deep inside a 5KB payload — too
+    far in to be a truncation, too small to be a model rebellion.
+    json-repair is a small library that fixes the common cases without
+    paying for another LLM round-trip.
+
+    Raises json.JSONDecodeError if both passes fail.
+    """
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as first_err:
+        repaired = repair_json(content, return_objects=True)
+        if not repaired:
+            raise first_err
+        return repaired
 
 # OpenRouter supports a `models` array on the request body — if the
 # primary model returns a transient error (429, 503), OpenRouter
@@ -258,8 +281,16 @@ class OpenRouterClient:
         )
 
         try:
-            parsed = json.loads(content)
+            parsed = _loads_with_repair(content)
         except json.JSONDecodeError as exc:
+            log.warning(
+                "openrouter.json_repair_failed",
+                extra={
+                    "user_id": user_id,
+                    "err": str(exc),
+                    "content_preview": (content or "")[:500],
+                },
+            )
             raise LLMParseError(f"LLM returned non-JSON content: {exc}") from exc
 
         if not isinstance(parsed, dict):
@@ -525,8 +556,16 @@ Rules:
             raise LLMParseError(f"unexpected openrouter response shape: {exc}") from exc
 
         try:
-            parsed = json.loads(content)
+            parsed = _loads_with_repair(content)
         except json.JSONDecodeError as exc:
+            log.warning(
+                "openrouter.template_json_repair_failed",
+                extra={
+                    "user_id": user_id,
+                    "err": str(exc),
+                    "content_preview": (content or "")[:500],
+                },
+            )
             raise LLMParseError(f"LLM returned non-JSON content: {exc}") from exc
 
         if not isinstance(parsed, dict):

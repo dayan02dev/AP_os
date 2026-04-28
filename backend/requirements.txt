@@ -21,6 +21,10 @@ email-validator==2.*
 # Resume parsing (Phase 5).
 pypdf==5.*
 python-docx==1.1.*
+# Fallback when an LLM returns *almost* valid JSON (unescaped quotes
+# inside a long string, trailing commas, dropped braces under load).
+# Cheaper and more deterministic than retrying the whole API call.
+json-repair==0.*
 
 # AWS SES for transactional email (Phase 6).
 boto3==1.35.*
