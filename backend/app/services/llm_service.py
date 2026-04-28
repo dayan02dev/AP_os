@@ -44,18 +44,15 @@ TEMPLATE_Q10_OPTIONS = ["Yes", "No"]
 log = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-# API Gateway HTTP API has a hard 30s integration timeout. Once we
-# subtract the file upload, storage write, and post-parse PATCH (~3s
-# in practice), the LLM call has ~22s to resolve. With OpenRouter
-# falling through to gpt-4o-mini when Gemini-2.0 throttles, a single
-# attempt averages 8-12s. Cap per-attempt at 18s and don't retry on
-# 429 — `models[]` already handles fallback inside one HTTP call.
-HTTP_TIMEOUT = 18.0
-MAX_ATTEMPTS = 2
-# Drop 429 from retry set: with a `models` array, an OpenRouter 429
-# means EVERY model in our list is throttled — retrying within the
-# same request just burns the Lambda budget. 5xx are still worth one
-# retry (transient OpenRouter issues, not provider quota).
+# API Gateway HTTP API has a hard 30s integration timeout. Subtract
+# upload + storage + Supabase calls (~3s) and we have ~25s for the LLM.
+# CALL_DEADLINE bounds the *entire* OpenRouter round-trip including
+# body download — httpx's per-stage timeout fires on chunk gaps, not
+# total elapsed, so a slow trickle of body chunks would not trigger it.
+# We wrap the whole thing in asyncio.wait_for to enforce a hard ceiling.
+HTTP_TIMEOUT = 24.0          # connect/read/write/pool — used as fallback only
+CALL_DEADLINE_SECONDS = 22.0  # asyncio.wait_for hard cap on POST + body read
+MAX_ATTEMPTS = 1             # `models[]` array handles provider fallback in one call
 RETRY_STATUS = {500, 502, 503, 504}
 
 REQUIRED_KEYS = {
@@ -103,6 +100,14 @@ Rules:
 
 class LLMParseError(RuntimeError):
     """Parsing failed after all retries, or response was unparseable."""
+
+
+class _RetryableStatus(Exception):
+    """Internal: OpenRouter returned a 5xx that's worth retrying."""
+
+    def __init__(self, status: int) -> None:
+        super().__init__(f"openrouter {status}")
+        self.status = status
 
 
 class OpenRouterClient:
@@ -154,7 +159,20 @@ class OpenRouterClient:
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as http:
             for attempt in range(1, MAX_ATTEMPTS + 1):
                 try:
-                    resp = await http.post(OPENROUTER_URL, headers=headers, json=payload)
+                    body_dict = await asyncio.wait_for(
+                        self._post_and_read(http, OPENROUTER_URL, headers, payload, user_id=user_id),
+                        timeout=CALL_DEADLINE_SECONDS,
+                    )
+                except asyncio.TimeoutError as exc:
+                    log.warning(
+                        "openrouter total deadline exceeded",
+                        extra={"attempt": attempt, "deadline_s": CALL_DEADLINE_SECONDS, "user_id": user_id},
+                    )
+                    if attempt < MAX_ATTEMPTS:
+                        continue
+                    raise LLMParseError(
+                        f"openrouter exceeded {CALL_DEADLINE_SECONDS}s total deadline"
+                    ) from exc
                 except httpx.HTTPError as exc:
                     last_err = exc
                     log.warning(
@@ -165,36 +183,68 @@ class OpenRouterClient:
                         await asyncio.sleep(2 ** (attempt - 1))
                         continue
                     raise LLMParseError(f"network error after {attempt} attempts: {exc}") from exc
-
-                if resp.status_code in RETRY_STATUS and attempt < MAX_ATTEMPTS:
+                except _RetryableStatus as exc:
+                    last_err = exc
                     log.warning(
                         "openrouter retriable status",
-                        extra={"attempt": attempt, "status": resp.status_code, "user_id": user_id},
+                        extra={"attempt": attempt, "status": exc.status, "user_id": user_id},
                     )
-                    await asyncio.sleep(2 ** (attempt - 1))
-                    continue
+                    if attempt < MAX_ATTEMPTS:
+                        await asyncio.sleep(2 ** (attempt - 1))
+                        continue
+                    raise LLMParseError(f"openrouter {exc.status} after retries") from exc
 
-                if resp.status_code >= 400:
-                    raise LLMParseError(
-                        f"openrouter returned {resp.status_code}: {resp.text[:500]}"
-                    )
-
-                log.info(
-                    "openrouter.response_received",
-                    extra={"user_id": user_id, "body_bytes": len(resp.content)},
-                )
-                body_dict = resp.json()
-                log.info(
-                    "openrouter.body_parsed",
-                    extra={
-                        "user_id": user_id,
-                        "model_used": body_dict.get("model"),
-                        "has_choices": bool(body_dict.get("choices")),
-                    },
-                )
                 return self._parse_response(body_dict, user_id=user_id)
 
         raise LLMParseError(f"exhausted retries: {last_err}")
+
+    async def _post_and_read(
+        self,
+        http: httpx.AsyncClient,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        *,
+        user_id: str | None,
+    ) -> dict[str, Any]:
+        """POST and fully consume the response body inside one bounded call.
+
+        httpx logs `HTTP Request: ... 200 OK` as soon as response headers
+        arrive — body download still happens lazily on `.content`/`.json()`.
+        OpenRouter streams the body as the upstream LLM generates tokens,
+        so the body read can take 10–20s after headers. Wrapping this
+        helper in `asyncio.wait_for` enforces a total wall-clock deadline
+        across header + body, which is what we actually need to fit the
+        Lambda budget.
+        """
+        resp = await http.post(url, headers=headers, json=payload)
+
+        if resp.status_code in RETRY_STATUS:
+            raise _RetryableStatus(resp.status_code)
+        if resp.status_code >= 400:
+            await resp.aread()
+            raise LLMParseError(
+                f"openrouter returned {resp.status_code}: {resp.text[:500]}"
+            )
+
+        # Force the body to download NOW — under the wait_for deadline —
+        # so a slow trickle from OpenRouter raises TimeoutError here, not
+        # later when the caller invokes resp.json() outside the wrapper.
+        body_bytes = await resp.aread()
+        log.info(
+            "openrouter.response_received",
+            extra={"user_id": user_id, "body_bytes": len(body_bytes)},
+        )
+        body_dict = resp.json()
+        log.info(
+            "openrouter.body_parsed",
+            extra={
+                "user_id": user_id,
+                "model_used": body_dict.get("model"),
+                "has_choices": bool(body_dict.get("choices")),
+            },
+        )
+        return body_dict
 
     def _parse_response(self, body: dict[str, Any], *, user_id: str | None) -> dict[str, Any]:
         try:
@@ -304,7 +354,20 @@ Rules:
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as http:
             for attempt in range(1, MAX_ATTEMPTS + 1):
                 try:
-                    resp = await http.post(OPENROUTER_URL, headers=headers, json=prompt_payload)
+                    body_dict = await asyncio.wait_for(
+                        self._post_and_read(http, OPENROUTER_URL, headers, prompt_payload, user_id=user_id),
+                        timeout=CALL_DEADLINE_SECONDS,
+                    )
+                except asyncio.TimeoutError as exc:
+                    log.warning(
+                        "openrouter (template) total deadline exceeded",
+                        extra={"attempt": attempt, "deadline_s": CALL_DEADLINE_SECONDS, "user_id": user_id},
+                    )
+                    if attempt < MAX_ATTEMPTS:
+                        continue
+                    raise LLMParseError(
+                        f"openrouter exceeded {CALL_DEADLINE_SECONDS}s total deadline"
+                    ) from exc
                 except httpx.HTTPError as exc:
                     last_err = exc
                     log.warning(
@@ -317,22 +380,18 @@ Rules:
                     raise LLMParseError(
                         f"network error after {attempt} attempts: {exc}"
                     ) from exc
-
-                if resp.status_code in RETRY_STATUS and attempt < MAX_ATTEMPTS:
+                except _RetryableStatus as exc:
+                    last_err = exc
                     log.warning(
                         "openrouter (template) retriable status",
-                        extra={"attempt": attempt, "status": resp.status_code,
-                               "user_id": user_id},
+                        extra={"attempt": attempt, "status": exc.status, "user_id": user_id},
                     )
-                    await asyncio.sleep(2 ** (attempt - 1))
-                    continue
+                    if attempt < MAX_ATTEMPTS:
+                        await asyncio.sleep(2 ** (attempt - 1))
+                        continue
+                    raise LLMParseError(f"openrouter {exc.status} after retries") from exc
 
-                if resp.status_code >= 400:
-                    raise LLMParseError(
-                        f"openrouter returned {resp.status_code}: {resp.text[:500]}"
-                    )
-
-                return self._parse_template_response(resp.json(), user_id=user_id)
+                return self._parse_template_response(body_dict, user_id=user_id)
 
         raise LLMParseError(f"exhausted retries: {last_err}")
 
@@ -414,42 +473,46 @@ Rules:
         headers = self._headers()
         last_err: Exception | None = None
 
-        # Tighter retry budget than the resume parser. Lambda timeout is
-        # 29s — the bigger freeform prompt takes 5–10s on its own, plus
-        # 3 retries × exponential waits used to push us past the ceiling
-        # whenever OpenRouter throttled us. Cap at 2 attempts with a flat
-        # 1-second wait — enough to clear most spurious 429s without
-        # risking a Mangum/API-Gateway timeout.
-        FREEFORM_ATTEMPTS = 2
-        FREEFORM_BACKOFF_S = 1.0
-        # And a tighter HTTP timeout per individual attempt — if Gemini
-        # hangs we want to bail in time to surface a friendly error.
-        per_attempt_timeout = 18.0
+        # Single attempt under the same total-deadline wrapper as the resume
+        # path. The freeform prompt is bigger (full document) so the body
+        # download is the slowest part — which is exactly what the wait_for
+        # bound protects against. 5xx retries are still useful but capped
+        # so the second attempt also fits inside Lambda's budget.
+        FREEFORM_ATTEMPTS = 1
 
-        async with httpx.AsyncClient(timeout=per_attempt_timeout) as http:
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as http:
             for attempt in range(1, FREEFORM_ATTEMPTS + 1):
                 try:
-                    resp = await http.post(OPENROUTER_URL, headers=headers, json=prompt_payload)
+                    body_dict = await asyncio.wait_for(
+                        self._post_and_read(http, OPENROUTER_URL, headers, prompt_payload, user_id=user_id),
+                        timeout=CALL_DEADLINE_SECONDS,
+                    )
+                except asyncio.TimeoutError as exc:
+                    log.warning(
+                        "openrouter (freeform) total deadline exceeded",
+                        extra={"attempt": attempt, "deadline_s": CALL_DEADLINE_SECONDS, "user_id": user_id},
+                    )
+                    if attempt < FREEFORM_ATTEMPTS:
+                        continue
+                    raise LLMParseError(
+                        f"openrouter exceeded {CALL_DEADLINE_SECONDS}s total deadline"
+                    ) from exc
                 except httpx.HTTPError as exc:
                     last_err = exc
                     if attempt < FREEFORM_ATTEMPTS:
-                        await asyncio.sleep(FREEFORM_BACKOFF_S)
+                        await asyncio.sleep(1.0)
                         continue
                     raise LLMParseError(
                         f"network error after {attempt} attempts: {exc}"
                     ) from exc
+                except _RetryableStatus as exc:
+                    last_err = exc
+                    if attempt < FREEFORM_ATTEMPTS:
+                        await asyncio.sleep(1.0)
+                        continue
+                    raise LLMParseError(f"openrouter {exc.status} after retries") from exc
 
-                if resp.status_code in RETRY_STATUS and attempt < FREEFORM_ATTEMPTS:
-                    await asyncio.sleep(FREEFORM_BACKOFF_S)
-                    continue
-
-                if resp.status_code >= 400:
-                    raise LLMParseError(
-                        f"openrouter returned {resp.status_code}: {resp.text[:500]}"
-                    )
-
-                # Reuse the anchor-path response parser — schema is identical.
-                return self._parse_template_response(resp.json(), user_id=user_id)
+                return self._parse_template_response(body_dict, user_id=user_id)
 
         raise LLMParseError(f"exhausted retries: {last_err}")
 

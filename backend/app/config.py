@@ -67,7 +67,10 @@ class Settings(BaseSettings):
 
     # ── OpenRouter ──────────────────────────────────────────────
     openrouter_api_key: str = ""
-    openrouter_model: str = "google/gemini-2.0-flash-001"
+    # gemini-2.5-flash is paid (separate quota from the rate-limited free
+    # gemini-2.0 tier) and benchmarks at 5s for our resume/template
+    # prompts vs 20s+ when 2.0 throttles and falls through to gpt-4o-mini.
+    openrouter_model: str = "google/gemini-2.5-flash"
 
     # ── Email (Resend HTTP API) ─────────────────────────────────
     # We migrated off AWS SES because sandbox-mode recipient verification

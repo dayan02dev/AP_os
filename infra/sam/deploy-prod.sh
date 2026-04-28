@@ -67,7 +67,7 @@ sam deploy \
     "SupabaseAnonKey=${SUPABASE_ANON_KEY}" \
     "SupabaseServiceRoleKey=${SUPABASE_SERVICE_ROLE_KEY}" \
     "OpenRouterApiKey=${OPENROUTER_API_KEY}" \
-    "OpenRouterModel=${OPENROUTER_MODEL:-google/gemini-2.0-flash-001}" \
+    "OpenRouterModel=${OPENROUTER_MODEL:-google/gemini-2.5-flash}" \
     "SentryDsn=${SENTRY_DSN:-}" \
     "AdminApiKey=${ADMIN_API_KEY}" \
     "AppVersion=${APP_VERSION:-0.1.0}" \
