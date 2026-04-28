@@ -179,7 +179,20 @@ class OpenRouterClient:
                         f"openrouter returned {resp.status_code}: {resp.text[:500]}"
                     )
 
-                return self._parse_response(resp.json(), user_id=user_id)
+                log.info(
+                    "openrouter.response_received",
+                    extra={"user_id": user_id, "body_bytes": len(resp.content)},
+                )
+                body_dict = resp.json()
+                log.info(
+                    "openrouter.body_parsed",
+                    extra={
+                        "user_id": user_id,
+                        "model_used": body_dict.get("model"),
+                        "has_choices": bool(body_dict.get("choices")),
+                    },
+                )
+                return self._parse_response(body_dict, user_id=user_id)
 
         raise LLMParseError(f"exhausted retries: {last_err}")
 
@@ -188,6 +201,11 @@ class OpenRouterClient:
             content = body["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMParseError(f"unexpected openrouter response shape: {exc}") from exc
+
+        log.info(
+            "openrouter.content_extracted",
+            extra={"user_id": user_id, "content_chars": len(content) if content else 0},
+        )
 
         try:
             parsed = json.loads(content)
