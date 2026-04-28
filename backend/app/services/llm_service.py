@@ -13,14 +13,17 @@ from ..config import settings
 
 # OpenRouter supports a `models` array on the request body — if the
 # primary model returns a transient error (429, 503), OpenRouter
-# automatically falls through to the next model on the list. Each
-# model has its own upstream quota, so this is the simplest mitigation
-# against the free-tier rate limits we keep hitting on Gemini Flash.
-# Order: cheapest/best JSON-mode first, then progressively wider nets.
-# Keep this list short — every entry adds latency on a primary failure.
+# automatically falls through to the next model on the list. The free
+# Gemini tier was getting throttled in waves and the within-Google
+# fallbacks were sharing that pool, so route the fallbacks through
+# different providers entirely (OpenAI, Anthropic) — separate upstream
+# quotas mean a Google outage doesn't take parsing down with it.
+# All three support strict JSON mode and are cheap enough that the
+# user's $20 OpenRouter credit covers ~thousands of requests each.
 FALLBACK_MODELS = [
+    "openai/gpt-4o-mini",
+    "anthropic/claude-3-5-haiku",
     "google/gemini-flash-1.5",
-    "google/gemini-flash-1.5-8b",
 ]
 
 
