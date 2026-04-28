@@ -17,6 +17,7 @@ import {
   ParsedReviewScreen,
   ParsingScreen,
   ReturningChoiceScreen,
+  TemplateScreen,
   UploadScreen,
 } from "./auth_upload.jsx";
 import { QuestionInput, isAnswered, whyBlocked } from "./inputs.jsx";
@@ -50,6 +51,11 @@ const PHASES = {
   // (pre-submission summary) so that re-entering REVIEW later doesn't
   // bounce the user back to the CV-review screen when a resume is on file.
   PARSE_REVIEW: "parse_review",
+  // Optional offline-template (.docx) download + upload step that lives
+  // between section 01 (Basic Details) and section 02 (Problem). Inserted
+  // as its own phase so applicants who type in Word/Docs can pre-fill
+  // Q9–Q19 before they hit the long-text questions.
+  TEMPLATE_UPLOAD: "template_upload",
   REVIEW: "review",
   SECTION_INTRO: "section_intro",
   QUESTION: "question",
@@ -104,6 +110,9 @@ function urlForState(phase, sectionIdx) {
   }
   if (phase === PHASES.SECTION_INTRO || phase === PHASES.QUESTION || phase === PHASES.CELEBRATE) {
     return "/apply/" + (SECTION_ORDER[sectionIdx] || SECTION_ORDER[0]);
+  }
+  if (phase === PHASES.TEMPLATE_UPLOAD) {
+    return "/apply/template";
   }
   return "/apply";
 }
@@ -422,10 +431,15 @@ export default function App() {
     }
     if (phase === PHASES.SECTION_INTRO) {
       // Section 1 intro → back to the CV parse-review (if resume on file)
-      //   otherwise to the upload screen. Section N intro (N>1) → back to
-      //   the last question of section N-1.
+      //   otherwise to the upload screen. Section 2 intro → back to the
+      //   offline-template page (which sits between sections 01 and 02).
+      //   Section N intro (N>2) → back to the last question of N-1.
       if (sectionIdx === 0) {
         setPhase(resume.resume ? PHASES.PARSE_REVIEW : PHASES.UPLOAD);
+        return;
+      }
+      if (sectionIdx === 1) {
+        setPhase(PHASES.TEMPLATE_UPLOAD);
         return;
       }
       const prevSectionLastFQ = [...flat].reverse().find((fq) => fq.sectionIdx === sectionIdx - 1);
@@ -433,6 +447,20 @@ export default function App() {
         setPhase(PHASES.QUESTION);
         setStepIdx(prevSectionLastFQ.globalIdx);
         setSectionIdx(prevSectionLastFQ.sectionIdx);
+      }
+      return;
+    }
+    if (phase === PHASES.TEMPLATE_UPLOAD) {
+      // Mirror the TemplateScreen's own back button: drop into the last
+      // question of section 0 so the user can re-edit basic info.
+      const lastBasicIdx = flat.findIndex(
+        (f, i, arr) =>
+          f.sectionIdx === 0 && (i === arr.length - 1 || arr[i + 1].sectionIdx !== 0),
+      );
+      if (lastBasicIdx >= 0) {
+        setSectionIdx(0);
+        setStepIdx(lastBasicIdx);
+        setPhase(PHASES.QUESTION);
       }
       return;
     }
@@ -640,6 +668,16 @@ export default function App() {
           onLogout={logout}
           onProfile={goProfileFrom}
           phase={phase}
+          onHome={() => {
+            // 'MY APPLICATION' button — should always land the user on
+            // the welcome/returning page (the tabbed 'Good to see you'
+            // screen), not just nav to /apply (which leaves the phase
+            // state untouched, so e.g. clicking from UPLOAD does
+            // nothing visible).
+            setSectionIdx(0);
+            setStepIdx(0);
+            setPhase(PHASES.RETURNING);
+          }}
         />
 
         {/* Section progress only on the section-intro hand-off — gives the
@@ -724,28 +762,7 @@ export default function App() {
           )}
           {phase === PHASES.UPLOAD && (
             <div>
-              <UploadScreen
-                onUploaded={onUploadedReal}
-                warmCopy={warmCopy}
-                onTemplateApplied={async (result) => {
-                  // Pull the freshly-written columns back into the wizard
-                  // state so the user sees their answers populated.
-                  await refetch();
-                  const filled = (result?.applied_fields || []).length;
-                  const missing = (result?.missing_answers || []).length;
-                  if (filled > 0) {
-                    pushToast({
-                      kind: "info",
-                      message: `Pre-filled ${filled} field${filled === 1 ? "" : "s"} from your template${missing ? ` · ${missing} couldn't be read` : ""}.`,
-                    });
-                  } else if (missing > 0) {
-                    pushToast({
-                      kind: "info",
-                      message: "Template uploaded but no new answers were applied. You can edit them in the wizard.",
-                    });
-                  }
-                }}
-              />
+              <UploadScreen onUploaded={onUploadedReal} warmCopy={warmCopy} />
               <div className="eir-upload-skip">
                 <button
                   type="button"
@@ -800,7 +817,40 @@ export default function App() {
           {phase === PHASES.CELEBRATE && (
             <CelebrationScreen
               message={celebMsg || "Section complete."}
+              onContinue={() => {
+                // Slot the offline-template step in between section 01
+                // (basic details) and section 02 (problem). Every other
+                // section transition goes straight to the next intro.
+                if (sectionIdx === 1) {
+                  setPhase(PHASES.TEMPLATE_UPLOAD);
+                } else {
+                  setPhase(PHASES.SECTION_INTRO);
+                }
+              }}
+            />
+          )}
+          {phase === PHASES.TEMPLATE_UPLOAD && (
+            <TemplateScreen
               onContinue={() => setPhase(PHASES.SECTION_INTRO)}
+              onBack={() => {
+                // Backtrack to the last basic-section question.
+                const lastBasicIdx = flat.findIndex(
+                  (f, i, arr) =>
+                    f.sectionIdx === 0 &&
+                    (i === arr.length - 1 || arr[i + 1].sectionIdx !== 0),
+                );
+                if (lastBasicIdx >= 0) {
+                  setSectionIdx(0);
+                  setStepIdx(lastBasicIdx);
+                  setPhase(PHASES.QUESTION);
+                } else {
+                  setPhase(PHASES.SECTION_INTRO);
+                }
+              }}
+              onTemplateApplied={async () => {
+                await refetch();
+                pushToast({ kind: "info", message: "Pre-filled from your template." });
+              }}
             />
           )}
           {phase === PHASES.QUESTION && currentFQ && (
@@ -1027,7 +1077,7 @@ function ParseFailedScreen({ error, onContinue, onRetry }) {
   );
 }
 
-function Header({ config, user, onLogout, onProfile, phase }) {
+function Header({ config, user, onLogout, onProfile, phase, onHome }) {
   const theme = THEMES[config.theme] || THEMES.minimal;
   const onProfilePage = phase === "profile";
   const navigate = useNavigate();
@@ -1040,7 +1090,12 @@ function Header({ config, user, onLogout, onProfile, phase }) {
   const onHomeClick = (e) => {
     if (!user) return; // anon: let the browser follow the / → programs.html rewrite
     e.preventDefault();
-    navigate("/apply");
+    // Ask App.jsx to reset the phase machine to the welcome/returning
+    // tabs screen. Without this, navigating to /apply when we're
+    // already on /apply has no visible effect — the phase state
+    // persists, so the upload screen / wizard step stays mounted.
+    if (onHome) onHome();
+    else navigate("/apply");
   };
   return (
     <header className="eir-header">
