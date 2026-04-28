@@ -76,6 +76,13 @@ export default function AppRoutes() {
         path="/apply/submitted"
         element={<ProtectedRoute><App /></ProtectedRoute>}
       />
+      {/* Optional offline-template upload step that sits between section
+          01 (basic) and section 02 (problem). PHASES.TEMPLATE_UPLOAD
+          serialises to this path via urlForState in App.jsx. */}
+      <Route
+        path="/apply/template"
+        element={<ProtectedRoute><App /></ProtectedRoute>}
+      />
       <Route
         path="/apply/set-password"
         element={<ProtectedRoute><SetPasswordPage /></ProtectedRoute>}
