@@ -44,9 +44,19 @@ TEMPLATE_Q10_OPTIONS = ["Yes", "No"]
 log = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-HTTP_TIMEOUT = 30.0
-MAX_ATTEMPTS = 3
-RETRY_STATUS = {429, 500, 502, 503, 504}
+# API Gateway HTTP API has a hard 30s integration timeout. Once we
+# subtract the file upload, storage write, and post-parse PATCH (~3s
+# in practice), the LLM call has ~22s to resolve. With OpenRouter
+# falling through to gpt-4o-mini when Gemini-2.0 throttles, a single
+# attempt averages 8-12s. Cap per-attempt at 18s and don't retry on
+# 429 — `models[]` already handles fallback inside one HTTP call.
+HTTP_TIMEOUT = 18.0
+MAX_ATTEMPTS = 2
+# Drop 429 from retry set: with a `models` array, an OpenRouter 429
+# means EVERY model in our list is throttled — retrying within the
+# same request just burns the Lambda budget. 5xx are still worth one
+# retry (transient OpenRouter issues, not provider quota).
+RETRY_STATUS = {500, 502, 503, 504}
 
 REQUIRED_KEYS = {
     "full_name", "email", "phone", "linkedin_url", "location",

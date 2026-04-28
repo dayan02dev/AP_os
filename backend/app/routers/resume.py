@@ -175,6 +175,7 @@ async def _parse_inline(
 
     try:
         text = extract_text(file_bytes, mime)
+        log.info("resume.extract_text ok", extra={"resume_id": resume_id, "chars": len(text)})
     except UnsupportedFileType as exc:
         _stamp_failed(resume_id, str(exc))
         return "failed", None, str(exc)
@@ -184,6 +185,10 @@ async def _parse_inline(
 
     try:
         parsed = await OpenRouterClient().parse_resume(text, user_id=user_id)
+        log.info(
+            "resume.llm_parse ok",
+            extra={"resume_id": resume_id, "parsed_keys": list(parsed.keys())},
+        )
     except LLMParseError as exc:
         _stamp_failed(resume_id, str(exc))
         return "failed", None, str(exc)
@@ -192,10 +197,15 @@ async def _parse_inline(
         _stamp_failed(resume_id, f"unexpected: {exc}")
         return "failed", None, f"unexpected: {exc}"
 
+    # parsed_at is set by the database via DEFAULT now() / trigger when we
+    # don't pass it; sending the literal string "now()" used to silently
+    # 400 from PostgREST and may be the reason this PATCH was hanging in
+    # production (no exception surfaced because supabase-py swallowed it).
     try:
         admin.table("resume_uploads").update(
-            {"parsed_data": parsed, "parse_status": "completed", "parsed_at": "now()"}
+            {"parsed_data": parsed, "parse_status": "completed"}
         ).eq("id", resume_id).execute()
+        log.info("resume.stamp_completed ok", extra={"resume_id": resume_id})
     except Exception as exc:
         log.error("could not stamp completed", extra={"resume_id": resume_id, "err": str(exc)})
         return "failed", None, f"post-parse update failed: {exc}"
