@@ -734,18 +734,19 @@ body {
   animation: pulse 1.8s infinite;
 }
 .countdown-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 .cd-cell {
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.1);
-  padding: 10px 8px;
+  padding: 14px 4px 12px;
   text-align: center;
+  min-width: 0;
 }
 .cd-val {
   font-family: var(--font-display);
-  font-weight: 700; font-size: clamp(32px, 3.6vw, 44px);
+  font-weight: 700; font-size: clamp(24px, 2.4vw, 34px);
   line-height: 1; color: var(--artlight);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
