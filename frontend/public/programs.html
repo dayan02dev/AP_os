@@ -272,21 +272,25 @@ body {
 .flow-card .flow-trl {
   margin-top: auto;
   margin-bottom: 0;
-  font-weight: 500;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,0.22);
+  font-weight: 400;
+  color: rgba(255,255,255,0.7);
+  font-size: 14px;
+  letter-spacing: 0.01em;
 }
 .flow-arrow {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #b8b3c9;
-  font-size: 28px;
-  font-weight: 400;
+  color: #a59cdb;
   user-select: none;
   /* Sit roughly mid-card vertically by adding the same top margin as the
      header text uses on the stages — keeps the arrow visually centered
      against the purple cards, not the full grid row. */
   padding-top: 110px;
 }
+.flow-arrow svg { display: block; width: 60px; height: 18px; }
 .flow-stage-text {
   padding-top: 110px;
   padding-left: 4px;
@@ -1127,7 +1131,12 @@ details.faq.hidden { display: none; }
           </div>
         </div>
 
-        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-arrow" aria-hidden="true">
+          <svg viewBox="0 0 60 18" xmlns="http://www.w3.org/2000/svg">
+            <line x1="0" y1="9" x2="46" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>
+            <polygon points="44,1 60,9 44,17" fill="currentColor"/>
+          </svg>
+        </div>
 
         <!-- Stage 2 -->
         <div class="flow-stage">
@@ -1139,7 +1148,12 @@ details.faq.hidden { display: none; }
           </div>
         </div>
 
-        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-arrow" aria-hidden="true">
+          <svg viewBox="0 0 60 18" xmlns="http://www.w3.org/2000/svg">
+            <line x1="0" y1="9" x2="46" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>
+            <polygon points="44,1 60,9 44,17" fill="currentColor"/>
+          </svg>
+        </div>
 
         <!-- Stage 3 — text only, no box -->
         <div class="flow-stage flow-stage-text">
