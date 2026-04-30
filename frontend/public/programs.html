@@ -459,7 +459,11 @@ body {
   font-weight: 700; margin: 0; text-wrap: balance;
 }
 .tracks-grid {
-  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 96px minmax(0,1fr) 96px minmax(0,1fr);
+  column-gap: 16px;
+  row-gap: 24px;
+  align-items: stretch;
 }
 .track {
   background: var(--paper);
@@ -660,6 +664,38 @@ body {
   font-family: var(--font-mono);
   font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
   color: rgba(255,255,255,0.55);
+}
+
+/* Connector cells between track cards (TIR → SIP → Outcome) */
+.track-connector {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  text-align: center;
+  padding: 0 6px;
+  min-width: 0;
+}
+.track-connector .conn-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0 0 12px;
+}
+.track-connector .conn-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--line);
+  margin: 0 0 16px;
+}
+.track-connector svg {
+  display: block;
+  width: 60px;
+  height: 18px;
+  margin: 0 auto;
+  color: var(--artblack);
 }
 
 @media (max-width: 1024px) {
@@ -1047,7 +1083,8 @@ details.faq.hidden { display: none; }
 @media (max-width: 960px) {
   .hero-inner { padding: 56px 24px 32px; }
   .tracks-head { grid-template-columns: 1fr; gap: 20px; }
-  .tracks-grid { grid-template-columns: 1fr; }
+  .tracks-grid { grid-template-columns: 1fr; column-gap: 0; }
+  .track-connector { display: none; }
   .compare-table { grid-template-columns: 1fr; }
   .cmp-cell { border-right: none; }
   .cmp-cell:nth-child(3n) { border-right: none; }
@@ -1232,6 +1269,16 @@ details.faq.hidden { display: none; }
       </div>
     </div>
 
+    <!-- CONNECTOR: TIR → SIP -->
+    <div class="track-connector" aria-hidden="true">
+      <div class="conn-label">Graduate</div>
+      <div class="conn-divider"></div>
+      <svg viewBox="0 0 60 18" xmlns="http://www.w3.org/2000/svg">
+        <line x1="0" y1="9" x2="46" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>
+        <polygon points="44,1 60,9 44,17" fill="currentColor"/>
+      </svg>
+    </div>
+
     <!-- SIP CARD with TIMER -->
     <div id="sip-track" class="track sip">
       <span class="track-bg-num" aria-hidden="true">02</span>
@@ -1282,6 +1329,16 @@ details.faq.hidden { display: none; }
         </a>
         <a href="#compare" class="btn btn-ghost">Compare</a>
       </div>
+    </div>
+
+    <!-- CONNECTOR: SIP → Outcome -->
+    <div class="track-connector" aria-hidden="true">
+      <div class="conn-label">Outcome</div>
+      <div class="conn-divider"></div>
+      <svg viewBox="0 0 60 18" xmlns="http://www.w3.org/2000/svg">
+        <line x1="0" y1="9" x2="46" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>
+        <polygon points="44,1 60,9 44,17" fill="currentColor"/>
+      </svg>
     </div>
 
     <!-- OUTCOME CARD -->
