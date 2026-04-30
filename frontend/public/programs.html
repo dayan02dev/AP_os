@@ -101,8 +101,9 @@ body {
 .nav-right { display: flex; align-items: center; gap: 18px; }
 .nav-link {
   font-family: var(--font-mono);
-  font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase;
-  color: var(--ink-soft); text-decoration: none;
+  font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink); text-decoration: none;
+  font-weight: 600;
   padding: 8px 12px;
 }
 .nav-link:hover { color: var(--artblue); }
@@ -178,19 +179,19 @@ body {
 .hero h1 {
   font-family: var(--font-display);
   font-size: clamp(44px, 6vw, 80px);
-  line-height: 1.05;
+  line-height: 1.12;
   letter-spacing: -0.025em;
   font-weight: 700;
-  margin: 0 0 28px;
+  margin: 0 0 32px;
   color: var(--ink);
   text-wrap: balance;
-  max-width: 20ch;
+  max-width: 26ch;
 }
 .hero h1 .hl { background: var(--artlight); color: var(--artblue); padding: 0 8px; font-weight: 800; }
 .hero h1 .blue { color: var(--artblue); }
 .hero-lede {
-  font-size: 18px; line-height: 1.6;
-  color: var(--ink-soft);
+  font-size: 18px; line-height: 1.65;
+  color: var(--ink);
   max-width: 68ch;
   margin: 0 0 48px;
   text-wrap: pretty;
@@ -307,6 +308,7 @@ body {
   line-height: 1.5;
   color: var(--artblue);
 }
+.flow-final-soft strong { font-weight: 700; color: var(--artblue); }
 
 @media (max-width: 880px) {
   .flow-grid {
@@ -453,7 +455,7 @@ body {
   font-weight: 700; margin: 0; text-wrap: balance;
 }
 .tracks-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px;
 }
 .track {
   background: var(--paper);
@@ -537,6 +539,129 @@ body {
 }
 .track.sip .btn-primary { background: var(--accent-violet); }
 .track.sip .btn-primary:hover { box-shadow: 0 8px 24px rgba(107,92,255,0.3); }
+
+/* ===== Tracks redesign — 3-col with full-bleed colored cards + outcome ===== */
+.tracks-intro-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+.track-intro {
+  border-left: 2px solid var(--artblue);
+  padding: 6px 0 6px 20px;
+}
+.track-intro.intro-sip { border-left-color: var(--accent-violet); }
+.track-intro.intro-outcome { border-left-color: var(--artblack); }
+.track-intro .intro-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-bottom: 12px;
+}
+.track-intro p {
+  margin: 0;
+  font-size: 15px; line-height: 1.55;
+  color: var(--ink-soft);
+}
+.track-intro p strong { color: var(--ink); font-weight: 700; }
+
+/* Full-bleed colored cards */
+.track.tir { background: var(--artblue-deep); border-color: var(--artblue-deep); color: #fff; }
+.track.sip { background: var(--accent-violet); border-color: var(--accent-violet); color: #fff; }
+.track.outcome { background: var(--artblack); border-color: var(--artblack); color: #fff; }
+
+/* Hide top stripe on colored cards (no longer needed). */
+.track.tir::before, .track.sip::before, .track.outcome::before { display: none; }
+
+/* Big background "01/02/03" digit */
+.track-bg-num {
+  position: absolute;
+  top: 28px; right: 32px;
+  font-family: var(--font-display);
+  font-weight: 800; font-size: 96px; line-height: 1;
+  letter-spacing: -0.04em;
+  color: rgba(255,255,255,0.10);
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+
+/* Lift card content above the bg number */
+.track > * { position: relative; z-index: 1; }
+
+/* Type colors on dark cards */
+.track.tir h2, .track.sip h2, .track.outcome h2 { color: #fff; }
+.track.tir .track-subhead,
+.track.sip .track-subhead,
+.track.outcome .track-subhead { color: rgba(255,255,255,0.65); }
+.track.tir .track-lede,
+.track.sip .track-lede,
+.track.outcome .track-lede { color: rgba(255,255,255,0.92); }
+
+/* Specs grid lines + labels on dark bg */
+.track.tir .track-specs,
+.track.sip .track-specs { border-top-color: rgba(255,255,255,0.18); }
+.track.tir .track-spec,
+.track.sip .track-spec { border-bottom-color: rgba(255,255,255,0.18); }
+.track.tir .track-spec:nth-child(odd),
+.track.sip .track-spec:nth-child(odd) { border-right-color: rgba(255,255,255,0.18); }
+.track.tir .track-spec .k,
+.track.sip .track-spec .k { color: rgba(255,255,255,0.55); }
+.track.tir .track-spec .v,
+.track.sip .track-spec .v { color: #fff; }
+.track.tir .track-spec .v.hl,
+.track.sip .track-spec .v.hl { color: var(--artlight); }
+
+/* Pills + status text on dark cards */
+.track.tir .track-pill { background: rgba(255,255,255,0.18); color: #fff; }
+.track.sip .track-pill { background: rgba(255,255,255,0.22); color: #fff; }
+.track.outcome .track-pill { background: rgba(255,255,255,0.16); color: #fff; }
+.track.tir .track-status,
+.track.sip .track-status,
+.track.outcome .track-status { color: rgba(255,255,255,0.7); }
+
+/* Buttons on dark cards — light-on-dark variant */
+.track.tir .btn-primary { background: #fff; color: var(--artblue); }
+.track.tir .btn-primary:hover { background: var(--artlight); color: var(--artblue-deep); box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+.track.tir .btn-ghost { color: #fff; border-color: rgba(255,255,255,0.45); }
+.track.tir .btn-ghost:hover { color: #fff; border-color: #fff; background: rgba(255,255,255,0.06); }
+.track.sip .btn-primary { background: #fff; color: var(--accent-violet); }
+.track.sip .btn-primary:hover { background: var(--artlight); color: var(--artblue-deep); box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+.track.sip .btn-ghost { color: #fff; border-color: rgba(255,255,255,0.45); }
+.track.sip .btn-ghost:hover { color: #fff; border-color: #fff; background: rgba(255,255,255,0.06); }
+
+/* SIP countdown sits inside violet card now — give it its own dark band */
+.track.sip .countdown { background: rgba(0,0,0,0.22); }
+
+/* Outcome card list */
+.outcome-list {
+  list-style: none; padding: 0;
+  margin: 8px 0 24px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.outcome-list li {
+  display: flex; gap: 12px;
+  font-size: 16px; color: #fff; line-height: 1.45;
+}
+.outcome-list li::before {
+  content: "→";
+  color: var(--accent-amber);
+  font-weight: 700; flex-shrink: 0;
+}
+.outcome-footer {
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255,255,255,0.18);
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: rgba(255,255,255,0.55);
+}
+
+@media (max-width: 1024px) {
+  .tracks-intro-row { grid-template-columns: 1fr; gap: 14px; }
+  .track-bg-num { font-size: 80px; }
+}
 
 /* ===== Countdown timer (SIP) ===== */
 .countdown {
@@ -980,10 +1105,10 @@ details.faq.hidden { display: none; }
       <span class="eyebrow"><span class="dot"></span>Programs · 2026 · Two paths</span>
     </div>
     <h1>
-      From <span class="hl">lab-proven</span> research to <span class="blue">step-change products.</span>
+      From <span class="hl">lab-proven</span> research and innovation to <span class="blue">step-change products.</span>
     </h1>
     <p class="hero-lede">
-      ARTPARK supports deep-tech translation in two phases. Early-stage technologists come in through the <strong>Technology Innovators in Residence (TIR)</strong> program to discover market and build early prototypes; incorporated startups graduate into <strong>Investment + Venture Building Support</strong> to win investment, mature their tech and run pilots. The destination is the same — escape velocity.
+      ARTPARK supports deep-tech translation along two distinct paths. Early-stage technologists come in through the <strong>Technology Innovators in Residence (TIR)</strong> program to mature their IP; incorporated startups with a pitch-ready proposition enter through the <strong>Startup Incubation Program (SIP)</strong> for direct investment and acceleration. Pick the path that matches where you are today.
     </p>
 
     <!-- Path diagram · Sequential flow (TIR → Investment + VBS → Escape velocity) -->
@@ -994,33 +1119,33 @@ details.faq.hidden { display: none; }
 
         <!-- Stage 1 -->
         <div class="flow-stage">
-          <p class="flow-header"><strong>For innovators</strong> with lab-proven, differentiated technologies that they believe could be immensely useful</p>
+          <p class="flow-header"><strong>For innovators</strong> with lab-proven, differentiated technologies that they believe could be immensely useful.</p>
           <div class="flow-card">
-            <h3>Technology Innovators in Residence</h3>
-            <p>Discover which market to target and what product to build. Develop early prototypes. Get ready to startup.</p>
-            <p class="flow-trl">Typical entry point: TRL 2-3</p>
+            <h3>Technology Innovators<br>in Residence</h3>
+            <p>Discover which market to target and what product to build. Develop early prototypes. Get ready to start up.</p>
+            <p class="flow-trl">Typical entry · TRL 3</p>
           </div>
         </div>
 
-        <div class="flow-arrow" aria-hidden="true">▶</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
 
         <!-- Stage 2 -->
         <div class="flow-stage">
-          <p class="flow-header"><strong>For startups</strong> that have a prototype with differentiated technology and some sense for their product-market fit</p>
+          <p class="flow-header"><strong>For startups</strong> that have a prototype with differentiated technology and some sense of product-market fit.</p>
           <div class="flow-card">
-            <h3>Investment + Venture Building Support</h3>
-            <p>Win investment, build your venture, mature your technology, collaborate with customers, and conduct pilots.</p>
-            <p class="flow-trl">Typical entry point: TRL 4-5</p>
+            <h3>Investment + Venture<br>Building Support</h3>
+            <p>Win investment, build your venture, mature your technology, collaborate with customers, and run pilots.</p>
+            <p class="flow-trl">Typical entry · TRL 4–5</p>
           </div>
         </div>
 
-        <div class="flow-arrow" aria-hidden="true">▶</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
 
         <!-- Stage 3 — text only, no box -->
         <div class="flow-stage flow-stage-text">
           <p class="flow-final-title">
             Achieve escape velocity
-            <span class="flow-final-soft"> with proven product-market fit, robust technology, well-rounded team, first customers and early revenues</span>
+            <span class="flow-final-soft"> with proven <strong>product-market fit</strong>, robust technology, a well-rounded team, first customers, and early revenue.</span>
           </p>
         </div>
 
@@ -1036,48 +1161,66 @@ details.faq.hidden { display: none; }
     <h2 class="block-title">Two programs. One destination. Pick where you are today.</h2>
   </div>
 
+  <!-- 3-column intro row (above the cards) -->
+  <div class="tracks-intro-row">
+    <div class="track-intro intro-tir">
+      <div class="intro-eyebrow">For innovators</div>
+      <p><strong>Lab-proven, differentiated tech</strong> you believe could be immensely useful — but no company yet.</p>
+    </div>
+    <div class="track-intro intro-sip">
+      <div class="intro-eyebrow">For startups</div>
+      <p><strong>Prototype + differentiated tech</strong> with early sense of product-market fit. Pitch-ready.</p>
+    </div>
+    <div class="track-intro intro-outcome">
+      <div class="intro-eyebrow">Achieve escape velocity</div>
+      <p><strong>Deployed deep-tech</strong> with proven product-market fit, robust technology, a well-rounded team, and first revenue.</p>
+    </div>
+  </div>
+
   <div class="tracks-grid">
 
     <!-- TIR CARD -->
     <div id="tir-track" class="track tir">
+      <span class="track-bg-num" aria-hidden="true">01</span>
       <div class="track-tag-row">
         <span class="track-pill">Track 01 · TIR</span>
         <span class="track-status"><span class="led"></span>Applications open</span>
       </div>
       <h2>Technology Innovator <br>in Residence</h2>
-      <div class="track-subhead">For researchers · TRL 3 · Pre-company</div>
+      <div class="track-subhead">Researchers · TRL 3 · Pre-company</div>
       <p class="track-lede">
-        You've identified a step-change technology problem and validated a core piece of IP in the lab. Assumptions and risks remain — TIR gives you 12 months, funding, and infrastructure at IISc to retire those risks and incorporate.
+        6 months, funding, and IISc infrastructure to retire risk on a step-change technology and incorporate the spin-out.
       </p>
       <div class="track-specs">
         <div class="track-spec">
-          <div class="k">Funding</div>
-          <div class="v hl">Up to ₹1 Cr/yr</div>
+          <div class="k">Kickoff</div>
+          <div class="v">₹25L · 0% equity</div>
         </div>
         <div class="track-spec">
-          <div class="k">Initial kickoff</div>
-          <div class="v">₹25L at 0% equity</div>
+          <div class="k">Subsequent funding</div>
+          <div class="v hl">Up to ₹2 Cr through SIP</div>
         </div>
         <div class="track-spec">
           <div class="k">Duration</div>
-          <div class="v">12 months on-campus</div>
+          <div class="v">6 months</div>
         </div>
         <div class="track-spec">
           <div class="k">TRL target</div>
-          <div class="v">TRL 3 → TRL 4</div>
+          <div class="v">3 → 4</div>
         </div>
       </div>
       <div class="track-cta-row">
         <a href="/tir" class="btn btn-primary">
-          <span>Learn more</span>
+          <span>Apply to TIR</span>
           <span class="arrow">→</span>
         </a>
-        <a href="/apply" class="btn btn-ghost">Begin application</a>
+        <a href="/apply" class="btn btn-ghost">Full brief</a>
       </div>
     </div>
 
     <!-- SIP CARD with TIMER -->
     <div id="sip-track" class="track sip">
+      <span class="track-bg-num" aria-hidden="true">02</span>
       <div class="track-tag-row">
         <span class="track-pill">Track 02 · SIP</span>
         <span class="track-status upcoming"><span class="led"></span>Opens 22 May 2026</span>
@@ -1096,9 +1239,9 @@ details.faq.hidden { display: none; }
       </div>
 
       <h2>Startup <br>Incubation Program</h2>
-      <div class="track-subhead">For registered startups · TRL 4+ · Pitch-ready</div>
+      <div class="track-subhead">Registered startups · TRL 4+ · Pitch-ready</div>
       <p class="track-lede">
-        You run an incorporated Indian startup with a working team, a pitch investors can engage with, and a technology de-risked to TRL 4 or above. SIP gives you direct capital, customer pipeline, and ARTPARK's scale-up infrastructure to move from demonstrated to deployed.
+        Direct investment, customer pipeline, and ARTPARK's scale-up infrastructure to move from demonstrated to deployed.
       </p>
       <div class="track-specs">
         <div class="track-spec">
@@ -1106,8 +1249,8 @@ details.faq.hidden { display: none; }
           <div class="v hl">Direct investment</div>
         </div>
         <div class="track-spec">
-          <div class="k">Entity required</div>
-          <div class="v">Registered Indian startup</div>
+          <div class="k">Entity</div>
+          <div class="v">Registered Indian</div>
         </div>
         <div class="track-spec">
           <div class="k">Duration</div>
@@ -1115,7 +1258,7 @@ details.faq.hidden { display: none; }
         </div>
         <div class="track-spec">
           <div class="k">TRL entry</div>
-          <div class="v">TRL 4 or higher</div>
+          <div class="v">4 or higher</div>
         </div>
       </div>
       <div class="track-cta-row">
@@ -1123,8 +1266,25 @@ details.faq.hidden { display: none; }
           <span>Join the waitlist</span>
           <span class="arrow">→</span>
         </a>
-        <a href="#compare" class="btn btn-ghost">Compare tracks</a>
+        <a href="#compare" class="btn btn-ghost">Compare</a>
       </div>
+    </div>
+
+    <!-- OUTCOME CARD -->
+    <div class="track outcome">
+      <span class="track-bg-num" aria-hidden="true">03</span>
+      <div class="track-tag-row">
+        <span class="track-pill">Outcome</span>
+      </div>
+      <h2>A scale-ready <br>deep-tech company.</h2>
+      <ul class="outcome-list">
+        <li>Proven product-market fit</li>
+        <li>Robust, deployed technology</li>
+        <li>Well-rounded founding team</li>
+        <li>First customers &amp; early revenue</li>
+        <li>Follow-on capital pathway</li>
+      </ul>
+      <div class="outcome-footer">Where ARTPARK alumni go from here.</div>
     </div>
 
   </div>
@@ -1140,8 +1300,8 @@ details.faq.hidden { display: none; }
     <div class="compare-table">
       <!-- header row -->
       <div class="cmp-cell cmp-head">Dimension</div>
-      <div class="cmp-cell cmp-head tir-head">Track 01<strong>TIR</strong></div>
-      <div class="cmp-cell cmp-head sip-head">Track 02<strong>SIP</strong></div>
+      <div class="cmp-cell cmp-head tir-head">Track 01<strong>Technology Innovator in Residence</strong></div>
+      <div class="cmp-cell cmp-head sip-head">Track 02<strong>Startup Incubation Program</strong></div>
 
       <!-- rows -->
       <div class="cmp-cell cmp-dim">Stage of maturity<span class="note">Technology readiness level at entry</span></div>
@@ -1153,7 +1313,7 @@ details.faq.hidden { display: none; }
       <div class="cmp-cell cmp-val"><strong>Incorporated Indian startup</strong> (Pvt Ltd, DPIIT-recognized preferred).</div>
 
       <div class="cmp-cell cmp-dim">Funding structure<span class="note">Capital and equity</span></div>
-      <div class="cmp-cell cmp-val"><strong>₹25L</strong> for the first 6 months, with up to <strong>₹1 Cr/yr</strong> thereafter.</div>
+      <div class="cmp-cell cmp-val"><strong>₹25L</strong> for the first 6 months, with up to <strong>₹2 Cr</strong> subsequent investment through the SIP process.</div>
       <div class="cmp-cell cmp-val"><strong>Direct equity investment</strong> on negotiated terms, sized to the round. Follow-on pathways.</div>
 
       <div class="cmp-cell cmp-dim">IP ownership<span class="note">Who owns what you build</span></div>
@@ -1162,7 +1322,7 @@ details.faq.hidden { display: none; }
 
       <div class="cmp-cell cmp-dim">Time commitment<span class="note">What you sign up for</span></div>
       <div class="cmp-cell cmp-val"><strong>Full-time, on-campus</strong> at ARTPARK, IISc Bangalore. NOC required if affiliated.</div>
-      <div class="cmp-cell cmp-val"><strong>Flexible</strong>. Founders continue running their company; ARTPARK is an investor + enabler.</div>
+      <div class="cmp-cell cmp-val"><strong>Full-time on the startup</strong>. Founders commit exclusively to the company, with strategic autonomy over their roadmap.</div>
 
       <div class="cmp-cell cmp-dim">Best for<span class="note">The archetype this is designed for</span></div>
       <div class="cmp-cell cmp-val cmp-row-last">Researchers translating a hard technology into product reality. Pre-company. IP-heavy.</div>
@@ -1206,7 +1366,7 @@ details.faq.hidden { display: none; }
       <ul class="pc-list pros">
         <li>Direct investment — sized to your round, not a fixed grant.</li>
         <li>You retain your IP and control the company.</li>
-        <li>Flexible engagement — keep running your startup, on your schedule.</li>
+        <li>Strategic autonomy — full-time on your startup, with you owning the roadmap.</li>
         <li>Access to ARTPARK's customer, government, and corporate pipeline.</li>
         <li>Faster path to revenue and scale for already-demonstrated tech.</li>
       </ul>
@@ -1433,7 +1593,7 @@ details.faq.hidden { display: none; }
       <p>
         Anything you see on this page is our current best thinking and will be communicated in detail, in writing, with shortlisted teams before any commitment. If you spot something unclear or feel a term deserves a second look, we want to hear from you.
       </p>
-      <p class="muted">Questions, feedback, or edge cases → <a href="mailto:programs@artpark.in" style="color:var(--artblue); text-decoration: underline;">programs@artpark.in</a></p>
+      <p class="muted">Questions, feedback, or edge cases → <a href="mailto:connect@artpark.in" style="color:var(--artblue); text-decoration: underline;">connect@artpark.in</a></p>
     </div>
   </div>
 </section>
