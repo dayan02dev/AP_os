@@ -707,8 +707,8 @@ body {
 .countdown {
   background: var(--artblack);
   color: #fff;
-  margin: 0 -36px 24px;
-  padding: 20px 36px;
+  margin: 0 0 24px;
+  padding: 20px;
   position: relative;
   overflow: hidden;
 }
@@ -1099,7 +1099,7 @@ details.faq.hidden { display: none; }
   .lockup img { height: 32px; }
   .lockup img.iisc { height: 44px; }
   .paths { padding: 24px; }
-  .countdown { margin: 0 -36px 24px; }
+  .countdown { margin: 0 0 24px; padding: 20px; }
 }
 @media (max-width: 560px) {
   .footer-inner { grid-template-columns: 1fr; }
@@ -1283,7 +1283,7 @@ details.faq.hidden { display: none; }
     <div id="sip-track" class="track sip">
       <span class="track-bg-num" aria-hidden="true">02</span>
       <div class="track-tag-row">
-        <span class="track-pill">Track 02 · SIP</span>
+        <span class="track-pill">SIP</span>
         <span class="track-status upcoming"><span class="led"></span>Opens 22 May 2026</span>
       </div>
 
@@ -1293,10 +1293,9 @@ details.faq.hidden { display: none; }
         <div class="countdown-grid">
           <div class="cd-cell"><div class="cd-val" id="cd-days">--</div><div class="cd-unit">Days</div></div>
           <div class="cd-cell"><div class="cd-val" id="cd-hours">--</div><div class="cd-unit">Hours</div></div>
-          <div class="cd-cell"><div class="cd-val" id="cd-mins">--</div><div class="cd-unit">Minutes</div></div>
-          <div class="cd-cell"><div class="cd-val" id="cd-secs">--</div><div class="cd-unit">Seconds</div></div>
+          <div class="cd-cell"><div class="cd-val" id="cd-mins">--</div><div class="cd-unit">Min</div></div>
+          <div class="cd-cell"><div class="cd-val" id="cd-secs">--</div><div class="cd-unit">Sec</div></div>
         </div>
-        <div class="countdown-target">Target: 22 May 2026 · 12:00 IST</div>
       </div>
 
       <h2>Startup <br>Incubation Program</h2>
