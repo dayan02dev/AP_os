@@ -11,3 +11,15 @@ confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
 resolve_s3 = true
 fail_on_empty_changeset = false
+
+[staging.build.parameters]
+cached = true
+parallel = true
+
+[staging.deploy.parameters]
+stack_name = "artpark-eir-api-staging"
+region = "ap-south-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+fail_on_empty_changeset = false

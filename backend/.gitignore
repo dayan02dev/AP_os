@@ -17,3 +17,6 @@ build/
 .env.prod
 .env.production
 .env.development
+# ...except example/template files, which are safe and should be tracked
+!.env.example
+!.env.*.example
