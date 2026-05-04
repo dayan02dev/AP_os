@@ -7,10 +7,16 @@ import { clearSession, saveSession } from "./session.js";
 
 /**
  * Request a 6-digit OTP to the given email.
- * Response is intentionally generic — never reveals whether the email exists.
+ *
+ * `track` is forwarded to Supabase user_metadata on the FIRST OTP request
+ * (signup) so the handle_new_user() trigger can stamp profiles.track. For
+ * existing users the field is ignored — track is locked once set. Pass
+ * "tir" or "sip"; null/undefined falls back to the backend default ("tir").
  */
-export async function requestOtp(email) {
-  return api.post("/auth/request-otp", { email });
+export async function requestOtp(email, track) {
+  const body = { email };
+  if (track === "tir" || track === "sip") body.track = track;
+  return api.post("/auth/request-otp", body);
 }
 
 /**

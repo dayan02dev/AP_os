@@ -25,6 +25,12 @@ export default function SignUpPage() {
   const navigate = useNavigate();
 
   const nextParam = params.get("next") || "";
+  // Track is locked at first signup (writes profiles.track via Supabase
+  // user_metadata). Default to "tir" so legacy /apply/signup links still
+  // work; SIP entry points pass ?track=sip.
+  const trackParamRaw = params.get("track");
+  const trackParam =
+    trackParamRaw === "sip" || trackParamRaw === "tir" ? trackParamRaw : "tir";
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState(null);
@@ -39,11 +45,12 @@ export default function SignUpPage() {
     }
     setLoading(true);
     try {
-      await requestOtp(trimmed);
+      await requestOtp(trimmed, trackParam);
       const qs = new URLSearchParams();
       qs.set("email", trimmed);
       qs.set("signup", "1");
       if (nextParam) qs.set("next", nextParam);
+      if (trackParam) qs.set("track", trackParam);
       navigate(`/apply/verify?${qs.toString()}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 429) {
@@ -70,14 +77,17 @@ export default function SignUpPage() {
     ? `/apply/signin?next=${encodeURIComponent(nextParam)}`
     : "/apply/signin";
 
+  const trackLabel = trackParam === "sip" ? "SIP" : "TIR";
+  const rootCls = trackParam === "sip" ? "eir-root track-sip" : "eir-root";
+
   return (
-    <div className="eir-root">
+    <div className={rootCls}>
       <div className="eir-bg" />
       <div className="eir-frame">
         <main className="eir-main">
           <div className="eir-screen eir-auth">
             <div className="eir-coord eir-mono">
-              <span>ARTPARK / TIR.2026</span>
+              <span>ARTPARK / {trackLabel}.2026</span>
               <span>sign up · new applicant</span>
             </div>
             <form className="eir-auth-body" onSubmit={onSubmit}>

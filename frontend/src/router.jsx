@@ -2,30 +2,36 @@
 // work in the providers above this component.
 //
 // Public routes (no auth required):
-//   /                      static marketing (via RootRedirect)
-//   /apply                 welcome screen; Begin button routes to signin
+//   /                      Programs landing (React)
+//   /sip                   SIP marketing page (React)
+//   /tir                   TIR marketing — static (vercel.json rewrite to /marketing.html)
+//   /apply                 TIR welcome screen
+//   /apply-sip             SIP welcome screen
 //   /apply/signin          email + password (existing users)
-//   /apply/signup          email-only signup → OTP → set-password
+//   /apply/signup          email-only signup → OTP → set-password (track via ?track=)
+//   /apply-sip/signup      ditto, default ?track=sip
 //   /apply/verify          6-digit OTP entry
 //   /apply/support         support ticket form (anon-friendly)
 //
 // Protected (redirect to /apply/signin?next=<path> if unauthed):
-//   /apply/basic, /apply/problem, /apply/solution, /apply/execution,
-//   /apply/evidence, /apply/declaration   wizard sections
-//   /apply/profile          profile settings
-//   /apply/review           pre-submission review
-//   /apply/submitted        post-submit receipt
-//   /apply/set-password     first-time password setup / reset (Phase B)
+//   /apply/<section>       TIR wizard sections (gated; SIP-enrolled users see TrackMismatchPage)
+//   /apply-sip/<section>   SIP wizard sections (gated; TIR-enrolled users see TrackMismatchPage)
+//   /apply/profile         profile settings
+//   /apply/review          pre-submission review
+//   /apply/submitted       post-submit receipt
+//   /apply/set-password    first-time password setup / reset
 
 import { Route, Routes } from "react-router-dom";
-import App from "./App.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
+import ProgramsPage from "./pages/ProgramsPage.jsx";
 import ProtectedRoute from "./pages/ProtectedRoute.jsx";
-import RootRedirect from "./pages/RootRedirect.jsx";
 import SetPasswordPage from "./pages/SetPasswordPage.jsx";
 import SignInPage from "./pages/SignInPage.jsx";
 import SignUpPage from "./pages/SignUpPage.jsx";
+import SipAppRoute from "./pages/SipAppRoute.jsx";
+import SipMarketingPage from "./pages/SipMarketingPage.jsx";
 import SupportPage from "./pages/SupportPage.jsx";
+import TirAppGate from "./pages/TirAppGate.jsx";
 import VerifyPage from "./pages/VerifyPage.jsx";
 
 const SECTION_SLUGS = [
@@ -40,52 +46,111 @@ const SECTION_SLUGS = [
 export default function AppRoutes() {
   return (
     <Routes>
-      {/* Root → static marketing HTML */}
-      <Route path="/" element={<RootRedirect />} />
+      {/* Public marketing surface */}
+      <Route path="/" element={<ProgramsPage />} />
+      <Route path="/sip" element={<SipMarketingPage />} />
+      {/* /tir is served by vercel.json rewrite to /marketing.html in prod;
+          in dev the SPA falls through to NotFound — that's acceptable for now. */}
 
       {/* Public auth + support pages */}
       <Route path="/apply/signin" element={<SignInPage />} />
       <Route path="/apply/signup" element={<SignUpPage />} />
+      <Route path="/apply-sip/signup" element={<SignUpPage />} />
       <Route path="/apply/verify" element={<VerifyPage />} />
       <Route path="/apply/support" element={<SupportPage />} />
 
       {/* /apply itself is public — unauthed users see the welcome screen */}
-      <Route path="/apply" element={<App />} />
+      <Route path="/apply" element={<TirAppGate />} />
+      <Route path="/apply-sip" element={<SipAppRoute />} />
 
-      {/* Protected wizard routes */}
+      {/* Protected TIR wizard routes */}
       {SECTION_SLUGS.map((slug) => (
         <Route
-          key={slug}
+          key={`tir-${slug}`}
           path={`/apply/${slug}`}
           element={
             <ProtectedRoute>
-              <App />
+              <TirAppGate />
             </ProtectedRoute>
           }
         />
       ))}
       <Route
         path="/apply/profile"
-        element={<ProtectedRoute><App /></ProtectedRoute>}
+        element={
+          <ProtectedRoute>
+            <TirAppGate />
+          </ProtectedRoute>
+        }
       />
       <Route
         path="/apply/review"
-        element={<ProtectedRoute><App /></ProtectedRoute>}
+        element={
+          <ProtectedRoute>
+            <TirAppGate />
+          </ProtectedRoute>
+        }
       />
       <Route
         path="/apply/submitted"
-        element={<ProtectedRoute><App /></ProtectedRoute>}
+        element={
+          <ProtectedRoute>
+            <TirAppGate />
+          </ProtectedRoute>
+        }
       />
-      {/* Optional offline-template upload step that sits between section
-          01 (basic) and section 02 (problem). PHASES.TEMPLATE_UPLOAD
-          serialises to this path via urlForState in App.jsx. */}
       <Route
         path="/apply/template"
-        element={<ProtectedRoute><App /></ProtectedRoute>}
+        element={
+          <ProtectedRoute>
+            <TirAppGate />
+          </ProtectedRoute>
+        }
       />
       <Route
         path="/apply/set-password"
-        element={<ProtectedRoute><SetPasswordPage /></ProtectedRoute>}
+        element={
+          <ProtectedRoute>
+            <SetPasswordPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Protected SIP wizard routes */}
+      {SECTION_SLUGS.map((slug) => (
+        <Route
+          key={`sip-${slug}`}
+          path={`/apply-sip/${slug}`}
+          element={
+            <ProtectedRoute>
+              <SipAppRoute />
+            </ProtectedRoute>
+          }
+        />
+      ))}
+      <Route
+        path="/apply-sip/profile"
+        element={
+          <ProtectedRoute>
+            <SipAppRoute />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/apply-sip/review"
+        element={
+          <ProtectedRoute>
+            <SipAppRoute />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/apply-sip/submitted"
+        element={
+          <ProtectedRoute>
+            <SipAppRoute />
+          </ProtectedRoute>
+        }
       />
 
       <Route path="*" element={<NotFoundPage />} />

@@ -1,18 +1,11 @@
-// RootRedirect — visiting "/" sends the user to the static programs landing.
-// Using window.location.replace (not react-router's <Navigate>) because
-// the landing is a static HTML file outside the SPA's route tree.
-//
-// In production, vercel.json rewrites "/" to "/programs.html" before the
-// SPA ever loads, so this component is unreachable. It's kept for the
-// local dev case (vite has no rewrite layer): hitting "/" loads the SPA,
-// which then bounces here to the static programs.html. That file in turn
-// links forward to "/2026" (TIR landing) and "/apply" (the wizard).
+// RootRedirect — visiting "/" renders the ARTPARK Programs landing page
+// as a React component. Replaces the previous static programs.html
+// rewrite. The static file remains in /public for now as a fallback for
+// any external links that hit it directly, but vercel.json routes "/" to
+// the SPA so this component is the canonical landing.
 
-import { useEffect } from "react";
+import ProgramsPage from "./ProgramsPage.jsx";
 
 export default function RootRedirect() {
-  useEffect(() => {
-    window.location.replace("/programs.html");
-  }, []);
-  return null;
+  return <ProgramsPage />;
 }

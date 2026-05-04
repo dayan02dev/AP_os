@@ -45,9 +45,9 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener("auth:expired", onExpired);
   }, []);
 
-  const requestOtp = useCallback(async (email) => {
+  const requestOtp = useCallback(async (email, track) => {
     setError(null);
-    return auth.requestOtp(email);
+    return auth.requestOtp(email, track);
   }, []);
 
   const verifyOtp = useCallback(async (email, token) => {
