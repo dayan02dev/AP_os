@@ -631,6 +631,7 @@ export default function AppSip() {
               onViewPast={onViewPast}
               onStartNew={onStartNew}
               warmCopy={warmCopy}
+              track="sip"
             />
           )}
           {phase === PHASES.UPLOAD && (

@@ -758,6 +758,7 @@ export default function App() {
               onViewPast={onViewPast}
               onStartNew={onStartNew}
               warmCopy={warmCopy}
+              track="tir"
             />
           )}
           {phase === PHASES.UPLOAD && (

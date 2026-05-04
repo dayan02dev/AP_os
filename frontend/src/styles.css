@@ -4297,3 +4297,160 @@ kbd {
 @media (max-width: 560px) {
   .programs-sip-stats-inner { grid-template-columns: 1fr; }
 }
+
+/* =========================================================
+   Returning chooser — track cards (TIR + SIP side-by-side)
+   =========================================================
+   Replaces the older single-card "Begin TIR.2026 application" panel
+   with a two-track picker. Matches the Remix design — left card uses
+   the TIR blue accent, right card uses the SIP violet, and a footnote
+   below explains the one-application-per-applicant rule. */
+
+.eir-ret-tracks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.eir-ret-track {
+  background: var(--bg-soft, #f0eee5);
+  border: 1px solid var(--line);
+  padding: 24px 24px 22px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--ink);
+  transition: border-color 150ms, transform 150ms, box-shadow 150ms;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 220px;
+}
+.eir-ret-track::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+}
+.eir-ret-track-tir::before {
+  background: #3213b7;
+}
+.eir-ret-track-sip::before {
+  background: #6B5CFF;
+}
+.eir-ret-track:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+.eir-ret-track-tir:hover {
+  border-color: #3213b7;
+}
+.eir-ret-track-sip:hover {
+  border-color: #6B5CFF;
+}
+
+.eir-ret-track-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.eir-ret-track-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.eir-ret-track-tir .eir-ret-track-eyebrow {
+  color: #3213b7;
+}
+.eir-ret-track-sip .eir-ret-track-eyebrow {
+  color: #6B5CFF;
+}
+.eir-ret-track-arrow {
+  color: var(--ink-dim);
+  font-size: 14px;
+  transition: transform 200ms, color 200ms;
+}
+.eir-ret-track:hover .eir-ret-track-arrow {
+  transform: translateX(4px);
+}
+.eir-ret-track-tir:hover .eir-ret-track-arrow {
+  color: #3213b7;
+}
+.eir-ret-track-sip:hover .eir-ret-track-arrow {
+  color: #6B5CFF;
+}
+
+.eir-ret-track-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.eir-ret-track-body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.eir-ret-track-body em {
+  font-style: italic;
+}
+
+.eir-ret-track-meta {
+  margin-top: auto;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.eir-ret-tracks-note {
+  margin-top: 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px;
+  background: var(--bg-soft, #f0eee5);
+  border-left: 3px solid var(--accent);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.eir-ret-tracks-note-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.eir-ret-tracks-note em {
+  font-style: italic;
+  color: var(--ink);
+}
+.eir-ret-tracks-note strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .eir-ret-tracks {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .eir-ret-track {
+    min-height: auto;
+  }
+}

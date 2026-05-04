@@ -1,6 +1,7 @@
 // Auth (register/login) + CV upload + parsing animation screens
 
 import { Fragment, useState as useAS, useEffect as useAE, useRef as useAR } from "react";
+import { useNavigate } from "react-router-dom";
 import { validateEmail, isPasswordValid, EmailInput, PasswordInput } from "./validators.jsx";
 import { useTemplate } from "./hooks/useTemplate.js";
 
@@ -214,10 +215,12 @@ function getStatusLabel(sub) {
 }
 
 // Shown after login. Three tabs: start new / continue draft / past applications.
-function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, pastSubmissions, onResume, onViewPast, onStartNew, warmCopy }) {
+function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, pastSubmissions, onResume, onViewPast, onStartNew, warmCopy, track = "tir" }) {
   // Pick a sensible default tab: if draft exists, show Continue; else if past subs, show Past; else Start
   const defaultTab = hasDraft ? "continue" : (pastSubmissions.length > 0 ? "past" : "start");
   const [tab, setTab] = useAS(defaultTab);
+  const navigate = useNavigate();
+  const cycleLabel = track === "sip" ? "SIP.2026" : "TIR.2026";
 
   // Prefer the real name (from profiles.full_name or the CV-filled
   // basic_full_name). Fall back to the email local-part only when we
@@ -231,7 +234,7 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
   return (
     <div className="eir-screen eir-returning">
       <div className="eir-coord eir-mono">
-        <span>ARTPARK / TIR.2026</span>
+        <span>ARTPARK / {cycleLabel}</span>
         <span>signed in · {user.email}</span>
       </div>
       <div className="eir-auth-body">
@@ -285,22 +288,62 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
           {tab === "start" && (
             <div className="eir-tabs-panel" role="tabpanel">
               <div className="eir-tabs-panel-head">
-                <h2 className="eir-tabs-panel-title">Start a new application</h2>
+                <h2 className="eir-tabs-panel-title">Begin a 2026 TIR or SIP application</h2>
                 <p className="eir-tabs-panel-sub">
-                  Fresh blank slate — plan for 3–4 hours. You can save progress anytime and come back.
+                  Pick the track that fits where you are. Your CV auto-fills the basics either way — est. 60–90 minutes.
                   {hasDraft && " Starting new will clear your current in-progress draft."}
                 </p>
               </div>
-              <div className="eir-ret-list">
-                <button className="eir-ret-card eir-ret-card-primary" onClick={onStartNew}>
-                  <div className="eir-ret-card-head">
-                    <span className="eir-mono eir-ret-card-eyebrow">begin · tir.2026</span>
+              <div className="eir-ret-tracks">
+                {/* TIR card. If the user is on /apply (track==="tir") clicking
+                    starts the wizard in place; otherwise it navigates to
+                    /apply, where TirAppGate decides whether to render the
+                    wizard or the track-mismatch screen based on the
+                    backend's wrong_track signal. */}
+                <button
+                  className="eir-ret-track eir-ret-track-tir"
+                  onClick={() => (track === "tir" ? onStartNew() : navigate("/apply"))}
+                >
+                  <div className="eir-ret-track-head">
+                    <span className="eir-mono eir-ret-track-eyebrow">begin · tir.2026</span>
+                    <span className="eir-ret-track-arrow eir-mono">→</span>
                   </div>
-                  <div className="eir-ret-card-title">Begin TIR.2026 application</div>
-                  <div className="eir-mono eir-dim eir-ret-card-meta">
-                    ↳ {hasDraft ? "your current draft will be cleared" : "your answers save automatically as you go"}
+                  <div className="eir-ret-track-title">Technology Innovator in Residence</div>
+                  <p className="eir-ret-track-body">
+                    For pre-incorporation researchers translating <em>lab-proven</em> work toward a defensible technology angle. TRL 3 and up.
+                  </p>
+                  <div className="eir-mono eir-dim eir-ret-track-meta">
+                    ↳ closes 22 may · ~60–90 min
                   </div>
                 </button>
+
+                {/* SIP card. Symmetric: if on /apply-sip (track==="sip") it
+                    starts the SIP wizard in place; otherwise it navigates
+                    to /apply-sip, where SipAppRoute renders the wizard or
+                    the mismatch screen depending on profiles.track. */}
+                <button
+                  className="eir-ret-track eir-ret-track-sip"
+                  onClick={() => (track === "sip" ? onStartNew() : navigate("/apply-sip"))}
+                >
+                  <div className="eir-ret-track-head">
+                    <span className="eir-mono eir-ret-track-eyebrow">begin · sip.2026</span>
+                    <span className="eir-ret-track-arrow eir-mono">→</span>
+                  </div>
+                  <div className="eir-ret-track-title">Startup Incubation Programme</div>
+                  <p className="eir-ret-track-body">
+                    For incorporated Pvt Ltd ventures with a working prototype (TRL 4+) and early customer signal.
+                  </p>
+                  <div className="eir-mono eir-dim eir-ret-track-meta">
+                    ↳ closes 31 may · ~60–90 min
+                  </div>
+                </button>
+              </div>
+              <div className="eir-ret-tracks-note eir-mono">
+                <span className="eir-ret-tracks-note-mark">!</span>
+                <span>
+                  You can <em>explore</em> both tracks, but only{" "}
+                  <strong>one application</strong> can be submitted per applicant — pick the track that fits where you are today.
+                </span>
               </div>
             </div>
           )}
