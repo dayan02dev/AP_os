@@ -23,13 +23,12 @@
 
 import { Route, Routes } from "react-router-dom";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
-import ProgramsPage from "./pages/ProgramsPage.jsx";
 import ProtectedRoute from "./pages/ProtectedRoute.jsx";
+import RootRedirect from "./pages/RootRedirect.jsx";
 import SetPasswordPage from "./pages/SetPasswordPage.jsx";
 import SignInPage from "./pages/SignInPage.jsx";
 import SignUpPage from "./pages/SignUpPage.jsx";
 import SipAppRoute from "./pages/SipAppRoute.jsx";
-import SipMarketingPage from "./pages/SipMarketingPage.jsx";
 import SupportPage from "./pages/SupportPage.jsx";
 import TirAppGate from "./pages/TirAppGate.jsx";
 import VerifyPage from "./pages/VerifyPage.jsx";
@@ -46,11 +45,16 @@ const SECTION_SLUGS = [
 export default function AppRoutes() {
   return (
     <Routes>
-      {/* Public marketing surface */}
-      <Route path="/" element={<ProgramsPage />} />
-      <Route path="/sip" element={<SipMarketingPage />} />
-      {/* /tir is served by vercel.json rewrite to /marketing.html in prod;
-          in dev the SPA falls through to NotFound — that's acceptable for now. */}
+      {/* Public marketing surface — served by vercel.json static rewrites
+          in production:
+            /     → /programs.html (Remix Programs landing)
+            /tir  → /marketing.html (Remix TIR)
+            /sip  → /sip-marketing.html (Remix SIP)
+          The fallback below catches them in dev so a hot-reloaded SPA still
+          renders something instead of NotFound. */}
+      <Route path="/" element={<RootRedirect />} />
+      <Route path="/tir" element={<RootRedirect />} />
+      <Route path="/sip" element={<RootRedirect />} />
 
       {/* Public auth + support pages */}
       <Route path="/apply/signin" element={<SignInPage />} />

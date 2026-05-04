@@ -32,6 +32,7 @@ import {
   WelcomeScreen,
 } from "./screens.jsx";
 import { SupportButton } from "./support.jsx";
+import { THEMES } from "./themes.jsx";
 
 import { useSipApplication } from "./hooks/useSipApplication.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
@@ -41,6 +42,16 @@ import {
   SECTION_ORDER_SIP,
   collapseFromRowSip,
 } from "./lib/fieldMap-sip.js";
+
+// SIP violet palette — overrides the TIR blue --accent + --accent-soft
+// tokens that the shared theme tokens otherwise set. Applied to
+// document.documentElement on mount so it beats App.jsx's inline TIR
+// styles if the user navigates between the two wizards in one session.
+const SIP_ACCENT_VARS = {
+  "--accent": "#6B5CFF",
+  "--accent-deep": "#4a3dd6",
+  "--accent-soft": "#ece9ff",
+};
 
 const PHASES = {
   WELCOME: "welcome",
@@ -142,6 +153,24 @@ export default function AppSip() {
   const [celebMsg, setCelebMsg] = useState("");
   const [prevPhase, setPrevPhase] = useState(null);
   const [viewingApp, setViewingApp] = useState(null);
+
+  // Apply the SIP violet accent at the document level so it wins against
+  // any --accent App.jsx set earlier in the session. Also apply the
+  // base "minimal" theme so the wizard chrome (line/ink/bg) renders even
+  // when the user lands on /apply-sip without going through /apply first.
+  useEffect(() => {
+    const root = document.documentElement;
+    const baseTheme = THEMES.minimal;
+    const baseEntries = Object.entries(baseTheme.vars);
+    const sipEntries = Object.entries(SIP_ACCENT_VARS);
+    baseEntries.forEach(([k, v]) => root.style.setProperty(k, v));
+    sipEntries.forEach(([k, v]) => root.style.setProperty(k, v));
+    root.setAttribute("data-bg", baseTheme.bg || "none");
+    root.setAttribute("data-theme", baseTheme.key);
+    return () => {
+      sipEntries.forEach(([k]) => root.style.removeProperty(k));
+    };
+  }, []);
 
   const flat = useMemo(
     () => flattenQuestionsSip(SECTIONS_SIP, answers),
@@ -551,7 +580,7 @@ export default function AppSip() {
           {user && loading && !application && <LoadingScreen />}
 
           {phase === PHASES.WELCOME && (
-            <WelcomeScreen onStart={startWizard} warmCopy={warmCopy} />
+            <WelcomeScreen onStart={startWizard} warmCopy={warmCopy} track="sip" />
           )}
           {phase === PHASES.RETURNING && user && (
             <ReturningChoiceScreen

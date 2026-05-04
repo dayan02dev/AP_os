@@ -72,30 +72,42 @@ function ProgressBar({ variant, progress, currentStep, totalSteps, sectionLabel,
   );
 }
 
-function WelcomeScreen({ onStart, warmCopy }) {
+function WelcomeScreen({ onStart, warmCopy, track }) {
+  const isSip = track === "sip";
+  const cycle = isSip ? "SIP.2026" : "TIR.2026";
+  const programLabel = isSip
+    ? "startup incubation programme · applications open"
+    : "technology innovator in residence · applications open";
+  const formalTitle = isSip
+    ? "Startup Incubation Programme — Application"
+    : "Technology Innovator in Residence — Application";
+  const formalLede = isSip
+    ? "Intake questionnaire for the 2026 SIP cohort. 6 sections, auto-filled where possible. Plan for 90–120 minutes."
+    : "Intake questionnaire for the 2026 TIR cohort. 6 sections, auto-filled where possible. Plan for 3–4 hours.";
+  const warmLede = isSip
+    ? "A short, honest conversation — not a form. We'll parse your CV to save you time, then walk through 6 sections covering your venture, the technology, and your traction. Plan for 90–120 minutes."
+    : "A short, honest conversation — not a form. We'll start by parsing your CV to save you time, then walk through 6 sections together. Plan for 3–4 hours of focused work.";
+  const duration = isSip ? "90–120 m" : "3–4 hrs";
+  const deadline = isSip ? "31 may" : "22 may";
   return (
     <div className="eir-screen eir-welcome">
       <div className="eir-coord eir-mono">
-        <span>ARTPARK / TIR.2026</span>
+        <span>ARTPARK / {cycle}</span>
         <span>intake · rev 04</span>
       </div>
       <div className="eir-welcome-body">
         <div className="eir-welcome-label eir-mono">
-          <span className="eir-dot-live" /> technology innovator in residence · applications open
+          <span className="eir-dot-live" /> {programLabel}
         </div>
         <h1 className="eir-welcome-title">
-          {warmCopy ? <>Let's get to know <em>you</em>.</> : <>Technology Innovator in Residence — Application</>}
+          {warmCopy ? <>Let's get to know <em>you</em>.</> : formalTitle}
         </h1>
-        <p className="eir-welcome-lede">
-          {warmCopy
-            ? "A short, honest conversation — not a form. We'll start by parsing your CV to save you time, then walk through 6 sections together. Plan for 3–4 hours of focused work."
-            : "Intake questionnaire for the 2026 TIR cohort. 6 sections, auto-filled where possible. Plan for 3–4 hours."}
-        </p>
+        <p className="eir-welcome-lede">{warmCopy ? warmLede : formalLede}</p>
         <div className="eir-welcome-meta">
-          <div className="eir-welcome-stat"><div className="eir-mono eir-dim">duration</div><div className="eir-welcome-stat-val">3–4 hrs</div></div>
+          <div className="eir-welcome-stat"><div className="eir-mono eir-dim">duration</div><div className="eir-welcome-stat-val">{duration}</div></div>
           <div className="eir-welcome-stat"><div className="eir-mono eir-dim">sections</div><div className="eir-welcome-stat-val">06</div></div>
           <div className="eir-welcome-stat"><div className="eir-mono eir-dim">auto-fill</div><div className="eir-welcome-stat-val">from CV</div></div>
-          <div className="eir-welcome-stat"><div className="eir-mono eir-dim">deadline</div><div className="eir-welcome-stat-val">22 may</div></div>
+          <div className="eir-welcome-stat"><div className="eir-mono eir-dim">deadline</div><div className="eir-welcome-stat-val">{deadline}</div></div>
         </div>
         <button className="eir-btn eir-btn-primary" onClick={onStart}>
           <span>Begin application</span><span className="eir-btn-key eir-mono">⏎</span>

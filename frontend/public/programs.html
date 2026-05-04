@@ -4,8 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ARTPARK · Programs · From lab to product</title>
-<link rel="icon" type="image/png" href="/assets/favicon.png">
-<link rel="apple-touch-icon" href="/assets/favicon.png">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
@@ -30,6 +28,7 @@
   --paper: #ffffff;
   --paper-soft: #f6f6f8;
   --font-display: "Trebuchet MS", "Lucida Grande", Tahoma, sans-serif;
+  --font-serif: "Trebuchet MS", "Lucida Grande", Tahoma, sans-serif;
   --font-body: "Open Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: "Open Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
@@ -40,51 +39,33 @@ body {
   font-family: var(--font-body);
   color: var(--ink);
   background: var(--paper);
-  font-size: 16px;
-  line-height: 1.55;
+  font-size: 20px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
 /* ===== Beta banner ===== */
-/* Not sticky — scrolls away with the page so it doesn't fight the
-   site-header for screen real estate (and saves us from juggling the
-   header's `top:` offset across breakpoints). */
 .beta-bar {
-  position: relative; z-index: 110;
+  position: sticky; top: 0; z-index: 110;
   background: var(--artblack);
   color: #fff;
   font-family: var(--font-body);
-  font-size: 13px; letter-spacing: 0.02em; line-height: 1.45;
-  padding: 10px 24px;
-  display: flex; align-items: center; justify-content: center; gap: 12px;
+  font-size: 13px; letter-spacing: 0.02em;
+  padding: 12px 32px;
+  display: flex; align-items: center; justify-content: center; gap: 14px;
   text-align: center;
 }
 .beta-bar .tag {
   background: var(--artlight); color: var(--artblue);
-  font-weight: 700; padding: 3px 9px;
-  letter-spacing: 0.14em; font-size: 11px;
+  font-weight: 700; padding: 4px 12px;
+  letter-spacing: 0.16em; font-size: 14px;
   text-transform: uppercase;
-  flex-shrink: 0;
 }
 .beta-bar .msg { color: rgba(255,255,255,0.85); }
 
-/* On phones the long beta message wraps onto 4-5 lines and the bar
-   eats half the viewport. Drop the redundant "BETA" pill (the message
-   already says "ARTPARK Programs is in beta"), tighten padding, and
-   shrink the type so it stays compact. */
-@media (max-width: 640px) {
-  .beta-bar {
-    font-size: 11.5px;
-    padding: 8px 14px;
-    line-height: 1.4;
-    gap: 0;
-  }
-  .beta-bar .tag { display: none; }
-}
-
 /* ===== Header ===== */
 .site-header {
-  position: sticky; top: 0; z-index: 100;
+  position: sticky; top: 44px; z-index: 100;
   background: rgba(255,255,255,0.92);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line);
@@ -98,20 +79,21 @@ body {
 .lockup img { height: 40px; width: auto; display: block; }
 .lockup img.iisc { height: 56px; }
 .lockup .divider { width: 1px; height: 36px; background: var(--line-strong); }
-.nav-right { display: flex; align-items: center; gap: 18px; }
+.nav-right { display: flex; align-items: center; gap: 8px; }
 .nav-link {
-  font-family: var(--font-mono);
-  font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase;
+  font-family: var(--font-display);
+  font-size: 14px; font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--ink); text-decoration: none;
-  font-weight: 700;
-  padding: 8px 12px;
+  padding: 10px 14px;
 }
 .nav-link:hover { color: var(--artblue); }
 .btn {
   display: inline-flex; align-items: center; gap: 10px;
-  padding: 12px 22px;
+  padding: 14px 26px;
   font-family: var(--font-display);
-  font-weight: 600; font-size: 14px;
+  font-weight: 700; font-size: 18px;
   border: none; cursor: pointer; text-decoration: none;
   letter-spacing: 0.01em; border-radius: 2px;
   transition: transform 150ms, box-shadow 150ms, background 150ms, border-color 150ms, color 150ms;
@@ -124,6 +106,55 @@ body {
 .btn-ghost:hover { border-color: var(--artblue); color: var(--artblue); }
 .btn-light { background: var(--artlight); color: var(--artblue); }
 .btn-light:hover { background: #fff; }
+.nav-right .btn { padding: 9px 16px; font-size: 13px; gap: 6px; letter-spacing: 0.02em; border-radius: 999px; }
+.nav-right .btn .arrow { font-size: 13px; }
+.nav-right .nav-returning {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-display);
+  text-decoration: none;
+  padding: 6px 12px 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.6);
+  transition: border-color 150ms, background 150ms, color 150ms;
+}
+.nav-right .nav-returning .key-glyph {
+  width: 14px; height: 14px; flex: 0 0 auto;
+  color: var(--ink-soft);
+}
+.nav-right .nav-returning .nav-returning-label {
+  display: inline-flex; flex-direction: column; line-height: 1;
+}
+.nav-right .nav-returning .nav-returning-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-soft); margin-bottom: 3px;
+}
+.nav-right .nav-returning .nav-returning-cta {
+  font-size: 13px; font-weight: 600; color: var(--artblue);
+  letter-spacing: 0.01em;
+}
+.nav-right .nav-returning:hover {
+  border-color: var(--artblue);
+  background: var(--artlight);
+}
+.nav-right .nav-returning:hover .key-glyph { color: var(--artblue); }
+@media (max-width: 720px) {
+  .nav-right .nav-returning { display: none; }
+}
+.hero-returning-strip {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.hero-returning-strip .sep { opacity: 0.4; }
+.hero-returning-strip a {
+  color: var(--artblue); text-decoration: none;
+  border-bottom: 1px solid currentColor; padding-bottom: 1px;
+}
+.hero-returning-strip a:hover { color: var(--ink); }
 
 /* ===== Hero ===== */
 .hero {
@@ -133,7 +164,7 @@ body {
 }
 .hero-photo-bg {
   position: absolute; inset: 0;
-  background-image: url('assets/hero-robotics.png');
+  background-image: url('/assets/hero-robotics.png');
   background-size: cover;
   background-position: center 40%;
   z-index: 0;
@@ -178,20 +209,21 @@ body {
 
 .hero h1 {
   font-family: var(--font-display);
-  font-size: clamp(44px, 6vw, 80px);
-  line-height: 1.12;
+  font-weight: 700;
+  font-size: clamp(52px, 6.8vw, 88px);
+  line-height: 1.02;
   letter-spacing: -0.025em;
   font-weight: 700;
-  margin: 0 0 32px;
+  margin: 0 0 28px;
   color: var(--ink);
   text-wrap: balance;
-  max-width: 26ch;
+  max-width: 20ch;
 }
 .hero h1 .hl { background: var(--artlight); color: var(--artblue); padding: 0 8px; font-weight: 800; }
 .hero h1 .blue { color: var(--artblue); }
 .hero-lede {
-  font-size: 18px; line-height: 1.65;
-  color: var(--ink);
+  font-size: 20px; line-height: 1.6;
+  color: #000;
   max-width: 68ch;
   margin: 0 0 48px;
   text-wrap: pretty;
@@ -230,104 +262,85 @@ body {
 .paths-wrap::after  { bottom: 10px; right: 10px; border-left: none; border-top: none; }
 .paths-svg { display: block; width: 100%; height: auto; max-height: 440px; position: relative; z-index: 1; }
 
-/* ===== Sequential flow chart (HTML/CSS replacement for SVG so it stacks on mobile) ===== */
-.flow-grid {
+/* ===== Hero flow (3 stages: TIR · SIP · Outcome) ===== */
+.hero-flow {
+  position: relative; z-index: 1;
   display: grid;
-  grid-template-columns: 1fr auto 1fr auto 1fr;
+  grid-template-columns: 1fr auto 1fr auto 0.85fr;
   gap: 18px;
   align-items: stretch;
-  position: relative;
-  z-index: 1;
 }
-.flow-stage { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.flow-header {
-  font-size: 15px;
-  line-height: 1.4;
-  color: var(--ink);
-  margin: 0;
+.hf-stage { display: flex; flex-direction: column; }
+.hf-persona {
+  font-family: var(--font-body);
+  color: var(--ink-soft);
+  font-size: 14px; line-height: 1.5;
+  margin: 0 0 16px;
+  min-height: 64px;
+  padding-right: 8px;
+  text-wrap: pretty;
 }
-.flow-header strong { font-weight: 700; }
-.flow-card {
+.hf-persona strong { color: var(--ink); font-weight: 700; }
+.hf-card {
   background: var(--artblue);
   color: #fff;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
+  padding: 22px 24px 22px;
+  display: flex; flex-direction: column;
   flex: 1;
-  border-radius: 2px;
+  position: relative;
+  transition: transform 200ms ease, box-shadow 200ms ease;
 }
-.flow-card h3 {
+.hf-card:hover { transform: translateY(-2px); box-shadow: 0 18px 36px -22px rgba(50,19,182,0.45); }
+.hf-card .hf-title {
   font-family: var(--font-display);
-  font-size: clamp(18px, 1.6vw, 22px);
   font-weight: 700;
-  line-height: 1.2;
-  margin: 0 0 16px;
+  font-size: 22px; line-height: 1.18;
+  letter-spacing: -0.005em;
+  color: #fff;
+  margin: 0 0 12px;
+  text-wrap: balance;
 }
-.flow-card p {
-  font-size: 15px;
-  line-height: 1.5;
-  margin: 0 0 14px;
-  color: rgba(255,255,255,0.95);
-}
-.flow-card .flow-trl {
-  margin-top: auto;
-  margin-bottom: 0;
-  padding-top: 16px;
-  border-top: 1px solid rgba(255,255,255,0.22);
-  font-weight: 400;
-  color: rgba(255,255,255,0.7);
-  font-size: 14px;
-  letter-spacing: 0.01em;
-}
-.flow-arrow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #a59cdb;
-  user-select: none;
-  /* Sit roughly mid-card vertically by adding the same top margin as the
-     header text uses on the stages — keeps the arrow visually centered
-     against the purple cards, not the full grid row. */
-  padding-top: 110px;
-}
-.flow-arrow svg { display: block; width: 60px; height: 18px; }
-.flow-stage-text {
-  padding-top: 110px;
-  padding-left: 4px;
-}
-.flow-final-title {
-  color: var(--artblue);
-  font-family: var(--font-display);
-  font-size: clamp(18px, 1.6vw, 22px);
-  font-weight: 700;
-  line-height: 1.4;
-  margin: 0;
-  display: block;
-}
-.flow-final-soft {
-  display: inline;
-  font-weight: 400;
+.hf-card .hf-body {
   font-family: var(--font-body);
-  font-size: 15px;
-  line-height: 1.5;
+  color: rgba(255,255,255,0.92);
+  font-size: 14px; line-height: 1.55;
+  margin: 0 0 18px;
+  text-wrap: pretty;
+}
+.hf-card .hf-meta {
+  margin-top: auto;
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.06em;
+  color: rgba(255,255,255,0.78);
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.18);
+}
+.hf-arrow {
+  display: flex; align-items: center; justify-content: center;
+  align-self: center;
+  padding-top: 80px; /* align with card middle, accounting for persona height */
+  color: rgba(50,19,182,0.45);
+}
+.hf-arrow svg { display: block; }
+.hf-outcome {
+  align-self: center;
+  padding-top: 80px;
+  font-family: var(--font-body);
+  font-size: 14px; line-height: 1.55;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+.hf-outcome .hl {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 22px; line-height: 1.18;
+  letter-spacing: -0.005em;
   color: var(--artblue);
+  display: block;
+  margin-bottom: 8px;
+  text-wrap: balance;
 }
-.flow-final-soft strong { font-weight: 700; color: var(--artblue); }
-
-@media (max-width: 880px) {
-  .flow-grid {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-  .flow-arrow {
-    padding-top: 0;
-    transform: rotate(90deg);
-    height: 32px;
-  }
-  .flow-stage-text { padding-top: 0; padding-left: 0; }
-  .flow-card { padding: 20px; }
-  .flow-card h3 { font-size: 18px; margin-bottom: 12px; }
-}
+.hf-outcome strong { color: var(--ink); font-weight: 700; }
 
 /* ===== Legacy Path diagram (kept for reference — no longer used) ===== */
 .paths {
@@ -454,45 +467,92 @@ body {
 }
 .block-title {
   font-family: var(--font-display);
+  font-weight: 700;
   font-size: clamp(38px, 4.6vw, 60px);
   line-height: 1.05; letter-spacing: -0.02em;
   font-weight: 700; margin: 0; text-wrap: balance;
 }
-.tracks-grid {
+/* ===== Flow rail ===== */
+.flow {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0,1fr) 96px minmax(0,1fr) 96px minmax(0,1fr);
-  column-gap: 16px;
-  row-gap: 24px;
+  grid-template-columns: 1fr auto 1fr auto 0.9fr;
   align-items: stretch;
+  gap: 0;
 }
+.flow-rail {
+  position: absolute; left: 0; right: 0; top: 50%;
+  height: 1px; background: var(--line-strong);
+  z-index: 0;
+}
+.flow-stage {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column;
+}
+.flow-persona {
+  background: var(--paper);
+  border-left: 2px solid var(--line-strong);
+  padding: 0 0 0 16px;
+  margin-bottom: 20px;
+  font-size: 14px; line-height: 1.5;
+  color: var(--ink-soft);
+  min-height: 88px;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.flow-persona .who {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-bottom: 6px;
+}
+.flow-persona strong { color: var(--ink); font-weight: 700; }
+.flow-stage.tir .flow-persona { border-left-color: var(--artblue); }
+.flow-stage.sip .flow-persona { border-left-color: var(--accent-violet); }
+.flow-stage.out .flow-persona { border-left-color: var(--artblack); }
+
 .track {
   background: var(--paper);
   border: 1px solid var(--line);
-  padding: 36px 36px 32px;
+  padding: 32px 32px 28px;
   display: flex; flex-direction: column;
   position: relative;
   overflow: hidden;
+  flex: 1;
+  transition: transform 200ms ease, box-shadow 200ms ease;
 }
+.track:hover { transform: translateY(-3px); box-shadow: 0 18px 40px -22px rgba(15,18,40,0.25); }
 .track::before {
   content: ""; position: absolute; top: 0; left: 0; right: 0;
-  height: 6px;
+  height: 4px;
 }
-.track.tir::before { background: var(--artblue); }
-.track.sip::before { background: var(--accent-violet); }
+.track.tir { background: var(--artblue); color: #fff; border-color: var(--artblue); }
+.track.sip { background: var(--accent-violet); color: #fff; border-color: var(--accent-violet); }
+.track.out { background: var(--artblack); color: #fff; border-color: var(--artblack); }
+
+.track-stage-num {
+  position: absolute; right: 18px; top: 14px;
+  font-family: var(--font-mono);
+  font-size: 90px; font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: rgba(255,255,255,0.08);
+  pointer-events: none;
+}
 .track-tag-row {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 24px;
+  display: flex; align-items: center; gap: 10px; margin-bottom: 18px;
+  position: relative; z-index: 1;
 }
 .track-pill {
   font-family: var(--font-mono);
-  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
   padding: 4px 10px;
+  background: rgba(255,255,255,0.16);
+  color: #fff;
 }
-.track.tir .track-pill { background: var(--artlight); color: var(--artblue); }
-.track.sip .track-pill { background: rgba(107,92,255,0.12); color: var(--accent-violet); }
 .track-status {
   font-family: var(--font-mono);
   font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--ink-dim);
+  color: rgba(255,255,255,0.78);
   display: inline-flex; align-items: center; gap: 6px;
 }
 .track-status .led {
@@ -501,214 +561,118 @@ body {
   animation: pulse 1.8s infinite;
 }
 .track-status.upcoming .led { background: var(--accent-amber); }
-.track h2 {
+.track h3.track-title {
   font-family: var(--font-display);
-  font-size: clamp(32px, 3.4vw, 44px);
-  line-height: 1.08; letter-spacing: -0.02em;
-  font-weight: 700; margin: 0 0 8px;
+  font-weight: 700;
+  font-size: clamp(26px, 2.4vw, 32px);
+  line-height: 1.1; letter-spacing: -0.01em;
+  margin: 0 0 6px;
+  color: #fff;
   text-wrap: balance;
+  position: relative; z-index: 1;
 }
 .track-subhead {
   font-family: var(--font-mono);
   font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--ink-dim);
-  margin-bottom: 16px;
+  color: rgba(255,255,255,0.7);
+  margin-bottom: 14px;
 }
 .track-lede {
-  color: var(--ink-soft); font-size: 20px; line-height: 1.6;
-  margin: 0 0 24px; text-wrap: pretty;
+  color: rgba(255,255,255,0.88); font-size: 15px; line-height: 1.55;
+  margin: 0 0 20px; text-wrap: pretty;
 }
 .track-specs {
   display: grid; grid-template-columns: 1fr 1fr; gap: 0;
-  border-top: 1px solid var(--line);
-  margin: 8px 0 24px;
+  border-top: 1px solid rgba(255,255,255,0.18);
+  margin: 0 0 20px;
 }
 .track-spec {
-  padding: 16px 0;
-  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.14);
 }
-.track-spec:nth-child(odd) { padding-right: 16px; border-right: 1px solid var(--line); }
-.track-spec:nth-child(even) { padding-left: 16px; }
+.track-spec:nth-child(odd) { padding-right: 14px; border-right: 1px solid rgba(255,255,255,0.14); }
+.track-spec:nth-child(even) { padding-left: 14px; }
 .track-spec .k {
   font-family: var(--font-mono);
-  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--ink-dim); margin-bottom: 4px;
+  font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: rgba(255,255,255,0.65); margin-bottom: 3px;
 }
 .track-spec .v {
   font-family: var(--font-display);
-  font-size: 19px; font-weight: 700;
-  color: var(--ink); line-height: 1.3;
+  font-size: 16px; font-weight: 700;
+  color: #fff; line-height: 1.25;
 }
-.track.tir .track-spec .v.hl { color: var(--artblue); }
-.track.sip .track-spec .v.hl { color: var(--accent-violet); }
+.track-spec .v.hl { color: var(--artlight); }
+.track.sip .track-spec .v.hl { color: #ffe9a8; }
+
 .track-cta-row {
-  display: flex; gap: 12px; flex-wrap: wrap; margin-top: auto;
-  padding-top: 8px;
+  display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto;
+  padding-top: 4px;
 }
-.track.sip .btn-primary { background: var(--accent-violet); }
-.track.sip .btn-primary:hover { box-shadow: 0 8px 24px rgba(107,92,255,0.3); }
+.track .btn-primary {
+  background: #fff; color: var(--ink);
+  padding: 11px 18px; font-size: 13px;
+}
+.track .btn-primary:hover { background: var(--artlight); color: var(--artblue); box-shadow: 0 8px 24px rgba(0,0,0,0.18); }
+.track.sip .btn-primary:hover { color: var(--accent-violet); }
+.track .btn-ghost {
+  background: transparent; color: rgba(255,255,255,0.85);
+  border: 1px solid rgba(255,255,255,0.32);
+  padding: 11px 18px; font-size: 13px;
+}
+.track .btn-ghost:hover { background: rgba(255,255,255,0.1); color: #fff; }
 
-/* ===== Tracks redesign — 3-col with full-bleed colored cards + outcome ===== */
-.tracks-intro-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 24px;
-  margin-bottom: 28px;
+/* Outcome stage */
+.track.out .out-list {
+  list-style: none; padding: 0; margin: 8px 0 0;
+  display: grid; gap: 10px;
 }
-.track-intro {
-  border-left: 2px solid var(--artblue);
-  padding: 6px 0 6px 20px;
-}
-.track-intro.intro-sip { border-left-color: var(--accent-violet); }
-.track-intro.intro-outcome { border-left-color: var(--artblack); }
-.track-intro .intro-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
-  color: var(--ink-dim);
-  margin-bottom: 12px;
-}
-.track-intro p {
-  margin: 0;
-  font-size: 15px; line-height: 1.55;
-  color: var(--ink-soft);
-}
-.track-intro p strong { color: var(--ink); font-weight: 700; }
-
-/* Full-bleed colored cards */
-.track.tir { background: var(--artblue-deep); border-color: var(--artblue-deep); color: #fff; }
-.track.sip { background: var(--accent-violet); border-color: var(--accent-violet); color: #fff; }
-.track.outcome { background: var(--artblack); border-color: var(--artblack); color: #fff; }
-
-/* Hide top stripe on colored cards (no longer needed). */
-.track.tir::before, .track.sip::before, .track.outcome::before { display: none; }
-
-/* Big background "01/02/03" digit */
-.track-bg-num {
-  position: absolute;
-  top: 28px; right: 32px;
+.track.out .out-list li {
   font-family: var(--font-display);
-  font-weight: 800; font-size: 96px; line-height: 1;
-  letter-spacing: -0.04em;
-  color: rgba(255,255,255,0.10);
-  pointer-events: none;
-  user-select: none;
-  z-index: 0;
+  font-size: 16px; font-weight: 600; color: #fff;
+  line-height: 1.35;
+  padding-left: 18px; position: relative;
+  text-wrap: balance;
 }
-
-/* Lift card content above the bg number */
-.track > * { position: relative; z-index: 1; }
-
-/* Type colors on dark cards */
-.track.tir h2, .track.sip h2, .track.outcome h2 { color: #fff; }
-.track.tir .track-subhead,
-.track.sip .track-subhead,
-.track.outcome .track-subhead { color: rgba(255,255,255,0.65); }
-.track.tir .track-lede,
-.track.sip .track-lede,
-.track.outcome .track-lede { color: rgba(255,255,255,0.92); }
-
-/* Specs grid lines + labels on dark bg */
-.track.tir .track-specs,
-.track.sip .track-specs { border-top-color: rgba(255,255,255,0.18); }
-.track.tir .track-spec,
-.track.sip .track-spec { border-bottom-color: rgba(255,255,255,0.18); }
-.track.tir .track-spec:nth-child(odd),
-.track.sip .track-spec:nth-child(odd) { border-right-color: rgba(255,255,255,0.18); }
-.track.tir .track-spec .k,
-.track.sip .track-spec .k { color: rgba(255,255,255,0.55); }
-.track.tir .track-spec .v,
-.track.sip .track-spec .v { color: #fff; }
-.track.tir .track-spec .v.hl,
-.track.sip .track-spec .v.hl { color: var(--artlight); }
-
-/* Pills + status text on dark cards */
-.track.tir .track-pill { background: rgba(255,255,255,0.18); color: #fff; }
-.track.sip .track-pill { background: rgba(255,255,255,0.22); color: #fff; }
-.track.outcome .track-pill { background: rgba(255,255,255,0.16); color: #fff; }
-.track.tir .track-status,
-.track.sip .track-status,
-.track.outcome .track-status { color: rgba(255,255,255,0.7); }
-
-/* Buttons on dark cards — light-on-dark variant */
-.track.tir .btn-primary { background: #fff; color: var(--artblue); }
-.track.tir .btn-primary:hover { background: var(--artlight); color: var(--artblue-deep); box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
-.track.tir .btn-ghost { color: #fff; border-color: rgba(255,255,255,0.45); }
-.track.tir .btn-ghost:hover { color: #fff; border-color: #fff; background: rgba(255,255,255,0.06); }
-.track.sip .btn-primary { background: #fff; color: var(--accent-violet); }
-.track.sip .btn-primary:hover { background: var(--artlight); color: var(--artblue-deep); box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
-.track.sip .btn-ghost { color: #fff; border-color: rgba(255,255,255,0.45); }
-.track.sip .btn-ghost:hover { color: #fff; border-color: #fff; background: rgba(255,255,255,0.06); }
-
-/* SIP countdown sits inside violet card now — give it its own dark band */
-.track.sip .countdown { background: rgba(0,0,0,0.22); }
-
-/* Outcome card list */
-.outcome-list {
-  list-style: none; padding: 0;
-  margin: 8px 0 24px;
-  display: flex; flex-direction: column; gap: 14px;
-}
-.outcome-list li {
-  display: flex; gap: 12px;
-  font-size: 16px; color: #fff; line-height: 1.45;
-}
-.outcome-list li::before {
-  content: "→";
+.track.out .out-list li::before {
+  content: "→"; position: absolute; left: 0; top: 0;
+  font-family: var(--font-mono); font-weight: 400;
   color: var(--accent-amber);
-  font-weight: 700; flex-shrink: 0;
 }
-.outcome-footer {
-  margin-top: auto;
-  padding-top: 20px;
+.track.out .out-foot {
+  margin-top: 22px;
+  padding-top: 16px;
   border-top: 1px solid rgba(255,255,255,0.18);
   font-family: var(--font-mono);
-  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
-  color: rgba(255,255,255,0.55);
+  font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: rgba(255,255,255,0.65);
 }
 
-/* Connector cells between track cards (TIR → SIP → Outcome) */
-.track-connector {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: center;
-  text-align: center;
-  padding: 0 6px;
-  min-width: 0;
+/* Arrow connectors */
+.flow-arrow {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 0 14px;
+  align-self: center;
 }
-.track-connector .conn-label {
+.flow-arrow .label {
   font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  margin: 0 0 12px;
+  font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-bottom: 8px;
+  white-space: nowrap;
 }
-.track-connector .conn-divider {
-  width: 100%;
-  height: 1px;
-  background: var(--line);
-  margin: 0 0 16px;
-}
-.track-connector svg {
-  display: block;
-  width: 60px;
-  height: 18px;
-  margin: 0 auto;
-  color: var(--artblack);
-}
-
-@media (max-width: 1024px) {
-  .tracks-intro-row { grid-template-columns: 1fr; gap: 14px; }
-  .track-bg-num { font-size: 80px; }
-}
+.flow-arrow svg { display: block; }
+.flow-arrow .head { fill: var(--ink); }
+.flow-arrow .stem { stroke: var(--ink); }
 
 /* ===== Countdown timer (SIP) ===== */
 .countdown {
-  background: var(--artblack);
+  background: rgba(0,0,0,0.22);
   color: #fff;
-  margin: 0 0 24px;
-  padding: 20px;
+  border: 1px solid rgba(255,255,255,0.14);
+  margin: 0 0 18px;
+  padding: 14px 16px;
   position: relative;
   overflow: hidden;
 }
@@ -734,34 +698,34 @@ body {
   animation: pulse 1.8s infinite;
 }
 .countdown-grid {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
 }
 .cd-cell {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.1);
-  padding: 14px 4px 12px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  padding: 8px 4px;
   text-align: center;
-  min-width: 0;
 }
 .cd-val {
   font-family: var(--font-display);
-  font-weight: 700; font-size: clamp(24px, 2.4vw, 34px);
-  line-height: 1; color: var(--artlight);
+  font-weight: 700; font-size: clamp(22px, 2.2vw, 28px);
+  line-height: 1; color: #ffe9a8;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 .cd-unit {
   font-family: var(--font-mono);
-  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
-  color: rgba(255,255,255,0.6); margin-top: 6px;
+  font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: rgba(255,255,255,0.6); margin-top: 4px;
 }
 .countdown-target {
-  margin-top: 10px;
+  margin-top: 8px;
   font-family: var(--font-mono);
-  font-size: 11px; letter-spacing: 0.08em;
+  font-size: 10px; letter-spacing: 0.08em;
   color: rgba(255,255,255,0.7);
 }
+.countdown-label { margin-bottom: 8px; }
 
 /* ===== Comparison table ===== */
 .compare-block { padding: 88px 32px; background: var(--paper-soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -795,10 +759,11 @@ body {
 .cmp-head strong {
   display: block;
   font-family: var(--font-display);
-  font-weight: 700; font-size: 22px;
+  font-weight: 700; font-size: 19px;
   letter-spacing: -0.01em;
   margin-top: 4px;
   color: var(--ink);
+  text-transform: none;
 }
 .cmp-dim {
   font-family: var(--font-display);
@@ -899,6 +864,7 @@ body {
 }
 .waitlist-block h2 {
   font-family: var(--font-display);
+  font-weight: 700;
   font-size: clamp(38px, 4.6vw, 56px);
   line-height: 1.08; letter-spacing: -0.02em;
   font-weight: 700; margin: 16px 0 16px;
@@ -940,15 +906,6 @@ body {
 }
 .waitlist-form .btn-light { background: var(--artlight); color: var(--artblue); }
 .waitlist-form .btn-light:hover { background: #fff; transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
-.waitlist-error {
-  margin-top: 14px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: #ffb4b4;
-  letter-spacing: 0.04em;
-  min-height: 16px;
-}
-.waitlist-error:empty { display: none; }
 .waitlist-thanks {
   display: none;
   padding: 20px;
@@ -1034,7 +991,7 @@ details.faq.hidden { display: none; }
   font-size: 28px; font-weight: 700; margin: 0 0 8px;
   letter-spacing: -0.01em;
 }
-.beta-note p { color: var(--ink-soft); font-size: 18px; line-height: 1.65; margin: 0 0 12px; max-width: 68ch; }
+.beta-note p { color: var(--ink-soft); font-size: 17px; line-height: 1.65; margin: 0 0 12px; max-width: 72ch; }
 .beta-note .muted { color: var(--ink-dim); font-size: 13px; font-family: var(--font-mono); letter-spacing: 0.04em; }
 
 /* ===== Footer ===== */
@@ -1045,11 +1002,11 @@ details.faq.hidden { display: none; }
 }
 .footer-inner {
   max-width: 1280px; margin: 0 auto;
-  display: grid; grid-template-columns: 2fr 1.4fr 1.4fr;
-  gap: 48px;
+  display: grid; grid-template-columns: 1.6fr 1fr 1fr;
+  gap: 56px;
 }
 .footer-brand img { height: 36px; margin-bottom: 16px; filter: brightness(0) invert(1); }
-.footer-brand p { font-size: 13px; max-width: 36ch; line-height: 1.6; }
+.footer-brand p { font-size: 13px; max-width: 44ch; line-height: 1.6; }
 .footer-col h4 {
   font-family: var(--font-mono);
   font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
@@ -1080,12 +1037,24 @@ details.faq.hidden { display: none; }
   }
   .path-arrow.fork, .path-arrow.merge { transform: rotate(90deg); margin: 4px 0; }
   .path-arrow.fork::before, .path-arrow.fork::after { width: 40px; }
+  .hero-flow {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .hf-arrow { padding-top: 0; transform: rotate(90deg); }
+  .hf-outcome { padding-top: 0; }
+  .hf-persona { min-height: 0; }
 }
 @media (max-width: 960px) {
   .hero-inner { padding: 56px 24px 32px; }
   .tracks-head { grid-template-columns: 1fr; gap: 20px; }
-  .tracks-grid { grid-template-columns: 1fr; column-gap: 0; }
-  .track-connector { display: none; }
+  .flow {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .flow-rail { display: none; }
+  .flow-arrow { padding: 4px 0; }
+  .flow-arrow svg { transform: rotate(90deg); }
   .compare-table { grid-template-columns: 1fr; }
   .cmp-cell { border-right: none; }
   .cmp-cell:nth-child(3n) { border-right: none; }
@@ -1100,7 +1069,6 @@ details.faq.hidden { display: none; }
   .lockup img { height: 32px; }
   .lockup img.iisc { height: 44px; }
   .paths { padding: 24px; }
-  .countdown { margin: 0 0 24px; padding: 20px; }
 }
 @media (max-width: 560px) {
   .footer-inner { grid-template-columns: 1fr; }
@@ -1125,15 +1093,29 @@ details.faq.hidden { display: none; }
 <header class="site-header">
   <div class="site-header-inner">
     <div class="lockup">
-      <img class="iisc" src="assets/iisc-logo-blue.png" alt="Indian Institute of Science">
-      <img src="assets/artpark-logo.png" alt="ARTPARK">
+      <img class="iisc" src="/assets/iisc-logo-blue.png" alt="Indian Institute of Science">
+      <img src="/assets/artpark-logo.png" alt="ARTPARK">
     </div>
     <nav class="nav-right">
       <a href="#tracks" class="nav-link">Tracks</a>
       <a href="#compare" class="nav-link">Compare</a>
       <a href="#faq" class="nav-link">FAQ</a>
+      <a href="/apply/signin" class="nav-returning" title="Resume an existing application">
+        <svg class="key-glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="5" cy="8" r="2.6"></circle>
+          <path d="M7.6 8 H14.5 M12.5 8 V10.2 M14.5 8 V10.6"></path>
+        </svg>
+        <span class="nav-returning-label">
+          <span class="nav-returning-eyebrow">Returning user</span>
+          <span class="nav-returning-cta">Sign in →</span>
+        </span>
+      </a>
       <a href="/tir" class="btn btn-primary">
         <span>Apply to TIR</span>
+        <span class="arrow">→</span>
+      </a>
+      <a href="/sip" class="btn btn-primary" style="background: var(--accent-violet);">
+        <span>Apply to SIP</span>
         <span class="arrow">→</span>
       </a>
     </nav>
@@ -1153,52 +1135,54 @@ details.faq.hidden { display: none; }
       ARTPARK supports deep-tech translation along two distinct paths. Early-stage technologists come in through the <strong>Technology Innovators in Residence (TIR)</strong> program to mature their IP; incorporated startups with a pitch-ready proposition enter through the <strong>Startup Incubation Program (SIP)</strong> for direct investment and acceleration. Pick the path that matches where you are today.
     </p>
 
-    <!-- Path diagram · Sequential flow (TIR → Investment + VBS → Escape velocity) -->
-    <!-- Built as HTML/CSS so it stacks vertically on mobile — an SVG-with-fixed-
-         viewBox version was unreadable on phones. -->
-    <div class="paths-wrap">
-      <div class="flow-grid" role="img" aria-label="Sequential flow from Technology Innovators in Residence through Investment + Venture Building Support to escape velocity">
+    <!-- Path diagram · Hero flow -->
+    <div class="paths-wrap" id="paths-wrap" data-variant="flow">
+      <div class="hero-flow">
 
-        <!-- Stage 1 -->
-        <div class="flow-stage">
-          <p class="flow-header"><strong>For innovators</strong> with lab-proven, differentiated technologies that they believe could be immensely useful.</p>
-          <div class="flow-card">
-            <h3>Technology Innovators<br>in Residence</h3>
-            <p>Discover which market to target and what product to build. Develop early prototypes. Get ready to start up.</p>
-            <p class="flow-trl">Typical entry · TRL 3</p>
-          </div>
-        </div>
-
-        <div class="flow-arrow" aria-hidden="true">
-          <svg viewBox="0 0 60 18" xmlns="http://www.w3.org/2000/svg">
-            <line x1="0" y1="9" x2="46" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>
-            <polygon points="44,1 60,9 44,17" fill="currentColor"/>
-          </svg>
-        </div>
-
-        <!-- Stage 2 -->
-        <div class="flow-stage">
-          <p class="flow-header"><strong>For startups</strong> that have a prototype with differentiated technology and some sense of product-market fit.</p>
-          <div class="flow-card">
-            <h3>Investment + Venture<br>Building Support</h3>
-            <p>Win investment, build your venture, mature your technology, collaborate with customers, and run pilots.</p>
-            <p class="flow-trl">Typical entry · TRL 4–5</p>
-          </div>
-        </div>
-
-        <div class="flow-arrow" aria-hidden="true">
-          <svg viewBox="0 0 60 18" xmlns="http://www.w3.org/2000/svg">
-            <line x1="0" y1="9" x2="46" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>
-            <polygon points="44,1 60,9 44,17" fill="currentColor"/>
-          </svg>
-        </div>
-
-        <!-- Stage 3 — text only, no box -->
-        <div class="flow-stage flow-stage-text">
-          <p class="flow-final-title">
-            Achieve escape velocity
-            <span class="flow-final-soft"> with proven <strong>product-market fit</strong>, robust technology, a well-rounded team, first customers, and early revenue.</span>
+        <!-- STAGE 1: TIR -->
+        <div class="hf-stage">
+          <p class="hf-persona">
+            <strong>For innovators</strong> with lab-proven, differentiated technologies that they believe could be immensely useful.
           </p>
+          <div class="hf-card">
+            <h3 class="hf-title">Technology Innovators in Residence</h3>
+            <p class="hf-body">Discover which market to target and what product to build. Develop early prototypes. Get ready to start up.</p>
+            <div class="hf-meta">Typical entry · TRL 3</div>
+          </div>
+        </div>
+
+        <!-- ARROW 1 -->
+        <div class="hf-arrow" aria-hidden="true">
+          <svg width="48" height="20" viewBox="0 0 48 20">
+            <line x1="2" y1="10" x2="36" y2="10" stroke="currentColor" stroke-width="2"/>
+            <polygon points="36,3 48,10 36,17" fill="currentColor"/>
+          </svg>
+        </div>
+
+        <!-- STAGE 2: SIP -->
+        <div class="hf-stage">
+          <p class="hf-persona">
+            <strong>For startups</strong> that have a prototype with differentiated technology and some sense of product-market fit.
+          </p>
+          <div class="hf-card">
+            <h3 class="hf-title">Investment + Venture Building Support</h3>
+            <p class="hf-body">Win investment, build your venture, mature your technology, collaborate with customers, and run pilots.</p>
+            <div class="hf-meta">Typical entry · TRL 4–5</div>
+          </div>
+        </div>
+
+        <!-- ARROW 2 -->
+        <div class="hf-arrow" aria-hidden="true">
+          <svg width="48" height="20" viewBox="0 0 48 20">
+            <line x1="2" y1="10" x2="36" y2="10" stroke="currentColor" stroke-width="2"/>
+            <polygon points="36,3 48,10 36,17" fill="currentColor"/>
+          </svg>
+        </div>
+
+        <!-- STAGE 3: OUTCOME -->
+        <div class="hf-outcome">
+          <span class="hl">Achieve escape velocity</span>
+          with proven <strong>product-market fit</strong>, robust technology, a well-rounded team, first customers, and early revenue.
         </div>
 
       </div>
@@ -1206,156 +1190,146 @@ details.faq.hidden { display: none; }
   </div>
 </section>
 
-<!-- TRACK CARDS -->
+<!-- TRACK FLOW -->
 <section id="tracks" class="tracks-block">
   <div class="tracks-head">
     <span class="block-eyebrow">Choose your track</span>
     <h2 class="block-title">Two programs. One destination. Pick where you are today.</h2>
   </div>
 
-  <!-- 3-column intro row (above the cards) -->
-  <div class="tracks-intro-row">
-    <div class="track-intro intro-tir">
-      <div class="intro-eyebrow">For innovators</div>
-      <p><strong>Lab-proven, differentiated tech</strong> you believe could be immensely useful — but no company yet.</p>
-    </div>
-    <div class="track-intro intro-sip">
-      <div class="intro-eyebrow">For startups</div>
-      <p><strong>Prototype + differentiated tech</strong> with early sense of product-market fit. Pitch-ready.</p>
-    </div>
-    <div class="track-intro intro-outcome">
-      <div class="intro-eyebrow">Achieve escape velocity</div>
-      <p><strong>Deployed deep-tech</strong> with proven product-market fit, robust technology, a well-rounded team, and first revenue.</p>
-    </div>
-  </div>
+  <div class="flow">
+    <div class="flow-rail" aria-hidden="true"></div>
 
-  <div class="tracks-grid">
-
-    <!-- TIR CARD -->
-    <div id="tir-track" class="track tir">
-      <span class="track-bg-num" aria-hidden="true">01</span>
-      <div class="track-tag-row">
-        <span class="track-pill">Track 01 · TIR</span>
-        <span class="track-status"><span class="led"></span>Applications open</span>
+    <!-- STAGE 1: TIR -->
+    <div class="flow-stage tir">
+      <div class="flow-persona">
+        <span class="who">For innovators</span>
+        <span><strong>Lab-proven, differentiated tech</strong> you believe could be immensely useful — but no company yet.</span>
       </div>
-      <h2>Technology Innovator <br>in Residence</h2>
-      <div class="track-subhead">Researchers · TRL 3 · Pre-company</div>
-      <p class="track-lede">
-        6 months, funding, and IISc infrastructure to retire risk on a step-change technology and incorporate the spin-out.
-      </p>
-      <div class="track-specs">
-        <div class="track-spec">
-          <div class="k">Kickoff</div>
-          <div class="v">₹25L · 0% equity</div>
+      <div class="track tir">
+        <div class="track-stage-num">01</div>
+        <div class="track-tag-row">
+          <span class="track-pill">TIR</span>
+          <span class="track-status"><span class="led"></span>Open</span>
         </div>
-        <div class="track-spec">
-          <div class="k">Subsequent funding</div>
-          <div class="v hl">Up to ₹2 Cr through SIP</div>
+        <h3 class="track-title">Technology Innovator <br>in Residence</h3>
+        <div class="track-subhead">Researchers · TRL 3 · Pre-company</div>
+        <p class="track-lede">
+          6 months, funding, and IISc infrastructure to retire risk on a step-change technology and incorporate the spin-out.
+        </p>
+        <div class="track-specs">
+          <div class="track-spec">
+            <div class="k">Kickoff</div>
+            <div class="v">₹25L · 0% equity</div>
+          </div>
+          <div class="track-spec">
+            <div class="k">Subsequent Funding</div>
+            <div class="v hl">Up to ₹2 Cr through SIP</div>
+          </div>
+          <div class="track-spec">
+            <div class="k">Duration</div>
+            <div class="v">6 months</div>
+          </div>
+          <div class="track-spec">
+            <div class="k">TRL target</div>
+            <div class="v">3 → 4</div>
+          </div>
         </div>
-        <div class="track-spec">
-          <div class="k">Duration</div>
-          <div class="v">6 months</div>
+        <div class="track-cta-row">
+          <a href="/apply/signup?track=tir" class="btn btn-primary">
+            <span>Apply to TIR</span>
+            <span class="arrow">→</span>
+          </a>
+          <a href="/tir#program" class="btn btn-ghost">Full brief</a>
         </div>
-        <div class="track-spec">
-          <div class="k">TRL target</div>
-          <div class="v">3 → 4</div>
-        </div>
-      </div>
-      <div class="track-cta-row">
-        <a href="/apply" class="btn btn-primary">
-          <span>Apply to TIR</span>
-          <span class="arrow">→</span>
-        </a>
-        <a href="/tir" class="btn btn-ghost">Full brief</a>
       </div>
     </div>
 
-    <!-- CONNECTOR: TIR → SIP -->
-    <div class="track-connector" aria-hidden="true">
-      <div class="conn-label">Graduate</div>
-      <div class="conn-divider"></div>
-      <svg viewBox="0 0 60 18" xmlns="http://www.w3.org/2000/svg">
-        <line x1="0" y1="9" x2="46" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>
-        <polygon points="44,1 60,9 44,17" fill="currentColor"/>
+    <!-- ARROW 1 -->
+    <div class="flow-arrow">
+      <span class="label">Graduate</span>
+      <svg width="56" height="22" viewBox="0 0 56 22" aria-hidden="true">
+        <line class="stem" x1="2" y1="11" x2="44" y2="11" stroke-width="1.5"/>
+        <polygon class="head" points="44,4 56,11 44,18"/>
       </svg>
     </div>
 
-    <!-- SIP CARD with TIMER -->
-    <div id="sip-track" class="track sip">
-      <span class="track-bg-num" aria-hidden="true">02</span>
-      <div class="track-tag-row">
-        <span class="track-pill">SIP</span>
-        <span class="track-status upcoming"><span class="led"></span>Opens 22 May 2026</span>
+    <!-- STAGE 2: SIP -->
+    <div class="flow-stage sip">
+      <div class="flow-persona">
+        <span class="who">For startups</span>
+        <span><strong>Prototype + differentiated tech</strong> with early sense of product-market fit. Pitch-ready.</span>
       </div>
+      <div class="track sip">
+        <div class="track-stage-num">02</div>
+        <div class="track-tag-row">
+          <span class="track-pill">SIP</span>
+          <span class="track-status"><span class="led"></span>Open</span>
+        </div>
 
-      <!-- COUNTDOWN -->
-      <div class="countdown" role="timer" aria-live="polite">
-        <div class="countdown-label"><span class="led"></span>Applications open in</div>
-        <div class="countdown-grid">
-          <div class="cd-cell"><div class="cd-val" id="cd-days">--</div><div class="cd-unit">Days</div></div>
-          <div class="cd-cell"><div class="cd-val" id="cd-hours">--</div><div class="cd-unit">Hours</div></div>
-          <div class="cd-cell"><div class="cd-val" id="cd-mins">--</div><div class="cd-unit">Min</div></div>
-          <div class="cd-cell"><div class="cd-val" id="cd-secs">--</div><div class="cd-unit">Sec</div></div>
+        <h3 class="track-title">Startup <br>Incubation Program</h3>
+        <div class="track-subhead">Registered startups · TRL 4+ · Pitch-ready</div>
+        <p class="track-lede">
+          Direct investment, customer pipeline, and ARTPARK's scale-up infrastructure to move from demonstrated to deployed.
+        </p>
+        <div class="track-specs">
+          <div class="track-spec">
+            <div class="k">Engagement</div>
+            <div class="v hl">Direct investment</div>
+          </div>
+          <div class="track-spec">
+            <div class="k">Entity</div>
+            <div class="v">Registered Indian</div>
+          </div>
+          <div class="track-spec">
+            <div class="k">Duration</div>
+            <div class="v">Up to 18 months</div>
+          </div>
+          <div class="track-spec">
+            <div class="k">TRL entry</div>
+            <div class="v">4 or higher</div>
+          </div>
         </div>
-      </div>
-
-      <h2>Startup <br>Incubation Program</h2>
-      <div class="track-subhead">Registered startups · TRL 4+ · Pitch-ready</div>
-      <p class="track-lede">
-        Direct investment, customer pipeline, and ARTPARK's scale-up infrastructure to move from demonstrated to deployed.
-      </p>
-      <div class="track-specs">
-        <div class="track-spec">
-          <div class="k">Engagement</div>
-          <div class="v hl">Direct investment</div>
+        <div class="track-cta-row">
+          <a href="/apply-sip/signup?track=sip" class="btn btn-primary">
+            <span>Apply to SIP</span>
+            <span class="arrow">→</span>
+          </a>
+          <a href="/sip#program" class="btn btn-ghost">Full brief</a>
         </div>
-        <div class="track-spec">
-          <div class="k">Entity</div>
-          <div class="v">Registered Indian</div>
-        </div>
-        <div class="track-spec">
-          <div class="k">Duration</div>
-          <div class="v">Up to 18 months</div>
-        </div>
-        <div class="track-spec">
-          <div class="k">TRL entry</div>
-          <div class="v">4 or higher</div>
-        </div>
-      </div>
-      <div class="track-cta-row">
-        <a href="#waitlist" class="btn btn-primary">
-          <span>Join the waitlist</span>
-          <span class="arrow">→</span>
-        </a>
-        <a href="#compare" class="btn btn-ghost">Compare</a>
       </div>
     </div>
 
-    <!-- CONNECTOR: SIP → Outcome -->
-    <div class="track-connector" aria-hidden="true">
-      <div class="conn-label">Outcome</div>
-      <div class="conn-divider"></div>
-      <svg viewBox="0 0 60 18" xmlns="http://www.w3.org/2000/svg">
-        <line x1="0" y1="9" x2="46" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>
-        <polygon points="44,1 60,9 44,17" fill="currentColor"/>
+    <!-- ARROW 2 -->
+    <div class="flow-arrow">
+      <span class="label">Outcome</span>
+      <svg width="56" height="22" viewBox="0 0 56 22" aria-hidden="true">
+        <line class="stem" x1="2" y1="11" x2="44" y2="11" stroke-width="1.5"/>
+        <polygon class="head" points="44,4 56,11 44,18"/>
       </svg>
     </div>
 
-    <!-- OUTCOME CARD -->
-    <div class="track outcome">
-      <span class="track-bg-num" aria-hidden="true">03</span>
-      <div class="track-tag-row">
-        <span class="track-pill">Outcome</span>
+    <!-- STAGE 3: OUTCOME -->
+    <div class="flow-stage out">
+      <div class="flow-persona">
+        <span class="who">Achieve escape velocity</span>
+        <span><strong>Deployed deep-tech</strong> with proven product-market fit, robust technology, a well-rounded team, and first revenue.</span>
       </div>
-      <h2>A scale-ready <br>deep-tech company.</h2>
-      <ul class="outcome-list">
-        <li>Proven product-market fit</li>
-        <li>Robust, deployed technology</li>
-        <li>Well-rounded founding team</li>
-        <li>First customers &amp; early revenue</li>
-        <li>Follow-on capital pathway</li>
-      </ul>
-      <div class="outcome-footer">Where ARTPARK alumni go from here.</div>
+      <div class="track out">
+        <div class="track-stage-num">03</div>
+        <div class="track-tag-row">
+          <span class="track-pill">Outcome</span>
+        </div>
+        <h3 class="track-title">A scale-ready deep-tech company.</h3>
+        <ul class="out-list">
+          <li>Proven product-market fit</li>
+          <li>Robust, deployed technology</li>
+          <li>Well-rounded founding team</li>
+          <li>First customers &amp; early revenue</li>
+          <li>Follow-on capital pathway</li>
+        </ul>
+        <div class="out-foot">Where ARTPARK alumni go from here.</div>
+      </div>
     </div>
 
   </div>
@@ -1453,102 +1427,7 @@ details.faq.hidden { display: none; }
   </div>
 </section>
 
-<!-- WAITLIST -->
-<section id="waitlist" class="waitlist-block">
-  <div class="waitlist-inner">
-    <div>
-      <span class="block-eyebrow">SIP · Waitlist</span>
-      <h2>Be first in line when <em>SIP</em> opens.</h2>
-      <p>Applications for the inaugural Startup Incubation Program cohort open on 22 May 2026 at 12:00 IST. Drop your details and we'll email you the moment the form goes live — plus a pre-read on eligibility, timelines, and typical ticket sizes.</p>
-    </div>
-    <form class="waitlist-form" id="waitlist-form" novalidate>
-      <label for="wl-name">Name</label>
-      <input id="wl-name" name="name" type="text" placeholder="Your full name" required="" autocomplete="name">
-      <div class="form-row">
-        <div>
-          <label for="wl-email">Work email</label>
-          <input id="wl-email" name="email" type="email" placeholder="you@startup.com" required="" autocomplete="email">
-        </div>
-        <div>
-          <label for="wl-startup">Startup name</label>
-          <input id="wl-startup" name="startup_name" type="text" placeholder="Startup Pvt Ltd" required="" autocomplete="organization">
-        </div>
-      </div>
-      <label for="wl-stage">Current stage</label>
-      <select id="wl-stage" name="current_stage" required="">
-        <option value="">Select your stage</option>
-        <option>Incorporated · pre-revenue</option>
-        <option>Incorporated · early revenue</option>
-        <option>Raised seed / pre-Series A</option>
-        <option>Series A or later</option>
-      </select>
-      <div class="submit-row">
-        <span class="submit-note">We'll only email you about SIP.</span>
-        <button type="submit" class="btn btn-light" id="wl-submit">
-          <span id="wl-submit-label">Notify me</span>
-          <span class="arrow">→</span>
-        </button>
-      </div>
-      <div class="waitlist-error" id="wl-error" role="alert" aria-live="polite"></div>
-      <div class="waitlist-thanks">✓ You're on the list. We'll email you on 22 May.</div>
-    </form>
-    <script>
-      (function () {
-        var API_BASE = "https://api.artpark.info";
-        var form = document.getElementById("waitlist-form");
-        var btn = document.getElementById("wl-submit");
-        var label = document.getElementById("wl-submit-label");
-        var errBox = document.getElementById("wl-error");
-        if (!form) return;
-
-        form.addEventListener("submit", async function (ev) {
-          ev.preventDefault();
-          errBox.textContent = "";
-
-          var payload = {
-            name: form.elements["name"].value.trim(),
-            email: form.elements["email"].value.trim(),
-            startup_name: form.elements["startup_name"].value.trim(),
-            current_stage: form.elements["current_stage"].value,
-            source: "programs_page",
-          };
-          if (!payload.name || !payload.email || !payload.startup_name || !payload.current_stage) {
-            errBox.textContent = "Please fill every field.";
-            return;
-          }
-
-          btn.disabled = true;
-          label.textContent = "Saving…";
-          try {
-            var res = await fetch(API_BASE + "/sip/waitlist", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload),
-            });
-            if (res.ok) {
-              form.classList.add("submitted");
-              return;
-            }
-            var msg = "Couldn't save your details. Please try again.";
-            try {
-              var body = await res.json();
-              if (body && body.detail) {
-                msg = typeof body.detail === "string" ? body.detail : msg;
-              }
-            } catch (_) { /* ignore parse errors */ }
-            if (res.status === 429) msg = "Too many attempts — please wait a few minutes.";
-            errBox.textContent = msg;
-          } catch (_) {
-            errBox.textContent = "Network error. Check your connection and try again.";
-          } finally {
-            btn.disabled = false;
-            label.textContent = "Notify me";
-          }
-        });
-      })();
-    </script>
-  </div>
-</section>
+<!-- (Waitlist removed — SIP applications now open) -->
 
 <!-- FAQ -->
 <section id="faq" class="faq-block">
@@ -1566,7 +1445,7 @@ details.faq.hidden { display: none; }
 
     <details class="faq" data-track="both" open="">
       <summary><span><span class="faq-tag">Both</span>Which track should I apply to?</span></summary>
-      <div class="ans">If your IP is at <strong>TRL 3</strong> and you haven't (or don't plan to yet) incorporated, apply to <strong>TIR</strong>. If you're already a <strong>registered Indian startup</strong> with a team, a pitch, and a technology at TRL 4+, join the <strong>SIP</strong> waitlist. When in doubt, apply to TIR — we can fast-track strong teams across.</div>
+      <div class="ans">If your IP is at <strong>TRL 3</strong> and you haven't (or don't plan to yet) incorporated, apply to <strong>TIR</strong>. If you're already a <strong>registered Indian startup</strong> with a team, a pitch, and a technology at TRL 4+, apply to <strong>SIP</strong>. When in doubt, apply to TIR — we can fast-track strong teams across.</div>
     </details>
 
     <details class="faq" data-track="tir">
@@ -1600,8 +1479,8 @@ details.faq.hidden { display: none; }
     </details>
 
     <details class="faq" data-track="sip">
-      <summary><span><span class="faq-tag">SIP</span>When exactly do SIP applications open?</span></summary>
-      <div class="ans">Applications open on <strong>22 May 2026 at 12:00 IST</strong>. The live countdown at the top of this page is the source of truth. Join the waitlist and we'll email you a link the moment the form is live.</div>
+      <summary><span><span class="faq-tag">SIP</span>When do SIP applications close?</span></summary>
+      <div class="ans">Applications close on <strong>31 May 2026 at 5pm IST</strong>. The cohort begins on 1 Aug 2026 with onboarding and term-sheet issuance. Diligence typically takes 4–6 weeks for shortlisted startups.</div>
     </details>
 
     <details class="faq" data-track="sip">
@@ -1672,21 +1551,21 @@ details.faq.hidden { display: none; }
 <footer class="site-footer">
   <div class="footer-inner">
     <div class="footer-brand">
-      <img src="assets/artpark-logo.png" alt="ARTPARK">
+      <img src="/assets/artpark-logo.png" alt="ARTPARK">
       <p>ARTPARK (AI &amp; Robotics Technology Park) is a not-for-profit Section-8 company at the Indian Institute of Science, Bangalore, committed to building and deploying AI &amp; Robotics technologies for <strong>Society, Economy, and Sovereignty</strong>.</p>
     </div>
     <div class="footer-col">
       <h4>Programs</h4>
-      <a href="#tir-track">Translation Innovation Residency (TIR)</a>
-      <a href="#sip-track">Startup Incubation Program (SIP)</a>
+      <a href="/tir">Technology Innovator in Residence (TIR)</a>
+      <a href="/sip">Startup Incubation Program (SIP)</a>
       <a href="#compare">Compare</a>
       <a href="#faq">FAQ</a>
     </div>
     <div class="footer-col">
       <h4>Apply</h4>
-      <a href="/apply">Translation Innovation Residency (TIR) application</a>
-      <a href="#waitlist">Startup Incubation Program (SIP) waitlist</a>
-      <a href="mailto:contact@artpark.in">Contact</a>
+      <a href="/apply/signup?track=tir">Technology Innovator in Residence (TIR)</a>
+      <a href="/apply-sip/signup?track=sip">Startup Incubation Program (SIP)</a>
+      <a href="https://www.artpark.in" target="_blank" rel="noopener">Contact</a>
     </div>
   </div>
   <div class="footer-bot">
@@ -1696,43 +1575,8 @@ details.faq.hidden { display: none; }
 </footer>
 
 <script>
-// ===== Countdown =====
-(function(){
-  // 22 May 2026, 12:00 IST = 06:30 UTC
-  const target = new Date('2026-05-22T06:30:00Z').getTime();
-  const elDays = document.getElementById('cd-days');
-  const elHours = document.getElementById('cd-hours');
-  const elMins = document.getElementById('cd-mins');
-  const elSecs = document.getElementById('cd-secs');
-  function pad(n){ return String(n).padStart(2,'0'); }
-  function tick(){
-    const now = Date.now();
-    let diff = target - now;
-    if (diff <= 0) {
-      elDays.textContent = '00';
-      elHours.textContent = '00';
-      elMins.textContent = '00';
-      elSecs.textContent = '00';
-      // Flip the status pill if we're past the target
-      const status = document.querySelector('.track.sip .track-status');
-      if (status) {
-        status.classList.remove('upcoming');
-        status.innerHTML = '<span class="led"></span>Applications open';
-      }
-      return;
-    }
-    const d = Math.floor(diff / 86400000); diff -= d * 86400000;
-    const h = Math.floor(diff / 3600000); diff -= h * 3600000;
-    const m = Math.floor(diff / 60000); diff -= m * 60000;
-    const s = Math.floor(diff / 1000);
-    elDays.textContent = pad(d);
-    elHours.textContent = pad(h);
-    elMins.textContent = pad(m);
-    elSecs.textContent = pad(s);
-  }
-  tick();
-  setInterval(tick, 1000);
-})();
+// ===== Countdown removed — SIP applications are open =====
+
 
 // ===== FAQ tabs =====
 (function(){
