@@ -63,11 +63,26 @@ async function _buildError(response) {
     });
   }
   // FastAPI default shape: { detail: ... }
+  // Detail can be a plain string OR a structured object — the SIP track
+  // guard raises HTTPException(detail={"code": "wrong_track", ...}). When
+  // detail is an object with a `code` key, surface it as the ApiError code
+  // so callers can pattern-match (e.g. wrong_track → render mismatch page)
+  // without digging into err.details every time.
   if (data && "detail" in data) {
+    const isStringDetail = typeof data.detail === "string";
+    const isObjectDetail =
+      data.detail && typeof data.detail === "object" && !Array.isArray(data.detail);
     return new ApiError({
       status: response.status,
-      code: `http_${response.status}`,
-      message: typeof data.detail === "string" ? data.detail : "Request failed",
+      code:
+        isObjectDetail && typeof data.detail.code === "string"
+          ? data.detail.code
+          : `http_${response.status}`,
+      message: isStringDetail
+        ? data.detail
+        : isObjectDetail && typeof data.detail.message === "string"
+          ? data.detail.message
+          : "Request failed",
       details: data.detail,
     });
   }
