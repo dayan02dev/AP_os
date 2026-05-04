@@ -24,7 +24,6 @@
 import { Route, Routes } from "react-router-dom";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
 import ProtectedRoute from "./pages/ProtectedRoute.jsx";
-import RootRedirect from "./pages/RootRedirect.jsx";
 import SetPasswordPage from "./pages/SetPasswordPage.jsx";
 import SignInPage from "./pages/SignInPage.jsx";
 import SignUpPage from "./pages/SignUpPage.jsx";
@@ -45,16 +44,13 @@ const SECTION_SLUGS = [
 export default function AppRoutes() {
   return (
     <Routes>
-      {/* Public marketing surface — served by vercel.json static rewrites
-          in production:
-            /     → /programs.html (Remix Programs landing)
-            /tir  → /marketing.html (Remix TIR)
-            /sip  → /sip-marketing.html (Remix SIP)
-          The fallback below catches them in dev so a hot-reloaded SPA still
-          renders something instead of NotFound. */}
-      <Route path="/" element={<RootRedirect />} />
-      <Route path="/tir" element={<RootRedirect />} />
-      <Route path="/sip" element={<RootRedirect />} />
+      {/* /, /tir, /sip are served by vercel.json rewrites pointing at
+          static HTML — the SPA never sees those paths in production.
+          We deliberately don't add SPA routes for them: a previous
+          attempt to do that with window.location.replace caused an
+          infinite redirect loop against the /programs.html → /
+          permanent redirect (browser bounced between the two forever).
+          NotFoundPage handles them gracefully in `vite dev`. */}
 
       {/* Public auth + support pages */}
       <Route path="/apply/signin" element={<SignInPage />} />
