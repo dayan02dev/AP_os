@@ -20,6 +20,7 @@ export default function SetPasswordPage() {
   const [params] = useSearchParams();
   const resetMode = params.get("reset") === "1";
   const nextParam = params.get("next") || "";
+  const isSipFlow = nextParam.startsWith("/apply-sip");
 
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
@@ -82,7 +83,7 @@ export default function SetPasswordPage() {
         <main className="eir-main">
           <div className="eir-screen eir-auth">
             <div className="eir-coord eir-mono">
-              <span>ARTPARK / TIR.2026</span>
+              <span>ARTPARK / {isSipFlow ? "SIP" : "TIR"}.2026</span>
               <span>{resetMode ? "reset password" : "set password"}</span>
             </div>
             <form className="eir-auth-body" onSubmit={onSubmit}>
