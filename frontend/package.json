@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && mv dist/index.html dist/app.html && cp dist/programs.html dist/index.html",
+    "build": "vite build && cp dist/index.html dist/app.html",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
