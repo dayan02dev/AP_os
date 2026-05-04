@@ -24,6 +24,9 @@ export default function VerifyPage() {
   const nextParam = params.get("next") || "";
   const resetMode = params.get("reset") === "1";
   const signupMode = params.get("signup") === "1";
+  const trackParamRaw = params.get("track");
+  const trackParam =
+    trackParamRaw === "sip" || trackParamRaw === "tir" ? trackParamRaw : null;
   // Dev shortcut: `?code=NNNNNN` pre-fills the OTP. Used by the
   // backend/scripts/dev_get_otp.py one-click URL so you can jump straight
   // into the wizard without typing the code manually.
@@ -75,13 +78,23 @@ export default function VerifyPage() {
             // If /me fails we fall through to the regular target — the
             // SetPasswordPage isn't a hard requirement on every signin.
           }
+          // Default landing: SIP signups land in /apply-sip; everyone
+          // else falls back to /apply (TIR). The track guard on the
+          // backend still gates the data fetch — this is just a UX hint.
+          const defaultHome = trackParam === "sip" ? "/apply-sip" : "/apply";
           if (!hasPassword) {
-            target = "/apply/set-password";
-          } else {
             target =
-              nextParam && nextParam.startsWith("/apply/")
-                ? nextParam
-                : "/apply";
+              trackParam === "sip"
+                ? "/apply/set-password?next=%2Fapply-sip"
+                : "/apply/set-password";
+          } else {
+            const safeNext =
+              nextParam &&
+              (nextParam.startsWith("/apply/") ||
+                nextParam.startsWith("/apply-sip/") ||
+                nextParam === "/apply" ||
+                nextParam === "/apply-sip");
+            target = safeNext ? nextParam : defaultHome;
           }
         }
         navigate(target, { replace: true });
@@ -135,7 +148,7 @@ export default function VerifyPage() {
         <main className="eir-main">
           <div className="eir-screen eir-auth">
             <div className="eir-coord eir-mono">
-              <span>ARTPARK / TIR.2026</span>
+              <span>ARTPARK / {trackParam === "sip" ? "SIP" : "TIR"}.2026</span>
               <span>
                 {signupMode
                   ? "sign up · verify email"

@@ -19,6 +19,7 @@ export default function SetPasswordPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const resetMode = params.get("reset") === "1";
+  const nextParam = params.get("next") || "";
 
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
@@ -49,7 +50,13 @@ export default function SetPasswordPage() {
         kind: "success",
         message: resetMode ? "Password reset." : "Password set.",
       });
-      navigate("/apply", { replace: true });
+      const safeNext =
+        nextParam &&
+        (nextParam.startsWith("/apply/") ||
+          nextParam.startsWith("/apply-sip/") ||
+          nextParam === "/apply" ||
+          nextParam === "/apply-sip");
+      navigate(safeNext ? nextParam : "/apply", { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 422) {
         setLocalError(

@@ -46,8 +46,13 @@ export default function SignInPage() {
     setLoading(true);
     try {
       await signInWithPassword(trimmedEmail, password);
-      const target =
-        nextParam && nextParam.startsWith("/apply/") ? nextParam : "/apply";
+      const safeNext =
+        nextParam &&
+        (nextParam.startsWith("/apply/") ||
+          nextParam.startsWith("/apply-sip/") ||
+          nextParam === "/apply" ||
+          nextParam === "/apply-sip");
+      const target = safeNext ? nextParam : "/apply";
       navigate(target, { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
