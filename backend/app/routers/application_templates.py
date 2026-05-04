@@ -27,7 +27,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 
-from ..deps import get_current_user
+from ..deps import get_current_user, require_track
 from ..models.application_template import (
     ApplicationTemplateRecord,
     ApplicationTemplateUploadResponse,
@@ -45,7 +45,11 @@ from ..utils.rate_limit import per_user_rate_limit
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/application-templates", tags=["application-templates"])
+router = APIRouter(
+    prefix="/application-templates",
+    tags=["application-templates"],
+    dependencies=[Depends(require_track("tir"))],
+)
 
 _BUCKET = "application-templates"
 _MAX_BYTES = 10 * 1024 * 1024
@@ -87,7 +91,7 @@ def _audit(user_id: str, action: str, metadata: dict[str, Any]) -> None:
 def _fetch_draft_application_id(user_id: str) -> str | None:
     res = (
         get_admin_client()
-        .table("applications")
+        .table("tir_applications")
         .select("id")
         .eq("user_id", user_id)
         .eq("status", "draft")
@@ -298,7 +302,7 @@ async def apply_template_to_application(current_user: dict = Depends(get_current
     # Multi-app: scope to the OPEN draft so we never write into a
     # previously-submitted (immutable) application.
     app_res = (
-        admin.table("applications")
+        admin.table("tir_applications")
         .select("*")
         .eq("user_id", user_id)
         .eq("status", "draft")
@@ -376,7 +380,7 @@ async def apply_template_to_application(current_user: dict = Depends(get_current
 
     if patch:
         try:
-            admin.table("applications").update(patch).eq("id", app_id).eq(
+            admin.table("tir_applications").update(patch).eq("id", app_id).eq(
                 "status", "draft"
             ).execute()
         except Exception as exc:
@@ -396,7 +400,7 @@ async def apply_template_to_application(current_user: dict = Depends(get_current
             new_missing: list[str] = list(missing)
             for col, val in patch.items():
                 try:
-                    admin.table("applications").update({col: val}).eq(
+                    admin.table("tir_applications").update({col: val}).eq(
                         "id", app_id
                     ).eq("status", "draft").execute()
                     applied.append(col)

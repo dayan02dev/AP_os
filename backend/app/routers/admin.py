@@ -85,7 +85,7 @@ async def admin_stats(_: None = Depends(require_admin_key)) -> dict[str, Any]:
     for s in status_values:
         try:
             res = (
-                admin.table("applications")
+                admin.table("tir_applications")
                 .select("id", count="exact")
                 .eq("status", s)
                 .execute()
@@ -99,7 +99,7 @@ async def admin_stats(_: None = Depends(require_admin_key)) -> dict[str, Any]:
 
     # Resume uploads total.
     try:
-        res = admin.table("resume_uploads").select("id", count="exact").execute()
+        res = admin.table("tir_resume_uploads").select("id", count="exact").execute()
         stats["resume_uploads_total"] = res.count or 0
     except Exception as exc:
         log.warning("admin.stats resume count failed", extra={"err": str(exc)})
@@ -150,7 +150,7 @@ async def admin_list_applications(
         "basic_full_name, basic_email, basic_org, "
         "created_at, updated_at, submitted_at"
     )
-    q = admin.table("applications").select(cols, count="exact")
+    q = admin.table("tir_applications").select(cols, count="exact")
     if status_filter:
         q = q.eq("status", status_filter)
 
@@ -184,7 +184,7 @@ async def admin_get_application(
     admin = get_admin_client()
     try:
         res = (
-            admin.table("applications")
+            admin.table("tir_applications")
             .select("*")
             .eq("id", application_id)
             .limit(1)
@@ -218,7 +218,7 @@ async def admin_get_application(
     # Attach the most-recent resume parse.
     try:
         resume_res = (
-            admin.table("resume_uploads")
+            admin.table("tir_resume_uploads")
             .select("id, parse_status, parsed_data, parsed_at, original_filename, created_at")
             .eq("user_id", app_row["user_id"])
             .order("created_at", desc=True)

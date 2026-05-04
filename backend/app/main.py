@@ -37,6 +37,10 @@ from .routers import (
     health,
     milestone_files,
     resume,
+    sip_applications,
+    sip_evidence_files,
+    sip_milestone_files,
+    sip_resume,
     support,
     waitlist,
 )
@@ -135,11 +139,18 @@ app.add_middleware(
 # ─── Routers ────────────────────────────────────────────────────
 app.include_router(health.router)
 app.include_router(auth.router)
+# TIR track
 app.include_router(applications.router)
 app.include_router(milestone_files.router)
 app.include_router(evidence_files.router)
 app.include_router(resume.router)
 app.include_router(application_templates.router)
+# SIP track
+app.include_router(sip_applications.router)
+app.include_router(sip_milestone_files.router)
+app.include_router(sip_evidence_files.router)
+app.include_router(sip_resume.router)
+# Shared
 app.include_router(support.router)
 app.include_router(waitlist.router)
 app.include_router(admin.router)

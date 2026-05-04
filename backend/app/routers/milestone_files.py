@@ -29,15 +29,19 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 
-from ..deps import get_current_user
+from ..deps import get_current_user, require_track
 from ..supabase_client import get_admin_client
 from ..utils.rate_limit import per_user_rate_limit
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/applications/me/milestone-files", tags=["applications"])
+router = APIRouter(
+    prefix="/applications/me/milestone-files",
+    tags=["applications"],
+    dependencies=[Depends(require_track("tir"))],
+)
 
-_BUCKET = "milestone-files"
+_BUCKET = "tir-milestone-files"
 _MAX_BYTES = 5 * 1024 * 1024
 _MAX_FILES_PER_APP = 3
 _ALLOWED_MIME = {
@@ -59,8 +63,8 @@ _MIME_TO_EXT = {
 
 # Per-user rate limits — generous enough for legitimate "swap a file" flows
 # but tight enough that a stolen token can't sweep the bucket.
-_rl_upload = per_user_rate_limit("milestone-files-upload", 30, 3600)   # 30/hour
-_rl_delete = per_user_rate_limit("milestone-files-delete", 30, 3600)   # 30/hour
+_rl_upload = per_user_rate_limit("tir-milestone-files-upload", 30, 3600)   # 30/hour
+_rl_delete = per_user_rate_limit("tir-milestone-files-delete", 30, 3600)   # 30/hour
 
 
 def _error(status_code: int, code: str, message: str) -> JSONResponse:
@@ -84,7 +88,7 @@ def _fetch_draft_application(user_id: str) -> dict[str, Any] | None:
     """
     res = (
         get_admin_client()
-        .table("applications")
+        .table("tir_applications")
         .select("id, status, execution_milestone_files")
         .eq("user_id", user_id)
         .eq("status", "draft")
@@ -179,7 +183,7 @@ async def upload_milestone_file(
 
     try:
         (
-            admin.table("applications")
+            admin.table("tir_applications")
             .update({"execution_milestone_files": new_list})
             .eq("id", app_row["id"])
             .eq("status", "draft")  # belt + suspenders; another tab might've submitted
@@ -244,7 +248,7 @@ async def delete_milestone_file(
     # bucket object than leave a phantom entry in the user's wizard.
     try:
         (
-            admin.table("applications")
+            admin.table("tir_applications")
             .update({"execution_milestone_files": new_list})
             .eq("id", app_row["id"])
             .eq("status", "draft")

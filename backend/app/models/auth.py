@@ -3,13 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+# Track values match the CHECK constraint on profiles.track.
+TrackValue = Literal["tir", "sip"]
+
 
 # ─── Request bodies ─────────────────────────────────────────────
 
 class OTPRequest(BaseModel):
     email: EmailStr
+    # Optional. When set on the FIRST OTP request (i.e. signup), the value
+    # is written to auth.users.raw_user_meta_data and read by the
+    # handle_new_user() trigger to populate profiles.track. For existing
+    # users this field is ignored — track is locked once set.
+    track: TrackValue | None = None
 
 
 class OTPVerify(BaseModel):

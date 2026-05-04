@@ -135,11 +135,16 @@ async def request_otp(payload: OTPRequest, request: Request):
     check_rate("request-otp", email, _REQUEST_OTP_MAX, _REQUEST_OTP_WINDOW_S)
 
     req_id = _new_request_id()
+    # If the caller passed a track ('tir' or 'sip'), pipe it into the
+    # auth.users metadata so the handle_new_user() trigger can stamp
+    # profiles.track on first signup. For existing users this `data` is
+    # ignored — track is locked once set.
+    options: dict = {"should_create_user": True}
+    if payload.track:
+        options["data"] = {"track": payload.track}
     try:
         anon = get_anon_client()
-        anon.auth.sign_in_with_otp(
-            {"email": email, "options": {"should_create_user": True}}
-        )
+        anon.auth.sign_in_with_otp({"email": email, "options": options})
     except Exception as exc:
         log.exception(
             "auth.request-otp supabase call failed",

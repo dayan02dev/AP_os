@@ -36,7 +36,7 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import HttpUrl, TypeAdapter, ValidationError
 
-from ..deps import get_current_user
+from ..deps import get_current_user, require_track
 from ..models.application import (
     ApplicationRead,
     ApplicationUpdate,
@@ -53,7 +53,11 @@ from ..utils.rate_limit import (
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/applications", tags=["applications"])
+router = APIRouter(
+    prefix="/applications",
+    tags=["applications"],
+    dependencies=[Depends(require_track("tir"))],
+)
 
 
 # ─── Config: which columns are writable / required / enum-valued ─────
@@ -289,7 +293,7 @@ def _fetch_application(user_id: str) -> dict[str, Any] | None:
     """
     res = (
         get_admin_client()
-        .table("applications")
+        .table("tir_applications")
         .select("*")
         .eq("user_id", user_id)
         .eq("status", "draft")
@@ -305,7 +309,7 @@ def _fetch_submitted_applications(user_id: str) -> list[dict[str, Any]]:
     """All non-draft applications for this user, newest first."""
     res = (
         get_admin_client()
-        .table("applications")
+        .table("tir_applications")
         .select("*")
         .eq("user_id", user_id)
         .neq("status", "draft")
@@ -318,7 +322,7 @@ def _fetch_submitted_applications(user_id: str) -> list[dict[str, Any]]:
 def _create_draft(user_id: str) -> dict[str, Any]:
     res = (
         get_admin_client()
-        .table("applications")
+        .table("tir_applications")
         .insert({"user_id": user_id})
         .execute()
     )
@@ -334,7 +338,7 @@ def _update_application(application_id: str, patch: dict[str, Any]) -> dict[str,
     submitted ones). Callers must pass the id of the row to mutate."""
     res = (
         get_admin_client()
-        .table("applications")
+        .table("tir_applications")
         .update(patch)
         .eq("id", application_id)
         .execute()

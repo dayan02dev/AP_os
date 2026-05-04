@@ -31,15 +31,19 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 
-from ..deps import get_current_user
+from ..deps import get_current_user, require_track
 from ..supabase_client import get_admin_client
 from ..utils.rate_limit import per_user_rate_limit
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/applications/me/evidence-files", tags=["applications"])
+router = APIRouter(
+    prefix="/applications/me/evidence-files",
+    tags=["applications"],
+    dependencies=[Depends(require_track("tir"))],
+)
 
-_BUCKET = "evidence-files"
+_BUCKET = "tir-evidence-files"
 _MAX_BYTES = 10 * 1024 * 1024
 _MAX_FILES_PER_APP = 5
 _ALLOWED_MIME = {
@@ -57,8 +61,8 @@ _MIME_TO_EXT = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
 }
 
-_rl_upload = per_user_rate_limit("evidence-files-upload", 60, 3600)
-_rl_delete = per_user_rate_limit("evidence-files-delete", 60, 3600)
+_rl_upload = per_user_rate_limit("tir-evidence-files-upload", 60, 3600)
+_rl_delete = per_user_rate_limit("tir-evidence-files-delete", 60, 3600)
 
 
 def _error(status_code: int, code: str, message: str) -> JSONResponse:
@@ -75,7 +79,7 @@ def _new_request_id() -> str:
 def _fetch_draft_application(user_id: str) -> dict[str, Any] | None:
     res = (
         get_admin_client()
-        .table("applications")
+        .table("tir_applications")
         .select("id, status, evidence_files")
         .eq("user_id", user_id)
         .eq("status", "draft")
@@ -173,7 +177,7 @@ async def upload_evidence_file(
 
     try:
         (
-            admin.table("applications")
+            admin.table("tir_applications")
             .update({"evidence_files": new_list})
             .eq("id", app_row["id"])
             .eq("status", "draft")
@@ -239,7 +243,7 @@ async def delete_evidence_file(
 
     try:
         (
-            admin.table("applications")
+            admin.table("tir_applications")
             .update({"evidence_files": new_list})
             .eq("id", app_row["id"])
             .eq("status", "draft")
