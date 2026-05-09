@@ -52,10 +52,12 @@ WRITABLE_FIELDS: set[str] = set(SipApplicationUpdate.model_fields.keys())
 
 # Always-required for SIP submit. Different from TIR — no team, no
 # problem_defined, no solution_stage. SIP-specific gates take their place.
+# Note: basic_org (registered company name) was removed from the wizard
+# in favour of the cap-table entry; the column stays nullable.
 ALWAYS_REQUIRED: list[str] = [
     # basic
     "basic_full_name", "basic_phone", "basic_email",
-    "basic_org", "basic_degree",
+    "basic_degree",
     "basic_incubator_association",
     "basic_hear_about",
     # SIP-specific Section 2 gates

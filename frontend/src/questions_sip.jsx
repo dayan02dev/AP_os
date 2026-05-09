@@ -45,15 +45,6 @@ const SECTIONS_SIP = [
         required: true,
       },
       {
-        id: "org",
-        kind: "short",
-        prompt: "What's your registered company name?",
-        help: "The Pvt Ltd entity you're applying with. Use 'Independent' only if you haven't incorporated yet.",
-        placeholder: "e.g. Acme Robotics Pvt Ltd",
-        cvAutoFill: true,
-        required: true,
-      },
-      {
         id: "degree",
         kind: "single",
         prompt: "Highest technology degree achieved (lead applicant)?",
