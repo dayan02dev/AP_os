@@ -81,8 +81,6 @@ function LongInput({ q, value, onChange, autoFocus }) {
   useEffect(() => { if (autoFocus && ref.current) ref.current.focus(); }, [autoFocus]);
   const text = value || "";
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
-  const sweetSpot = q.sweetSpotWords || (q.minWords ? Math.round(q.minWords * 0.5) : 0);
-  const inSweetSpot = sweetSpot > 0 && wordCount >= sweetSpot;
 
   return (
     <div className="eir-long-wrap">

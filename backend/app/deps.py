@@ -4,10 +4,10 @@
 header by calling `supabase.auth.get_user(token)`. Returns a small dict the
 routes can depend on. Raises 401 on any problem.
 
-`require_track('tir' | 'sip')` — factory for a dependency that asserts the
-caller's `profiles.track` matches the required value. Used to physically
-isolate the TIR and SIP application flows: a TIR user trying to hit a SIP
-endpoint (or vice versa) gets 403 before the route handler ever runs.
+`require_track('tir' | 'sip')` — currently a no-op (staging policy is that
+both wizards open to every authed user; track gating moves into the admin
+portal). The dependency is still wired into every router so re-enabling
+enforcement is a one-line edit.
 """
 
 from typing import Annotated, Literal
@@ -95,53 +95,13 @@ async def get_current_user(
 
 
 def require_track(required: Literal["tir", "sip"]):
-    """Build a FastAPI dependency that asserts the caller's track == `required`.
+    """No-op gate (staging): both wizards open to every authed user.
 
-    Usage on a router:
-        from ..deps import get_current_user, require_track
-
-        @router.get(
-            "/sip-applications/me",
-            dependencies=[Depends(require_track("sip"))],
-        )
-        async def get_sip_app(current_user: dict = Depends(get_current_user)):
-            ...
-
-    Behavior:
-      - track matches → pass
-      - track is the OTHER value → 403 with message pointing user to support
-      - track is NULL → 403 telling user their account hasn't picked a track yet
+    Track gating is being moved into the admin portal — for now any signed-in
+    user can fill and submit either TIR or SIP. The dependency is kept on
+    every route so re-enabling enforcement is a one-line change here.
     """
     async def _dep(current_user: dict = Depends(get_current_user)) -> None:
-        track = current_user.get("track")
-        if track == required:
-            return
-        if track is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": "track_unassigned",
-                    "message": (
-                        "Your account hasn't been assigned a program track yet. "
-                        "Please complete signup."
-                    ),
-                },
-            )
-        # Wrong-track case — explicit message tells the user what to do.
-        other = "TIR" if required == "sip" else "SIP"
-        you_are = "TIR" if track == "tir" else "SIP"
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "wrong_track",
-                "message": (
-                    f"You're enrolled in the {you_are} track. "
-                    f"This endpoint is for {required.upper()} applicants only. "
-                    "To switch tracks, contact support."
-                ),
-                "your_track": track,
-                "required_track": required,
-            },
-        )
+        return None
 
     return _dep

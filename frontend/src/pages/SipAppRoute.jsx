@@ -1,30 +1,16 @@
-// SipAppRoute — gate for /apply-sip/* routes.
+// SipAppRoute — wraps <AppSip /> in <SipApplicationProvider>.
 //
-// Wraps <AppSip /> in <SipApplicationProvider> and detects wrong-track
-// users via the 403/wrong_track signal exposed by useSipApplication. When
-// triggered, renders <TrackMismatchPage /> instead of the wizard.
+// Track gating has moved into the admin portal: every authed user can fill
+// and submit both TIR and SIP. The wrongTrack signal is no longer used to
+// short-circuit the wizard.
 
 import AppSip from "../AppSip.jsx";
-import {
-  SipApplicationProvider,
-  useSipApplication,
-} from "../hooks/useSipApplication.jsx";
-import TrackMismatchPage from "./TrackMismatchPage.jsx";
-
-function GateInner() {
-  const { wrongTrack } = useSipApplication();
-  if (wrongTrack) {
-    return (
-      <TrackMismatchPage enrolledTrack="tir" attemptedTrack="sip" />
-    );
-  }
-  return <AppSip />;
-}
+import { SipApplicationProvider } from "../hooks/useSipApplication.jsx";
 
 export default function SipAppRoute() {
   return (
     <SipApplicationProvider>
-      <GateInner />
+      <AppSip />
     </SipApplicationProvider>
   );
 }

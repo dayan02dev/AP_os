@@ -14,8 +14,9 @@
 //   /apply/support         support ticket form (anon-friendly)
 //
 // Protected (redirect to /apply/signin?next=<path> if unauthed):
-//   /apply/<section>       TIR wizard sections (gated; SIP-enrolled users see TrackMismatchPage)
-//   /apply-sip/<section>   SIP wizard sections (gated; TIR-enrolled users see TrackMismatchPage)
+//   /apply/<section>       TIR wizard sections — open to any authed user
+//   /apply-sip/<section>   SIP wizard sections — open to any authed user
+//   /apply-sip/fit-check   SIP early-exit screen for pre-incorporation answers
 //   /apply/profile         profile settings
 //   /apply/review          pre-submission review
 //   /apply/submitted       post-submit receipt
@@ -146,6 +147,14 @@ export default function AppRoutes() {
       />
       <Route
         path="/apply-sip/submitted"
+        element={
+          <ProtectedRoute>
+            <SipAppRoute />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/apply-sip/fit-check"
         element={
           <ProtectedRoute>
             <SipAppRoute />

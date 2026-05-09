@@ -667,6 +667,18 @@ kbd {
   text-wrap: balance;
   max-width: 24ch;
 }
+/* SIP wizard: tighter heading scale + wider wrap so multi-clause questions
+   fit two-three lines instead of four-five. Matches the staging spec. */
+.track-sip .eir-q-prompt {
+  font-size: clamp(24px, 2.8vw, 34px);
+  line-height: 1.18;
+  font-weight: 600;
+  max-width: 32ch;
+}
+.track-sip .eir-q-help {
+  font-size: 14px;
+  max-width: 56ch;
+}
 .eir-q-help {
   font-size: 15px;
   color: var(--ink-soft);
@@ -697,6 +709,56 @@ kbd {
   align-items: center;
   gap: 18px;
   flex-wrap: wrap;
+}
+.eir-fit-actions {
+  align-items: stretch;
+  gap: 14px;
+  margin-top: 24px;
+}
+.eir-btn-fit-proceed {
+  background: var(--bg-soft, #f0eee5);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  text-align: left;
+  cursor: pointer;
+}
+.eir-btn-fit-proceed:hover {
+  background: var(--bg);
+  border-color: var(--line-strong);
+}
+.eir-fit-proceed-main { font-weight: 500; }
+.eir-fit-proceed-sub { color: var(--ink-soft); }
+.eir-fit-disclaimer {
+  margin-top: 18px;
+  max-width: 56ch;
+  line-height: 1.5;
+  font-size: 12px;
+}
+.eir-q-inline-attach {
+  margin-top: 28px;
+}
+.eir-q-inline-attach-divider {
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 14px;
+  position: relative;
+}
+.eir-q-inline-attach-divider::before,
+.eir-q-inline-attach-divider::after {
+  content: "";
+  display: inline-block;
+  width: 22%;
+  height: 1px;
+  background: var(--line);
+  vertical-align: middle;
+  margin: 0 12px;
 }
 .eir-block-reason {
   color: #c84a1a;
@@ -2731,18 +2793,20 @@ kbd {
   margin-bottom: 18px;
 }
 .eir-tabs-panel-title {
-  margin: 0 0 8px;
-  font-family: var(--font-serif);
-  font-size: 26px;
-  font-weight: 400;
+  margin: 0 0 10px;
+  font-family: var(--font-sans);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
   color: var(--ink);
-  line-height: 1.2;
+  line-height: 1.18;
 }
 .eir-tabs-panel-sub {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--ink-soft);
   line-height: 1.55;
+  max-width: 64ch;
 }
 
 .eir-tabs-empty {

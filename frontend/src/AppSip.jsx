@@ -23,7 +23,11 @@ import {
 } from "./auth_upload.jsx";
 import { SipQuestionInput, isAnsweredSip, whyBlockedSip } from "./inputs_sip.jsx";
 import { ProfileScreen } from "./profile.jsx";
-import { SECTIONS_SIP, flattenQuestionsSip } from "./questions_sip.jsx";
+import {
+  SECTIONS_SIP,
+  flattenQuestionsSip,
+  findInlineChildSip,
+} from "./questions_sip.jsx";
 import {
   CelebrationScreen,
   DoneScreen,
@@ -102,13 +106,16 @@ function urlForState(phase, sectionIdx) {
   if (phase === PHASES.PROFILE) return "/apply-sip/profile";
   if (phase === PHASES.REVIEW) return "/apply-sip/review";
   if (phase === PHASES.DONE) return "/apply-sip/submitted";
+  // EARLY_EXIT gets its own slug so the auto-resolve effect below doesn't
+  // see slug==="" and flip the phase back to RETURNING/UPLOAD before the
+  // fit-check screen can render.
+  if (phase === PHASES.EARLY_EXIT) return "/apply-sip/fit-check";
   if (
     phase === PHASES.WELCOME ||
     phase === PHASES.RETURNING ||
     phase === PHASES.UPLOAD ||
     phase === PHASES.PARSING ||
-    phase === PHASES.PARSE_REVIEW ||
-    phase === PHASES.EARLY_EXIT
+    phase === PHASES.PARSE_REVIEW
   ) {
     return "/apply-sip";
   }
@@ -198,6 +205,10 @@ export default function AppSip() {
     }
     if (slug === "submitted") {
       setPhase(PHASES.DONE);
+      return;
+    }
+    if (slug === "fit-check") {
+      setPhase(PHASES.EARLY_EXIT);
       return;
     }
     if (SECTION_ORDER_SIP.includes(slug)) {
@@ -695,6 +706,7 @@ export default function AppSip() {
               stepIdx={stepIdx}
               value={answers[currentFQ.q.id]}
               onChange={(v) => handleAnswerChange(currentFQ.q.id, v)}
+              onAnswerById={handleAnswerChange}
               onNext={goNextQuestion}
               onPrev={goPrevQuestion}
               canPrev={stepIdx > 0}
@@ -717,6 +729,16 @@ export default function AppSip() {
                   answers.sipTRL === "TRL 3 or earlier — research stage"
                 ) {
                   save({ sipTRL: null });
+                }
+                setPhase(PHASES.QUESTION);
+              }}
+              onProceedSip={() => {
+                // User wants to keep going on SIP despite the fit warning.
+                // Move past the gating question to the next one in the flow.
+                const next = flat[stepIdx + 1];
+                if (next) {
+                  setStepIdx(stepIdx + 1);
+                  setSectionIdx(next.sectionIdx);
                 }
                 setPhase(PHASES.QUESTION);
               }}
@@ -928,17 +950,16 @@ function ParseFailedScreen({ error, onContinue, onRetry }) {
   );
 }
 
-function SipEarlyExitScreen({ answers, onChangeAnswer }) {
+function SipEarlyExitScreen({ answers, onChangeAnswer, onProceedSip }) {
   const isPreIncorp =
     answers.sipIncorporated === "Not yet — we're still pre-incorporation";
   return (
     <div className="eir-screen">
       <div className="eir-coord eir-mono">
-        <span>SIP.2026</span>
-        <span>fit check</span>
+        <span>sip.2026 / fit check</span>
       </div>
       <div className="eir-welcome-body">
-        <h1 className="eir-welcome-title" style={{ maxWidth: "24ch" }}>
+        <h1 className="eir-welcome-title" style={{ maxWidth: "20ch" }}>
           {isPreIncorp
             ? "TIR might be the better fit for you right now."
             : "SIP is calibrated for ventures past the prototype mark."}
@@ -946,40 +967,57 @@ function SipEarlyExitScreen({ answers, onChangeAnswer }) {
         <p className="eir-welcome-lede">
           {isPreIncorp ? (
             <>
-              The Startup Incubation Program is for incorporated Pvt Ltd
+              The Startup Incubation Programme is for incorporated Pvt Ltd
               companies translating lab-proven research into a product.{" "}
-              <em>Technology Innovator in Residence (TIR)</em> is designed for
-              founders at your stage — pre-incorporation, working from research
-              toward a defensible technology angle.
+              <em>Translational Innovation Residency (TIR)</em> is designed
+              for founders at your stage — pre-incorporation, working from
+              research toward a defensible technology angle.
             </>
           ) : (
             <>
               SIP is built around ventures with a working prototype (TRL 4 and
               beyond) and at least early customer signal. If you're earlier
-              than that, the <em>Technology Innovator in Residence (TIR)</em>{" "}
+              than that, the <em>Translational Innovation Residency (TIR)</em>{" "}
               programme is where to look.
             </>
           )}
         </p>
         <p className="eir-welcome-lede">
           Questions? Email{" "}
-          <a href="mailto:connect@artpark.in" style={{ color: "var(--accent)" }}>
-            connect@artpark.in
+          <a href="mailto:sip@artpark.in" style={{ color: "var(--accent)" }}>
+            sip@artpark.in
           </a>
           .
         </p>
-        <div className="eir-q-actions" style={{ flexWrap: "wrap" }}>
+        <div className="eir-q-actions eir-fit-actions">
           <a
-            className="eir-btn eir-btn-primary"
-            href="/tir"
+            className="eir-btn eir-btn-primary eir-fit-switch"
+            href="/apply"
             style={{ textDecoration: "none" }}
           >
-            <span>Switch to TIR application →</span>
+            <span>switch to TIR application →</span>
           </a>
+          <button
+            type="button"
+            className="eir-btn eir-btn-fit-proceed"
+            onClick={onProceedSip}
+          >
+            <span className="eir-fit-proceed-main">
+              proceed with SIP application
+            </span>
+            <span className="eir-fit-proceed-sub eir-mono">
+              · register within 30 days
+            </span>
+          </button>
           <button className="eir-btn eir-btn-ghost" onClick={onChangeAnswer}>
             <span>← change my answer</span>
           </button>
         </div>
+        <p className="eir-fit-disclaimer eir-mono eir-dim">
+          by proceeding, you commit to incorporating a private limited company
+          within 30 days of acceptance. proof of incorporation will be
+          required before disbursement.
+        </p>
       </div>
     </div>
   );
@@ -1083,6 +1121,7 @@ function QuestionView({
   stepIdx,
   value,
   onChange,
+  onAnswerById,
   onNext,
   onPrev,
   canPrev,
@@ -1093,6 +1132,7 @@ function QuestionView({
   const { q, section, globalIdx } = fq;
   const answered = isAnsweredSip(q, value);
   const blockReason = answered ? null : whyBlockedSip(q, value);
+  const inlineChild = findInlineChildSip(q.id);
 
   let prompt = typeof q.prompt === "function" ? q.prompt(answers) : q.prompt;
 
@@ -1147,6 +1187,19 @@ function QuestionView({
             autoFocus
           />
         </div>
+
+        {inlineChild && (
+          <div className="eir-q-inline-attach">
+            <div className="eir-q-inline-attach-divider eir-mono">
+              {inlineChild.attachLabel || "attachments · optional"}
+            </div>
+            <SipQuestionInput
+              q={inlineChild}
+              value={answers[inlineChild.id]}
+              onChange={(v) => onAnswerById(inlineChild.id, v)}
+            />
+          </div>
+        )}
 
         <div className="eir-q-actions">
           {canPrev && (

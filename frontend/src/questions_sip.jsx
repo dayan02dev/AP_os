@@ -131,7 +131,7 @@ const SECTIONS_SIP = [
         kind: "long",
         prompt: "Tell us more about your incubator/accelerator association.",
         help:
-          "Names of programs, dates, any funding/grants received, and the nature of support. DST rules prevent companies from drawing DST grants from multiple sources.",
+          "Names of programs, dates, any funding/grants received, and the nature of support.",
         placeholder:
           "e.g. IIT Madras Incubation Cell — 2024, ₹10L seed grant, equity-free…",
         maxChars: 800,
@@ -197,7 +197,7 @@ const SECTIONS_SIP = [
         prompt:
           "Describe your solution. Does it represent a 10× improvement (on technological, economic or operational metrics) — rather than an incremental gain — over existing state-of-the-art solutions? How so?",
         help:
-          "We back long-term step-change innovation. The bigger the impact, the more excited we are.",
+          "As we build for the future, we want to back long-term step-change innovation. The bigger the impact, the more excited we are.",
         placeholder:
           "We're building a low-cost IoT soil sensor network with on-device ML for nutrient prediction. Sensor cost drops from ₹15,000 to ₹1,200 and accuracy improves 3× through adaptive calibration — turning what was a per-farm capital expense into a per-acre operating cost…",
         maxChars: 2000,
@@ -252,7 +252,7 @@ const SECTIONS_SIP = [
         kind: "long",
         prompt: "Tell us about your pilots, design partners, or customers.",
         help:
-          "Who are they, what are they paying for (or what's the LOI), and what specific outcome have they signed up for? You can attach signed LOIs, MoUs, or POs on the Evidence step.",
+          "Who are they, what are they paying for (or what's the LOI), and what specific outcome have they signed up for? You can attach signed LOIs, MoUs, or POs below.",
         placeholder:
           "We're piloting with 3 dairy cooperatives across MH and KA — Amul Pvt Ltd, Mahaan Foods, and a regional FPO. Two are paid pilots (₹4–6L each, 6 months) targeting a 15% reduction in cold-chain losses. Signed LOIs attached.",
         maxChars: 2000,
@@ -260,6 +260,8 @@ const SECTIONS_SIP = [
         required: true,
       },
       {
+        // Rendered inline under sipTractionDetails — flatten skips this so it
+        // doesn't get its own page. Same backend write column either way.
         id: "sipTractionFiles",
         kind: "sipTractionFiles",
         prompt: "Attach signed LOIs, MoUs, or POs (optional, up to 5).",
@@ -269,6 +271,8 @@ const SECTIONS_SIP = [
         maxFiles: 5,
         maxMB: 5,
         optional: true,
+        inlineAfter: "sipTractionDetails",
+        attachLabel: "lois / mous / pos · optional",
       },
     ],
   },
@@ -297,7 +301,7 @@ const SECTIONS_SIP = [
         prompt:
           "What are the most critical milestones you aim to achieve over the next 12 months?",
         help:
-          "What does a successful deployment look like? One or two sharp outcomes beat a vague roadmap. Share quarterly milestones tied to specific outcomes and budgets.",
+          "What does a successful deployment look like? One or two sharp outcomes beat a vague roadmap. Share quarterly milestones tied to specific outcomes and budgets. You can also attach supporting docs below (PDF/XLS).",
         placeholder:
           "Q1: bench-validated prototype. Q2: closed-loop pilot with 3 partner sites. Q3: 100-unit field deployment with measured uptime ≥ 95%…",
         maxChars: 2000,
@@ -305,6 +309,7 @@ const SECTIONS_SIP = [
         required: true,
       },
       {
+        // Inline attachment under milestone — flatten skips this entry.
         id: "milestoneFiles",
         kind: "milestoneFiles",
         prompt: "Supporting docs (optional).",
@@ -314,6 +319,8 @@ const SECTIONS_SIP = [
         maxFiles: 3,
         maxMB: 5,
         optional: true,
+        inlineAfter: "milestone",
+        attachLabel: "supporting docs · optional",
       },
       {
         id: "infrastructure",
@@ -391,7 +398,7 @@ const SECTIONS_SIP = [
       {
         id: "sipPatents",
         kind: "sipPatents",
-        prompt: "Patents, publications, or other technical evidence (optional).",
+        prompt: "Patents, publications, or other technical evidence.",
         help:
           "PDFs of granted patents, accepted publications, white papers, etc. Up to 5 files.",
         accept: ".pdf,.png,.jpg,.jpeg,.doc,.docx",
@@ -440,10 +447,23 @@ function flattenQuestionsSip(sections, answers) {
   sections.forEach((s, si) => {
     s.questions.forEach((q) => {
       if (q.conditional && !q.conditional(answers || {})) return;
+      // Inline children are rendered under their parent question, not as a
+      // standalone step. Keep them in SECTIONS_SIP so review/completion logic
+      // and findInlineChildSip() can still see them.
+      if (q.inlineAfter) return;
       out.push({ section: s, sectionIdx: si, q, globalIdx: out.length });
     });
   });
   return out;
 }
 
-export { SECTIONS_SIP, flattenQuestionsSip };
+function findInlineChildSip(parentId) {
+  for (const s of SECTIONS_SIP) {
+    for (const q of s.questions) {
+      if (q.inlineAfter === parentId) return q;
+    }
+  }
+  return null;
+}
+
+export { SECTIONS_SIP, flattenQuestionsSip, findInlineChildSip };
