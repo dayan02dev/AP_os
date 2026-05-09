@@ -203,13 +203,15 @@ function SingleEvidenceInput({ q, value, onChange, kind }) {
         `/sip-applications/me/evidence-files?kind=${encodeURIComponent(kind)}`,
         { method: "POST", body: fd, timeoutMs: 60_000 },
       );
-      // Backend returns the updated row; pluck the column we wrote to.
+      // Backend returns { ok, kind, file, value }. `value` is the new
+      // single-file metadata; fall back to `file` and the column key for
+      // forward-compat.
       const colMap = {
         "pitch-deck": "sip_pitch_deck",
         "cap-table": "sip_cap_table_file",
       };
       const col = colMap[kind];
-      const next = result?.[col] || result?.file || null;
+      const next = result?.value || result?.file || result?.[col] || null;
       onChange(next);
     } catch (e) {
       if (e instanceof ApiError) {
@@ -241,7 +243,9 @@ function SingleEvidenceInput({ q, value, onChange, kind }) {
         "cap-table": "sip_cap_table_file",
       };
       const col = colMap[kind];
-      onChange(result?.[col] ?? null);
+      // Delete returns { ok, kind, value: null }. Prefer value, fall back
+      // to the column key, default to null.
+      onChange(result?.value ?? result?.[col] ?? null);
     } catch (e) {
       setErr(e?.message || "Couldn't remove file.");
     } finally {
@@ -363,6 +367,17 @@ function MultiEvidenceInput({ q, value, onChange, kind }) {
   };
   const col = colMap[kind];
 
+  // The evidence-files router returns { ok, kind, file, value: <new array> }
+  // — `value` is the authoritative new list. We also fall back to the
+  // column key and `files` for forward-compat in case the API shape ever
+  // changes.
+  const pickList = (result, prev) => {
+    if (Array.isArray(result?.value)) return result.value;
+    if (Array.isArray(result?.[col])) return result[col];
+    if (Array.isArray(result?.files)) return result.files;
+    return prev;
+  };
+
   const upload = async (incoming) => {
     setErr(null);
     if (busy) return;
@@ -383,7 +398,7 @@ function MultiEvidenceInput({ q, value, onChange, kind }) {
           `/sip-applications/me/evidence-files?kind=${encodeURIComponent(kind)}`,
           { method: "POST", body: fd, timeoutMs: 60_000 },
         );
-        latest = result?.[col] || result?.files || latest;
+        latest = pickList(result, latest);
         onChange(latest);
       } catch (e) {
         if (e instanceof ApiError) {
@@ -417,7 +432,7 @@ function MultiEvidenceInput({ q, value, onChange, kind }) {
         `/sip-applications/me/evidence-files/${encodeURIComponent(file_uuid)}?kind=${encodeURIComponent(kind)}`,
         { method: "DELETE" },
       );
-      onChange(result?.[col] || result?.files || []);
+      onChange(pickList(result, files.filter((f) => f.file_uuid !== file_uuid)));
     } catch (e) {
       setErr(e?.message || "Couldn't remove file.");
     } finally {

@@ -739,7 +739,8 @@ kbd {
   font-size: 12px;
 }
 .eir-q-inline-attach {
-  margin-top: 28px;
+  margin-top: 22px;
+  max-width: 56ch;
 }
 .eir-q-inline-attach-divider {
   text-align: center;
@@ -747,7 +748,7 @@ kbd {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-soft);
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   position: relative;
 }
 .eir-q-inline-attach-divider::before,
@@ -759,6 +760,41 @@ kbd {
   background: var(--line);
   vertical-align: middle;
   margin: 0 12px;
+}
+/* Compact horizontal drop-zone for inline attachments — single row,
+   icon-left, label centred. Replaces the tall stacked default so the
+   attachment doesn't dominate the question column. */
+.eir-q-inline-attach .eir-filedrop {
+  padding: 14px 18px;
+  border-width: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: left;
+  min-height: 56px;
+}
+.eir-q-inline-attach .eir-filedrop-icon {
+  margin: 0;
+  flex-shrink: 0;
+}
+.eir-q-inline-attach .eir-filedrop-icon svg {
+  width: 22px;
+  height: 22px;
+}
+.eir-q-inline-attach .eir-filedrop-main {
+  font-size: 14px;
+  margin: 0;
+  flex: 0 1 auto;
+}
+.eir-q-inline-attach .eir-filedrop-meta {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+.eir-q-inline-attach .eir-filedrop.has-file {
+  padding: 12px 18px;
 }
 .eir-block-reason {
   color: #c84a1a;

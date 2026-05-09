@@ -162,7 +162,7 @@ function CelebrationScreen({ message, onContinue }) {
   );
 }
 
-function DoneScreen({ answers, onRestart, submission, onBack }) {
+function DoneScreen({ answers, onRestart, submission, onBack, onDownload }) {
   const name = (answers?.fullName || "").split(" ")[0] || "there";
   const isPast = !!submission;
   const stampId = submission?.id || ("TIR-" + Math.floor(Math.random() * 9000 + 1000));
@@ -289,6 +289,15 @@ function DoneScreen({ answers, onRestart, submission, onBack }) {
           ) : (
             <button className="eir-btn eir-btn-ghost" onClick={onRestart}>
               <span>Back to my applications</span>
+            </button>
+          )}
+          {onDownload && (
+            <button
+              type="button"
+              className="eir-btn eir-btn-ghost eir-btn-download"
+              onClick={onDownload}
+            >
+              <span>↓ Download my responses</span>
             </button>
           )}
         </div>
