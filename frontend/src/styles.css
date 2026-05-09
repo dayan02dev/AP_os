@@ -714,6 +714,13 @@ kbd {
   align-items: stretch;
   gap: 14px;
   margin-top: 24px;
+  flex-wrap: nowrap;
+}
+.eir-fit-actions .eir-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  text-align: center;
 }
 .eir-btn-fit-proceed {
   background: var(--bg-soft, #f0eee5);
@@ -721,9 +728,10 @@ kbd {
   color: var(--ink);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   padding: 14px 18px;
-  text-align: left;
+  text-align: center;
   cursor: pointer;
 }
 .eir-btn-fit-proceed:hover {
@@ -3115,6 +3123,8 @@ kbd {
   .eir-q-help { font-size: 14px; }
   .eir-q-input-wrap { margin-bottom: 22px; }
   .eir-q-actions { flex-wrap: wrap; gap: 10px; }
+  .eir-fit-actions { flex-wrap: wrap; }
+  .eir-fit-actions .eir-btn { flex: 1 1 100%; }
 
   /* Inputs and textareas — bump font-size to ≥16px so iOS Safari
      doesn't auto-zoom on focus. */
