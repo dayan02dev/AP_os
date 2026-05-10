@@ -831,6 +831,14 @@ kbd {
 }
 .eir-input:focus { border-bottom-color: var(--accent); }
 .eir-input::placeholder { color: var(--ink-dim); opacity: 0.7; }
+.eir-input:-webkit-autofill,
+.eir-input:-webkit-autofill:hover,
+.eir-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--bg) inset;
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--ink);
+  transition: background-color 5000s ease-in-out 0s;
+}
 
 /* Format-invalid state — red shadow underneath the input border so the
    applicant gets immediate feedback when they typed an email without an
