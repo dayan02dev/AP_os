@@ -21,6 +21,9 @@ export default function SignInPage() {
   const navigate = useNavigate();
 
   const nextParam = params.get("next") || "";
+  const trackParam = params.get("track") || "";
+  const isSip = trackParam === "sip" || nextParam.startsWith("/apply-sip");
+  const trackLabel = isSip ? "SIP" : "TIR";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -52,7 +55,7 @@ export default function SignInPage() {
           nextParam.startsWith("/apply-sip/") ||
           nextParam === "/apply" ||
           nextParam === "/apply-sip");
-      const target = safeNext ? nextParam : "/apply";
+      const target = safeNext ? nextParam : (isSip ? "/apply-sip" : "/apply");
       navigate(target, { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -84,6 +87,8 @@ export default function SignInPage() {
       const qs = new URLSearchParams();
       qs.set("email", trimmedEmail);
       if (nextParam) qs.set("next", nextParam);
+      else if (isSip) qs.set("next", "/apply-sip");
+      if (isSip) qs.set("track", "sip");
       if (resetMode) qs.set("reset", "1");
       navigate(`/apply/verify?${qs.toString()}`);
     } catch (err) {
@@ -111,7 +116,7 @@ export default function SignInPage() {
         <main className="eir-main">
           <div className="eir-screen eir-auth">
             <div className="eir-coord eir-mono">
-              <span>ARTPARK / TIR.2026</span>
+              <span>ARTPARK / {trackLabel}.2026</span>
               <span>sign in · email + password</span>
             </div>
             <form className="eir-auth-body" onSubmit={onPasswordSubmit}>
@@ -206,8 +211,8 @@ export default function SignInPage() {
                 <Link
                   to={
                     nextParam
-                      ? `/apply/signup?next=${encodeURIComponent(nextParam)}`
-                      : "/apply/signup"
+                      ? `/apply/signup?next=${encodeURIComponent(nextParam)}${isSip ? "&track=sip" : ""}`
+                      : isSip ? "/apply/signup?track=sip" : "/apply/signup"
                   }
                 >
                   Create an account ↗

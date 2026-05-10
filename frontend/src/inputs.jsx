@@ -17,6 +17,7 @@ function ShortInput({ q, value, onChange, autoFocus }) {
 
   const isPhone = q.id === "phone" || q.kind === "phone";
   const isName = q.id === "fullName";
+  const [nameHint, setNameHint] = useState(false);
 
   const handleChange = (raw) => {
     if (isPhone) {
@@ -29,6 +30,10 @@ function ShortInput({ q, value, onChange, autoFocus }) {
       // Only allow letters, spaces, hyphens, periods, and apostrophes
       // (covers names like "Dr. Arun Kumar", "O'Brien", "Mary-Jane").
       const cleaned = raw.replace(/[^a-zA-Z\s.\-']/g, "");
+      if (cleaned !== raw) {
+        setNameHint(true);
+        setTimeout(() => setNameHint(false), 3000);
+      }
       onChange(cleaned);
     } else {
       onChange(raw);
@@ -41,18 +46,25 @@ function ShortInput({ q, value, onChange, autoFocus }) {
   const cls = `eir-input${phoneInvalid ? " eir-input-invalid" : ""}`;
 
   return (
-    <input
-      ref={ref}
-      type={isPhone ? "tel" : "text"}
-      inputMode={isPhone ? "tel" : undefined}
-      className={cls}
-      value={text}
-      onChange={(e) => handleChange(e.target.value)}
-      onBlur={() => setTouched(true)}
-      placeholder={q.placeholder || "Type your answer…"}
-      autoComplete={isPhone ? "tel" : "off"}
-      aria-invalid={phoneInvalid || undefined}
-    />
+    <>
+      <input
+        ref={ref}
+        type={isPhone ? "tel" : "text"}
+        inputMode={isPhone ? "tel" : undefined}
+        className={cls}
+        value={text}
+        onChange={(e) => handleChange(e.target.value)}
+        onBlur={() => setTouched(true)}
+        placeholder={q.placeholder || "Type your answer…"}
+        autoComplete={isPhone ? "tel" : "off"}
+        aria-invalid={phoneInvalid || undefined}
+      />
+      {nameHint && (
+        <span className="eir-mono eir-dim" style={{ fontSize: "12px", marginTop: "6px", display: "block", color: "var(--accent)" }}>
+          Only letters, spaces, hyphens, periods, and apostrophes are allowed.
+        </span>
+      )}
+    </>
   );
 }
 
