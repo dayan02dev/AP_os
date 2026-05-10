@@ -416,6 +416,7 @@ export default function App() {
   // question pages. Maps each phase to its sensible "previous" target so
   // users never hit a dead back-button.
   const goBackUniversal = () => {
+    flushNow();
     if (phase === PHASES.QUESTION) {
       // First question of the whole wizard → drop back to that section's intro.
       if (stepIdx === 0) {
@@ -677,6 +678,7 @@ export default function App() {
             // screen), not just nav to /apply (which leaves the phase
             // state untouched, so e.g. clicking from UPLOAD does
             // nothing visible).
+            flushNow();
             setSectionIdx(0);
             setStepIdx(0);
             setPhase(PHASES.RETURNING);

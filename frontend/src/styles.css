@@ -899,9 +899,9 @@ kbd {
 }
 
 /* Options */
-.eir-options { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.eir-options { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .eir-option {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 14px;
   padding: 14px 18px;
@@ -914,8 +914,6 @@ kbd {
   font-size: 16px;
   transition: background 140ms, border-color 140ms, transform 140ms;
   border-radius: var(--radius);
-  width: 100%;
-  box-sizing: border-box;
 }
 .eir-option:hover {
   background: var(--chip);

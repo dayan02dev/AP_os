@@ -369,6 +369,7 @@ export default function AppSip() {
   };
 
   const goBackUniversal = () => {
+    flushNow();
     if (phase === PHASES.QUESTION) {
       if (stepIdx === 0) {
         setPhase(PHASES.SECTION_INTRO);
@@ -571,6 +572,7 @@ export default function AppSip() {
           onProfile={goProfileFrom}
           phase={phase}
           onHome={() => {
+            flushNow();
             setSectionIdx(0);
             setStepIdx(0);
             setPhase(PHASES.RETURNING);
