@@ -12,6 +12,7 @@ import { ApiError } from "../lib/api.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { checkPasswordRules, isPasswordValid } from "../validators.jsx";
+import { usePageTheme } from "../hooks/usePageTheme.jsx";
 
 export default function SetPasswordPage() {
   const { user, setPassword } = useAuth();
@@ -22,6 +23,7 @@ export default function SetPasswordPage() {
   const nextParam = params.get("next") || "";
   const isSipFlow = nextParam.startsWith("/apply-sip");
 
+  usePageTheme(isSipFlow);
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
   const [showPw, setShowPw] = useState(false);

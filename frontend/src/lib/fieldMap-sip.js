@@ -35,7 +35,7 @@ export const QUESTION_TO_COLUMN_SIP = Object.freeze({
   sipTractionFiles: "sip_traction_files",
 
   // ── Section · Execution (shared) ──
-  willBreak: "execution_will_break",
+  // willBreak intentionally omitted — column dropped from SIP schema
   milestone: "execution_milestone",
   milestoneFiles: "execution_milestone_files",
   infrastructure: "execution_infrastructure",

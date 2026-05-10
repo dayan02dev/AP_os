@@ -8,12 +8,12 @@
 //     VerifyPage routes to /apply/set-password afterward
 //   - "Sign up" link → /apply/signup for new applicants
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
-import { THEMES } from "../themes.jsx";
+import { usePageTheme } from "../hooks/usePageTheme.jsx";
 
 export default function SignInPage() {
   const { requestOtp, signInWithPassword } = useAuth();
@@ -32,27 +32,7 @@ export default function SignInPage() {
   const [otpLoading, setOtpLoading] = useState(false);
   const [localError, setLocalError] = useState(null);
 
-  // Apply the correct theme so the sign-in page matches the app
-  useEffect(() => {
-    const root = document.documentElement;
-    const theme = THEMES.minimal;
-    Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
-    if (isSip) {
-      root.style.setProperty("--accent", "#6B5CFF");
-      root.style.setProperty("--accent-deep", "#4a3dd6");
-      root.style.setProperty("--accent-soft", "#ece9ff");
-    }
-    root.setAttribute("data-bg", theme.bg || "none");
-    root.setAttribute("data-theme", theme.key);
-    return () => {
-      Object.keys(theme.vars).forEach((k) => root.style.removeProperty(k));
-      if (isSip) {
-        root.style.removeProperty("--accent");
-        root.style.removeProperty("--accent-deep");
-        root.style.removeProperty("--accent-soft");
-      }
-    };
-  }, [isSip]);
+  usePageTheme(isSip);
 
   const trimmedEmail = email.trim().toLowerCase();
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);

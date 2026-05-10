@@ -5,8 +5,10 @@
 // Standalone page (no wizard chrome), per the locked spec.
 
 import { Link } from "react-router-dom";
+import { usePageTheme } from "../hooks/usePageTheme.jsx";
 
 export default function TrackMismatchPage({ enrolledTrack, attemptedTrack }) {
+  usePageTheme(enrolledTrack === "sip");
   const enrolledLabel = enrolledTrack === "sip" ? "SIP" : "TIR";
   const attemptedLabel = attemptedTrack === "sip" ? "SIP" : "TIR";
   const otherHref = enrolledTrack === "sip" ? "/apply-sip" : "/apply";

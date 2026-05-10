@@ -3,10 +3,12 @@
 
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth.jsx";
+import { usePageTheme } from "../hooks/usePageTheme.jsx";
 
 export default function ProtectedRoute({ children }) {
   const { isAuthed, loading } = useAuth();
   const location = useLocation();
+  usePageTheme(location.pathname.startsWith("/apply-sip"));
 
   if (loading) {
     // Plain passthrough while rehydrating — a flash of loading UI is ok.

@@ -17,6 +17,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
+import { usePageTheme } from "../hooks/usePageTheme.jsx";
 
 export default function SignUpPage() {
   const { requestOtp } = useAuth();
@@ -31,6 +32,7 @@ export default function SignUpPage() {
   const trackParamRaw = params.get("track");
   const trackParam =
     trackParamRaw === "sip" || trackParamRaw === "tir" ? trackParamRaw : "tir";
+  usePageTheme(trackParam === "sip");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState(null);

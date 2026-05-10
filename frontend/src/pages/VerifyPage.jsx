@@ -11,6 +11,7 @@ import { ApiError } from "../lib/api.js";
 import * as authApi from "../lib/auth.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
+import { usePageTheme } from "../hooks/usePageTheme.jsx";
 
 const RESEND_SECONDS = 30;
 
@@ -32,6 +33,7 @@ export default function VerifyPage() {
   // into the wizard without typing the code manually.
   const prefillCode = (params.get("code") || "").replace(/\D/g, "").slice(0, 6);
 
+  usePageTheme(trackParam === "sip" || nextParam.startsWith("/apply-sip"));
   const [code, setCode] = useState(prefillCode);
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);

@@ -2,11 +2,12 @@
 // When authed, the email field prefills from useAuth and is read-only.
 
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useSupport } from "../hooks/useSupport.js";
 import { useToast } from "../hooks/useToast.jsx";
+import { usePageTheme } from "../hooks/usePageTheme.jsx";
 
 const CATEGORIES = [
   { k: "technical", label: "Technical issue" },
@@ -17,6 +18,9 @@ const CATEGORIES = [
 
 export default function SupportPage() {
   const { user, isAuthed } = useAuth();
+  const location = useLocation();
+  const isSip = location.pathname.includes("sip");
+  usePageTheme(isSip);
   const { submit, submitting, lastTicket } = useSupport();
   const { push } = useToast();
 

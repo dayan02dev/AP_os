@@ -1,6 +1,10 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { usePageTheme } from "../hooks/usePageTheme.jsx";
 
 export default function NotFoundPage() {
+  const location = useLocation();
+  const isSip = location.pathname.startsWith("/apply-sip");
+  usePageTheme(isSip);
   return (
     <div className="eir-root">
       <div className="eir-bg" />
