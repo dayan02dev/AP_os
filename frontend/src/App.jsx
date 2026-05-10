@@ -130,6 +130,7 @@ export default function App() {
     saving,
     locked,
     save,
+    flushNow,
     submit,
     refetch,
     completion,
@@ -383,6 +384,7 @@ export default function App() {
   };
 
   const goNextQuestion = () => {
+    flushNow();
     const cur = flat[stepIdx];
     const next = flat[stepIdx + 1];
     if (!cur) return;
@@ -402,6 +404,7 @@ export default function App() {
   };
 
   const goPrevQuestion = () => {
+    flushNow();
     if (stepIdx > 0) {
       const prev = flat[stepIdx - 1];
       setStepIdx(stepIdx - 1);

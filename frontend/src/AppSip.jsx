@@ -145,6 +145,7 @@ export default function AppSip() {
     saving,
     locked,
     save,
+    flushNow,
     submit,
     refetch,
     completion,
@@ -323,6 +324,7 @@ export default function AppSip() {
   };
 
   const goNextQuestion = () => {
+    flushNow();
     const cur = flat[stepIdx];
     if (!cur) return;
 
@@ -358,6 +360,7 @@ export default function AppSip() {
   };
 
   const goPrevQuestion = () => {
+    flushNow();
     if (stepIdx > 0) {
       const prev = flat[stepIdx - 1];
       setStepIdx(stepIdx - 1);
