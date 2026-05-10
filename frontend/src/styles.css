@@ -709,6 +709,8 @@ kbd {
   align-items: center;
   gap: 24px;
   flex-wrap: wrap;
+  margin-top: 32px;
+  padding-bottom: 24px;
 }
 .eir-fit-actions {
   align-items: stretch;
