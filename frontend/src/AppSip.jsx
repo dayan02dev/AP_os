@@ -760,12 +760,28 @@ export default function AppSip() {
             />
           )}
           {phase === PHASES.DONE &&
-            (viewingApp || application) &&
             (() => {
-              const target = viewingApp || application;
-              const targetAnswers = viewingApp
-                ? collapseFromRowSip(viewingApp)
-                : answers;
+              // Pick the row to render the receipt for, in priority order:
+              //   1. A past submission the user explicitly clicked on
+              //   2. The most-recent submitted row (submittedApps is desc by
+              //      submitted_at on the backend) — this is the freshly-
+              //      submitted application after handleSubmit() returns.
+              //   3. Fallback to current `application` only if no submission
+              //      exists yet (edge case, shouldn't normally render here).
+              // Reading from `application` directly broke download/receipt:
+              // after submit, the backend creates a new empty draft and
+              // GET /sip-applications/me returns it, so `answers` becomes
+              // empty and the download showed "(not provided)" everywhere.
+              const lastSubmitted =
+                Array.isArray(submittedApps) && submittedApps.length > 0
+                  ? submittedApps[0]
+                  : null;
+              const target = viewingApp || lastSubmitted || application;
+              if (!target) return null;
+              const targetAnswers =
+                viewingApp || lastSubmitted
+                  ? collapseFromRowSip(viewingApp || lastSubmitted)
+                  : answers;
               return (
                 <DoneScreen
                   answers={targetAnswers}
