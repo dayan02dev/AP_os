@@ -722,16 +722,17 @@ kbd {
   width: auto !important;
   justify-content: center;
   text-align: center;
-  white-space: nowrap;
+  white-space: normal;
 }
 .eir-btn-fit-proceed {
   background: var(--bg-soft, #f0eee5);
   border: 1px solid var(--line);
   color: var(--ink);
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 4px;
   padding: 14px 18px;
   text-align: center;
   cursor: pointer;
