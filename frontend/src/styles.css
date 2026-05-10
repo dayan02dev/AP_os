@@ -707,7 +707,7 @@ kbd {
 .eir-q-actions {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 24px;
   flex-wrap: wrap;
 }
 .eir-fit-actions {
@@ -889,7 +889,7 @@ kbd {
 }
 
 /* Options */
-.eir-options { display: flex; flex-direction: column; gap: 8px; }
+.eir-options { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .eir-option {
   display: flex;
   align-items: center;
@@ -904,6 +904,8 @@ kbd {
   font-size: 16px;
   transition: background 140ms, border-color 140ms, transform 140ms;
   border-radius: var(--radius);
+  width: 100%;
+  box-sizing: border-box;
 }
 .eir-option:hover {
   background: var(--chip);
