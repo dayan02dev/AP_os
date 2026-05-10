@@ -1303,7 +1303,11 @@ function ReviewSubmitPanel({ answers, completion, onSubmit, locked, saving, onBa
             {entries.map(([k, v]) => (
               <div key={k} className="eir-done-answer-row">
                 <dt className="eir-review-label">{QUESTION_PROMPTS[k] || k}</dt>
-                <dd>{typeof v === "string" ? v : JSON.stringify(v)}</dd>
+                <dd>{typeof v === "string" ? v
+                  : Array.isArray(v) ? v.map((e) => e?.name || JSON.stringify(e)).join(", ")
+                  : v && typeof v === "object" && v.name ? v.name
+                  : v && typeof v === "object" ? Object.entries(v).filter(([,val]) => val).map(([key]) => ({ truthful: "Truthful", refChecks: "Reference checks", terms: "Terms accepted", newsletter: "Newsletter" }[key] || key)).join(", ") || "None selected"
+                  : String(v)}</dd>
               </div>
             ))}
           </dl>

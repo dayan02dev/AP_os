@@ -774,8 +774,18 @@ export function isAnsweredSip(q, value) {
       );
     case "long":
       return !!(value && value.trim());
-    case "single":
-      return !!value;
+    case "single": {
+      if (!value) return false;
+      const opts = q.options || [];
+      const isOther = opts.some(
+        (o) => /(?:^|[\s/])Other\s*$/i.test(o) && (value === o || value.startsWith(`${o}:`))
+      );
+      if (isOther) {
+        const colonIdx = value.indexOf(":");
+        return colonIdx > 0 && value.slice(colonIdx + 1).trim().length > 0;
+      }
+      return true;
+    }
     case "multi":
       return Array.isArray(value) && value.length > 0;
     case "declarations":

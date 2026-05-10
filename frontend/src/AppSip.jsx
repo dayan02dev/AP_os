@@ -797,7 +797,7 @@ export default function AppSip() {
         <Footer saving={saving} locked={locked} />
       </div>
 
-      <SupportButton userEmail={user?.email} />
+      <SupportButton userEmail={user?.email} track="SIP" />
     </div>
   );
 }
@@ -1276,7 +1276,14 @@ function ReviewSubmitPanel({
         )
         .join(", ");
     if (v && typeof v === "object" && v.name) return v.name;
-    return JSON.stringify(v);
+    if (v && typeof v === "object") {
+      const labels = { truthful: "Truthful", refChecks: "Reference checks", terms: "Terms accepted", newsletter: "Newsletter" };
+      return Object.entries(v)
+        .filter(([, val]) => val)
+        .map(([key]) => labels[key] || key)
+        .join(", ") || "None selected";
+    }
+    return String(v);
   };
 
   return (

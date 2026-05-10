@@ -4,7 +4,7 @@ import { useState as useSupS, useEffect as useSupE, useRef as useSupR } from "re
 
 const SUPPORT_EMAIL = "support@artpark.in";
 
-function SupportButton({ userEmail }) {
+function SupportButton({ userEmail, track = "TIR" }) {
   const [open, setOpen] = useSupS(false);
   return (
     <>
@@ -12,12 +12,12 @@ function SupportButton({ userEmail }) {
         <span className="eir-support-fab-icon">?</span>
         <span className="eir-support-fab-label eir-mono">support</span>
       </button>
-      {open && <SupportModal onClose={() => setOpen(false)} userEmail={userEmail} />}
+      {open && <SupportModal onClose={() => setOpen(false)} userEmail={userEmail} track={track} />}
     </>
   );
 }
 
-function SupportModal({ onClose, userEmail }) {
+function SupportModal({ onClose, userEmail, track = "TIR" }) {
   const [stage, setStage] = useSupS("form"); // form | sending | sent
   const [category, setCategory] = useSupS("technical");
   const [subject, setSubject] = useSupS("");
@@ -47,8 +47,8 @@ function SupportModal({ onClose, userEmail }) {
     // Also fire a mailto as a "real" fallback so a ticket actually leaves the browser
     // (runs in a hidden iframe to avoid navigating away from the app)
     try {
-      const body = `Category: ${category}\nContact: ${contactEmail}\n\n${message}\n\n---\nSent from ARTPARK TIR application portal`;
-      const mailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`[TIR Support] ${subject}`)}&body=${encodeURIComponent(body)}`;
+      const body = `Category: ${category}\nContact: ${contactEmail}\n\n${message}\n\n---\nSent from ARTPARK ${track} application portal`;
+      const mailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`[${track} Support] ${subject}`)}&body=${encodeURIComponent(body)}`;
       const frame = document.createElement("iframe");
       frame.style.display = "none";
       frame.src = mailto;
@@ -57,15 +57,16 @@ function SupportModal({ onClose, userEmail }) {
     } catch (e) {}
 
     // Simulate backend processing + return ticket id
-    const id = "TIR-" + Math.floor(Math.random() * 90000 + 10000);
+    const id = `${track}-` + Math.floor(Math.random() * 90000 + 10000);
     setTimeout(() => {
       setTicketId(id);
       setStage("sent");
       // Persist ticket locally so user has a record
       try {
-        const tix = JSON.parse(localStorage.getItem("tir:tickets") || "[]");
+        const storageKey = `${track.toLowerCase()}:tickets`;
+        const tix = JSON.parse(localStorage.getItem(storageKey) || "[]");
         tix.unshift({ id, subject, category, message, contactEmail, ts: Date.now() });
-        localStorage.setItem("tir:tickets", JSON.stringify(tix.slice(0, 20)));
+        localStorage.setItem(storageKey, JSON.stringify(tix.slice(0, 20)));
       } catch (e) {}
     }, 1400);
   };
@@ -75,7 +76,7 @@ function SupportModal({ onClose, userEmail }) {
       <div className="eir-sup-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="eir-sup-head">
           <div className="eir-sup-head-left">
-            <span className="eir-mono eir-dim eir-sup-eyebrow">support · TIR.2026</span>
+            <span className="eir-mono eir-dim eir-sup-eyebrow">support · {track}.2026</span>
             <h3 className="eir-sup-title">
               {stage === "sent" ? "Ticket received" : "Report a problem"}
             </h3>
@@ -159,7 +160,7 @@ function SupportModal({ onClose, userEmail }) {
             </div>
 
             <div className="eir-sup-foot eir-mono eir-dim">
-              ↳ your message goes directly to the ARTPARK TIR support team · response within 24 hours
+              ↳ your message goes directly to the ARTPARK {track} support team · response within 24 hours
             </div>
           </form>
         )}

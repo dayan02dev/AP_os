@@ -16,6 +16,7 @@ function ShortInput({ q, value, onChange, autoFocus }) {
   useEffect(() => { if (autoFocus && ref.current) ref.current.focus(); }, [autoFocus]);
 
   const isPhone = q.id === "phone" || q.kind === "phone";
+  const isName = q.id === "fullName";
 
   const handleChange = (raw) => {
     if (isPhone) {
@@ -23,6 +24,11 @@ function ShortInput({ q, value, onChange, autoFocus }) {
       // user from typing letters at all rather than telling them off
       // after the fact.
       const cleaned = raw.replace(/[^\d+\-()\s]/g, "");
+      onChange(cleaned);
+    } else if (isName) {
+      // Only allow letters, spaces, hyphens, periods, and apostrophes
+      // (covers names like "Dr. Arun Kumar", "O'Brien", "Mary-Jane").
+      const cleaned = raw.replace(/[^a-zA-Z\s.\-']/g, "");
       onChange(cleaned);
     } else {
       onChange(raw);
@@ -735,7 +741,18 @@ function isAnswered(q, value) {
     case "long":
       if (!value || !value.trim()) return false;
       return true;
-    case "single": return !!value;
+    case "single": {
+      if (!value) return false;
+      const opts = q.options || [];
+      const isOther = opts.some(
+        (o) => /(?:^|[\s/])Other\s*$/i.test(o) && (value === o || value.startsWith(`${o}:`))
+      );
+      if (isOther) {
+        const colonIdx = value.indexOf(":");
+        return colonIdx > 0 && value.slice(colonIdx + 1).trim().length > 0;
+      }
+      return true;
+    }
     case "multi": return Array.isArray(value) && value.length > 0;
     case "files":
       if (q.multi) return Array.isArray(value) && value.length > 0;
