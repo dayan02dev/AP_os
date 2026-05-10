@@ -899,9 +899,11 @@ kbd {
 }
 
 /* Options */
-.eir-options { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.eir-options { display: flex; flex-direction: column; gap: 8px; }
 .eir-option {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
   align-items: center;
   gap: 14px;
   padding: 14px 18px;
