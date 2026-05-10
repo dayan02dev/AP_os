@@ -707,10 +707,10 @@ kbd {
 .eir-q-actions {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 20px;
   flex-wrap: wrap;
-  margin-top: 32px;
-  padding-bottom: 24px;
+  margin-top: 36px;
+  padding-bottom: 32px;
 }
 .eir-fit-actions {
   align-items: stretch;
@@ -753,7 +753,7 @@ kbd {
 }
 .eir-q-inline-attach {
   margin-top: 22px;
-  max-width: 56ch;
+  width: 100%;
 }
 .eir-q-inline-attach-divider {
   text-align: center;
@@ -3129,7 +3129,7 @@ kbd {
   .eir-q-prompt { font-size: clamp(24px, 6vw, 36px) !important; }
   .eir-q-help { font-size: 14px; }
   .eir-q-input-wrap { margin-bottom: 22px; }
-  .eir-q-actions { flex-wrap: wrap; gap: 10px; }
+  .eir-q-actions { flex-wrap: wrap; gap: 14px; margin-top: 28px; padding-bottom: 24px; }
   .eir-fit-actions { flex-wrap: wrap !important; }
   .eir-fit-actions > * { flex: 1 1 100% !important; white-space: normal; }
 
