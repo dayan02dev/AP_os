@@ -99,6 +99,8 @@ function LongInput({ q, value, onChange, autoFocus }) {
   useEffect(() => { if (autoFocus && ref.current) ref.current.focus(); }, [autoFocus]);
   const text = value || "";
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const sweetSpot = q.sweetSpotWords || (q.minWords ? Math.round(q.minWords * 0.5) : 0);
+  const inSweetSpot = sweetSpot > 0 && wordCount >= sweetSpot;
 
   return (
     <div className="eir-long-wrap">
@@ -114,6 +116,13 @@ function LongInput({ q, value, onChange, autoFocus }) {
         <span className="eir-mono eir-dim">
           {wordCount.toString().padStart(3, "0")} words
         </span>
+        {sweetSpot > 0 && (
+          <span className={`eir-mono eir-softtip ${inSweetSpot ? "is-met" : ""}`}>
+            {inSweetSpot
+              ? `✓ solid length — the kind reviewers tend to notice`
+              : `↳ tip: answers over ~${sweetSpot} words tend to stand out`}
+          </span>
+        )}
       </div>
     </div>
   );

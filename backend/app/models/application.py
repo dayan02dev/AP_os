@@ -105,9 +105,15 @@ ApplicationStatusValue = Literal[
 # ─── Update model (PATCH body) ───────────────────────────────────────
 
 class ApplicationUpdate(BaseModel):
-    """Partial update. All fields optional. Unknown fields rejected."""
+    """Partial update. All fields optional. Unknown fields silently dropped.
 
-    model_config = ConfigDict(extra="forbid")
+    extra="ignore" — same rationale as SipApplicationUpdate: the frontend
+    batches multiple pending answers into a single PATCH, so a stale or
+    misnamed field id should not 422 the whole batch and lose every
+    other answer in it. Per-field validators still surface real errors.
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
     # Progress tracking — clients send current_section as they navigate.
     current_section: str | None = Field(default=None, max_length=_MAX_SECTION)
