@@ -3,11 +3,13 @@
 Mirrors application.py but for the SIP track:
   - Drops TIR-only fields (basic_has_team, basic_teammates, problem_defined,
     solution_stage, evidence_files, evidence_video_url, evidence_deck,
-    legacy solution_* columns, execution_will_break/budget).
+    legacy solution_* columns).
   - Adds SIP-specific fields (sip_incorporated, sip_trl, sip_founders,
     sip_traction, sip_traction_details, sip_traction_files, sip_pitch_deck,
     sip_cap_table_file, sip_demo_video_url, sip_patents_files).
-  - Column names match backend/migrations/011_sip_track.sql exactly.
+  - execution_will_break is shared with TIR; added back to the SIP table
+    via migration 012 after the wizard kept asking for it.
+  - Column names match backend/migrations/011_sip_track.sql + 012.
 """
 
 from __future__ import annotations
@@ -62,9 +64,18 @@ ApplicationStatusValue = Literal[
 # ─── Update model (PATCH body) ───────────────────────────────────────
 
 class SipApplicationUpdate(BaseModel):
-    """Partial update for SIP applications. All fields optional."""
+    """Partial update for SIP applications. All fields optional.
 
-    model_config = ConfigDict(extra="forbid")
+    Uses extra="ignore" — unknown fields are dropped silently rather than
+    422-ing the whole PATCH. The frontend batches multiple pending answers
+    into one request, and a single stale field-name (e.g. a legacy
+    question id from before a column was renamed) used to reject the
+    entire batch and lose every answer in it. Ignoring unknowns keeps
+    valid fields persisting while still surfacing real validation errors
+    on individual fields via the per-field validators below.
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
     current_section: str | None = Field(default=None, max_length=_MAX_SECTION)
 
@@ -102,6 +113,7 @@ class SipApplicationUpdate(BaseModel):
     )
 
     # ── Section 05 · Execution Plan (shared) ──
+    execution_will_break: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
     execution_milestone: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
     execution_infrastructure: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
     execution_failure: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
