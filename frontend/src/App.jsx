@@ -904,6 +904,7 @@ export default function App() {
                   setViewingApp(null);
                   navigate("/apply");
                 }}
+                questionPrompts={QUESTION_PROMPTS}
               />
             );
           })()}

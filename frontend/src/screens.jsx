@@ -162,7 +162,7 @@ function CelebrationScreen({ message, onContinue }) {
   );
 }
 
-function DoneScreen({ answers, onRestart, submission, onBack, onDownload }) {
+function DoneScreen({ answers, onRestart, submission, onBack, onDownload, questionPrompts }) {
   const name = (answers?.fullName || "").split(" ")[0] || "there";
   const isPast = !!submission;
   const stampId = submission?.id || ("TIR-" + Math.floor(Math.random() * 9000 + 1000));
@@ -259,12 +259,44 @@ function DoneScreen({ answers, onRestart, submission, onBack, onDownload }) {
           <div className="eir-done-answers">
             <div className="eir-mono eir-dim eir-done-answers-label">↳ what you submitted</div>
             <dl className="eir-done-answers-list">
-              {Object.entries(answers).slice(0, 12).map(([k, v]) => (
-                <div key={k} className="eir-done-answer-row">
-                  <dt className="eir-mono">{k}</dt>
-                  <dd>{typeof v === "string" ? v : JSON.stringify(v)}</dd>
-                </div>
-              ))}
+              {Object.entries(answers)
+                .filter(([, v]) => {
+                  if (v === undefined || v === null || v === "") return false;
+                  if (Array.isArray(v) && v.length === 0) return false;
+                  return true;
+                })
+                .slice(0, 30)
+                .map(([k, v]) => {
+                  const label = (questionPrompts && questionPrompts[k]) || k;
+                  let display;
+                  if (typeof v === "string") {
+                    display = v;
+                  } else if (Array.isArray(v)) {
+                    display = v
+                      .map((e) =>
+                        e && typeof e === "object" && e.name
+                          ? `${e.name}${e.share !== undefined ? ` (${e.share}%)` : ""}`
+                          : e?.name || e?.original_name || String(e)
+                      )
+                      .join(", ");
+                  } else if (v && typeof v === "object" && v.name) {
+                    display = v.name;
+                  } else if (v && typeof v === "object") {
+                    const labels = { truthful: "Truthful", refChecks: "Reference checks", terms: "Terms accepted", newsletter: "Newsletter" };
+                    display = Object.entries(v)
+                      .filter(([, val]) => val)
+                      .map(([key]) => labels[key] || key)
+                      .join(", ") || "None selected";
+                  } else {
+                    display = String(v);
+                  }
+                  return (
+                    <div key={k} className="eir-done-answer-row">
+                      <dt className="eir-review-label">{label}</dt>
+                      <dd>{display}</dd>
+                    </div>
+                  );
+                })}
             </dl>
           </div>
         )}
