@@ -444,14 +444,24 @@ async def patch_application(
             "Request body must be a JSON object.",
         )
 
-    unknown = [k for k in body if k not in WRITABLE_FIELDS]
+    # Soft-drop unknown fields rather than failing the whole batch.
+    # Combined with ApplicationUpdate's extra="ignore", any stale field
+    # is logged for visibility and silently stripped — never poisoning
+    # saves of the other valid fields in the same debounced PATCH.
+    unknown = sorted(k for k in body if k not in WRITABLE_FIELDS)
     if unknown:
-        return _error(
-            status.HTTP_400_BAD_REQUEST,
-            "unknown_fields",
-            f"Unknown fields: {sorted(unknown)}",
-            unknown=sorted(unknown),
+        log.warning(
+            "applications PATCH dropped unknown fields",
+            extra={"user_id": user_id, "ref": req_id, "unknown": unknown},
         )
+        body = {k: v for k, v in body.items() if k in WRITABLE_FIELDS}
+        if not body:
+            return _error(
+                status.HTTP_400_BAD_REQUEST,
+                "empty_patch",
+                "No writable fields in request body.",
+                unknown=unknown,
+            )
 
     # Type / enum validation via the partial model.
     try:
