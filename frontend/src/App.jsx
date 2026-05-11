@@ -1118,7 +1118,7 @@ function Header({ config, user, onLogout, onProfile, phase, onHome }) {
         </a>
       </div>
       <div className="eir-header-right">
-        <div className="eir-mono eir-dim eir-theme-tag">{theme.tag}</div>
+        <div className="eir-mono eir-dim eir-theme-tag">TIR.2026</div>
         {user && !onProfilePage && (
           <button className="eir-header-user eir-mono" onClick={onProfile} title="Profile settings">
             <span className="eir-header-user-avatar">{(user.email?.[0] || "?").toUpperCase()}</span>
@@ -1262,8 +1262,32 @@ const QUESTION_PROMPTS = SECTIONS.reduce((acc, s) => {
 }, {});
 
 function ReviewSubmitPanel({ answers, completion, onSubmit, locked, saving, onBack }) {
+  const renderValue = (v) => {
+    if (typeof v === "string") return v;
+    if (Array.isArray(v))
+      return v
+        .map((e) =>
+          e && typeof e === "object" && e.name
+            ? `${e.name}${e.share !== undefined ? ` (${e.share}%)` : ""}`
+            : e?.name || e?.original_name || String(e),
+        )
+        .join(", ");
+    if (v && typeof v === "object" && v.name) return v.name;
+    if (v && typeof v === "object") {
+      const labels = { truthful: "Truthful", refChecks: "Reference checks", terms: "Terms accepted", newsletter: "Newsletter" };
+      return Object.entries(v)
+        .filter(([, val]) => val)
+        .map(([key]) => labels[key] || key)
+        .join(", ") || "None selected";
+    }
+    return String(v);
+  };
   const entries = Object.entries(answers)
-    .filter(([_, v]) => v !== undefined && v !== null && v !== "")
+    .filter(([_, v]) => {
+      if (v === undefined || v === null || v === "") return false;
+      if (Array.isArray(v) && v.length === 0) return false;
+      return true;
+    })
     .slice(0, 30);
   // Submission is allowed at any completion %; the missing-fields list
   // and the percentage hint are purely informational. Only block while
@@ -1306,11 +1330,7 @@ function ReviewSubmitPanel({ answers, completion, onSubmit, locked, saving, onBa
             {entries.map(([k, v]) => (
               <div key={k} className="eir-done-answer-row">
                 <dt className="eir-review-label">{QUESTION_PROMPTS[k] || k}</dt>
-                <dd>{typeof v === "string" ? v
-                  : Array.isArray(v) ? v.map((e) => e?.name || JSON.stringify(e)).join(", ")
-                  : v && typeof v === "object" && v.name ? v.name
-                  : v && typeof v === "object" ? Object.entries(v).filter(([,val]) => val).map(([key]) => ({ truthful: "Truthful", refChecks: "Reference checks", terms: "Terms accepted", newsletter: "Newsletter" }[key] || key)).join(", ") || "None selected"
-                  : String(v)}</dd>
+                <dd>{renderValue(v)}</dd>
               </div>
             ))}
           </dl>
