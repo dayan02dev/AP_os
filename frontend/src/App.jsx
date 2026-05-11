@@ -1257,7 +1257,14 @@ function QuestionView({
 // the review panel can show "Do you have a co-founder or team?" instead of
 // the bare answer key "hasTeam" (which renders as "hasteam" under mono).
 const QUESTION_PROMPTS = SECTIONS.reduce((acc, s) => {
-  for (const q of s.questions) acc[q.id] = q.prompt;
+  for (const q of s.questions) {
+    if (typeof q.prompt === "string") {
+      acc[q.id] = q.prompt;
+    } else if (typeof q.prompt === "function") {
+      // Dynamic prompts — call with empty answers to get a generic label
+      try { acc[q.id] = q.prompt({}); } catch { acc[q.id] = q.id; }
+    }
+  }
   return acc;
 }, {});
 
