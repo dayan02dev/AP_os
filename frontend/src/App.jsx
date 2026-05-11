@@ -885,9 +885,17 @@ export default function App() {
               onBack={canGoBackUniversal ? goBackUniversal : null}
             />
           )}
-          {phase === PHASES.DONE && (viewingApp || application) && (() => {
-            const target = viewingApp || application;
-            const targetAnswers = viewingApp ? collapseFromRow(viewingApp) : answers;
+          {phase === PHASES.DONE && (() => {
+            const lastSubmitted =
+              Array.isArray(submittedApps) && submittedApps.length > 0
+                ? submittedApps[0]
+                : null;
+            const target = viewingApp || lastSubmitted || application;
+            if (!target) return null;
+            const targetAnswers =
+              viewingApp || lastSubmitted
+                ? collapseFromRow(viewingApp || lastSubmitted)
+                : answers;
             return (
               <DoneScreen
                 answers={targetAnswers}
