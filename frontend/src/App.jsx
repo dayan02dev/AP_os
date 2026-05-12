@@ -712,7 +712,7 @@ export default function App() {
           {phase === PHASES.RETURNING && user && (
             <ReturningChoiceScreen
               user={user}
-              applicantName={application?.basic_full_name || user?.full_name}
+              applicantName={application?.basic_full_name}
               hasDraft={!locked && !!application && Object.keys(answers || {}).length > 0}
               draftProgress={
                 application && completion

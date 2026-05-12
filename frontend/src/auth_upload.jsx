@@ -222,13 +222,16 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
   const navigate = useNavigate();
   const cycleLabel = track === "sip" ? "SIP.2026" : "TIR.2026";
 
-  // Prefer the real name (from profiles.full_name or the CV-filled
-  // basic_full_name). Fall back to the email local-part only when we
-  // genuinely don't know a name yet — and even then, title-case it so
-  // "rohanss24" shows as "Rohanss24" rather than a lowercase handle.
+  // Display name only comes from the current draft's basic_full_name —
+  // either CV-parsed or hand-typed in the wizard. We intentionally do
+  // NOT fall back to profiles.full_name: that field can hold a stale
+  // CV name from a previous account or test session, leading to
+  // confusing greetings like "Good to see you, Sanjay" when the actual
+  // user is manager@... before they've uploaded anything. Email
+  // local-part is the safe fallback — title-cased so "rohanss24" reads
+  // "Rohanss24".
   const displayName =
     applicantName?.trim() ||
-    user.full_name?.trim() ||
     ((email) => email?.split("@")[0]?.replace(/^./, (c) => c.toUpperCase()))(user.email);
 
   return (

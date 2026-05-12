@@ -601,7 +601,7 @@ export default function AppSip() {
           {phase === PHASES.RETURNING && user && (
             <ReturningChoiceScreen
               user={user}
-              applicantName={application?.basic_full_name || user?.full_name}
+              applicantName={application?.basic_full_name}
               hasDraft={
                 !locked &&
                 !!application &&
