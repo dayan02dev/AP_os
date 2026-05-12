@@ -330,16 +330,17 @@ async def apply_parsed_to_application(current_user: dict = Depends(get_current_u
     applied: list[str] = []
     skipped: list[str] = []
 
-    profile_res = admin.table("profiles").select("*").eq("id", user_id).limit(1).execute()
+    # Profile fields always reflect the LATEST CV — every apply-to-application
+    # overwrites them. See the matching note in sip_resume.py for why.
+    profile_res = admin.table("profiles").select("id").eq("id", user_id).limit(1).execute()
     profile_rows = profile_res.data or []
     if not profile_rows:
         skipped.extend(f"profiles.{col}" for _, col in PROFILE_MAP)
     else:
-        profile = profile_rows[0]
         profile_patch: dict[str, Any] = {}
         for src, dest in PROFILE_MAP:
             val = parsed.get(src)
-            if val and not profile.get(dest):
+            if val:
                 profile_patch[dest] = val
                 applied.append(f"profiles.{dest}")
             else:

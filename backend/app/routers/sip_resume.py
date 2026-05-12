@@ -288,16 +288,21 @@ async def apply_parsed_to_application(current_user: dict = Depends(get_current_u
     applied: list[str] = []
     skipped: list[str] = []
 
-    profile_res = admin.table("profiles").select("*").eq("id", user_id).limit(1).execute()
+    # Profile fields always reflect the LATEST CV — every apply-to-application
+    # overwrites them. Previously we used a "fill only if empty" guard, which
+    # cached the first CV's name forever and caused stale greetings when the
+    # same test account was reused with a different CV. The wizard's
+    # basic_full_name (per-draft) still stays editable by the user; this
+    # profile-level field is intended to mirror the latest parsed source.
+    profile_res = admin.table("profiles").select("id").eq("id", user_id).limit(1).execute()
     profile_rows = profile_res.data or []
     if not profile_rows:
         skipped.extend(f"profiles.{col}" for _, col in PROFILE_MAP)
     else:
-        profile = profile_rows[0]
         profile_patch: dict[str, Any] = {}
         for src, dest in PROFILE_MAP:
             val = parsed.get(src)
-            if val and not profile.get(dest):
+            if val:
                 profile_patch[dest] = val
                 applied.append(f"profiles.{dest}")
             else:
