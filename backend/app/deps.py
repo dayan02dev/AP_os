@@ -14,7 +14,7 @@ from .utils.logging import user_id_var
 
 # Typed alias so routes can write:
 #   user: CurrentUser = Depends(get_current_user)
-CurrentUser = dict  # {"user_id": str, "email": str}
+CurrentUser = dict  # {"user_id": str, "email": str, "roles": list[str]}
 
 
 async def get_current_user(
@@ -67,4 +67,20 @@ async def get_current_user(
     except Exception:
         pass
 
-    return {"user_id": user.id, "email": user.email}
+    # Fetch the user's roles for RBAC. Single query per request; cheap.
+    # Empty list if no roles granted yet (pure applicants pre-Phase-1).
+    # Failures here are non-fatal: routes that don't require a specific
+    # capability still work; routes that do will 403 via require_capability.
+    roles: list[str] = []
+    try:
+        roles_res = (
+            client.table("user_roles")
+            .select("role")
+            .eq("user_id", user.id)
+            .execute()
+        )
+        roles = [row["role"] for row in (roles_res.data or [])]
+    except Exception:
+        pass
+
+    return {"user_id": user.id, "email": user.email, "roles": roles}
