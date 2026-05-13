@@ -28,6 +28,7 @@ import SignUpPage from "./pages/SignUpPage.jsx";
 import SupportPage from "./pages/SupportPage.jsx";
 import VerifyPage from "./pages/VerifyPage.jsx";
 import AdminDashboardStub from "./pages/admin/AdminDashboardStub.jsx";
+import AdminAddUser from "./pages/admin/AdminAddUser.jsx";
 
 const SECTION_SLUGS = [
   "basic",
@@ -96,6 +97,14 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <AdminDashboardStub />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/users/new"
+        element={
+          <ProtectedRoute>
+            <AdminAddUser />
           </ProtectedRoute>
         }
       />
