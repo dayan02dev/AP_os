@@ -194,6 +194,7 @@ def fetch_ai_score_overalls() -> list[float]:
             .table("ai_screening")
             .select("score_overall")
             .not_.is_("score_overall", "null")
+            .limit(10_000)
             .execute()
         )
         rows = res.data or []
@@ -218,6 +219,7 @@ def fetch_org_texts(track: str) -> list[str]:
             .table(_track_table(track))
             .select("basic_org")
             .neq("status", "draft")
+            .limit(10_000)
             .execute()
         )
         rows = res.data or []

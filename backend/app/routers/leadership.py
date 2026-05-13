@@ -12,8 +12,10 @@ the frontend simpler (one fetch, one loading state) and is well under the
 Lambda warm-call budget — every helper is a count(*) or single-column
 projection, no row scans.
 
-Guarded by `require_capability("view_stats")`. The `leadership` and `admin`
-roles both have this capability in `rbac.ROLE_CAPABILITIES`.
+Guarded by `require_capability("view_stats")` — granted to the `leadership`
+role only (see `rbac.ROLE_CAPABILITIES`). Admins handle user provisioning,
+not dashboard analytics; if an admin needs the dashboard, grant them the
+`leadership` role as well.
 """
 
 from __future__ import annotations
