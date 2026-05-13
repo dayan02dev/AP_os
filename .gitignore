@@ -56,4 +56,4 @@ build/
 htmlcov/
 .pytest_cache/
 __pycache__/
-*.pyc
+*.pyc.superpowers/
