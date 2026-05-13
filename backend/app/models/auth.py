@@ -60,7 +60,15 @@ class UserMe(BaseModel):
     """Shape returned by GET /auth/me — mirrors `profiles` columns + a
     `password_set` flag derived from auth.users.app_metadata so the
     frontend can decide whether to force the user through SetPasswordPage
-    after OTP verify."""
+    after OTP verify.
+
+    Phase 1 additions:
+      - roles: list of granted roles from `user_roles` (drives post-signin
+        redirect + RoleSwitcher + RBAC capability checks frontend-side).
+      - active_role: UI navigation device — which dashboard the user is
+        currently viewing. NULL is valid; the frontend defaults to the
+        first granted role.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -73,6 +81,8 @@ class UserMe(BaseModel):
     location_country: str | None = None
     created_at: datetime | None = None
     password_set: bool = False
+    roles: list[str] = []
+    active_role: str | None = None
 
 
 class SimpleOK(BaseModel):
