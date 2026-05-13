@@ -381,37 +381,94 @@ Reuse the existing CSS tokens and `eir-*` class system. Spec's design tokens (Sc
 
 ## 7. AI pipeline (infrastructure now, prompts later)
 
-### 7.1 Architecture
+### 7.1 Architecture — SQS + worker Lambda
+
+The submit endpoint returns immediately; AI scoring happens asynchronously in a separate Lambda. Chosen over inline scoring to protect against deadline-day submission spikes and remove any risk of submit timeouts.
 
 ```
-applicant submits ──▶ POST /sip-applications/me/submit
+applicant submits ─▶ POST /sip-applications/{track}/me/submit
                        │
-                       ├─ status: submitted
-                       └─ enqueue AI job (background task in Lambda)
+                       │  (Lambda #1: existing API function)
+                       │
+                       ├─ validate payload
+                       ├─ write status = submitted
+                       ├─ SendMessage to artpark-eir-ai-screening (FIFO)
+                       └─ return 200 OK                          ← <500ms always
+                                
+                                ▼  (SQS holds the message)
+                                
+                       ┌─────────────────────────────────────┐
+                       │  Lambda #2: artpark-eir-ai-worker  │
+                       │  (separate SAM resource, SQS event  │
+                       │   source mapping triggers it)       │
+                       └─────────────────────────────────────┘
                                 │
-                                ▼
-                       AI worker reads ai_screening_queue
-                                │
+                                ├─ write status = ai_screening
                                 ├─ build prompt (rubric + app data)
-                                ├─ call openrouter ─▶ google/gemini-flash-latest
+                                ├─ if AI_STUB=true: deterministic random scores
+                                │  else: call OpenRouter → google/gemini-flash-latest
                                 ├─ parse 5 scores + summary + flags
-                                └─ upsert into ai_screening
+                                ├─ upsert into ai_screening
+                                ├─ write status = under_review
+                                └─ delete SQS message (handled by Lambda runtime on success)
+                                
+                                ▼  on failure (exception or timeout)
+                                
+                       SQS visibility timeout expires → message redelivered
+                                │ (up to 3 receive attempts)
+                                ▼
+                       DLQ artpark-eir-ai-screening-dlq
                                 │
                                 ▼
-                       status: ai_screening → under_review
-                                │
-                                └─ notify leadership in-portal
+                       CloudWatch alarm fires → admin sees "AI scoring failed" 
+                       flag in dashboard; "Re-trigger" button re-enqueues
 ```
 
-### 7.2 Implementation notes
+### 7.2 Infrastructure additions
 
-- **No new infrastructure**: the submit endpoint runs the OpenRouter call **synchronously within the same Lambda invocation** before returning. We return 202 Accepted with the submission ID immediately the AI completes (typical: 3–8s for Gemini Flash). If the call exceeds 25s we abort, mark `ai_screening.error`, and leadership manually re-triggers.
-  - Important: FastAPI's `BackgroundTasks` would NOT work here because AWS Lambda freezes the container the instant the response is sent — any task scheduled after `return` gets killed mid-flight.
-  - If p95 latency starts exceeding 15s in production, we migrate to: submit endpoint enqueues onto SQS → separate `ai-worker` Lambda processes. Out of scope for Phase 1.
-- **Stub mode**: env var `AI_STUB=true` short-circuits to deterministic random scores. Useful for staging while the real prompt is being tuned.
+New AWS resources (added to `infra/sam/template.yaml`):
+
+| Resource | Purpose | Config |
+|---|---|---|
+| `AiScreeningQueue` (AWS::SQS::Queue) | Main FIFO queue for AI screening jobs | FIFO with content-based deduplication; visibility timeout 300s; max receive count 3 before DLQ |
+| `AiScreeningDLQ` (AWS::SQS::Queue) | Dead-letter queue for jobs that fail 3× | FIFO; retention 14 days for forensics |
+| `AiWorkerFunction` (AWS::Serverless::Function) | Worker Lambda that processes queue messages | Python 3.11, arm64, 1024MB RAM, 60s timeout, reserved concurrency 10 (don't hammer OpenRouter); same code base as API function, different handler entrypoint |
+| IAM policy on `ApiFunction` | Allow SendMessage on the queue | `sqs:SendMessage` scoped to `AiScreeningQueue.Arn` |
+| IAM policy on `AiWorkerFunction` | Allow receive/delete from queue + DB writes | `sqs:ReceiveMessage` + `sqs:DeleteMessage` + Supabase service-role env injection |
+| CloudWatch alarm | Alerts admin when DLQ has any messages | Threshold `ApproximateNumberOfMessagesVisible > 0` for 60s |
+
+The worker Lambda lives in the same `backend/app/` codebase but registered as a separate handler: `backend/app/ai_worker.py` with `lambda_handler(event, context)`. SAM bundles the same code for both functions.
+
+### 7.3 Implementation notes
+
+- **Stub mode default**: env var `AI_STUB=true` on the worker Lambda short-circuits to deterministic random scores (seeded by `hash(application_id)` so the same app always scores identically). Returns in <10ms. No OpenRouter calls. All downstream code paths work identically — dashboard widgets, status transitions, audit log entries.
+- **Switching to real Gemini**: flip `AI_STUB=false` in the worker Lambda env vars and redeploy. From that point every new submission gets a real Gemini call. Already-scored apps stay at their stub scores until manually re-triggered.
 - **Rubric in code**: Phase 1 stores the rubric prompt as a Python constant in `backend/app/ai_rubric.py`. Phase 2 migrates it to a `scoring_md` DB table with versioning + admin editor (the spec's L2 scoring.md UI).
-- **Failure handling**: on AI error, status stays `ai_screening`, `ai_screening.error` is set, leadership sees a "Re-trigger" button.
-- **No retries**: Phase 1 doesn't auto-retry. Manual re-trigger from leadership UI only.
+- **Idempotency**: SQS at-least-once delivery means a message could be processed twice. Safe because `ai_screening` has `UNIQUE (application_id, application_track)` — second worker run upserts over the first. Status transitions are also idempotent (writing `under_review` over `under_review` is a no-op).
+- **Failure handling**:
+  - First 2 retries: SQS redelivers automatically with backoff
+  - 3rd failure: message lands in DLQ
+  - Dashboard shows affected applications with "AI scoring failed — re-trigger" chip
+  - Re-trigger sends a fresh SQS message; DLQ message stays for audit
+- **Stub mode + real Gemini coexist**: even with stub default, the OpenRouter call path is fully written and tested in CI. Flipping the env var is the *only* change needed to go live.
+
+### 7.4 Frontend impact of async AI
+
+The post-submit screen needs to handle the "AI not yet complete" state. Concretely:
+
+- Immediately after submit, applicant lands on the existing submission-receipt screen. AI score is NULL.
+- For the applicant's "My Application" status page (Phase 2), we'll show "Application under review · AI screening in progress" until status flips.
+- For the leadership dashboard, applications with `status=ai_screening` show a small pulsing "processing" chip (per spec component 8.2 — `PROCESSING (cyan, pulsing)`). They auto-disappear on next dashboard refresh once status moves to `under_review`.
+- Phase 1 uses **manual refresh** on the leadership dashboard (no realtime). With stub mode the gap is ~10ms; with real Gemini it's 3–8s. Phase 2 wires Supabase Realtime subscriptions if leadership reports stale-data complaints.
+
+### 7.5 Cost envelope (real Gemini, post-stub)
+
+- Per scoring call: ~3000 input + ~500 output tokens × Gemini Flash pricing = **~$0.0003 per submission**
+- 2000-app cohort = **~$0.60 per cohort**
+- SQS messages: $0.40 per million → **effectively $0** at this volume
+- Worker Lambda invocations: included in existing free tier or pennies per cohort
+
+Total ongoing AI cost = **under $1 per cohort** at current scale.
 
 ### 7.3 Out-of-scope for Phase 1 AI
 
@@ -505,9 +562,15 @@ Migration `014_admin_platform_phase1.sql` already applied to staging Supabase.
 ### Step 5 — Reviewer scoring screen (Phase 1.5)
 - Builds on the inbox. The 6-slider scoring form is in spec R-2.
 
-### Step 6 — AI pipeline
-- Stub mode first (`AI_STUB=true`) for the entire dashboard data flow.
-- Real `google/gemini-flash-latest` call wired with a placeholder rubric prompt.
+### Step 6 — AI pipeline (SQS + worker)
+- Add SQS queue + DLQ to SAM template.
+- Build `backend/app/ai_worker.py` with `lambda_handler(event, context)`.
+- Wire IAM policies: API Lambda gets SendMessage, worker Lambda gets ReceiveMessage + DeleteMessage.
+- Submit endpoint enqueues on `status=submitted`.
+- Worker writes `ai_screening` row + transitions to `under_review`.
+- Stub mode (`AI_STUB=true`) wired but real Gemini call also fully implemented and CI-tested behind the flag.
+- CloudWatch alarm on DLQ depth.
+- Dashboard chip for `processing` status, "Re-trigger" button on failed apps.
 
 ### Step 7 — Email notifications + audit + edge cases
 - Wire Resend templates per § 8.
@@ -524,7 +587,9 @@ Migration `014_admin_platform_phase1.sql` already applied to staging Supabase.
 
 | Risk | Mitigation |
 |---|---|
-| Lambda 29s timeout when Gemini is slow | If we observe >20s p95 latency, move AI calls to a separate worker Lambda via SQS. For Phase 1 we accept inline calls + assume Gemini Flash holds <10s. |
+| SQS message lost mid-processing (worker Lambda dies before deleting) | SQS visibility timeout (300s) means message reappears after worker death; max 3 retries before DLQ. Idempotent write via `ai_screening` UNIQUE constraint prevents double-scoring. |
+| DLQ fills up silently if no one watches | CloudWatch alarm fires the moment DLQ depth > 0; leadership dashboard shows a red banner with affected app count. |
+| Deadline-day surge (500+ concurrent submits) | SQS buffers infinitely; worker Lambda concurrency capped at 10 to protect OpenRouter rate limits — applications get scored within a few minutes, not a few seconds, but submit endpoint stays <500ms throughout. |
 | Cross-track FK polymorphism (no DB-level FK from reviews to tir_applications/sip_applications) | Validate at API layer on every write. Add a Postgres trigger in Phase 2 if integrity drift becomes a problem. |
 | Last-admin lockout | Hard-coded backend protection (§ 9). Plus: first admin is seeded directly in Supabase, never deletable through the API. |
 | Stub AI scores look "fake" in screenshots for board demos | Seed script generates AI scores that mirror real distributions (5.5 ± 1.2 with category-correlation). Toggleable via env. |
@@ -550,7 +615,7 @@ Migration `014_admin_platform_phase1.sql` already applied to staging Supabase.
 4. ⬜ Leadership signs in, sees the dashboard wired to real data (≥40 synthetic apps), filters by industry + status, opens an app drawer, assigns 2 reviewers, moves the status to shortlist after both reviewers submit.
 5. ⬜ Every state change above appears in the audit log within 2 seconds.
 6. ⬜ Email is sent at every key transition (visible in Resend dashboard).
-7. ⬜ AI pipeline (stubbed) writes an `ai_screening` row on every submit and the dashboard charts populate from it.
+7. ⬜ AI pipeline: submit endpoint returns 200 in <500ms; worker Lambda picks up the SQS message, writes `ai_screening` row, transitions status to `under_review`. With `AI_STUB=true` this happens in <2s; with real Gemini in 3–8s. DLQ stays empty under normal load.
 8. ⬜ Role + capability enforcement: a reviewer who tries to hit `/leadership/applications` gets 403.
 9. ⬜ Last-admin protection: attempting to revoke the last admin role returns 409.
 10. ⬜ Lighthouse mobile score on `/apply/signin` and `/admin/dashboard` ≥ 85.
