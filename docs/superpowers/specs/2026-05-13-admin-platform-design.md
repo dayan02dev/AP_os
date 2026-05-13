@@ -4,31 +4,54 @@
 **Branch**: `staging-role_based_dashboard` (forked from `main`)
 **Target Supabase**: staging (`exqmxvdtcsvpgtftwjml`)
 **Target Lambda**: staging (`artpark-eir-api-staging`)
-**Scope**: P0 features from the ARTPARK OS Selection System spec, narrowed to **Leadership Dashboard + Admin User Management**.
-**Canonical references**: `ARTPARK_OS_Evaluation System [in depth latest].pdf`, `ARTPARK_OS_UX_UI_Specification evaluation.pdf`, `UI_AP_OS_doc.pdf`.
+**Scope**: build the two surfaces shown in the team's UI screenshots — **Leadership Dashboard** and **Admin User-Management page** — wired to real data, plus the minimum backend + reviewer plumbing those screens depend on.
+
+### Source of truth
+
+> **The team's UI screenshots are the canonical specification.** The PDFs (`ARTPARK_OS_Evaluation System`, `UX/UI Specification`, `Full Proposal`) are *context* — they describe the holistic Selection System we're building toward over several phases, not what Phase 1 ships. Where the PDFs and screenshots disagree on Phase 1 scope, **the screenshots win**.
+>
+> Concretely: features described in the PDFs but **not** visible in the screenshots are deferred:
+> - Jury portal, psychometry, scoring.md editor, cohort analytics dashboard
+> - Cohort Manager portal + role
+> - Audit log feed page (the table + capability stay; no UI surface in Phase 1)
+> - AI-vs-human variance flags + override-with-reason flow at Gate 1
+> - Mentor + Founder dashboards
+> - Multi-cohort archive
+>
+> The **reviewer experience** is not in the screenshots either. Phase 1 creates reviewer *assignments* (so leadership's "Assign reviewer" button is functional) and sends reviewers an email — but the reviewer scoring UI lands in **Phase 1.5** as the immediate next ship, before Phase 2 begins.
 
 ---
 
 ## 1. Goal
 
-Ship a foundation that lets the team move applicant submissions through the first four layers of the Selection System pipeline:
+Ship the two surfaces shown in the team's UI screenshots, wired to real data on the staging Supabase, with the backend infrastructure they depend on. The applicant wizard flow stays as-is; what changes is everything *around* it: who can see the data, who can act on it, and how those actions ripple through the system.
 
-```
-L1 Intake → L2 AI Evaluation → L3 Human Review → L4 Gate 1 (Admin/Leadership decision)
-```
+### Two primary surfaces (from screenshots)
 
-Two user-facing surfaces in Phase 1:
+1. **Leadership Dashboard** (`/admin/dashboard`)
+   - Header: track badge, user info, "EXPORT CSV", "SWITCH ROLE"
+   - Two tabs: **Dashboard** (5 metric cards + pipeline funnel + AI score distribution + score components + industry breakdown + status grid) and **Applications** (sortable table + filter pills + search + per-row drawer with "Open full review", "Assign reviewer", "Move to shortlist")
+   - All charts and counts come from real DB queries against the staging Supabase
+   - Already prototyped in `leadership.jsx` (703 LOC) — Phase 1 wires it up
 
-1. **Leadership Dashboard** — eagle view of every application: metrics, funnel, AI score distribution, score components, industry breakdown, status grid, full applications table with filtering + per-application drawer. *Already prototyped — Phase 1 wires it to real data.*
-2. **Admin User Management page** — a profile-style page where Admin grants/revokes roles, edits user identity, resets passwords. Mirrors the existing self-service "Profile" component in a `mode="admin"` variant.
+2. **Admin User-Management page** (`/admin/users/:userId`)
+   - Section 01: Personal information (full name, email immutable, phone, organisation, role/title) + Save changes
+   - Section 02: Active role panel showing all 6 role cards — in admin mode the verb is **GRANT / REVOKE** (in self-service mode it would be **SWITCH**)
+   - Section 03: Change password (current / new / confirm + Update password button)
+   - Section 04: Sign out
+   - Reused as a shared `ProfileShell` component with `mode="self" | "admin"` variants
 
-Three deferred surfaces in Phase 1 (placeholders only — routes exist, screens return "coming soon"):
+### Backend the screenshots depend on
 
-- Reviewer dashboard (R-1, R-2 in spec)
-- Application detail / full review page (A-2 in spec)
-- Reviewer assignment flow (A-3 in spec, used from the leadership drawer)
+- 6-role multi-role schema + `require_capability()` enforcement
+- Leadership's drawer buttons need destinations: a reviewer-picker (modal), a status-transition endpoint, an application-detail page
+- Email notifications on status transitions + on reviewer assignment
+- AI screening pipeline (SQS + worker Lambda, stub mode default) so the dashboard's AI score charts have real rows to read from
+- Immutable audit log of every state change (no UI page in Phase 1 — table + capability ready for Phase 2's audit feed)
 
-Everything later (psychometry, jury, scoring.md editor, cohort analytics, mentor + founder portals) is **out of scope for Phase 1**.
+### Phase 1.5 — the next ship after Phase 1
+
+The reviewer experience: inbox + scoring screen with 5 sliders + Yes/Maybe/No. Built as a fast follow once leadership has been using Phase 1 long enough to inform the reviewer UI's details. **Not in Phase 1 acceptance**, but **explicitly the very next ship** before any Phase 2 work.
 
 ---
 
@@ -323,7 +346,7 @@ Built into `frontend/src/router.jsx`:
   /admin/applications           → applications list (mirrored from dashboard's Apps tab)
   /admin/applications/:track/:id → full app detail (Phase 1 stub, real in Phase 2)
   /admin/profile                → Profile (self-service, slim variant)
-  /admin/audit                  → audit log feed (leadership + admin)
+  (no audit-feed page in Phase 1 — table + capability exist for Phase 2)
 
 /reviewer                       → ReviewerAppShell (protected: reviewer)
   /reviewer/inbox               → list of assigned apps (Phase 1 stub)
@@ -343,7 +366,7 @@ frontend/src/
 │   │   ├── AdminAddUser.jsx
 │   │   ├── ApplicationsList.jsx
 │   │   ├── ApplicationDetail.jsx      ← Phase 1 stub
-│   │   └── AuditFeed.jsx
+│   │   └── (no AuditFeed page in Phase 1)
 │   └── reviewer/
 │       ├── ReviewerAppShell.jsx
 │       ├── ReviewerInbox.jsx
