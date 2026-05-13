@@ -139,3 +139,41 @@ async def create_user(
         "temp_password": None if body.send_invite else temp_password,
         "invite_sent": body.send_invite,
     }
+
+
+@router.get(
+    "",
+    dependencies=[Depends(require_capability("manage_users"))],
+)
+async def list_users(
+    role: str | None = None,
+    search: str | None = None,
+    limit: int = 200,
+):
+    """List users with optional filters. Joins profiles + user_roles."""
+    client = get_admin_client()
+
+    q = client.table("profiles").select(
+        "id, email, full_name, phone, location_city, active_role, created_at"
+    )
+    if search:
+        q = q.or_(f"email.ilike.%{search}%,full_name.ilike.%{search}%")
+    q = q.order("created_at", desc=True).limit(limit)
+    profs = (q.execute()).data or []
+
+    rls = (
+        client.table("user_roles")
+        .select("user_id, role, granted_at")
+        .execute()
+    ).data or []
+    roles_by_user: dict[str, list[str]] = {}
+    for r in rls:
+        roles_by_user.setdefault(r["user_id"], []).append(r["role"])
+
+    rows = []
+    for p in profs:
+        user_roles = roles_by_user.get(p["id"], [])
+        if role and role not in user_roles:
+            continue
+        rows.append({**p, "roles": user_roles})
+    return {"users": rows, "total": len(rows)}
