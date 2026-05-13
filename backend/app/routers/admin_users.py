@@ -1,0 +1,141 @@
+"""Admin endpoints for user provisioning + role management.
+
+Implements spec §5.1. Every endpoint is gated by an admin capability:
+  - manage_users for list/create/edit
+  - grant_role / revoke_role for role mutations
+  - reset_password for password reset
+
+Session 1 ships only POST /admin/users (the vertical-slice minimum).
+Session 2 appends list/detail/edit/grant/revoke/reset-password to this
+file — see docs/superpowers/plans/2026-05-13-session-division.md.
+"""
+
+from __future__ import annotations
+
+import logging
+import secrets
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, EmailStr, Field
+
+from ..deps import get_current_user
+from ..rbac import ROLE_CAPABILITIES, require_capability
+from ..supabase_client import get_admin_client
+
+log = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/admin/users", tags=["admin"])
+
+
+# ─── Request models ─────────────────────────────────────────────────
+
+
+class CreateUserRequest(BaseModel):
+    email: EmailStr
+    full_name: str = Field(..., min_length=1, max_length=200)
+    phone: str | None = Field(default=None, max_length=30)
+    # organization / role_title aren't in the `profiles` schema in Phase 1.
+    # We accept them in the request so the admin form is complete, but they
+    # don't persist anywhere yet — Phase 2 will add columns + plumbing.
+    organization: str | None = Field(default=None, max_length=200)
+    role_title: str | None = Field(default=None, max_length=200)
+    roles: list[str] = Field(..., min_length=1, max_length=6)
+    send_invite: bool = Field(default=True)
+
+
+# ─── Endpoints ──────────────────────────────────────────────────────
+
+
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_capability("manage_users"))],
+)
+async def create_user(
+    body: CreateUserRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Create a new auth user, write a profile row, assign roles, and
+    optionally send a magic-link invite email via Supabase.
+
+    Stores `granted_by` = current admin's user_id on every user_roles row
+    for audit purposes (we'll fold this into audit_log_v2 in Task 15).
+    """
+    client = get_admin_client()
+
+    valid_roles = set(ROLE_CAPABILITIES.keys())
+    bad = [r for r in body.roles if r not in valid_roles]
+    if bad:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "invalid_role",
+                "invalid": bad,
+                "valid": sorted(valid_roles),
+            },
+        )
+
+    # Supabase's password policy enforces upper+lower+digit+symbol.
+    # token_urlsafe gives upper+lower+digit but no symbol — guarantee
+    # a valid password by appending a fixed symbol+digit+case mix. Only
+    # consumed on the non-invite path; the magic-link path lets the
+    # invitee pick their own password.
+    temp_password = secrets.token_urlsafe(16) + "!1Aa"
+
+    try:
+        if body.send_invite:
+            invite = client.auth.admin.invite_user_by_email(body.email)
+            new_user = invite.user
+        else:
+            create = client.auth.admin.create_user({
+                "email": body.email,
+                "password": temp_password,
+                "email_confirm": True,
+            })
+            new_user = create.user
+    except Exception as exc:
+        msg = str(exc)
+        if "already" in msg.lower() or "registered" in msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "email_exists", "email": body.email},
+            )
+        log.error(
+            "admin create_user failed",
+            extra={"email": body.email, "err": msg[:200]},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "auth_create_failed", "message": msg[:200]},
+        )
+
+    new_user_id = new_user.id
+
+    # Upsert profile row. handle_new_user trigger may have created an
+    # empty profile; we fill the fields the admin provided. We do NOT
+    # write organization/role_title — see CreateUserRequest comment.
+    client.table("profiles").upsert({
+        "id": new_user_id,
+        "email": body.email,
+        "full_name": body.full_name,
+        "phone": body.phone,
+    }).execute()
+
+    rows = [
+        {
+            "user_id": new_user_id,
+            "role": r,
+            "granted_by": current_user["user_id"],
+        }
+        for r in body.roles
+    ]
+    client.table("user_roles").insert(rows).execute()
+
+    return {
+        "id": new_user_id,
+        "email": body.email,
+        "full_name": body.full_name,
+        "roles": body.roles,
+        "temp_password": None if body.send_invite else temp_password,
+        "invite_sent": body.send_invite,
+    }

@@ -30,6 +30,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from .config import settings
 from .routers import (
     admin,
+    admin_users,
     application_templates,
     applications,
     auth,
@@ -143,6 +144,7 @@ app.include_router(application_templates.router)
 app.include_router(support.router)
 app.include_router(waitlist.router)
 app.include_router(admin.router)
+app.include_router(admin_users.router)
 
 log.info(
     "app ready",
