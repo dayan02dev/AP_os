@@ -36,6 +36,7 @@ from .routers import (
     auth,
     evidence_files,
     health,
+    leadership,
     milestone_files,
     resume,
     support,
@@ -145,6 +146,7 @@ app.include_router(support.router)
 app.include_router(waitlist.router)
 app.include_router(admin.router)
 app.include_router(admin_users.router)
+app.include_router(leadership.router)
 
 log.info(
     "app ready",
