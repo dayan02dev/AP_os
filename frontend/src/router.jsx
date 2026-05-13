@@ -27,6 +27,7 @@ import SignInPage from "./pages/SignInPage.jsx";
 import SignUpPage from "./pages/SignUpPage.jsx";
 import SupportPage from "./pages/SupportPage.jsx";
 import VerifyPage from "./pages/VerifyPage.jsx";
+import AdminDashboardStub from "./pages/admin/AdminDashboardStub.jsx";
 
 const SECTION_SLUGS = [
   "basic",
@@ -86,6 +87,17 @@ export default function AppRoutes() {
       <Route
         path="/apply/set-password"
         element={<ProtectedRoute><SetPasswordPage /></ProtectedRoute>}
+      />
+
+      {/* Admin / leadership shell (Phase 1). Session 5 replaces the
+          /admin/dashboard target with the real Leadership Dashboard. */}
+      <Route
+        path="/admin/dashboard"
+        element={
+          <ProtectedRoute>
+            <AdminDashboardStub />
+          </ProtectedRoute>
+        }
       />
 
       <Route path="*" element={<NotFoundPage />} />

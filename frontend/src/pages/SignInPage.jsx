@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
+import { shouldRouteToAdminShell } from "../lib/rbac.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 
@@ -45,10 +46,21 @@ export default function SignInPage() {
     }
     setLoading(true);
     try {
-      await signInWithPassword(trimmedEmail, password);
-      const target =
-        nextParam && nextParam.startsWith("/apply/") ? nextParam : "/apply";
-      navigate(target, { replace: true });
+      const me = await signInWithPassword(trimmedEmail, password);
+      // Honour ?next= when it points at a known protected surface.
+      // Otherwise branch by role: admin/leadership land on the admin
+      // shell; everyone else (applicant-only) falls through to /apply.
+      // Task 8 will route reviewers separately to /reviewer/inbox.
+      const allowedNext =
+        nextParam &&
+        (nextParam.startsWith("/apply/") || nextParam.startsWith("/admin/"));
+      if (allowedNext) {
+        navigate(nextParam, { replace: true });
+      } else if (shouldRouteToAdminShell(me?.roles)) {
+        navigate("/admin/dashboard", { replace: true });
+      } else {
+        navigate("/apply", { replace: true });
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setLocalError(
