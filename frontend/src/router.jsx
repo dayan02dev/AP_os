@@ -29,6 +29,7 @@ import SupportPage from "./pages/SupportPage.jsx";
 import VerifyPage from "./pages/VerifyPage.jsx";
 import AdminDashboardStub from "./pages/admin/AdminDashboardStub.jsx";
 import AdminAddUser from "./pages/admin/AdminAddUser.jsx";
+import ReviewerInboxStub from "./pages/reviewer/ReviewerInboxStub.jsx";
 
 const SECTION_SLUGS = [
   "basic",
@@ -105,6 +106,16 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <AdminAddUser />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Reviewer surface (Phase 1 stub; scoring UI ships in Phase 1.5). */}
+      <Route
+        path="/reviewer/inbox"
+        element={
+          <ProtectedRoute>
+            <ReviewerInboxStub />
           </ProtectedRoute>
         }
       />

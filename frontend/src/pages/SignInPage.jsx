@@ -48,16 +48,26 @@ export default function SignInPage() {
     try {
       const me = await signInWithPassword(trimmedEmail, password);
       // Honour ?next= when it points at a known protected surface.
-      // Otherwise branch by role: admin/leadership land on the admin
-      // shell; everyone else (applicant-only) falls through to /apply.
-      // Task 8 will route reviewers separately to /reviewer/inbox.
+      // Otherwise branch by role, in this priority order:
+      //   admin / leadership   → /admin/dashboard
+      //   reviewer (no admin)  → /reviewer/inbox
+      //   mentor (no above)    → /mentor/founders  (Phase 2 — page TBD)
+      //   else (applicant)     → /apply
       const allowedNext =
         nextParam &&
-        (nextParam.startsWith("/apply/") || nextParam.startsWith("/admin/"));
+        (nextParam.startsWith("/apply/") ||
+          nextParam.startsWith("/admin/") ||
+          nextParam.startsWith("/reviewer/"));
+      const roles = me?.roles || [];
       if (allowedNext) {
         navigate(nextParam, { replace: true });
-      } else if (shouldRouteToAdminShell(me?.roles)) {
+      } else if (shouldRouteToAdminShell(roles)) {
         navigate("/admin/dashboard", { replace: true });
+      } else if (roles.includes("reviewer")) {
+        navigate("/reviewer/inbox", { replace: true });
+      } else if (roles.includes("mentor")) {
+        // Mentor dashboard is Phase 2; for now treat as applicant fallback.
+        navigate("/apply", { replace: true });
       } else {
         navigate("/apply", { replace: true });
       }
