@@ -37,19 +37,13 @@ from . import openrouter_client
 
 log = logging.getLogger(__name__)
 
-# Status values in the state machine.
+# Status values in the state machine (spec §4.8). The worker only acts on
+# rows in `submitted`; anything past that is treated as already-screened
+# and skipped (idempotency). This is simpler and safer than enumerating
+# every downstream status — if a row left `submitted` it shouldn't be
+# touched by the screener again.
 _STATUS_SUBMITTED = "submitted"
-_STATUS_AI_SCREENING = "ai_screening"
 _STATUS_UNDER_REVIEW = "under_review"
-
-# Statuses at or beyond under_review — treat as already-processed.
-_TERMINAL_STATUSES: set[str] = {
-    _STATUS_UNDER_REVIEW,
-    "reviewed",
-    "accepted",
-    "rejected",
-    "waitlisted",
-}
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
@@ -128,38 +122,12 @@ def _advance_status(
     application_id: str,
     application_track: str,
 ) -> None:
-    """Advance the application to under_review and stamp ai_screened_at if the
-    column exists.
-
-    To keep this robust across schema variations we attempt to stamp
-    ai_screened_at; if the column is absent Supabase / PostgREST will raise
-    an error, so we fall back to updating only status.
-    """
+    """Advance the application from submitted to under_review."""
     table = f"{application_track}_applications"
-    now = datetime.now(timezone.utc).isoformat()
-    try:
-        client.table(table).update({
-            "status": _STATUS_UNDER_REVIEW,
-            "ai_screened_at": now,
-        }).eq("id", application_id).execute()
-        log.info(
-            "Advanced status → under_review (with ai_screened_at) for %s",
-            application_id,
-        )
-    except Exception as exc:
-        # ai_screened_at column may not exist in all schema versions.
-        log.warning(
-            "Could not stamp ai_screened_at (column may be absent): %s — "
-            "retrying with status-only update",
-            exc,
-        )
-        client.table(table).update({
-            "status": _STATUS_UNDER_REVIEW,
-        }).eq("id", application_id).execute()
-        log.info(
-            "Advanced status → under_review (status only) for %s",
-            application_id,
-        )
+    client.table(table).update({
+        "status": _STATUS_UNDER_REVIEW,
+    }).eq("id", application_id).execute()
+    log.info("Advanced status → under_review for %s", application_id)
 
 
 def _process_record(record: dict) -> None:
@@ -195,7 +163,7 @@ def _process_record(record: dict) -> None:
     res = (
         client.table("tir_applications")
         .select(
-            "id, status, basic_full_name, basic_org_name, basic_org, "
+            "id, status, basic_full_name, basic_org, "
             "problem_describe, solution_describe, solution_core_tech"
         )
         .eq("id", application_id)
@@ -211,10 +179,10 @@ def _process_record(record: dict) -> None:
 
     current_status: str = app_row.get("status", "")
 
-    # ── 2. Idempotency: already processed? ────────────────────────────────
-    if current_status in _TERMINAL_STATUSES:
+    # ── 2. Idempotency: only screen rows that are still in `submitted` ────
+    if current_status != _STATUS_SUBMITTED:
         log.info(
-            "application_id=%s is already in status=%s — skipping (idempotent)",
+            "application_id=%s is in status=%s (not submitted) — skipping",
             application_id,
             current_status,
         )
