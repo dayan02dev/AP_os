@@ -165,6 +165,44 @@ def test_list_users_role_filter_narrows_results(client, monkeypatch, _clear_over
     assert body["users"][0]["roles"] == ["reviewer"]
 
 
+def test_list_users_search_uses_ilike_filter(client, monkeypatch, _clear_overrides):
+    """Exercise the `search=...` query param so the q.or_(email.ilike, full_name.ilike)
+    branch in list_users is covered. The fake _FakeQuery.or_() is a no-op, so we
+    pre-filter the profiles rows down to the expected match and just verify the
+    handler doesn't crash on the search path and merges roles correctly."""
+    fake = _FakeAdminClient(
+        rows={
+            "profiles": [
+                {
+                    "id": "u-1",
+                    "email": "foo@x.com",
+                    "full_name": "Foo Bar",
+                    "phone": None,
+                    "location_city": "Bangalore",
+                    "active_role": "admin",
+                    "created_at": "2026-05-01T00:00:00Z",
+                },
+            ],
+            "user_roles": [
+                {"user_id": "u-1", "role": "admin", "granted_at": "2026-05-01T00:00:00Z"},
+            ],
+        }
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.get(
+        "/admin/users?search=foo",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["total"] == 1
+    assert body["users"][0]["id"] == "u-1"
+    assert body["users"][0]["email"] == "foo@x.com"
+    assert body["users"][0]["roles"] == ["admin"]
+
+
 def test_list_users_requires_manage_users_capability(client, _clear_overrides):
     app.dependency_overrides[get_current_user] = _override_user(["reviewer"])
 
