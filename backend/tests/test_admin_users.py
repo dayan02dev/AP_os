@@ -42,6 +42,8 @@ class _FakeQuery:
     def range(self, *_args, **_kwargs): return self
     def or_(self, *_args, **_kwargs): return self
     def update(self, *_args, **_kwargs): return self
+    def insert(self, *_args, **_kwargs): return self
+    def delete(self, *_args, **_kwargs): return self
 
     def execute(self):
         return SimpleNamespace(data=self._data, count=self._count)
@@ -359,6 +361,165 @@ def test_patch_user_requires_manage_users_capability(client, _clear_overrides):
         "/admin/users/u-1",
         headers={"Authorization": "Bearer test-token"},
         json={"full_name": "X"},
+    )
+    assert res.status_code == 403
+    assert res.json()["detail"]["code"] == "missing_capability"
+
+
+# ─── Unit tests: POST /admin/users/{user_id}/roles ─────────────────────
+
+
+class _RaisingInsertQuery(_FakeQuery):
+    """Variant whose insert().execute() raises a configured exception."""
+
+    def __init__(self, error_msg: str):
+        super().__init__()
+        self._error_msg = error_msg
+        self._insert_called = False
+
+    def insert(self, *_args, **_kwargs):
+        self._insert_called = True
+        return self
+
+    def execute(self):
+        if self._insert_called:
+            raise Exception(self._error_msg)
+        return SimpleNamespace(data=self._data, count=self._count)
+
+
+class _FakeAdminClientThatRaises:
+    """Admin client whose user_roles.insert() raises a configured error."""
+
+    def __init__(self, error_msg: str):
+        self._error_msg = error_msg
+
+    def table(self, _name: str) -> _RaisingInsertQuery:
+        return _RaisingInsertQuery(self._error_msg)
+
+
+def test_grant_role_success(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(rows={"user_roles": []})
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/u-1/roles",
+        headers={"Authorization": "Bearer test-token"},
+        json={"role": "reviewer"},
+    )
+    assert res.status_code == 201, res.text
+    assert res.json() == {"ok": True, "role": "reviewer"}
+
+
+def test_grant_role_invalid_role(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(rows={"user_roles": []})
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/u-1/roles",
+        headers={"Authorization": "Bearer test-token"},
+        json={"role": "wizard"},
+    )
+    assert res.status_code == 400
+    assert res.json()["detail"]["code"] == "invalid_role"
+
+
+def test_grant_role_duplicate_returns_409(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClientThatRaises(
+        "duplicate key value violates unique constraint ... 23505"
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/u-1/roles",
+        headers={"Authorization": "Bearer test-token"},
+        json={"role": "reviewer"},
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "already_granted"
+
+
+def test_grant_role_requires_grant_role_capability(client, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user(["reviewer"])
+
+    res = client.post(
+        "/admin/users/u-1/roles",
+        headers={"Authorization": "Bearer test-token"},
+        json={"role": "reviewer"},
+    )
+    assert res.status_code == 403
+    assert res.json()["detail"]["code"] == "missing_capability"
+
+
+# ─── Unit tests: DELETE /admin/users/{user_id}/roles/{role} ────────────
+
+
+def test_revoke_role_success(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(rows={"user_roles": []})
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.delete(
+        "/admin/users/u-1/roles/reviewer",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json() == {"ok": True, "role": "reviewer"}
+
+
+def test_revoke_role_invalid_role_returns_400(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(rows={"user_roles": []})
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.delete(
+        "/admin/users/u-1/roles/wizard",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 400
+    assert res.json()["detail"]["code"] == "invalid_role"
+
+
+def test_revoke_admin_when_only_one_admin_blocked(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(
+        rows={"user_roles": []},
+        counts={"user_roles": 1},
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.delete(
+        "/admin/users/u-1/roles/admin",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["code"] == "last_admin_protection"
+
+
+def test_revoke_admin_with_multiple_admins_succeeds(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(
+        rows={"user_roles": []},
+        counts={"user_roles": 2},
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.delete(
+        "/admin/users/u-1/roles/admin",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json() == {"ok": True, "role": "admin"}
+
+
+def test_revoke_role_requires_revoke_role_capability(client, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user(["reviewer"])
+
+    res = client.delete(
+        "/admin/users/u-1/roles/reviewer",
+        headers={"Authorization": "Bearer test-token"},
     )
     assert res.status_code == 403
     assert res.json()["detail"]["code"] == "missing_capability"

@@ -221,3 +221,64 @@ async def patch_user(user_id: str, body: PatchUserRequest):
     patch.pop("role_title", None)
     client.table("profiles").update(patch).eq("id", user_id).execute()
     return {"ok": True, "patched": list(patch.keys())}
+
+
+class GrantRoleRequest(BaseModel):
+    role: str
+
+
+@router.post(
+    "/{user_id}/roles",
+    dependencies=[Depends(require_capability("grant_role"))],
+    status_code=status.HTTP_201_CREATED,
+)
+async def grant_role(
+    user_id: str,
+    body: GrantRoleRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    if body.role not in ROLE_CAPABILITIES:
+        raise HTTPException(400, detail={"code": "invalid_role", "role": body.role})
+    client = get_admin_client()
+    try:
+        client.table("user_roles").insert({
+            "user_id": user_id, "role": body.role,
+            "granted_by": current_user["user_id"],
+        }).execute()
+    except Exception as exc:
+        # Likely PK violation = already granted
+        if "duplicate" in str(exc).lower() or "23505" in str(exc):
+            raise HTTPException(409, detail={"code": "already_granted", "role": body.role})
+        raise
+    return {"ok": True, "role": body.role}
+
+
+@router.delete(
+    "/{user_id}/roles/{role}",
+    dependencies=[Depends(require_capability("revoke_role"))],
+)
+async def revoke_role(user_id: str, role: str):
+    if role not in ROLE_CAPABILITIES:
+        raise HTTPException(400, detail={"code": "invalid_role", "role": role})
+
+    client = get_admin_client()
+
+    # Last-admin protection: if revoking 'admin' from the only remaining
+    # admin, refuse. Counts admin assignments across all users; if removing
+    # this one leaves zero, block.
+    if role == "admin":
+        total_admins = (
+            client.table("user_roles").select("user_id", count="exact")
+            .eq("role", "admin").execute()
+        ).count or 0
+        if total_admins <= 1:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "last_admin_protection",
+                    "message": "Cannot revoke the last admin role.",
+                },
+            )
+
+    client.table("user_roles").delete().eq("user_id", user_id).eq("role", role).execute()
+    return {"ok": True, "role": role}
