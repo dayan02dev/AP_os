@@ -1,21 +1,9 @@
 // StatusGrid — clickable grid of status cells, one per canonical status.
 // `statusCounts` is the backend's stats.status_counts array, which is the
 // source of truth for both the IDs and the labels. The bucket-color dot
-// is derived from STATUS_BUCKET (see same map in ApplicationsTable).
+// is derived from the shared STATUS_BUCKET map in statusBuckets.js.
 
-const STATUS_BUCKET = {
-  submitted:    "open",
-  ai_screening: "review",
-  under_review: "review",
-  evaluated:    "review",
-  shortlisted:  "advance",
-  interview:    "advance",
-  offered:      "decision",
-  onboarded:    "decision",
-  rejected:     "decision",
-  waitlisted:   "decision",
-  withdrawn:    "decision",
-};
+import { bucketFor } from "./statusBuckets.js";
 
 export default function StatusGrid({ statusCounts, onFilter, activeStatus }) {
   if (!statusCounts || statusCounts.length === 0) {
@@ -29,7 +17,7 @@ export default function StatusGrid({ statusCounts, onFilter, activeStatus }) {
   return (
     <div className="lp-status-grid">
       {statusCounts.map((s) => {
-        const bucket = STATUS_BUCKET[s.id] || "open";
+        const bucket = bucketFor(s.id);
         const isActive = activeStatus === s.id;
         return (
           <button

@@ -10,7 +10,7 @@
 // renders the paginated list + filter chips. Clicking a chart/pill in the
 // Dashboard tab flips to the Applications tab with that filter pre-applied.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../hooks/useAuth.jsx";
 import { leadershipApi } from "../../lib/leadershipApi.js";
 import "../../styles/leadership.css";
@@ -96,26 +96,18 @@ export default function LeadershipDashboard() {
     };
   }, []);
 
-  // ----- Debounce the search input -----
+  // ----- Debounce the search input. Reset offset alongside the new search
+  //       value so a typed query lands on page 1 of results. -----
   useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput), 300);
+    const t = setTimeout(() => {
+      setSearch(searchInput);
+      setOffset(0);
+    }, 300);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // ----- Refetch app list when filters change. Reset offset whenever a
-  //       filter or search changes (but not when only offset changes). -----
-  const lastFiltersKey = useRef(null);
-  const filtersKey = `${industry || ""}|${statusFilter || ""}|${trackFilter || ""}|${search}`;
+  // ----- Refetch app list whenever any filter or pagination input changes. -----
   useEffect(() => {
-    if (lastFiltersKey.current !== filtersKey) {
-      lastFiltersKey.current = filtersKey;
-      setOffset(0);
-    }
-  }, [filtersKey]);
-
-  useEffect(() => {
-    // Only fire when stats has resolved — avoids a duplicate flash on first
-    // paint where both stats + list fire simultaneously.
     let cancelled = false;
     setAppsLoading(true);
     setAppsError(null);
@@ -145,10 +137,12 @@ export default function LeadershipDashboard() {
     };
   }, [industry, statusFilter, trackFilter, search, offset]);
 
-  // ----- Filter-and-jump (Dashboard → Applications) -----
+  // ----- Filter-and-jump (Dashboard → Applications). Every filter change
+  //       resets offset to 0 here so the fetch effect fires exactly once. -----
   const filterAndShow = useCallback(
     (setter) => (val) => {
       setter(val);
+      setOffset(0);
       if (val) setView("applications");
     },
     []
@@ -365,7 +359,10 @@ export default function LeadershipDashboard() {
                 <button
                   type="button"
                   className={`lp-pill ${!industry ? "is-on" : ""}`}
-                  onClick={() => setIndustry(null)}
+                  onClick={() => {
+                    setIndustry(null);
+                    setOffset(0);
+                  }}
                 >
                   all
                 </button>
@@ -434,9 +431,10 @@ export default function LeadershipDashboard() {
                       type="button"
                       key={t}
                       className={`lp-seg-btn eir-mono ${trackFilter === t ? "is-on" : ""}`}
-                      onClick={() =>
-                        setTrackFilter(trackFilter === t ? null : t)
-                      }
+                      onClick={() => {
+                        setTrackFilter(trackFilter === t ? null : t);
+                        setOffset(0);
+                      }}
                     >
                       {t}
                     </button>
@@ -452,6 +450,7 @@ export default function LeadershipDashboard() {
                       setTrackFilter(null);
                       setSearchInput("");
                       setSearch("");
+                      setOffset(0);
                     }}
                   >
                     clear ×
@@ -465,7 +464,10 @@ export default function LeadershipDashboard() {
               <button
                 type="button"
                 className={`lp-pill ${!industry ? "is-on" : ""}`}
-                onClick={() => setIndustry(null)}
+                onClick={() => {
+                  setIndustry(null);
+                  setOffset(0);
+                }}
               >
                 all
               </button>
@@ -474,9 +476,10 @@ export default function LeadershipDashboard() {
                   type="button"
                   key={i.id}
                   className={`lp-pill ${industry === i.id ? "is-on" : ""}`}
-                  onClick={() =>
-                    setIndustry(industry === i.id ? null : i.id)
-                  }
+                  onClick={() => {
+                    setIndustry(industry === i.id ? null : i.id);
+                    setOffset(0);
+                  }}
                 >
                   {i.label}
                 </button>
@@ -488,7 +491,10 @@ export default function LeadershipDashboard() {
               <button
                 type="button"
                 className={`lp-pill ${!statusFilter ? "is-on" : ""}`}
-                onClick={() => setStatusFilter(null)}
+                onClick={() => {
+                  setStatusFilter(null);
+                  setOffset(0);
+                }}
               >
                 all
               </button>
@@ -497,9 +503,10 @@ export default function LeadershipDashboard() {
                   type="button"
                   key={s.id}
                   className={`lp-pill ${statusFilter === s.id ? "is-on" : ""}`}
-                  onClick={() =>
-                    setStatusFilter(statusFilter === s.id ? null : s.id)
-                  }
+                  onClick={() => {
+                    setStatusFilter(statusFilter === s.id ? null : s.id);
+                    setOffset(0);
+                  }}
                 >
                   {s.label}
                 </button>

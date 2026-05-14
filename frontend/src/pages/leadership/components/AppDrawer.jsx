@@ -4,33 +4,10 @@
 // reviewer_assignments, status_history). The action buttons at the bottom
 // are visible but no-op — Session 6 wires them.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
 import ComponentBars from "./ComponentBars.jsx";
-
-const STATUS_BUCKET = {
-  submitted:    "open",
-  ai_screening: "review",
-  under_review: "review",
-  evaluated:    "review",
-  shortlisted:  "advance",
-  interview:    "advance",
-  offered:      "decision",
-  onboarded:    "decision",
-  rejected:     "decision",
-  waitlisted:   "decision",
-  withdrawn:    "decision",
-};
-
-function StatusChip({ statusId, statusLabel }) {
-  const bucket = STATUS_BUCKET[statusId] || "open";
-  return (
-    <span className={`lp-chip lp-chip-${bucket}`}>
-      <span className={`lp-status-dot lp-status-${bucket}`} />
-      {statusLabel || statusId}
-    </span>
-  );
-}
+import StatusChip from "./StatusChip.jsx";
 
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -82,6 +59,7 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const panelRef = useRef(null);
 
   useEffect(() => {
     if (!row) return undefined;
@@ -108,6 +86,23 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
     };
   }, [row]);
 
+  // Modal a11y: Escape closes, body scroll is locked while drawer is mounted,
+  // and initial focus lands on the panel so keyboard users aren't stranded.
+  useEffect(() => {
+    if (!row) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    panelRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [row, onClose]);
+
   if (!row) return null;
 
   const application = detail?.application || null;
@@ -124,13 +119,21 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
 
   return (
     <div className="lp-drawer-back" onClick={onClose}>
-      <div className="lp-drawer" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="lp-drawer"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lp-drawer-title"
+        tabIndex={-1}
+        ref={panelRef}
+      >
         <div className="lp-drawer-head">
           <div>
             <div className="eir-mono eir-dim">
               {row.id?.slice(0, 8)} · {(row.track || "").toUpperCase()}
             </div>
-            <h3 className="lp-drawer-title">{fullName}</h3>
+            <h3 className="lp-drawer-title" id="lp-drawer-title">{fullName}</h3>
             <div className="eir-mono eir-dim">
               {org ? `${org} · ` : ""}
               {email}

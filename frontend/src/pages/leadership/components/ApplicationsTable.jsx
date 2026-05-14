@@ -6,20 +6,7 @@
 // limit/offset is owned by the parent (LeadershipDashboard).
 
 import { useMemo } from "react";
-
-const STATUS_BUCKET = {
-  submitted:    "open",
-  ai_screening: "review",
-  under_review: "review",
-  evaluated:    "review",
-  shortlisted:  "advance",
-  interview:    "advance",
-  offered:      "decision",
-  onboarded:    "decision",
-  rejected:     "decision",
-  waitlisted:   "decision",
-  withdrawn:    "decision",
-};
+import StatusChip from "./StatusChip.jsx";
 
 function scoreTier(score) {
   if (score >= 8) return "high";
@@ -42,16 +29,6 @@ function ScorePill({ score }) {
         />
       </span>
       <span className="eir-mono lp-score-n">{score.toFixed(1)}</span>
-    </span>
-  );
-}
-
-function StatusChip({ statusId, statusLabel }) {
-  const bucket = STATUS_BUCKET[statusId] || "open";
-  return (
-    <span className={`lp-chip lp-chip-${bucket}`}>
-      <span className={`lp-status-dot lp-status-${bucket}`} />
-      {statusLabel || statusId}
     </span>
   );
 }
