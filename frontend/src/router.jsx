@@ -30,6 +30,30 @@ import VerifyPage from "./pages/VerifyPage.jsx";
 import AdminDashboardStub from "./pages/admin/AdminDashboardStub.jsx";
 import AdminAddUser from "./pages/admin/AdminAddUser.jsx";
 import ReviewerInboxStub from "./pages/reviewer/ReviewerInboxStub.jsx";
+import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
+import { useAuth } from "./hooks/useAuth.jsx";
+import { hasCapability } from "./lib/rbac.js";
+
+// Capability gate for /leadership. ProtectedRoute already enforces auth;
+// this layer enforces the `view_stats` capability (leadership role).
+function LeadershipRoute() {
+  const { user } = useAuth();
+  const roles = user?.roles || [];
+  if (!hasCapability(roles, "view_stats")) {
+    return (
+      <div style={{ padding: 40, fontFamily: "system-ui" }}>
+        <h1>Access denied — leadership role required</h1>
+        <p>
+          You need the <code>leadership</code> role to view this page.
+        </p>
+        <p>
+          Your roles: <code>{roles.join(", ") || "(none)"}</code>
+        </p>
+      </div>
+    );
+  }
+  return <LeadershipDashboard />;
+}
 
 const SECTION_SLUGS = [
   "basic",
@@ -116,6 +140,16 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <ReviewerInboxStub />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Leadership dashboard (Session 5). Capability-gated to `view_stats`. */}
+      <Route
+        path="/leadership"
+        element={
+          <ProtectedRoute>
+            <LeadershipRoute />
           </ProtectedRoute>
         }
       />
