@@ -177,3 +177,47 @@ async def list_users(
             continue
         rows.append({**p, "roles": user_roles})
     return {"users": rows, "total": len(rows)}
+
+
+class PatchUserRequest(BaseModel):
+    full_name: str | None = Field(default=None, max_length=200)
+    phone: str | None = Field(default=None, max_length=30)
+    organization: str | None = Field(default=None, max_length=200)
+    role_title: str | None = Field(default=None, max_length=200)
+
+
+@router.get(
+    "/{user_id}",
+    dependencies=[Depends(require_capability("manage_users"))],
+)
+async def get_user(user_id: str):
+    client = get_admin_client()
+    prof = (
+        client.table("profiles").select("*").eq("id", user_id).limit(1).execute()
+    ).data
+    if not prof:
+        raise HTTPException(404, detail={"code": "user_not_found"})
+    p = prof[0]
+    rls = (
+        client.table("user_roles").select("role, granted_at, granted_by")
+        .eq("user_id", user_id).execute()
+    ).data or []
+    return {**p, "roles": rls}
+
+
+@router.patch(
+    "/{user_id}",
+    dependencies=[Depends(require_capability("manage_users"))],
+)
+async def patch_user(user_id: str, body: PatchUserRequest):
+    patch = body.model_dump(exclude_unset=True)
+    if not patch:
+        raise HTTPException(400, detail={"code": "empty_patch"})
+    client = get_admin_client()
+    # Map "organization" → "location_city" (existing column reuse)
+    if "organization" in patch:
+        patch["location_city"] = patch.pop("organization")
+    # role_title not yet a column — drop silently (forward-compat)
+    patch.pop("role_title", None)
+    client.table("profiles").update(patch).eq("id", user_id).execute()
+    return {"ok": True, "patched": list(patch.keys())}

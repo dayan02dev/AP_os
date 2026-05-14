@@ -41,6 +41,7 @@ class _FakeQuery:
     def limit(self, *_args, **_kwargs): return self
     def range(self, *_args, **_kwargs): return self
     def or_(self, *_args, **_kwargs): return self
+    def update(self, *_args, **_kwargs): return self
 
     def execute(self):
         return SimpleNamespace(data=self._data, count=self._count)
@@ -209,6 +210,155 @@ def test_list_users_requires_manage_users_capability(client, _clear_overrides):
     res = client.get(
         "/admin/users",
         headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 403
+    assert res.json()["detail"]["code"] == "missing_capability"
+
+
+# ─── Unit tests: GET /admin/users/{user_id} ────────────────────────────
+
+
+def test_get_user_returns_profile_and_roles(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(
+        rows={
+            "profiles": [
+                {
+                    "id": "u-1",
+                    "email": "a@b.com",
+                    "full_name": "A",
+                    "phone": "+91 1111",
+                    "location_city": "Bangalore",
+                    "active_role": "reviewer",
+                    "created_at": "2026-05-01T00:00:00Z",
+                },
+            ],
+            "user_roles": [
+                {
+                    "role": "reviewer",
+                    "granted_at": "2026-05-01T00:00:00Z",
+                    "granted_by": "u-admin",
+                },
+            ],
+        }
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.get(
+        "/admin/users/u-1",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["id"] == "u-1"
+    assert body["email"] == "a@b.com"
+    assert body["full_name"] == "A"
+    assert body["roles"] == [
+        {
+            "role": "reviewer",
+            "granted_at": "2026-05-01T00:00:00Z",
+            "granted_by": "u-admin",
+        }
+    ]
+
+
+def test_get_user_returns_404_for_missing_user(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(rows={"profiles": [], "user_roles": []})
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.get(
+        "/admin/users/nope",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 404
+    assert res.json()["detail"]["code"] == "user_not_found"
+
+
+def test_get_user_requires_manage_users_capability(client, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user(["reviewer"])
+
+    res = client.get(
+        "/admin/users/u-1",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 403
+    assert res.json()["detail"]["code"] == "missing_capability"
+
+
+# ─── Unit tests: PATCH /admin/users/{user_id} ──────────────────────────
+
+
+def test_patch_user_updates_profile_fields(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(rows={"profiles": [], "user_roles": []})
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.patch(
+        "/admin/users/u-1",
+        headers={"Authorization": "Bearer test-token"},
+        json={"full_name": "New Name", "phone": "+91 1234"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["ok"] is True
+    assert body["patched"] == ["full_name", "phone"]
+
+
+def test_patch_user_maps_organization_to_location_city(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(rows={"profiles": [], "user_roles": []})
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.patch(
+        "/admin/users/u-1",
+        headers={"Authorization": "Bearer test-token"},
+        json={"organization": "IISc"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["ok"] is True
+    assert "location_city" in body["patched"]
+    assert "organization" not in body["patched"]
+
+
+def test_patch_user_drops_role_title_silently(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(rows={"profiles": [], "user_roles": []})
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.patch(
+        "/admin/users/u-1",
+        headers={"Authorization": "Bearer test-token"},
+        json={"role_title": "Engineer", "phone": "+91 999"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["ok"] is True
+    assert body["patched"] == ["phone"]
+
+
+def test_patch_user_rejects_empty_patch(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(rows={"profiles": [], "user_roles": []})
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.patch(
+        "/admin/users/u-1",
+        headers={"Authorization": "Bearer test-token"},
+        json={},
+    )
+    assert res.status_code == 400
+    assert res.json()["detail"]["code"] == "empty_patch"
+
+
+def test_patch_user_requires_manage_users_capability(client, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user(["reviewer"])
+
+    res = client.patch(
+        "/admin/users/u-1",
+        headers={"Authorization": "Bearer test-token"},
+        json={"full_name": "X"},
     )
     assert res.status_code == 403
     assert res.json()["detail"]["code"] == "missing_capability"
