@@ -1,0 +1,245 @@
+/* =========================================================
+   ARTPARK — Admin Shell Styles
+   Adds .admin-* and .role-switcher* classes only.
+   Reuses CSS variables from the global styles.css (:root).
+   Does NOT redefine eir-* classes that are already global.
+   ========================================================= */
+
+/* =========== Shell layout =========== */
+
+.admin-shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* =========== Sidebar =========== */
+
+.admin-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  background: var(--bg-soft);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.admin-sidebar-brand {
+  padding: 20px 20px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink);
+  border-bottom: 1px dashed var(--line-strong);
+  user-select: none;
+}
+
+.admin-sidebar nav {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0;
+  gap: 2px;
+}
+
+.admin-sidebar nav a {
+  display: block;
+  padding: 9px 20px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: color 120ms, background 120ms, border-color 120ms;
+  letter-spacing: 0.01em;
+}
+
+.admin-sidebar nav a:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--line) 40%, transparent);
+}
+
+/* Active NavLink — bold + accent left border */
+.admin-sidebar nav a.active {
+  color: var(--ink);
+  font-weight: 600;
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 50%, transparent);
+}
+
+/* =========== Main column =========== */
+
+.admin-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* =========== Top bar (ProfileShell) =========== */
+
+.admin-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 32px;
+  border-bottom: 1px dashed var(--line-strong);
+  background: var(--bg);
+  gap: 16px;
+  min-height: 60px;
+}
+
+.admin-topbar-left {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+}
+
+.admin-topbar-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  flex-shrink: 0;
+}
+
+.admin-topbar-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.admin-topbar-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-topbar-email {
+  font-size: 11px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.01em;
+}
+
+.admin-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* Sign out button — ghost chip style */
+.admin-signout-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+
+.admin-signout-btn:hover {
+  background: var(--chip);
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+/* =========== Content area =========== */
+
+.admin-content {
+  flex: 1;
+  padding: 32px;
+  overflow-y: auto;
+}
+
+/* =========== Role Switcher =========== */
+
+.role-switcher {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+.role-switcher-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 9px;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: background 120ms, color 120ms, border-color 120ms;
+  white-space: nowrap;
+}
+
+.role-switcher-chip:hover:not(.role-switcher-chip--active) {
+  background: var(--chip);
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+/* Active role chip — filled background */
+.role-switcher-chip--active {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+  cursor: default;
+}
+
+.role-switcher-chip-icon {
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* =========== Responsive =========== */
+
+@media (max-width: 768px) {
+  .admin-sidebar {
+    width: 180px;
+  }
+
+  .admin-content {
+    padding: 20px 18px;
+  }
+
+  .admin-topbar {
+    padding: 12px 18px;
+  }
+
+  .admin-topbar-kicker {
+    display: none;
+  }
+
+  .role-switcher-chip {
+    font-size: 9px;
+    padding: 4px 7px;
+  }
+}
