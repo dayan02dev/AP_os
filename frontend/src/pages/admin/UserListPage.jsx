@@ -60,8 +60,11 @@ export default function UserListPage() {
           setTotal(data.total ?? null);
         }
       } catch (err) {
-        // Ignore aborts — a new request is already in flight
-        if (cancelled || err?.code === "timeout") return;
+        // Effect cleanup sets `cancelled` synchronously before ctrl.abort(),
+        // so this flag is the reliable abort signal. Don't use err.code
+        // ("timeout") — api.js emits the same code for genuine 30s network
+        // timeouts, which we DO want to surface to the user.
+        if (cancelled) return;
         let msg;
         if (err?.status === 403) {
           msg = "You don't have permission to view users.";
