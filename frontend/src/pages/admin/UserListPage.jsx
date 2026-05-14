@@ -6,9 +6,10 @@
 // /admin/users/new. Loading, empty, and error states all surfaced.
 // No pagination, no sortable columns — deferred to later tasks.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { adminApi } from "../../lib/adminApi.js";
+import { api } from "../../lib/api.js";
 
 const ROLE_OPTIONS = [
   { value: "", label: "All roles" },
@@ -40,29 +41,44 @@ export default function UserListPage() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // Fetch whenever committed search or roleFilter changes
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = {};
-      if (search) params.search = search;
-      if (roleFilter) params.role = roleFilter;
-      const data = await adminApi.listUsers(params);
-      setUsers(data.users ?? []);
-      setTotal(data.total ?? null);
-    } catch (err) {
-      setError(err?.message || "Failed to load users.");
-      setUsers([]);
-      setTotal(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [search, roleFilter]);
-
+  // Fetch whenever committed search or roleFilter changes.
+  // AbortController cancels in-flight requests when filters change rapidly.
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    const ctrl = new AbortController();
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const params = new URLSearchParams();
+        if (search) params.set("search", search);
+        if (roleFilter) params.set("role", roleFilter);
+        const qs = params.toString();
+        const data = await api.get(`/admin/users${qs ? `?${qs}` : ""}`, { signal: ctrl.signal });
+        if (!cancelled) {
+          setUsers(data.users ?? []);
+          setTotal(data.total ?? null);
+        }
+      } catch (err) {
+        // Ignore aborts — a new request is already in flight
+        if (cancelled || err?.code === "timeout") return;
+        let msg;
+        if (err?.status === 403) {
+          msg = "You don't have permission to view users.";
+        } else if (err?.status === 401) {
+          msg = "Your session expired. Please sign in again.";
+        } else {
+          msg = err?.message || "Couldn't load users.";
+        }
+        setError(msg);
+        setUsers([]);
+        setTotal(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; ctrl.abort(); };
+  }, [search, roleFilter]);
 
   // Derived: are any filters active?
   const filtersActive = search !== "" || roleFilter !== "";
@@ -155,7 +171,6 @@ export default function UserListPage() {
                 type="button"
                 key={user.id}
                 className="user-list-tr user-list-tr-row"
-                role="row"
                 onClick={() => navigate(`/admin/users/${user.id}`)}
                 aria-label={`View ${user.full_name || user.email}`}
               >
