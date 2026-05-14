@@ -125,7 +125,10 @@ Resources:
       Name: !Sub artpark-eir-api-${EnvName}
       DisableExecuteApiEndpoint: false
       CorsConfiguration:
-        AllowOrigins: [!Ref FrontendOrigin]
+        # FrontendOrigin is comma-separated (per its Parameter description).
+        # !Split converts it to the list AllowOrigins expects so multiple
+        # preview URLs (main staging branch + feature branches) all work.
+        AllowOrigins: !Split [',', !Ref FrontendOrigin]
         AllowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
         AllowHeaders: [Authorization, Content-Type, X-Request-ID, X-Admin-Key]
         AllowCredentials: true
