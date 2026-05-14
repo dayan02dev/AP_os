@@ -43,6 +43,7 @@ class _FakeQuery:
     def or_(self, *_args, **_kwargs): return self
     def update(self, *_args, **_kwargs): return self
     def insert(self, *_args, **_kwargs): return self
+    def upsert(self, *_args, **_kwargs): return self
     def delete(self, *_args, **_kwargs): return self
 
     def execute(self):
@@ -101,6 +102,28 @@ def _override_user(roles: list[str]):
 def _clear_overrides():
     yield
     app.dependency_overrides.clear()
+
+
+# ─── Audit capture (Task 15) ───────────────────────────────────────────
+
+
+_audit_calls: list[dict] = []
+
+
+def _capture_audit(**kwargs):
+    _audit_calls.append(kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _capture_audit_writes(monkeypatch):
+    """Replace write_audit in the admin_users router with a capture list.
+
+    Autouse so every test in this module sees the patched version; clears
+    the list before each test so assertions stay scoped to one handler call.
+    """
+    _audit_calls.clear()
+    monkeypatch.setattr(admin_users_router, "write_audit", _capture_audit)
+    yield
 
 
 # ─── Unit tests: GET /admin/users ──────────────────────────────────────
@@ -335,6 +358,14 @@ def test_patch_user_updates_profile_fields(client, monkeypatch, _clear_overrides
     assert body["ok"] is True
     assert body["patched"] == ["full_name", "phone"]
 
+    # Audit hook fired exactly once with the expected action + patched keys.
+    assert len(_audit_calls) == 1
+    call = _audit_calls[0]
+    assert call["action_type"] == "user.profile_updated"
+    assert call["target_table"] == "profiles"
+    assert call["target_id"] == "u-1"
+    assert call["after"] == {"patched": ["full_name", "phone"]}
+
 
 def test_patch_user_maps_organization_to_location_city(client, monkeypatch, _clear_overrides):
     fake = _FakeAdminClient(rows={"profiles": [], "user_roles": []})
@@ -439,6 +470,13 @@ def test_grant_role_success(client, monkeypatch, _clear_overrides):
     assert res.status_code == 201, res.text
     assert res.json() == {"ok": True, "role": "reviewer"}
 
+    assert len(_audit_calls) == 1
+    call = _audit_calls[0]
+    assert call["action_type"] == "role.granted"
+    assert call["target_table"] == "user_roles"
+    assert call["target_id"] == "u-1"
+    assert call["after"] == {"role": "reviewer"}
+
 
 def test_grant_role_invalid_role(client, monkeypatch, _clear_overrides):
     fake = _FakeAdminClient(rows={"user_roles": []})
@@ -496,6 +534,13 @@ def test_revoke_role_success(client, monkeypatch, _clear_overrides):
     )
     assert res.status_code == 200, res.text
     assert res.json() == {"ok": True, "role": "reviewer"}
+
+    assert len(_audit_calls) == 1
+    call = _audit_calls[0]
+    assert call["action_type"] == "role.revoked"
+    assert call["target_table"] == "user_roles"
+    assert call["target_id"] == "u-1"
+    assert call["before"] == {"role": "reviewer"}
 
 
 def test_revoke_role_invalid_role_returns_400(client, monkeypatch, _clear_overrides):
@@ -573,6 +618,13 @@ def test_reset_password_success(client, monkeypatch, _clear_overrides):
     assert res.status_code == 200, res.text
     assert res.json() == {"ok": True, "email_sent_to": "a@b.com"}
     assert auth.last_reset_email == "a@b.com"
+
+    assert len(_audit_calls) == 1
+    call = _audit_calls[0]
+    assert call["action_type"] == "user.password_reset_triggered"
+    assert call["target_table"] == "profiles"
+    assert call["target_id"] == "u-1"
+    assert call["after"] == {"email": "a@b.com"}
 
 
 def test_reset_password_user_not_found(client, monkeypatch, _clear_overrides):
@@ -652,6 +704,13 @@ def test_deactivate_user_success(client, monkeypatch, _clear_overrides):
     assert res.json() == {"ok": True, "user_id": "u-1", "email": "a@b.com"}
     assert auth.last_ban == ("u-1", {"ban_duration": "876600h"})
 
+    assert len(_audit_calls) == 1
+    call = _audit_calls[0]
+    assert call["action_type"] == "user.deactivated"
+    assert call["target_table"] == "profiles"
+    assert call["target_id"] == "u-1"
+    assert call["after"] == {"email": "a@b.com"}
+
 
 def test_deactivate_user_not_found(client, monkeypatch, _clear_overrides):
     fake = _FakeAdminClient(rows={"profiles": []})
@@ -705,6 +764,56 @@ def test_deactivate_leadership_role_lacks_capability(client, _clear_overrides):
     )
     assert res.status_code == 403
     assert res.json()["detail"]["code"] == "missing_capability"
+
+
+# ─── Unit test: POST /admin/users writes an audit row (Task 15) ────────
+
+
+class _FakeCreateAuth(_FakeAuth):
+    """_FakeAuth extension that supports invite/create flows used by
+    create_user. Returns a dummy user with a deterministic id."""
+
+    def __init__(self, new_user_id: str = "u-new"):
+        super().__init__()
+        self._new_user_id = new_user_id
+
+    def invite_user_by_email(self, _email):
+        return SimpleNamespace(user=SimpleNamespace(id=self._new_user_id))
+
+    def create_user(self, _payload):
+        return SimpleNamespace(user=SimpleNamespace(id=self._new_user_id))
+
+
+def test_create_user_writes_audit(client, monkeypatch, _clear_overrides):
+    """Mirrors the create-user happy path on the fake client and verifies
+    the audit hook is invoked with the expected payload."""
+    auth = _FakeCreateAuth(new_user_id="u-new")
+    fake = _FakeAdminClient(rows={"profiles": [], "user_roles": []}, auth=auth)
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users",
+        headers={"Authorization": "Bearer test-token"},
+        json={
+            "email": "new@x.com",
+            "full_name": "New Reviewer",
+            "roles": ["reviewer"],
+            "send_invite": True,
+        },
+    )
+    assert res.status_code == 201, res.text
+
+    assert len(_audit_calls) == 1
+    call = _audit_calls[0]
+    assert call["action_type"] == "user.created"
+    assert call["target_table"] == "profiles"
+    assert call["target_id"] == "u-new"
+    assert call["after"] == {
+        "email": "new@x.com",
+        "roles": ["reviewer"],
+        "invite_sent": True,
+    }
 
 
 # ─── Staging smoke tests (skipped unless RUN_STAGING_TESTS=1) ──────────

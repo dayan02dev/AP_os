@@ -20,6 +20,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from ..deps import get_current_user
 from ..rbac import ROLE_CAPABILITIES, require_capability
+from ..services.audit import write_audit
 from ..supabase_client import get_admin_client
 
 log = logging.getLogger(__name__)
@@ -131,6 +132,15 @@ async def create_user(
     ]
     client.table("user_roles").insert(rows).execute()
 
+    write_audit(
+        actor_user_id=current_user["user_id"],
+        actor_role="admin",
+        action_type="user.created",
+        target_table="profiles",
+        target_id=new_user_id,
+        after={"email": body.email, "roles": body.roles, "invite_sent": body.send_invite},
+    )
+
     return {
         "id": new_user_id,
         "email": body.email,
@@ -209,7 +219,11 @@ async def get_user(user_id: str):
     "/{user_id}",
     dependencies=[Depends(require_capability("manage_users"))],
 )
-async def patch_user(user_id: str, body: PatchUserRequest):
+async def patch_user(
+    user_id: str,
+    body: PatchUserRequest,
+    current_user: dict = Depends(get_current_user),
+):
     patch = body.model_dump(exclude_unset=True)
     if not patch:
         raise HTTPException(400, detail={"code": "empty_patch"})
@@ -220,6 +234,14 @@ async def patch_user(user_id: str, body: PatchUserRequest):
     # role_title not yet a column — drop silently (forward-compat)
     patch.pop("role_title", None)
     client.table("profiles").update(patch).eq("id", user_id).execute()
+    write_audit(
+        actor_user_id=current_user["user_id"],
+        actor_role="admin",
+        action_type="user.profile_updated",
+        target_table="profiles",
+        target_id=user_id,
+        after={"patched": list(patch.keys())},
+    )
     return {"ok": True, "patched": list(patch.keys())}
 
 
@@ -250,6 +272,14 @@ async def grant_role(
         if "duplicate" in str(exc).lower() or "23505" in str(exc):
             raise HTTPException(409, detail={"code": "already_granted", "role": body.role})
         raise
+    write_audit(
+        actor_user_id=current_user["user_id"],
+        actor_role="admin",
+        action_type="role.granted",
+        target_table="user_roles",
+        target_id=user_id,
+        after={"role": body.role},
+    )
     return {"ok": True, "role": body.role}
 
 
@@ -257,7 +287,11 @@ async def grant_role(
     "/{user_id}/roles/{role}",
     dependencies=[Depends(require_capability("revoke_role"))],
 )
-async def revoke_role(user_id: str, role: str):
+async def revoke_role(
+    user_id: str,
+    role: str,
+    current_user: dict = Depends(get_current_user),
+):
     if role not in ROLE_CAPABILITIES:
         raise HTTPException(400, detail={"code": "invalid_role", "role": role})
 
@@ -281,6 +315,14 @@ async def revoke_role(user_id: str, role: str):
             )
 
     client.table("user_roles").delete().eq("user_id", user_id).eq("role", role).execute()
+    write_audit(
+        actor_user_id=current_user["user_id"],
+        actor_role="admin",
+        action_type="role.revoked",
+        target_table="user_roles",
+        target_id=user_id,
+        before={"role": role},
+    )
     return {"ok": True, "role": role}
 
 
@@ -288,7 +330,10 @@ async def revoke_role(user_id: str, role: str):
     "/{user_id}/reset-password",
     dependencies=[Depends(require_capability("reset_password"))],
 )
-async def reset_password(user_id: str):
+async def reset_password(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     """Send a Supabase-managed password reset email."""
     client = get_admin_client()
     prof = (
@@ -304,6 +349,14 @@ async def reset_password(user_id: str):
             502,
             detail={"code": "reset_send_failed", "message": str(exc)[:200]},
         )
+    write_audit(
+        actor_user_id=current_user["user_id"],
+        actor_role="admin",
+        action_type="user.password_reset_triggered",
+        target_table="profiles",
+        target_id=user_id,
+        after={"email": email},
+    )
     return {"ok": True, "email_sent_to": email}
 
 
@@ -311,7 +364,10 @@ async def reset_password(user_id: str):
     "/{user_id}/deactivate",
     dependencies=[Depends(require_capability("manage_users"))],
 )
-async def deactivate_user(user_id: str):
+async def deactivate_user(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     """Soft-deactivate a user by banning them at the Supabase auth level.
 
     Uses Supabase's admin API to set a 100-year ban duration (876600h).
@@ -337,4 +393,12 @@ async def deactivate_user(user_id: str):
             502,
             detail={"code": "deactivate_failed", "message": str(exc)[:200]},
         )
+    write_audit(
+        actor_user_id=current_user["user_id"],
+        actor_role="admin",
+        action_type="user.deactivated",
+        target_table="profiles",
+        target_id=user_id,
+        after={"email": prof[0]["email"]},
+    )
     return {"ok": True, "user_id": user_id, "email": prof[0]["email"]}
