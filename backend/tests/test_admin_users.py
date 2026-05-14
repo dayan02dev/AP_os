@@ -784,6 +784,102 @@ class _FakeCreateAuth(_FakeAuth):
         return SimpleNamespace(user=SimpleNamespace(id=self._new_user_id))
 
 
+# ─── Email hook integration ────────────────────────────────────────────
+
+
+class _FakeEmailService:
+    """Capture-only stand-in for the EmailService singleton."""
+
+    def __init__(self):
+        self.role_granted_calls: list[dict] = []
+
+    def send_role_granted(self, **kwargs):
+        self.role_granted_calls.append(kwargs)
+        return {"message_id": "test", "status": "sent"}
+
+
+def test_grant_role_fires_role_granted_email(client, monkeypatch, _clear_overrides):
+    """Happy path: grant_role looks up the user's email + name and invokes
+    send_role_granted with the right kwargs. Pre-existing tests have no
+    profiles row so the email is silently skipped; this one provides one."""
+    fake = _FakeAdminClient(
+        rows={
+            "user_roles": [],
+            "profiles": [
+                {"id": "u-1", "email": "newrev@x.com", "full_name": "New Reviewer"},
+            ],
+        }
+    )
+    fake_email = _FakeEmailService()
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(admin_users_router, "get_email_service", lambda: fake_email)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/u-1/roles",
+        headers={"Authorization": "Bearer test-token"},
+        json={"role": "reviewer"},
+    )
+    assert res.status_code == 201, res.text
+    assert len(fake_email.role_granted_calls) == 1
+    call = fake_email.role_granted_calls[0]
+    assert call["to"] == "newrev@x.com"
+    assert call["role"] == "reviewer"
+    assert call["user_name"] == "New Reviewer"
+    assert call["granted_by"] == "admin@x.com"
+    assert call["signin_url"].endswith("/apply/signin")
+
+
+def test_grant_role_swallows_email_failures(client, monkeypatch, _clear_overrides):
+    """A 5xx from Resend (or any send-side exception) must NOT break the
+    grant — the row is already in user_roles + audit_log_v2 by then."""
+    from app.services.email_service import EmailDeliveryError
+
+    class _RaisingEmailService:
+        def send_role_granted(self, **_kwargs):
+            raise EmailDeliveryError("resend 503")
+
+    fake = _FakeAdminClient(
+        rows={
+            "user_roles": [],
+            "profiles": [{"id": "u-1", "email": "x@y.com", "full_name": "X"}],
+        }
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(admin_users_router, "get_email_service", lambda: _RaisingEmailService())
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/u-1/roles",
+        headers={"Authorization": "Bearer test-token"},
+        json={"role": "reviewer"},
+    )
+    # Still 201 — the grant landed even though Resend failed.
+    assert res.status_code == 201, res.text
+
+
+def test_grant_role_skips_email_when_profile_missing(client, monkeypatch, _clear_overrides):
+    """User has no profile row (or no email column) → grant still succeeds,
+    no email attempt is made. Common path for users created via OAuth that
+    haven't yet completed the wizard."""
+    fake = _FakeAdminClient(rows={"user_roles": [], "profiles": []})
+    fake_email = _FakeEmailService()
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(admin_users_router, "get_email_service", lambda: fake_email)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/u-1/roles",
+        headers={"Authorization": "Bearer test-token"},
+        json={"role": "reviewer"},
+    )
+    assert res.status_code == 201, res.text
+    assert fake_email.role_granted_calls == []
+
+
+# ─── (original test follows) ───────────────────────────────────────────
+
+
 def test_create_user_writes_audit(client, monkeypatch, _clear_overrides):
     """Mirrors the create-user happy path on the fake client and verifies
     the audit hook is invoked with the expected payload."""

@@ -21,6 +21,11 @@ from pydantic import BaseModel, EmailStr, Field
 from ..deps import get_current_user
 from ..rbac import ROLE_CAPABILITIES, require_capability
 from ..services.audit import write_audit
+from ..services.email_service import (
+    EmailDeliveryError,
+    frontend_url,
+    get_email_service,
+)
 from ..supabase_client import get_admin_client
 
 log = logging.getLogger(__name__)
@@ -280,7 +285,66 @@ async def grant_role(
         target_id=user_id,
         after={"role": body.role},
     )
+
+    # Best-effort role-granted notification (spec §8). Failure here must not
+    # break the role grant — the row is already in user_roles + audit_log_v2.
+    _notify_role_granted_safely(
+        client=client,
+        user_id=user_id,
+        role=body.role,
+        granted_by_email=current_user.get("email"),
+    )
+
     return {"ok": True, "role": body.role}
+
+
+def _notify_role_granted_safely(
+    *,
+    client,
+    user_id: str,
+    role: str,
+    granted_by_email: str | None,
+) -> None:
+    """Send the role-granted email if we can resolve the user's address.
+
+    Wrapped in a defensive try/except so DB lookup failures, Resend outages,
+    or missing template files never propagate to the caller. The grant
+    itself is the load-bearing operation; the email is informational.
+    """
+    try:
+        prof = (
+            client.table("profiles")
+            .select("email,full_name")
+            .eq("id", user_id)
+            .limit(1)
+            .execute()
+        )
+        row = (prof.data or [None])[0]
+        if not row or not row.get("email"):
+            log.info(
+                "role_granted email skipped — no profile email on file",
+                extra={"user_id": user_id, "role": role},
+            )
+            return
+        signin_url = frontend_url("/apply/signin")
+        get_email_service().send_role_granted(
+            to=row["email"],
+            user_name=row.get("full_name") or row["email"],
+            role=role,
+            granted_by=granted_by_email or "admin",
+            signin_url=signin_url,
+        )
+    except EmailDeliveryError as exc:
+        log.warning(
+            "role_granted email delivery failed (swallowed)",
+            extra={"user_id": user_id, "role": role, "err": str(exc)},
+        )
+    except Exception:
+        log.warning(
+            "role_granted email send unexpectedly failed (swallowed)",
+            extra={"user_id": user_id, "role": role},
+            exc_info=True,
+        )
 
 
 @router.delete(

@@ -631,6 +631,182 @@ def test_legal_next_statuses_for_evaluated_app(client, monkeypatch, _clear_overr
     assert body["allowed"] == ["rejected", "shortlisted", "waitlisted", "withdrawn"]
 
 
+# ─── Email hook integration (Session 8 / Task 26) ──────────────────────
+
+
+class _FakeEmailService:
+    """Capture-only stand-in for the EmailService singleton."""
+
+    def __init__(self):
+        self.reviewer_assigned_calls: list[dict] = []
+        self.status_change_calls: list[dict] = []
+
+    def send_reviewer_assigned(self, **kwargs):
+        self.reviewer_assigned_calls.append(kwargs)
+        return {"message_id": "test", "status": "sent"}
+
+    def send_status_change(self, **kwargs):
+        self.status_change_calls.append(kwargs)
+        return {"message_id": "test", "status": "sent"}
+
+
+def test_change_status_to_shortlisted_fires_email(client, monkeypatch, _clear_overrides):
+    app_id = "77777777-7777-7777-7777-777777777777"
+    _install_db(monkeypatch, {
+        "tir_applications": [
+            {
+                "id": app_id,
+                "status": "evaluated",
+                "user_id": "applicant-u",
+                "basic_email": "appy@example.com",
+                "basic_full_name": "Appy McApp",
+            },
+        ],
+        "sip_applications": [],
+        "application_status_log": [],
+    })
+    fake_email = _FakeEmailService()
+    monkeypatch.setattr(la_router, "get_email_service", lambda: fake_email)
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.patch(
+        f"/leadership/applications/{app_id}/status",
+        headers={"Authorization": "Bearer test-token"},
+        json={"to_status": "shortlisted", "reason": "Strong fit"},
+    )
+    assert res.status_code == 200, res.text
+    assert len(fake_email.status_change_calls) == 1
+    call = fake_email.status_change_calls[0]
+    assert call["to"] == "appy@example.com"
+    assert call["applicant_name"] == "Appy McApp"
+    assert call["to_status"] == "shortlisted"
+    assert call["track"] == "tir"
+    assert call["reason"] == "Strong fit"
+
+
+def test_change_status_to_evaluated_does_not_fire_email(client, monkeypatch, _clear_overrides):
+    """Only Gate 1 outcomes (shortlisted/rejected/waitlisted) trigger email.
+    Moving to `evaluated` is an internal state change — applicants don't
+    learn about it until a final decision lands."""
+    app_id = "88888888-8888-8888-8888-888888888888"
+    _install_db(monkeypatch, {
+        "tir_applications": [
+            {"id": app_id, "status": "under_review", "user_id": "applicant-u",
+             "basic_email": "appy@example.com"},
+        ],
+        "sip_applications": [],
+    })
+    fake_email = _FakeEmailService()
+    monkeypatch.setattr(la_router, "get_email_service", lambda: fake_email)
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.patch(
+        f"/leadership/applications/{app_id}/status",
+        headers={"Authorization": "Bearer test-token"},
+        json={"to_status": "evaluated"},
+    )
+    assert res.status_code == 200, res.text
+    assert fake_email.status_change_calls == []
+
+
+def test_change_status_swallows_email_failures(client, monkeypatch, _clear_overrides):
+    """Email-send raising must NOT break the status transition or roll back
+    the DB write."""
+    from app.services.email_service import EmailDeliveryError
+
+    class _RaisingEmail:
+        def send_status_change(self, **_kwargs):
+            raise EmailDeliveryError("resend 503")
+
+    app_id = "99999999-9999-9999-9999-999999999999"
+    _install_db(monkeypatch, {
+        "tir_applications": [
+            {"id": app_id, "status": "evaluated", "user_id": "applicant-u",
+             "basic_email": "x@y.com"},
+        ],
+        "sip_applications": [],
+    })
+    monkeypatch.setattr(la_router, "get_email_service", lambda: _RaisingEmail())
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.patch(
+        f"/leadership/applications/{app_id}/status",
+        headers={"Authorization": "Bearer test-token"},
+        json={"to_status": "rejected"},
+    )
+    assert res.status_code == 200, res.text
+
+
+def test_assign_reviewers_fires_email_for_each_new_reviewer(
+    client, monkeypatch, _clear_overrides,
+):
+    app_id = "10101010-1010-1010-1010-101010101010"
+    _install_db(monkeypatch, {
+        "tir_applications": [
+            {"id": app_id, "status": "under_review", "user_id": "applicant-u",
+             "basic_full_name": "Appy McApp"},
+        ],
+        "sip_applications": [],
+        "reviewer_assignments": [],
+        # The router does a batched in_("id", ...) lookup on profiles for
+        # each new reviewer; the FakeQuery in_() is a no-op and execute()
+        # returns whatever's pre-loaded. Pre-load both reviewers' profiles.
+        "profiles": [
+            {"id": "rev-1", "email": "r1@x.com", "full_name": "Reviewer One"},
+            {"id": "rev-2", "email": "r2@x.com", "full_name": "Reviewer Two"},
+        ],
+    })
+    fake_email = _FakeEmailService()
+    monkeypatch.setattr(la_router, "get_email_service", lambda: fake_email)
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.post(
+        f"/leadership/applications/{app_id}/reviewers",
+        headers={"Authorization": "Bearer test-token"},
+        json={"reviewer_user_ids": ["rev-1", "rev-2"]},
+    )
+    assert res.status_code == 201, res.text
+    assert len(fake_email.reviewer_assigned_calls) == 2
+    by_to = {c["to"]: c for c in fake_email.reviewer_assigned_calls}
+    assert set(by_to) == {"r1@x.com", "r2@x.com"}
+    for c in fake_email.reviewer_assigned_calls:
+        assert c["applicant_name"] == "Appy McApp"
+        assert c["track"] == "tir"
+        assert c["application_id"] == app_id
+        assert c["inbox_url"].endswith("/reviewer/inbox")
+
+
+def test_assign_reviewers_idempotent_path_does_not_re_email(
+    client, monkeypatch, _clear_overrides,
+):
+    """Already-active reviewers don't trigger a duplicate email."""
+    app_id = "20202020-2020-2020-2020-202020202020"
+    _install_db(monkeypatch, {
+        "tir_applications": [
+            {"id": app_id, "status": "under_review", "user_id": "applicant-u"},
+        ],
+        "sip_applications": [],
+        "reviewer_assignments": [
+            {"reviewer_user_id": "rev-1", "state": "pending"},
+        ],
+        "profiles": [
+            {"id": "rev-1", "email": "r1@x.com", "full_name": "R1"},
+        ],
+    })
+    fake_email = _FakeEmailService()
+    monkeypatch.setattr(la_router, "get_email_service", lambda: fake_email)
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.post(
+        f"/leadership/applications/{app_id}/reviewers",
+        headers={"Authorization": "Bearer test-token"},
+        json={"reviewer_user_ids": ["rev-1"]},
+    )
+    assert res.status_code == 201, res.text
+    # rev-1 was already active → no new add → no email sent.
+    assert fake_email.reviewer_assigned_calls == []
+
+
 # ─── Auth (401 on missing Bearer for each route) ───────────────────────
 
 

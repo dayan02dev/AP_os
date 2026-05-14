@@ -158,7 +158,7 @@ def test_submission_confirmation_renders_context(configured):
     assert "Priya Sharma" in payload["html"]
     assert "abc-123" in payload["html"]
     assert "Priya Sharma" in payload["text"]
-    assert payload["subject"].startswith("ARTPARK EIR")
+    assert payload["subject"].startswith("ARTPARK TIR")
     assert payload["to"] == ["applicant@example.com"]
 
 
@@ -194,3 +194,157 @@ def test_ticket_ack_short_id_in_subject(configured):
     payload = fake.call_args.kwargs["json"]
     assert "#deadbeef" in payload["subject"]
     assert "CV upload fails" in payload["html"]
+
+
+# ─── Phase 1 admin platform senders (Session 8 / Task 26) ──────────────
+
+
+def test_role_granted_renders_role_label_and_signin_link(configured):
+    fake = MagicMock(return_value=_ok())
+    svc = _svc_with_post(fake)
+    svc.send_role_granted(
+        to="newrev@artpark.in",
+        user_name="New Reviewer",
+        role="reviewer",
+        granted_by="admin@artpark.in",
+        signin_url="https://example.test/apply/signin",
+    )
+    payload = fake.call_args.kwargs["json"]
+    assert "Reviewer" in payload["subject"]  # _role_copy maps to "Reviewer"
+    assert payload["to"] == ["newrev@artpark.in"]
+    assert "New Reviewer" in payload["html"]
+    assert "https://example.test/apply/signin" in payload["html"]
+    assert "admin@artpark.in" in payload["html"]
+    # The blurb describes what the reviewer role lets them do.
+    assert "Score applications" in payload["html"]
+
+
+def test_role_granted_unknown_role_falls_back_gracefully(configured):
+    fake = MagicMock(return_value=_ok())
+    svc = _svc_with_post(fake)
+    svc.send_role_granted(
+        to="u@x.com",
+        user_name="U",
+        role="mystery-role",
+        granted_by="admin",
+        signin_url="https://example.test/apply/signin",
+    )
+    payload = fake.call_args.kwargs["json"]
+    # Title-cased fallback for the label; generic blurb body.
+    assert "Mystery-Role" in payload["subject"]
+    assert "mystery-role" in payload["html"]
+
+
+def test_reviewer_assigned_carries_inbox_url_and_applicant_name(configured):
+    fake = MagicMock(return_value=_ok())
+    svc = _svc_with_post(fake)
+    svc.send_reviewer_assigned(
+        to="rev@artpark.in",
+        reviewer_name="R Reviewer",
+        applicant_name="A Applicant",
+        application_id="ffffffff-1111-2222-3333-444455556666",
+        track="tir",
+        inbox_url="https://example.test/reviewer/inbox",
+    )
+    payload = fake.call_args.kwargs["json"]
+    assert payload["to"] == ["rev@artpark.in"]
+    assert "TIR" in payload["subject"]
+    assert "A Applicant" in payload["subject"]
+    assert "A Applicant" in payload["html"]
+    assert "https://example.test/reviewer/inbox" in payload["html"]
+    # Application id is short-formed (first 8 chars) for readability.
+    assert "ffffffff" in payload["html"]
+
+
+def test_status_change_shortlisted_voice(configured):
+    fake = MagicMock(return_value=_ok())
+    svc = _svc_with_post(fake)
+    svc.send_status_change(
+        to="appy@example.com",
+        applicant_name="Priya",
+        application_id="aaaa1111-2222-3333-4444-555566667777",
+        track="tir",
+        to_status="shortlisted",
+    )
+    payload = fake.call_args.kwargs["json"]
+    assert payload["subject"] == "Great news — you've been shortlisted"
+    assert "shortlisted" in payload["html"].lower()
+    assert "Priya" in payload["html"]
+
+
+def test_status_change_rejected_avoids_scores_and_uses_neutral_voice(configured):
+    fake = MagicMock(return_value=_ok())
+    svc = _svc_with_post(fake)
+    svc.send_status_change(
+        to="appy@example.com",
+        applicant_name="Sam",
+        application_id="bbbb2222-3333-4444-5555-666677778888",
+        track="sip",
+        to_status="rejected",
+    )
+    payload = fake.call_args.kwargs["json"]
+    body = payload["html"].lower()
+    # Per spec §8: no raw scores, neutral rejection voice.
+    assert "score" not in body
+    assert "won't be advancing" in body or "thank you for applying" in body
+    # Subject doesn't expose the rejection word — applicants don't need that
+    # in their inbox preview text.
+    assert "rejected" not in payload["subject"].lower()
+
+
+def test_status_change_waitlisted_voice(configured):
+    fake = MagicMock(return_value=_ok())
+    svc = _svc_with_post(fake)
+    svc.send_status_change(
+        to="appy@example.com",
+        applicant_name="Liu",
+        application_id="cccc3333-4444-5555-6666-777788889999",
+        track="tir",
+        to_status="waitlisted",
+    )
+    payload = fake.call_args.kwargs["json"]
+    body = payload["html"].lower()
+    assert "waitlist" in body
+
+
+# ─── Module-level helpers ──────────────────────────────────────────────
+
+
+def test_role_copy_for_known_role():
+    label, blurb = es._role_copy("leadership")
+    assert label == "Leadership"
+    assert "Gate 1" in blurb
+
+
+def test_role_copy_unknown_role_titlecases():
+    label, blurb = es._role_copy("custodian")
+    assert label == "Custodian"
+    assert "custodian" in blurb
+
+
+def test_track_label_known():
+    assert es._track_label("tir") == "TIR"
+    assert es._track_label("sip") == "SIP"
+
+
+def test_track_label_unknown_uppercases():
+    assert es._track_label("foo") == "FOO"
+
+
+def test_track_label_none_returns_empty():
+    assert es._track_label(None) == ""
+
+
+def test_frontend_url_uses_first_origin():
+    with patch.object(es.settings, "frontend_origin", "https://a.test,https://b.test"):
+        assert es.frontend_url("/apply/signin") == "https://a.test/apply/signin"
+
+
+def test_frontend_url_strips_trailing_slash_on_origin():
+    with patch.object(es.settings, "frontend_origin", "https://a.test/"):
+        assert es.frontend_url("/x") == "https://a.test/x"
+
+
+def test_frontend_url_inserts_leading_slash_if_missing():
+    with patch.object(es.settings, "frontend_origin", "https://a.test"):
+        assert es.frontend_url("x") == "https://a.test/x"

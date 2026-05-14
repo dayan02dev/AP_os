@@ -33,12 +33,21 @@ from ..deps import get_current_user
 from ..rbac import require_capability
 from ..services import applications_query
 from ..services.audit import write_audit
+from ..services.email_service import (
+    EmailDeliveryError,
+    frontend_url,
+    get_email_service,
+)
 from ..services.state_machine import (
     LEGAL_TRANSITIONS,
     assert_legal_transition,
     legal_next_states,
 )
 from ..supabase_client import get_admin_client
+
+# Statuses for which we notify the applicant via email. Set so containment
+# checks are O(1) and the next person can find the list without grepping.
+STATUS_CHANGE_NOTIFICATION_STATUSES = frozenset({"shortlisted", "rejected", "waitlisted"})
 
 log = logging.getLogger(__name__)
 
@@ -194,6 +203,16 @@ async def change_status(
         reason=body.reason,
     )
 
+    # Best-effort applicant notification for Gate 1 outcomes only — submitted /
+    # under_review / evaluated / withdrawn don't trigger an email (spec §8).
+    if body.to_status in STATUS_CHANGE_NOTIFICATION_STATUSES:
+        _notify_status_change_safely(
+            application_row=row,
+            track=track,
+            to_status=body.to_status,
+            reason=body.reason,
+        )
+
     return {
         "ok": True,
         "application_id": application_id,
@@ -202,6 +221,146 @@ async def change_status(
         "to_status": body.to_status,
         "reason": body.reason,
     }
+
+
+def _notify_reviewers_assigned_safely(
+    *,
+    reviewer_user_ids: list[str],
+    application_row: dict[str, Any],
+    track: str,
+) -> None:
+    """Send the reviewer-assigned email to each newly-added reviewer.
+
+    Looks up each reviewer's profile in one batched query to keep the cost
+    flat with reviewer count. Every send is independently wrapped so a
+    single bad address doesn't suppress the rest of the batch.
+    """
+    if not reviewer_user_ids:
+        return
+    try:
+        profs = (
+            get_admin_client()
+            .table("profiles")
+            .select("id,email,full_name")
+            .in_("id", reviewer_user_ids)
+            .execute()
+        )
+        rows_by_id = {r["id"]: r for r in (profs.data or []) if r.get("id")}
+    except Exception:
+        log.warning(
+            "reviewer_assigned: batched profile lookup failed (skipping all)",
+            extra={"track": track, "count": len(reviewer_user_ids)},
+            exc_info=True,
+        )
+        return
+
+    applicant_name = application_row.get("basic_full_name") or "an applicant"
+    application_id = application_row.get("id") or ""
+    inbox_url = frontend_url("/reviewer/inbox")
+
+    svc = get_email_service()
+    for uid in reviewer_user_ids:
+        prof = rows_by_id.get(uid)
+        if not prof or not prof.get("email"):
+            log.info(
+                "reviewer_assigned email skipped — no email on file",
+                extra={"reviewer_user_id": uid, "application_id": application_id},
+            )
+            continue
+        try:
+            svc.send_reviewer_assigned(
+                to=prof["email"],
+                reviewer_name=prof.get("full_name") or prof["email"],
+                applicant_name=applicant_name,
+                application_id=application_id,
+                track=track,
+                inbox_url=inbox_url,
+            )
+        except EmailDeliveryError as exc:
+            log.warning(
+                "reviewer_assigned email delivery failed (swallowed)",
+                extra={"reviewer_user_id": uid, "application_id": application_id, "err": str(exc)},
+            )
+        except Exception:
+            log.warning(
+                "reviewer_assigned email send unexpectedly failed (swallowed)",
+                extra={"reviewer_user_id": uid, "application_id": application_id},
+                exc_info=True,
+            )
+
+
+def _notify_status_change_safely(
+    *,
+    application_row: dict[str, Any],
+    track: str,
+    to_status: str,
+    reason: str | None,
+) -> None:
+    """Send the applicant a status-change email. Swallows every failure.
+
+    Recipient resolution prefers the application's `basic_email` (the email
+    the applicant typed in the wizard, which they actually monitor) and
+    falls back to their profiles.email (auth-side address). If we end up
+    with neither, skip silently — a missing email is not an error worth
+    surfacing to the caller of /status.
+    """
+    try:
+        to_email = application_row.get("basic_email")
+        if not to_email and application_row.get("user_id"):
+            try:
+                prof = (
+                    get_admin_client()
+                    .table("profiles")
+                    .select("email,full_name")
+                    .eq("id", application_row["user_id"])
+                    .limit(1)
+                    .execute()
+                )
+                prof_row = (prof.data or [None])[0]
+                if prof_row:
+                    to_email = prof_row.get("email")
+            except Exception:
+                log.warning(
+                    "status_change: profile lookup failed; skipping email",
+                    extra={"application_id": application_row.get("id"), "track": track},
+                    exc_info=True,
+                )
+                return
+        if not to_email:
+            log.info(
+                "status_change email skipped — no recipient on file",
+                extra={"application_id": application_row.get("id"), "track": track, "to_status": to_status},
+            )
+            return
+
+        applicant_name = (
+            application_row.get("basic_full_name")
+            or to_email.split("@", 1)[0]
+        )
+
+        get_email_service().send_status_change(
+            to=to_email,
+            applicant_name=applicant_name,
+            application_id=application_row.get("id") or "",
+            track=track,
+            to_status=to_status,
+            reason=reason,
+        )
+    except EmailDeliveryError as exc:
+        log.warning(
+            "status_change email delivery failed (swallowed)",
+            extra={
+                "application_id": application_row.get("id"),
+                "to_status": to_status,
+                "err": str(exc),
+            },
+        )
+    except Exception:
+        log.warning(
+            "status_change email send unexpectedly failed (swallowed)",
+            extra={"application_id": application_row.get("id"), "to_status": to_status},
+            exc_info=True,
+        )
 
 
 @router.get(
@@ -375,6 +534,15 @@ async def assign_reviewers(
             target_table="reviewer_assignments",
             target_id=application_id,
             after={"track": track, "reviewer_user_ids": to_add},
+        )
+
+        # Best-effort reviewer-assigned email per new reviewer (spec §8).
+        # Already-assigned reviewers in the request don't get a re-notify —
+        # we only email `to_add`, not `already_assigned`.
+        _notify_reviewers_assigned_safely(
+            reviewer_user_ids=to_add,
+            application_row=app_row,
+            track=track,
         )
 
     # Return the post-state for an easy frontend refresh path.

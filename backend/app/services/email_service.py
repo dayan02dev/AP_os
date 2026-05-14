@@ -242,6 +242,214 @@ class EmailService:
             text=text,
         )
 
+    # ── Phase 1 admin platform senders (Session 8 / Task 26) ──────────
+    #
+    # Three new triggers wired from leadership + admin write endpoints:
+    #
+    #   send_role_granted        admin_users.grant_role
+    #   send_reviewer_assigned   leadership_actions.assign_reviewers
+    #   send_status_change       leadership_actions.change_status
+    #                            (only for shortlisted/rejected/waitlisted)
+    #
+    # All callers wrap these in try/except so an email-infra failure can't
+    # roll back the primary mutation (per spec §8 "best-effort" rule).
+
+    def send_role_granted(
+        self,
+        *,
+        to: str,
+        user_name: str,
+        role: str,
+        granted_by: str,
+        signin_url: str,
+    ) -> dict[str, str]:
+        """Notify a user that an admin granted them a role.
+
+        ``granted_by`` is a display string (email or "admin"). The template
+        renders it inside a code block so an empty value falls back gracefully.
+        """
+        role_label, role_blurb = _role_copy(role)
+        html, text = self._render_pair(
+            "role_granted",
+            {
+                "user_name": user_name or to,
+                "role": role,
+                "role_label": role_label,
+                "role_blurb": role_blurb,
+                "granted_by": granted_by or "admin",
+                "signin_url": signin_url,
+            },
+        )
+        return self.send_raw(
+            to=[to],
+            subject=f"You've been granted {role_label} access on ARTPARK OS",
+            html=html,
+            text=text,
+        )
+
+    def send_reviewer_assigned(
+        self,
+        *,
+        to: str,
+        reviewer_name: str,
+        applicant_name: str,
+        application_id: str,
+        track: str,
+        inbox_url: str,
+    ) -> dict[str, str]:
+        """Notify a reviewer that an application has been assigned to them."""
+        track_label = _track_label(track)
+        application_id_short = str(application_id)[:8]
+        html, text = self._render_pair(
+            "reviewer_assigned",
+            {
+                "reviewer_name": reviewer_name or to,
+                "applicant_name": applicant_name or "an applicant",
+                "application_id": application_id,
+                "application_id_short": application_id_short,
+                "track": track,
+                "track_label": track_label,
+                "inbox_url": inbox_url,
+            },
+        )
+        return self.send_raw(
+            to=[to],
+            subject=f"New {track_label} application to review — {applicant_name or application_id_short}",
+            html=html,
+            text=text,
+        )
+
+    def send_status_change(
+        self,
+        *,
+        to: str,
+        applicant_name: str,
+        application_id: str,
+        track: str,
+        to_status: str,
+        reason: str | None = None,
+    ) -> dict[str, str]:
+        """Notify an applicant that their status has moved to a terminal-ish
+        Gate 1 outcome (shortlisted / waitlisted / rejected). The template
+        also has a generic branch for any other status the caller chooses to
+        send, but Phase 1 only fires this for the three outcomes per spec §8."""
+        status_label, headline, subject_line = _status_copy(to_status, applicant_name)
+        track_label = _track_label(track)
+        application_id_short = str(application_id)[:8]
+        html, text = self._render_pair(
+            "status_change",
+            {
+                "applicant_name": applicant_name or "there",
+                "application_id": application_id,
+                "application_id_short": application_id_short,
+                "track": track,
+                "track_label": track_label,
+                "to_status": to_status,
+                "status_label": status_label,
+                "headline": headline,
+                "subject_line": subject_line,
+                "reason": reason,
+            },
+        )
+        return self.send_raw(
+            to=[to],
+            subject=subject_line,
+            html=html,
+            text=text,
+        )
+
+
+# ── Copy helpers (module-level so tests can import + diff against them) ─
+
+
+_ROLE_COPY: dict[str, tuple[str, str]] = {
+    "admin": (
+        "Admin",
+        "Manage users, grant or revoke roles, reset passwords, and handle support tickets.",
+    ),
+    "leadership": (
+        "Leadership",
+        "See every application across both tracks, assign reviewers, and make Gate 1 decisions on shortlist / waitlist / reject.",
+    ),
+    "reviewer": (
+        "Reviewer",
+        "Score applications assigned to you across five rubric categories. The full scoring screen ships in Phase 1.5.",
+    ),
+    "mentor": (
+        "Mentor",
+        "Guide accepted founders through their residency milestones. The mentor surface arrives in Phase 2.",
+    ),
+    "founder": (
+        "Founder",
+        "Access your post-acceptance founder portal (milestones, evidence uploads). The founder surface arrives in Phase 2.",
+    ),
+    "applicant": (
+        "Applicant",
+        "Continue your application via the apply portal.",
+    ),
+}
+
+
+def _role_copy(role: str) -> tuple[str, str]:
+    """(display_label, body_blurb) for the role-granted email. Falls back to
+    a generic line so an unrecognised role still produces a sensible email."""
+    return _ROLE_COPY.get(
+        role,
+        (role.title(), f"You've been granted the '{role}' role on the platform."),
+    )
+
+
+def _track_label(track: str | None) -> str:
+    """Map 'tir'/'sip' to the human label used in subject lines + body."""
+    if not track:
+        return ""
+    return {"tir": "TIR", "sip": "SIP"}.get(track.lower(), track.upper())
+
+
+def frontend_url(path: str) -> str:
+    """Compose ``<primary frontend origin> + path`` for email-body links.
+
+    `settings.frontend_origins` is a comma-parsed list — the first entry is
+    the user-facing origin (apply.artpark.info in prod, the Vercel preview
+    URL in staging). Falls back to localhost so dev runs don't 500 when no
+    env is configured.
+
+    Lives here because every caller is an email-body helper; if anything
+    else needs frontend URLs later, this can move to ``app/utils/urls.py``.
+    """
+    base = (settings.frontend_origins or ["http://localhost:5173"])[0].rstrip("/")
+    return f"{base}{path if path.startswith('/') else '/' + path}"
+
+
+def _status_copy(to_status: str, applicant_name: str) -> tuple[str, str, str]:
+    """Returns (status_label, headline, subject_line) for the status-change
+    email. Kept in one place so subject + body stay aligned across edits."""
+    name = applicant_name or "applicant"
+    if to_status == "shortlisted":
+        return (
+            "Shortlisted",
+            f"You've been shortlisted, {name}.",
+            "Great news — you've been shortlisted",
+        )
+    if to_status == "waitlisted":
+        return (
+            "Waitlisted",
+            f"An update on your application, {name}.",
+            "An update on your ARTPARK application",
+        )
+    if to_status == "rejected":
+        return (
+            "Not selected",
+            f"An update on your application, {name}.",
+            "An update on your ARTPARK application",
+        )
+    # Generic fallback — keeps the worker safe if a future state lands here.
+    return (
+        to_status.replace("_", " ").title(),
+        f"An update on your application, {name}.",
+        "An update on your ARTPARK application",
+    )
+
 
 @lru_cache(maxsize=1)
 def get_email_service() -> EmailService:
