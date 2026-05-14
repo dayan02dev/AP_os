@@ -1,126 +1,169 @@
-// LeadershipDashboard — top-level page for /leadership.
+// LeadershipDashboard — /leadership
 //
+// Visual contract: ARTPARK design system §6.5 (Dashboard tab) + §6.6 (Applications tab).
 // Owns:
-//   - GET /leadership/stats fetch on mount (powers all dashboard charts)
-//   - GET /leadership/applications fetch keyed off filter state
-//   - Filter state (industry, status, track, search) + debounced search
+//   - GET /leadership/stats on mount (powers Dashboard tab)
+//   - GET /leadership/applications keyed off filter state (powers Applications tab)
+//   - Filter state (industry, status, track, search) with debounced search
 //   - Drawer open/close state
 //
-// The Dashboard tab renders summary cards from `stats`. The Applications tab
-// renders the paginated list + filter chips. Clicking a chart/pill in the
-// Dashboard tab flips to the Applications tab with that filter pre-applied.
+// Tabs strip per §5.7. Dashboard tab: 5-metric strip + 60/40 split rows (funnel/status,
+// histogram/components, industry full-width). Applications tab: filter bar + .tbl + row click → drawer.
+//
+// Charts are hand-rolled per §5.9 — no chart library. Mono --artblue with --paper-soft tracks.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.jsx";
+import { hasCapability } from "../../lib/rbac.js";
 import { leadershipApi } from "../../lib/leadershipApi.js";
-import "../../styles/leadership.css";
-
-import MetricCard from "./components/MetricCard.jsx";
-import FunnelStrip from "./components/FunnelStrip.jsx";
-import ScoreHistogram from "./components/ScoreHistogram.jsx";
-import ComponentBars from "./components/ComponentBars.jsx";
-import IndustryBars from "./components/IndustryBars.jsx";
-import StatusGrid from "./components/StatusGrid.jsx";
-import ApplicationsTable from "./components/ApplicationsTable.jsx";
 import AppDrawer from "./components/AppDrawer.jsx";
+import "../../styles/admin.css";
 
 const PAGE_SIZE = 50;
-const HISTOGRAM_FETCH_LIMIT = 200;
+const HISTOGRAM_BIN_COUNT = 10;
+
+function initialsFor(user) {
+  const src = user?.full_name || user?.email || "";
+  return src
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase() || "")
+    .join("") || "—";
+}
+
+function fmtDate(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("en-IN", {
+      day: "2-digit", month: "short", year: "numeric",
+    });
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+// Status → dot color mapping. The one place in the system where semantic
+// colors are legitimate per design-system §1 rule 16.
+const STATUS_DOT_COLOR = {
+  submitted:        "blue",
+  ai_screening:     "amber",
+  screening_failed: "coral",
+  under_review:     "blue",
+  evaluated:        "blue",
+  shortlisted:      "green",
+  interview:        "green",
+  offered:          "green",
+  onboarded:        "green",
+  rejected:         "coral",
+  waitlisted:       "amber",
+  withdrawn:        "dim",
+};
+
+function StatusCell({ statusId, label }) {
+  const cls = STATUS_DOT_COLOR[statusId] || "";
+  return (
+    <span className="status-cell">
+      <span className={`dot ${cls}`} />
+      <span style={{ textTransform: "capitalize" }}>{label || statusId}</span>
+    </span>
+  );
+}
+
+function buildHistogram(scores, binCount = HISTOGRAM_BIN_COUNT) {
+  // Bin [0,10] into binCount equal buckets, return [{from,to,count}].
+  const bins = Array.from({ length: binCount }, (_, i) => ({
+    from: (10 / binCount) * i,
+    to: (10 / binCount) * (i + 1),
+    count: 0,
+  }));
+  for (const s of scores) {
+    if (typeof s !== "number" || !Number.isFinite(s)) continue;
+    let idx = Math.floor((s / 10) * binCount);
+    if (idx >= binCount) idx = binCount - 1;
+    if (idx < 0) idx = 0;
+    bins[idx].count += 1;
+  }
+  // Median bin = the bucket where the cumulative count crosses 50%.
+  const total = bins.reduce((acc, b) => acc + b.count, 0);
+  let medianIdx = -1;
+  if (total > 0) {
+    let cum = 0;
+    for (let i = 0; i < bins.length; i++) {
+      cum += bins[i].count;
+      if (cum >= total / 2) { medianIdx = i; break; }
+    }
+  }
+  return { bins, medianIdx, total };
+}
 
 export default function LeadershipDashboard() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const roles = user?.roles || [];
+  const showSwitchToAdmin = hasCapability(roles, "manage_users");
 
-  // Tabs
   const [view, setView] = useState("dashboard");
 
-  // Dashboard data
   const [stats, setStats] = useState(null);
-  const [statsError, setStatsError] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState(null);
 
-  // Histogram source — list of {ai_score_overall} sampled via the list endpoint.
   const [scoreSample, setScoreSample] = useState(null);
 
-  // Filters
   const [industry, setIndustry] = useState(null);
   const [statusFilter, setStatusFilter] = useState(null);
   const [trackFilter, setTrackFilter] = useState(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState(["submitted_at", "desc"]);
   const [offset, setOffset] = useState(0);
 
-  // Applications data
   const [apps, setApps] = useState([]);
   const [appsTotal, setAppsTotal] = useState(0);
   const [appsLoading, setAppsLoading] = useState(false);
   const [appsError, setAppsError] = useState(null);
 
-  // Drawer
   const [openRow, setOpenRow] = useState(null);
 
-  // ----- Initial stats + score sample fetch -----
+  // ── Initial fetch ──
   useEffect(() => {
     let cancelled = false;
     setStatsLoading(true);
-    leadershipApi
-      .getStats()
-      .then((s) => {
-        if (!cancelled) {
-          setStats(s);
-          setStatsLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setStatsError(err?.message || "Failed to load stats.");
-          setStatsLoading(false);
-        }
-      });
-    // Score sample — best-effort; failure is non-fatal (histogram falls back
-    // to a placeholder).
-    leadershipApi
-      .listApplications({ limit: HISTOGRAM_FETCH_LIMIT, offset: 0 })
+    leadershipApi.getStats()
+      .then((s) => { if (!cancelled) { setStats(s); setStatsLoading(false); } })
+      .catch((err) => { if (!cancelled) { setStatsError(err?.message || "Failed to load stats."); setStatsLoading(false); } });
+    leadershipApi.listApplications({ limit: 200, offset: 0 })
       .then((page) => {
         if (cancelled) return;
-        const scores = (page?.applications || [])
+        const ss = (page?.applications || [])
           .map((a) => a.ai_score_overall)
           .filter((v) => typeof v === "number" && Number.isFinite(v));
-        setScoreSample(scores);
+        setScoreSample(ss);
       })
-      .catch(() => {
-        if (!cancelled) setScoreSample([]);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .catch(() => { if (!cancelled) setScoreSample([]); });
+    return () => { cancelled = true; };
   }, []);
 
-  // ----- Debounce the search input. Reset offset alongside the new search
-  //       value so a typed query lands on page 1 of results. -----
+  // ── Search debounce ──
   useEffect(() => {
-    const t = setTimeout(() => {
-      setSearch(searchInput);
-      setOffset(0);
-    }, 300);
+    const t = setTimeout(() => { setSearch(searchInput); setOffset(0); }, 300);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // ----- Refetch app list whenever any filter or pagination input changes. -----
+  // ── Refetch app list on any filter change ──
   useEffect(() => {
     let cancelled = false;
     setAppsLoading(true);
     setAppsError(null);
-    const params = {
+    leadershipApi.listApplications({
       industry: industry || undefined,
       status: statusFilter || undefined,
       track: trackFilter ? trackFilter.toLowerCase() : undefined,
       search: search || undefined,
       limit: PAGE_SIZE,
       offset,
-    };
-    leadershipApi
-      .listApplications(params)
+    })
       .then((page) => {
         if (cancelled) return;
         setApps(page?.applications || []);
@@ -132,414 +175,512 @@ export default function LeadershipDashboard() {
         setAppsError(err?.message || "Failed to load applications.");
         setAppsLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [industry, statusFilter, trackFilter, search, offset]);
 
-  // ----- Filter-and-jump (Dashboard → Applications). Every filter change
-  //       resets offset to 0 here so the fetch effect fires exactly once. -----
   const filterAndShow = useCallback(
     (setter) => (val) => {
       setter(val);
       setOffset(0);
       if (val) setView("applications");
     },
-    []
+    [],
   );
 
-  // Lookup so the table + drawer can translate status id → label without
-  // re-deriving it. Build once stats has loaded.
   const statusLabelById = useMemo(() => {
     const out = {};
-    (stats?.status_counts || []).forEach((s) => {
-      out[s.id] = s.label;
-    });
+    (stats?.status_counts || []).forEach((s) => { out[s.id] = s.label; });
     return out;
   }, [stats]);
 
   const industries = stats?.industry?.industries || [];
-
-  // Derived metric values (totals from /leadership/stats)
   const totals = stats?.totals || {};
   const submitted = totals.apps_submitted ?? 0;
   const tirCount = totals.tir_count ?? 0;
   const sipCount = totals.sip_count ?? 0;
-  const tirPct = submitted ? Math.round((tirCount / submitted) * 100) : 0;
-  const sipPct = submitted ? Math.round((sipCount / submitted) * 100) : 0;
-  const avgScoreDisplay =
+  const avgAi =
     totals.avg_ai_score === null || totals.avg_ai_score === undefined
       ? "—"
       : Number(totals.avg_ai_score).toFixed(1);
 
-  const activeIndustryLabel =
-    industries.find((i) => i.id === industry)?.label || null;
-  const activeStatusLabel = statusLabelById[statusFilter] || null;
+  const funnel = stats?.funnel || {};
+  const funnelOrder = [
+    { id: "profiles",  label: "Signed up" },
+    { id: "submitted", label: "Submitted" },
+    { id: "in_review", label: "In review" },
+    { id: "advanced",  label: "Advanced" },
+    { id: "decided",   label: "Decided" },
+  ];
+  const funnelMax = Math.max(1, ...funnelOrder.map((f) => funnel[f.id] || 0));
+
+  const componentAverages = useMemo(() => {
+    // The bundled stats endpoint doesn't yet expose per-component averages —
+    // when it does, this becomes a server projection. For now we render
+    // placeholder labels at empty widths so the chart frame is there.
+    return [
+      { id: "problem",    label: "Problem impact",     value: null, weight: 22 },
+      { id: "solution",   label: "Completeness & depth", value: null, weight: 30 },
+      { id: "tech",       label: "Technical depth",    value: null, weight: 22 },
+      { id: "founders",   label: "Behavioural signal", value: null, weight: 14 },
+      { id: "commitment", label: "Commitment",         value: null, weight: 12 },
+    ];
+  }, []);
+
+  const histogram = useMemo(() => buildHistogram(scoreSample || []), [scoreSample]);
+
+  function clearAllFilters() {
+    setIndustry(null);
+    setStatusFilter(null);
+    setTrackFilter(null);
+    setSearchInput("");
+    setSearch("");
+    setOffset(0);
+  }
+  const filtersActive = !!(industry || statusFilter || trackFilter || search);
 
   return (
-    <div className="eir-screen lp-screen">
-      <div className="lp-head">
-        <div className="lp-head-l">
-          <div className="eir-mono eir-dim">
-            ARTPARK / OS · Leadership Panel
-          </div>
-          <h1 className="lp-head-title">
-            TIR + SIP cohort <em>2026</em>
-          </h1>
-          <div className="eir-mono eir-dim">
-            Signed in as {user?.email || "—"} · {(user?.roles || []).join(", ") || "no roles"}
-          </div>
+    <div className="app-shell">
+      <div className="app-betabar">
+        <span>ARTPARK / OS</span>
+        <span className="pill">Staging</span>
+        <span style={{ opacity: 0.6 }}>Programs leadership</span>
+      </div>
+
+      <header className="app-header">
+        <div className="logos">
+          <img src="/assets/iisc-logo.png" alt="IISc" className="iisc" />
+          <span className="rule" aria-hidden="true" />
+          <img src="/assets/artpark-logo.png" alt="ARTPARK" className="artpark" />
         </div>
-        <div className="lp-head-r">
+        <span className="role-tag">Leadership</span>
+        <div className="spacer" />
+        {showSwitchToAdmin && (
           <button
             type="button"
-            className="eir-chip-btn eir-mono"
-            onClick={() => alert("Export ships in a later session.")}
+            className="switch-role"
+            onClick={() => navigate("/admin/users")}
+            aria-label="Switch to admin view"
           >
-            Export CSV ↓
+            Switch to admin <span className="arrow">→</span>
+          </button>
+        )}
+        <div className="user-chip">
+          <span className="avatar" aria-hidden="true">{initialsFor(user)}</span>
+          <span>
+            <span className="name">{user?.full_name || user?.email}</span>
+            {user?.full_name && <span className="email">{user.email}</span>}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={logout}
+          style={{ marginLeft: 8 }}
+        >
+          Sign out
+        </button>
+      </header>
+
+      <main className="app-main" style={{ margin: "0 auto" }}>
+        <header className="page-head">
+          <div>
+            <span className="eyebrow eyebrow-rule">Programs · leadership</span>
+            <h1>{view === "dashboard" ? "Funnel." : "Applications."}</h1>
+            <p className="page-sub">
+              {view === "dashboard"
+                ? "Live view of TIR and SIP applications, scoring, and reviewer load."
+                : "Filter, search, and open any application to assign reviewers or change status."}
+            </p>
+          </div>
+        </header>
+
+        <nav className="tabs" aria-label="Leadership views">
+          <button
+            type="button"
+            className={view === "dashboard" ? "active" : ""}
+            onClick={() => setView("dashboard")}
+          >
+            Dashboard
           </button>
           <button
             type="button"
-            className="eir-chip-btn eir-mono"
-            onClick={logout}
+            className={view === "applications" ? "active" : ""}
+            onClick={() => setView("applications")}
           >
-            Sign out
+            Applications {submitted > 0 && <span style={{ color: "var(--ink-dim)", marginLeft: 4 }}>{submitted}</span>}
           </button>
-        </div>
-      </div>
+        </nav>
 
-      <div className="lp-tabs" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view === "dashboard"}
-          className={`lp-tab ${view === "dashboard" ? "is-on" : ""}`}
-          onClick={() => setView("dashboard")}
-        >
-          <span className="lp-tab-label">Dashboard</span>
-          <span className="eir-mono eir-dim lp-tab-sub">
-            overview · charts · funnel
-          </span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view === "applications"}
-          className={`lp-tab ${view === "applications" ? "is-on" : ""}`}
-          onClick={() => setView("applications")}
-        >
-          <span className="lp-tab-label">
-            Applications{" "}
-            <span className="eir-mono lp-tab-count">{submitted}</span>
-          </span>
-          <span className="eir-mono eir-dim lp-tab-sub">
-            individual submissions
-          </span>
-        </button>
-      </div>
+        {statsError && <div className="inline-error">Stats failed to load: {statsError}</div>}
 
-      {statsError && (
-        <div className="lp-error">Stats failed to load: {statsError}</div>
-      )}
+        {view === "dashboard" && (
+          <>
+            {/* ── 5-card metric strip ── */}
+            <div className="metrics" style={{ marginBottom: "var(--s-7)" }}>
+              <div className="metric is-feature">
+                <span className="label">Profiles</span>
+                <span className="num">{statsLoading ? "…" : (totals.profiles_signed_up ?? 0)}</span>
+                <span className="delta">Users on platform</span>
+              </div>
+              <div className="metric">
+                <span className="label">Applications</span>
+                <span className="num">{statsLoading ? "…" : submitted}</span>
+                <span className="delta">
+                  {submitted ? `TIR ${tirCount} · SIP ${sipCount}` : "None yet"}
+                </span>
+              </div>
+              <div className="metric">
+                <span className="label">Advanced</span>
+                <span className="num">{statsLoading ? "…" : (totals.advanced_past_review ?? 0)}</span>
+                <span className="delta">
+                  {submitted
+                    ? `${Math.round(((totals.advanced_past_review ?? 0) / submitted) * 100)}% of submissions`
+                    : "—"}
+                </span>
+              </div>
+              <div className="metric">
+                <span className="label">Onboarded</span>
+                <span className="num">{statsLoading ? "…" : (totals.onboarded ?? 0)}</span>
+                <span className="delta">From offered → ready</span>
+              </div>
+              <div className="metric">
+                <span className="label">Avg AI score</span>
+                <span className="num">{statsLoading ? "…" : avgAi}</span>
+                <span className="delta">
+                  {submitted > 0 ? `Across ${submitted} apps` : "No apps yet"}
+                </span>
+              </div>
+            </div>
 
-      {view === "dashboard" && (
-        <>
-          <div className="lp-metric-row">
-            <MetricCard
-              kicker="Profiles signed up"
-              value={statsLoading ? "…" : totals.profiles_signed_up ?? 0}
-              sub="users on platform"
-            />
-            <MetricCard
-              kicker="Applications submitted"
-              value={statsLoading ? "…" : submitted}
-              split={
-                submitted > 0
-                  ? [
-                      { label: "TIR", n: tirCount, pct: tirPct },
-                      { label: "SIP", n: sipCount, pct: sipPct },
-                    ]
-                  : undefined
-              }
-              sub={submitted === 0 ? "none yet" : undefined}
-            />
-            <MetricCard
-              kicker="Advanced past review"
-              value={statsLoading ? "…" : totals.advanced_past_review ?? 0}
-              sub={
-                submitted > 0
-                  ? `${Math.round(((totals.advanced_past_review ?? 0) / submitted) * 100)}% of submissions`
-                  : "—"
-              }
-            />
-            <MetricCard
-              kicker="Onboarded"
-              value={statsLoading ? "…" : totals.onboarded ?? 0}
-              sub="from offered → ready"
-            />
-            <MetricCard
-              kicker="Average AI score"
-              value={statsLoading ? "…" : avgScoreDisplay}
-              sub={
-                submitted > 0
-                  ? `across ${submitted} apps`
-                  : "no apps yet"
-              }
-              accent
-            />
-          </div>
+            {/* ── Funnel + Status grid ── */}
+            <div className="split-60-40" style={{ marginBottom: "var(--s-7)" }}>
+              <section>
+                <div className="section-head">
+                  <span className="eyebrow eyebrow-rule">Pipeline</span>
+                  <h2>Funnel.</h2>
+                  <p>From signup to onboarded, across both tracks.</p>
+                </div>
+                {statsLoading ? (
+                  <div className="inline-loading">Loading funnel…</div>
+                ) : (
+                  <div className="funnel">
+                    {funnelOrder.map((f) => {
+                      const n = funnel[f.id] ?? 0;
+                      const pct = Math.round((n / funnelMax) * 100);
+                      return (
+                        <div key={f.id} className="funnel-row">
+                          <span className="f-label">{f.label}</span>
+                          <div className="f-track"><div className="f-fill" style={{ width: `${pct}%` }} /></div>
+                          <span className="f-n">{n}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
 
-          <div className="lp-grid">
-            <section className="lp-card lp-card-wide">
-              <div className="lp-card-head">
-                <div className="eir-mono eir-dim">§ Pipeline funnel</div>
-                <h2 className="lp-card-title">From signup to onboarded</h2>
+              <section>
+                <div className="section-head">
+                  <span className="eyebrow eyebrow-rule">Status today</span>
+                  <h2>Where every app sits.</h2>
+                  <p>Click a status to filter the Applications tab.</p>
+                </div>
+                <div className="metrics metrics-status">
+                  {(stats?.status_counts || []).slice(0, 6).map((s) => {
+                    const dotCls = STATUS_DOT_COLOR[s.id] || "";
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className={`metric clickable${statusFilter === s.id ? " is-feature" : ""}`}
+                        onClick={() => filterAndShow(setStatusFilter)(statusFilter === s.id ? null : s.id)}
+                        style={{ textAlign: "left", cursor: "pointer" }}
+                      >
+                        <span className="label">
+                          <span className={`dot ${dotCls}`} />
+                          {s.label}
+                        </span>
+                        <span className="num">{s.n}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+
+            {/* ── AI score histogram + components ── */}
+            <div className="split-60-40" style={{ marginBottom: "var(--s-7)" }}>
+              <section>
+                <div className="section-head">
+                  <span className="eyebrow eyebrow-rule">AI score distribution</span>
+                  <h2>Where the cohort lands.</h2>
+                  <p>
+                    {histogram.total > 0
+                      ? `${histogram.total} scored applications. The darker bar marks the median bucket.`
+                      : "No scored applications yet."}
+                  </p>
+                </div>
+                {scoreSample === null ? (
+                  <div className="inline-loading">Loading score sample…</div>
+                ) : (
+                  <>
+                    <div className="histogram">
+                      {histogram.bins.map((b, i) => {
+                        const maxCount = Math.max(1, ...histogram.bins.map((x) => x.count));
+                        const heightPct = (b.count / maxCount) * 100;
+                        return (
+                          <div
+                            key={i}
+                            className={`h-bar${i === histogram.medianIdx ? " is-median" : ""}`}
+                            style={{ height: `${heightPct}%` }}
+                            title={`${b.from.toFixed(1)}–${b.to.toFixed(1)} · ${b.count}`}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div className="histogram-axis">
+                      {histogram.bins.map((b, i) => (
+                        <span key={i} className="axis-label">
+                          {i === 0 ? "0" : i === histogram.bins.length - 1 ? "10" : b.from.toFixed(0)}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </section>
+
+              <section>
+                <div className="section-head">
+                  <span className="eyebrow eyebrow-rule">Score components</span>
+                  <h2>What the AI is weighting.</h2>
+                  <p>Five signals scored 0–10. Cohort averages arrive in a later session.</p>
+                </div>
+                <div>
+                  {componentAverages.map((c) => (
+                    <div key={c.id} className="bar-row">
+                      <span className="bar-label">
+                        {c.label}
+                        <span style={{ color: "var(--ink-dim)", fontSize: 11, marginLeft: 6 }}>
+                          {c.weight}%
+                        </span>
+                      </span>
+                      <div className="bar-track">
+                        <div
+                          className="bar-fill"
+                          style={{ width: c.value != null ? `${c.value * 10}%` : "0%" }}
+                        />
+                      </div>
+                      <span className="bar-value">{c.value != null ? c.value.toFixed(1) : "—"}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            {/* ── Industry bars ── */}
+            <section>
+              <div className="section-head">
+                <span className="eyebrow eyebrow-rule">Industries</span>
+                <h2>Where they come from.</h2>
+                <p>Click a row to jump to the Applications tab pre-filtered to that industry.</p>
               </div>
               {statsLoading ? (
-                <div className="lp-loading">loading funnel…</div>
+                <div className="inline-loading">Loading industries…</div>
               ) : (
-                <FunnelStrip funnel={stats?.funnel} />
-              )}
-            </section>
-
-            <section className="lp-card">
-              <div className="lp-card-head">
-                <div className="eir-mono eir-dim">§ AI score distribution</div>
-                <h2 className="lp-card-title">
-                  Across submitted applications
-                </h2>
-              </div>
-              {scoreSample === null ? (
-                <div className="lp-loading">loading score sample…</div>
-              ) : (
-                <ScoreHistogram scores={scoreSample} />
-              )}
-            </section>
-
-            <section className="lp-card">
-              <div className="lp-card-head">
-                <div className="eir-mono eir-dim">
-                  § AI score · components
+                <div>
+                  {industries.slice(0, 6).map((i) => {
+                    const max = Math.max(1, ...industries.map((x) => x.n));
+                    const pct = (i.n / max) * 100;
+                    return (
+                      <button
+                        key={i.id}
+                        type="button"
+                        className="bar-row"
+                        onClick={() => filterAndShow(setIndustry)(industry === i.id ? null : i.id)}
+                        style={{
+                          width: "100%",
+                          background: industry === i.id ? "var(--paper-soft)" : "transparent",
+                          border: "none",
+                          textAlign: "left",
+                          cursor: "pointer",
+                          padding: "10px var(--s-3)",
+                        }}
+                      >
+                        <span className="bar-label">{i.label}</span>
+                        <div className="bar-track">
+                          <div className="bar-fill" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="bar-value">{i.n} · {i.pct}%</span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <h2 className="lp-card-title">What the score is made of</h2>
-                <p className="lp-card-blurb">
-                  Five weighted signals scored 0–10. Per-application breakdowns
-                  appear in the application drawer; cohort-wide averages will
-                  arrive in a later session.
-                </p>
-              </div>
-              <ComponentBars placeholder />
-            </section>
-
-            <section className="lp-card lp-card-wide">
-              <div className="lp-card-head">
-                <div className="eir-mono eir-dim">
-                  § Applications by industry
-                </div>
-                <h2 className="lp-card-title">
-                  Where the cohort is concentrated
-                </h2>
-                <p className="lp-card-blurb">
-                  Click an industry to jump into the Applications tab
-                  pre-filtered.
-                </p>
-              </div>
-              {statsLoading ? (
-                <div className="lp-loading">loading industries…</div>
-              ) : (
-                <IndustryBars
-                  industries={industries}
-                  total={stats?.industry?.total ?? 0}
-                  activeIndustry={industry}
-                  onFilter={filterAndShow(setIndustry)}
-                />
               )}
-              <div className="lp-ind-filter-row">
-                <span className="eir-mono eir-dim">filter:</span>
+            </section>
+          </>
+        )}
+
+        {view === "applications" && (
+          <>
+            <div className="filter-bar">
+              <input
+                className="field filter-search"
+                type="search"
+                placeholder="Search by name, email, or org"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                aria-label="Search applications"
+              />
+              <div className="filter-chips" role="group" aria-label="Track">
                 <button
                   type="button"
-                  className={`lp-pill ${!industry ? "is-on" : ""}`}
-                  onClick={() => {
-                    setIndustry(null);
-                    setOffset(0);
-                  }}
+                  className={`chip${!trackFilter ? " active" : ""}`}
+                  onClick={() => { setTrackFilter(null); setOffset(0); }}
                 >
-                  all
+                  All tracks
                 </button>
-                {industries.map((i) => (
+                {["TIR", "SIP"].map((t) => (
                   <button
+                    key={t}
                     type="button"
-                    key={i.id}
-                    className={`lp-pill ${industry === i.id ? "is-on" : ""}`}
-                    onClick={() =>
-                      filterAndShow(setIndustry)(industry === i.id ? null : i.id)
-                    }
+                    className={`chip${trackFilter === t ? " active" : ""}`}
+                    onClick={() => { setTrackFilter(trackFilter === t ? null : t); setOffset(0); }}
                   >
-                    {i.label}
+                    {t}
                   </button>
                 ))}
               </div>
-            </section>
-
-            <section className="lp-card lp-card-wide">
-              <div className="lp-card-head">
-                <div className="eir-mono eir-dim">§ Status breakdown</div>
-                <h2 className="lp-card-title">
-                  Where every application sits right now
-                </h2>
-                <p className="lp-card-blurb">
-                  Click a status to open the Applications tab filtered to it.
-                </p>
-              </div>
-              {statsLoading ? (
-                <div className="lp-loading">loading status grid…</div>
-              ) : (
-                <StatusGrid
-                  statusCounts={stats?.status_counts || []}
-                  activeStatus={statusFilter}
-                  onFilter={filterAndShow(setStatusFilter)}
-                />
+              <div className="filter-spacer" />
+              {filtersActive && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={clearAllFilters}>
+                  Clear filters
+                </button>
               )}
-            </section>
-          </div>
-        </>
-      )}
+              <span className="filter-count">
+                {appsLoading ? "…" : `${apps.length} of ${appsTotal}`}
+              </span>
+            </div>
 
-      {view === "applications" && (
-        <div className="lp-grid">
-          <section className="lp-card lp-card-wide">
-            <div className="lp-card-head lp-card-head-row">
-              <div>
-                <div className="eir-mono eir-dim">§ Applications database</div>
-                <h2 className="lp-card-title">
-                  {appsLoading ? "…" : `${apps.length} of ${appsTotal}`}
-                  {activeIndustryLabel && <> · {activeIndustryLabel}</>}
-                  {activeStatusLabel && <> · {activeStatusLabel}</>}
-                  {trackFilter && <> · {trackFilter}</>}
-                </h2>
-              </div>
-              <div className="lp-toolbar">
-                <input
-                  className="lp-search eir-mono"
-                  placeholder="search name / email / org…"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                />
-                <div className="lp-seg">
-                  {["TIR", "SIP"].map((t) => (
-                    <button
-                      type="button"
-                      key={t}
-                      className={`lp-seg-btn eir-mono ${trackFilter === t ? "is-on" : ""}`}
-                      onClick={() => {
-                        setTrackFilter(trackFilter === t ? null : t);
-                        setOffset(0);
-                      }}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-                {(industry || statusFilter || trackFilter || search) && (
+            {/* Status chip row */}
+            <div className="filter-bar" style={{ marginBottom: "var(--s-5)" }}>
+              <span className="eyebrow" style={{ marginRight: "var(--s-3)" }}>Status</span>
+              <div className="filter-chips">
+                <button
+                  type="button"
+                  className={`chip${!statusFilter ? " active" : ""}`}
+                  onClick={() => { setStatusFilter(null); setOffset(0); }}
+                >
+                  All
+                </button>
+                {(stats?.status_counts || []).map((s) => (
                   <button
+                    key={s.id}
                     type="button"
-                    className="eir-chip-btn eir-mono"
-                    onClick={() => {
-                      setIndustry(null);
-                      setStatusFilter(null);
-                      setTrackFilter(null);
-                      setSearchInput("");
-                      setSearch("");
-                      setOffset(0);
-                    }}
+                    className={`chip${statusFilter === s.id ? " active" : ""}`}
+                    onClick={() => { setStatusFilter(statusFilter === s.id ? null : s.id); setOffset(0); }}
                   >
-                    clear ×
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {appsError && <div className="inline-error">{appsError}</div>}
+
+            {appsLoading && !appsError && (
+              <div className="inline-loading">Loading applications…</div>
+            )}
+
+            {!appsLoading && !appsError && apps.length === 0 && (
+              <div className="card card-soft tbl-empty">
+                <span className="eyebrow">No matches</span>
+                <h3>No applications match those filters.</h3>
+                <p>Clear filters or pick a different status.</p>
+                {filtersActive && (
+                  <button type="button" className="btn btn-ghost" onClick={clearAllFilters}>
+                    Clear filters
                   </button>
                 )}
               </div>
-            </div>
-
-            <div className="lp-ind-filter-row" style={{ marginTop: 0 }}>
-              <span className="eir-mono eir-dim">industry:</span>
-              <button
-                type="button"
-                className={`lp-pill ${!industry ? "is-on" : ""}`}
-                onClick={() => {
-                  setIndustry(null);
-                  setOffset(0);
-                }}
-              >
-                all
-              </button>
-              {industries.map((i) => (
-                <button
-                  type="button"
-                  key={i.id}
-                  className={`lp-pill ${industry === i.id ? "is-on" : ""}`}
-                  onClick={() => {
-                    setIndustry(industry === i.id ? null : i.id);
-                    setOffset(0);
-                  }}
-                >
-                  {i.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="lp-ind-filter-row">
-              <span className="eir-mono eir-dim">status:</span>
-              <button
-                type="button"
-                className={`lp-pill ${!statusFilter ? "is-on" : ""}`}
-                onClick={() => {
-                  setStatusFilter(null);
-                  setOffset(0);
-                }}
-              >
-                all
-              </button>
-              {(stats?.status_counts || []).map((s) => (
-                <button
-                  type="button"
-                  key={s.id}
-                  className={`lp-pill ${statusFilter === s.id ? "is-on" : ""}`}
-                  onClick={() => {
-                    setStatusFilter(statusFilter === s.id ? null : s.id);
-                    setOffset(0);
-                  }}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-
-            {appsError && <div className="lp-error">Error: {appsError}</div>}
-            {appsLoading ? (
-              <div className="lp-loading">loading applications…</div>
-            ) : (
-              <ApplicationsTable
-                applications={apps}
-                total={appsTotal}
-                statusLabelById={statusLabelById}
-                sort={sort}
-                setSort={setSort}
-                limit={PAGE_SIZE}
-                offset={offset}
-                setOffset={setOffset}
-                onOpen={setOpenRow}
-              />
             )}
-          </section>
-        </div>
-      )}
 
-      {openRow && (
-        <AppDrawer
-          row={openRow}
-          statusLabelById={statusLabelById}
-          onClose={() => setOpenRow(null)}
-        />
-      )}
+            {!appsLoading && !appsError && apps.length > 0 && (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Applicant</th>
+                    <th>Track</th>
+                    <th>Industry</th>
+                    <th className="num">AI score</th>
+                    <th>Status</th>
+                    <th>Submitted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {apps.map((a) => (
+                    <tr
+                      key={`${a.track}-${a.id}`}
+                      className="clickable"
+                      onClick={() => setOpenRow(a)}
+                    >
+                      <td className="primary">
+                        {a.basic_full_name || <span style={{ color: "var(--ink-dim)" }}>No name</span>}
+                        <span className="sub">{a.basic_org || a.basic_email || ""}</span>
+                      </td>
+                      <td>{(a.track || "").toUpperCase()}</td>
+                      <td>{a.industry?.label || "—"}</td>
+                      <td className="num">
+                        {a.ai_score_overall != null
+                          ? a.ai_score_overall.toFixed(1)
+                          : <span style={{ color: "var(--ink-dim)" }}>—</span>}
+                      </td>
+                      <td>
+                        <StatusCell
+                          statusId={a.status}
+                          label={statusLabelById[a.status] || a.status}
+                        />
+                      </td>
+                      <td>{fmtDate(a.submitted_at || a.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {!appsLoading && !appsError && apps.length > 0 && (
+              <div className="tbl-pagination">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={offset === 0}
+                  onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                >
+                  ← Previous
+                </button>
+                <span className="page-info">
+                  Showing {offset + 1}–{offset + apps.length} of {appsTotal}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={offset + apps.length >= appsTotal}
+                  onClick={() => setOffset(offset + PAGE_SIZE)}
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+          </>
+        )}
+
+        {openRow && (
+          <AppDrawer
+            row={openRow}
+            statusLabelById={statusLabelById}
+            onClose={() => setOpenRow(null)}
+          />
+        )}
+      </main>
     </div>
   );
 }

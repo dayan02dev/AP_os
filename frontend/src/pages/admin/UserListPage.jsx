@@ -1,32 +1,65 @@
 // UserListPage — renders inside AdminLayout's <Outlet />.
 //
-// Fetches GET /admin/users via adminApi.listUsers({ search, role }).
-// 250ms debounced search input, role <select> filter, clickable rows
-// navigating to /admin/users/:id, and a "+ Add user" button going to
-// /admin/users/new. Loading, empty, and error states all surfaced.
-// No pagination, no sortable columns — deferred to later tasks.
+// Visual contract: ARTPARK design system §5.2 page-head, §5.4 filter-bar,
+// §5.3 .tbl, §5.11 toast. No icons, no emoji, no badges. Sharp corners.
+//
+// Fetches GET /admin/users via adminApi.listUsers. 250ms debounced search.
+// Role chips replace the previous <select>. Click row → /admin/users/:id.
 
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { adminApi } from "../../lib/adminApi.js";
 import { api } from "../../lib/api.js";
 
-const ROLE_OPTIONS = [
-  { value: "", label: "All roles" },
-  { value: "applicant", label: "applicant" },
-  { value: "founder", label: "founder" },
-  { value: "reviewer", label: "reviewer" },
-  { value: "mentor", label: "mentor" },
-  { value: "leadership", label: "leadership" },
-  { value: "admin", label: "admin" },
+const ROLE_CHIPS = [
+  { value: "",           label: "All" },
+  { value: "admin",      label: "Admin" },
+  { value: "leadership", label: "Leadership" },
+  { value: "reviewer",   label: "Reviewer" },
+  { value: "mentor",     label: "Mentor" },
+  { value: "founder",    label: "Founder" },
 ];
+
+function fmtDate(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("en-IN", {
+      day: "2-digit", month: "short", year: "numeric",
+    });
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+function primaryRole(roles) {
+  // Display priority — show the most "load-bearing" role.
+  if (!roles?.length) return null;
+  const order = ["admin", "leadership", "reviewer", "mentor", "founder", "applicant"];
+  for (const r of order) {
+    if (roles.includes(r)) return r;
+  }
+  return roles[0];
+}
+
+function RoleCell({ roles }) {
+  const primary = primaryRole(roles);
+  if (!primary) return <span style={{ color: "var(--ink-dim)" }}>—</span>;
+  const extra = (roles?.length || 0) - 1;
+  return (
+    <span>
+      <span style={{ textTransform: "capitalize" }}>{primary}</span>
+      {extra > 0 && (
+        <span style={{ color: "var(--ink-dim)", marginLeft: 6 }}>
+          +{extra}
+        </span>
+      )}
+    </span>
+  );
+}
 
 export default function UserListPage() {
   const navigate = useNavigate();
 
-  // Raw search string — we debounce before firing the API call
   const [searchInput, setSearchInput] = useState("");
-  // Debounced search committed to the query
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
 
@@ -35,14 +68,11 @@ export default function UserListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Debounce: commit searchInput → search after 250ms idle
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 250);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // Fetch whenever committed search or roleFilter changes.
-  // AbortController cancels in-flight requests when filters change rapidly.
   useEffect(() => {
     const ctrl = new AbortController();
     let cancelled = false;
@@ -60,19 +90,11 @@ export default function UserListPage() {
           setTotal(data.total ?? null);
         }
       } catch (err) {
-        // Effect cleanup sets `cancelled` synchronously before ctrl.abort(),
-        // so this flag is the reliable abort signal. Don't use err.code
-        // ("timeout") — api.js emits the same code for genuine 30s network
-        // timeouts, which we DO want to surface to the user.
         if (cancelled) return;
         let msg;
-        if (err?.status === 403) {
-          msg = "You don't have permission to view users.";
-        } else if (err?.status === 401) {
-          msg = "Your session expired. Please sign in again.";
-        } else {
-          msg = err?.message || "Couldn't load users.";
-        }
+        if (err?.status === 403) msg = "You don't have permission to view users.";
+        else if (err?.status === 401) msg = "Your session expired. Please sign in again.";
+        else msg = err?.message || "Couldn't load users.";
         setError(msg);
         setUsers([]);
         setTotal(null);
@@ -83,134 +105,144 @@ export default function UserListPage() {
     return () => { cancelled = true; ctrl.abort(); };
   }, [search, roleFilter]);
 
-  // Derived: are any filters active?
   const filtersActive = search !== "" || roleFilter !== "";
-
-  // Count label
   const countLabel = (() => {
     if (total === null) return null;
     if (!filtersActive) return `${total} user${total !== 1 ? "s" : ""}`;
-    return `${users.length} of ${total} user${total !== 1 ? "s" : ""}`;
+    return `${users.length} of ${total}`;
   })();
 
-  return (
-    <div className="user-list-page">
-      {/* ── Page header ── */}
-      <div className="user-list-header">
-        <div className="user-list-header-left">
-          <span className="eir-mono user-list-kicker">admin · users</span>
-          <h1 className="user-list-title">Users</h1>
-        </div>
-        <button
-          type="button"
-          className="eir-chip-btn eir-mono user-list-add-btn"
-          onClick={() => navigate("/admin/users/new")}
-        >
-          + Add user
-        </button>
-      </div>
+  function clearFilters() {
+    setSearchInput("");
+    setSearch("");
+    setRoleFilter("");
+  }
 
-      {/* ── Filters row ── */}
-      <div className="user-list-filters">
+  return (
+    <>
+      <header className="page-head">
+        <div>
+          <span className="eyebrow eyebrow-rule">User management</span>
+          <h1>Users.</h1>
+          <p className="page-sub">
+            Search, filter by role, and drill into any user's profile.
+          </p>
+        </div>
+        <div className="page-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => navigate("/admin/users/new")}
+          >
+            Invite user <span className="arrow">→</span>
+          </button>
+        </div>
+      </header>
+
+      <div className="filter-bar">
         <input
-          className="user-list-search eir-mono"
-          type="text"
-          placeholder="search name or email…"
+          className="field filter-search"
+          type="search"
+          placeholder="Search by name or email"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           aria-label="Search users"
         />
-        <select
-          className="user-list-role-select eir-mono"
-          value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
-          aria-label="Filter by role"
-        >
-          {ROLE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
+        <div className="filter-chips" role="group" aria-label="Filter by role">
+          {ROLE_CHIPS.map((opt) => (
+            <button
+              key={opt.value || "all"}
+              type="button"
+              className={`chip${roleFilter === opt.value ? " active" : ""}`}
+              onClick={() => setRoleFilter(opt.value)}
+            >
               {opt.label}
-            </option>
+            </button>
           ))}
-        </select>
-        {countLabel && (
-          <span className="eir-mono eir-dim user-list-count">{countLabel}</span>
-        )}
+        </div>
+        <div className="filter-spacer" />
+        {countLabel && <span className="filter-count">{countLabel}</span>}
       </div>
 
-      {/* ── Error state ── */}
-      {error && (
-        <div className="user-list-error" role="alert">
-          <span className="eir-mono">Error:</span> {error}
-        </div>
-      )}
+      {error && <div className="inline-error" role="alert">{error}</div>}
 
-      {/* ── Loading state ── */}
-      {loading && !error && (
-        <div className="user-list-loading eir-mono eir-dim">Loading users…</div>
-      )}
+      {loading && !error && <div className="inline-loading">Loading users…</div>}
 
-      {/* ── Empty state ── */}
       {!loading && !error && users.length === 0 && (
-        <div className="user-list-empty eir-mono eir-dim">
-          No users match these filters.
+        <div className="card card-soft tbl-empty">
+          <span className="eyebrow">No matches</span>
+          <h3>No users match those filters.</h3>
+          <p>
+            {filtersActive
+              ? "Clear the filters or invite someone new."
+              : "Invite the first user to get started."}
+          </p>
+          {filtersActive ? (
+            <button type="button" className="btn btn-ghost" onClick={clearFilters}>
+              Clear filters
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => navigate("/admin/users/new")}
+            >
+              Invite user <span className="arrow">→</span>
+            </button>
+          )}
         </div>
       )}
 
-      {/* ── Table ── */}
       {!loading && !error && users.length > 0 && (
-        <div className="user-list-table-wrap">
-          <div className="user-list-table" role="table" aria-label="Users">
-            {/* Header row */}
-            <div className="user-list-tr user-list-tr-head" role="row">
-              <div className="user-list-th eir-mono" role="columnheader">Name</div>
-              <div className="user-list-th eir-mono" role="columnheader">Email</div>
-              <div className="user-list-th eir-mono" role="columnheader">Roles</div>
-              <div className="user-list-th eir-mono" role="columnheader">Joined</div>
-            </div>
-
-            {/* Data rows */}
-            {users.map((user) => (
-              <button
-                type="button"
-                key={user.id}
-                className="user-list-tr user-list-tr-row"
-                onClick={() => navigate(`/admin/users/${user.id}`)}
-                aria-label={`View ${user.full_name || user.email}`}
-              >
-                <div className="user-list-td user-list-td-name" role="cell">
-                  <span className="user-list-name">
-                    {user.full_name || <span className="eir-dim">—</span>}
-                  </span>
-                  {user.location_city && (
-                    <span className="eir-mono eir-dim user-list-location">
-                      {user.location_city}
+        <>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Joined</th>
+                <th aria-label="Actions" style={{ width: 48 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => (
+                <tr
+                  key={u.id}
+                  className="clickable"
+                  onClick={() => navigate(`/admin/users/${u.id}`)}
+                >
+                  <td className="primary">
+                    {u.full_name || <span style={{ color: "var(--ink-dim)" }}>No name</span>}
+                    <span className="sub">{u.email}</span>
+                  </td>
+                  <td><RoleCell roles={u.roles} /></td>
+                  <td>
+                    <span className="status-cell">
+                      <span className="dot green" />
+                      Active
                     </span>
-                  )}
-                </div>
-                <div className="user-list-td user-list-td-email eir-mono" role="cell">
-                  {user.email}
-                </div>
-                <div className="user-list-td user-list-td-roles" role="cell">
-                  {(user.roles ?? []).length > 0 ? (
-                    <span className="user-list-chips">
-                      {user.roles.map((role) => (
-                        <span key={role} className="user-list-role-chip eir-mono">
-                          {role}
-                        </span>
-                      ))}
-                    </span>
-                  ) : (
-                    <span className="eir-dim eir-mono">—</span>
-                  )}
-                </div>
-                <div className="user-list-td user-list-td-joined eir-mono eir-dim" role="cell">
-                  {user.created_at?.slice(0, 10) ?? "—"}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
+                  </td>
+                  <td>{fmtDate(u.created_at)}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="row-menu"
+                      aria-label="Row actions"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/admin/users/${u.id}`);
+                      }}
+                    >
+                      ⋯
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
-    </div>
+    </>
   );
 }

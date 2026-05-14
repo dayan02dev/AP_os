@@ -1,38 +1,32 @@
-// UserDetailPage — renders inside AdminLayout's <Outlet />.
+// UserDetailPage — /admin/users/:id
 //
-// Fetches GET /admin/users/{id} via adminApi.getUser(userId).
-// Displays a read-only profile section, a UserRolesPanel, and a
-// UserSecurityPanel side by side. Roles + security actions trigger a
-// refetch so the page stays in sync without a full reload.
+// Visual contract: ARTPARK design system §6.4.
+// Two-col 1fr/320px. Left: .card panels for Personal + Roles. Right: .card-soft Security.
+// Page head: eyebrow USER · ADMIN, h1 = name (no trailing period — proper noun),
+// sub = email · role-dot · last-active.
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { adminApi } from "../../lib/adminApi.js";
 import UserRolesPanel from "./UserRolesPanel.jsx";
 import UserSecurityPanel from "./UserSecurityPanel.jsx";
 
-function fmt(dateStr) {
-  if (!dateStr) return "—";
+function fmtDate(iso) {
+  if (!iso) return "—";
   try {
-    return new Date(dateStr).toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
+    return new Date(iso).toLocaleDateString("en-IN", {
+      day: "2-digit", month: "short", year: "numeric",
     });
   } catch {
-    return dateStr.slice(0, 10);
+    return iso.slice(0, 10);
   }
 }
 
-function ProfileField({ label, value }) {
-  return (
-    <div className="user-detail-field">
-      <span className="user-detail-field-label eir-mono eir-dim">{label}</span>
-      <span className="user-detail-field-value">
-        {value || <span className="eir-dim">—</span>}
-      </span>
-    </div>
-  );
+function rolesLabel(roles) {
+  if (!Array.isArray(roles) || roles.length === 0) return "No roles";
+  const names = roles.map((r) => (typeof r === "string" ? r : r.role));
+  // Capitalise + join with em-dash
+  return names.map((r) => r.charAt(0).toUpperCase() + r.slice(1)).join(" · ");
 }
 
 export default function UserDetailPage() {
@@ -53,134 +47,159 @@ export default function UserDetailPage() {
       const data = await adminApi.getUser(userId);
       setUser(data);
     } catch (err) {
-      if (err?.status === 404) {
-        setNotFound(true);
-      } else if (err?.status === 403) {
-        setError("You don't have permission to view this user.");
-      } else if (err?.status === 401) {
-        setError("Your session expired. Please sign in again.");
-      } else {
-        setError(err?.message || "Couldn't load user.");
-      }
+      if (err?.status === 404) setNotFound(true);
+      else if (err?.status === 403) setError("You don't have permission to view this user.");
+      else if (err?.status === 401) setError("Your session expired. Please sign in again.");
+      else setError(err?.message || "Couldn't load user.");
     } finally {
       setLoading(false);
     }
   }, [userId]);
 
-  useEffect(() => {
-    fetchUser();
-  }, [fetchUser]);
+  useEffect(() => { fetchUser(); }, [fetchUser]);
 
-  // ── Loading ──
   if (loading) {
-    return (
-      <div className="user-detail-page">
-        <div className="user-detail-loading eir-mono eir-dim">Loading user…</div>
-      </div>
-    );
+    return <div className="inline-loading">Loading user…</div>;
   }
 
-  // ── Not found ──
   if (notFound) {
     return (
-      <div className="user-detail-page">
+      <>
         <button
           type="button"
-          className="user-detail-back eir-mono"
+          className="back-link"
           onClick={() => navigate("/admin/users")}
         >
-          ← back to users
+          ← Back to users
         </button>
-        <div className="user-detail-not-found eir-mono">
-          User not found.
+        <div className="card card-soft tbl-empty">
+          <span className="eyebrow">Not found</span>
+          <h3>That user doesn't exist.</h3>
+          <p>The link may be stale, or the user was deactivated and removed.</p>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => navigate("/admin/users")}
+          >
+            Back to users
+          </button>
         </div>
-      </div>
+      </>
     );
   }
 
-  // ── Error ──
   if (error) {
     return (
-      <div className="user-detail-page">
+      <>
         <button
           type="button"
-          className="user-detail-back eir-mono"
+          className="back-link"
           onClick={() => navigate("/admin/users")}
         >
-          ← back to users
+          ← Back to users
         </button>
-        <div className="user-detail-error" role="alert">
-          <span className="eir-mono">Error:</span> {error}
-        </div>
-      </div>
+        <div className="inline-error" role="alert">{error}</div>
+      </>
     );
   }
 
   if (!user) return null;
 
+  const roleList = user.roles || [];
+  const headSub = [
+    user.email,
+    rolesLabel(roleList),
+    user.created_at && `Joined ${fmtDate(user.created_at)}`,
+  ].filter(Boolean);
+
   return (
-    <div className="user-detail-page">
-      {/* ── Back link ── */}
+    <>
       <button
         type="button"
-        className="user-detail-back eir-mono"
+        className="back-link"
         onClick={() => navigate("/admin/users")}
       >
-        ← back to users
+        ← Back to users
       </button>
 
-      {/* ── Page header ── */}
-      <div className="user-detail-header">
-        <div className="user-detail-header-left">
-          <span className="eir-mono user-detail-kicker">admin · users · detail</span>
-          <h1 className="user-detail-title">
-            {user.full_name || <span className="eir-dim">No name</span>}
-          </h1>
-          <span className="user-detail-email eir-mono eir-dim">{user.email}</span>
-        </div>
-        {user.active_role && (
-          <span className="user-detail-role-chip eir-mono">{user.active_role}</span>
-        )}
-      </div>
-
-      {/* ── Three-panel layout ── */}
-      <div className="user-detail-panels">
-        {/* Panel 1: Profile fields (read-only) */}
-        <section className="user-detail-profile-panel">
-          <div className="user-detail-panel-heading eir-mono">Profile</div>
-          <div className="user-detail-fields">
-            <ProfileField label="Full name"    value={user.full_name} />
-            <ProfileField label="Email"        value={user.email} />
-            <ProfileField label="Phone"        value={user.phone} />
-            <ProfileField label="City"         value={user.location_city} />
-            <ProfileField label="Joined"       value={fmt(user.created_at)} />
-            <ProfileField
-              label="Last sign-in"
-              value={user.last_sign_in_at ? fmt(user.last_sign_in_at) : null}
-            />
-            {user.applications_count !== undefined && (
-              <ProfileField
-                label="Applications"
-                value={String(user.applications_count)}
-              />
-            )}
+      <header className="page-head">
+        <div>
+          <span className="eyebrow eyebrow-rule">User · admin</span>
+          {/* No trailing period — h1 is a proper noun (the user's name). */}
+          <h1>{user.full_name || user.email}</h1>
+          <div
+            className="page-sub"
+            style={{ display: "flex", flexWrap: "wrap", gap: "var(--s-2)", alignItems: "center" }}
+          >
+            <span className="status-cell"><span className="dot green" /> Active</span>
+            {headSub.map((bit, i) => (
+              <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: "var(--s-2)" }}>
+                <span style={{ color: "var(--ink-dim)" }}>·</span>
+                <span>{bit}</span>
+              </span>
+            ))}
           </div>
-        </section>
+        </div>
+      </header>
 
-        {/* Panel 2: Roles */}
-        <UserRolesPanel
-          userId={user.id}
-          roles={user.roles ?? []}
-          onRolesChanged={fetchUser}
-        />
+      <div className="two-col">
+        <div className="col-main">
+          <section className="card">
+            <div className="section-head" style={{ marginBottom: "var(--s-3)" }}>
+              <span className="eyebrow">Personal info</span>
+              <h2 style={{ marginTop: "var(--s-2)" }}>Profile.</h2>
+            </div>
+            <dl className="def">
+              <div className="def-row">
+                <dt>Full name</dt>
+                <dd>{user.full_name || <span style={{ color: "var(--ink-dim)" }}>Not set</span>}</dd>
+                <span />
+              </div>
+              <div className="def-row">
+                <dt>Email</dt>
+                <dd style={{ wordBreak: "break-all" }}>{user.email}</dd>
+                <span style={{ color: "var(--ink-dim)", fontSize: 11 }}>Immutable</span>
+              </div>
+              <div className="def-row">
+                <dt>Phone</dt>
+                <dd>{user.phone || <span style={{ color: "var(--ink-dim)" }}>Not set</span>}</dd>
+                <span />
+              </div>
+              <div className="def-row">
+                <dt>City</dt>
+                <dd>{user.location_city || <span style={{ color: "var(--ink-dim)" }}>Not set</span>}</dd>
+                <span />
+              </div>
+              <div className="def-row">
+                <dt>Joined</dt>
+                <dd>{fmtDate(user.created_at)}</dd>
+                <span />
+              </div>
+              {user.applications_count !== undefined && (
+                <div className="def-row">
+                  <dt>Applications</dt>
+                  <dd>{user.applications_count}</dd>
+                  <span />
+                </div>
+              )}
+            </dl>
+          </section>
 
-        {/* Panel 3: Security */}
-        <UserSecurityPanel
-          userId={user.id}
-          email={user.email}
-          onDeactivated={() => navigate("/admin/users")}
-        />
+          <UserRolesPanel
+            userId={user.id}
+            roles={user.roles ?? []}
+            onRolesChanged={fetchUser}
+          />
+        </div>
+
+        <aside className="col-aside">
+          <UserSecurityPanel
+            userId={user.id}
+            email={user.email}
+            onDeactivated={() => navigate("/admin/users")}
+          />
+        </aside>
       </div>
-    </div>
+    </>
   );
 }

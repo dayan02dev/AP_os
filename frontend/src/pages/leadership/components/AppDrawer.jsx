@@ -1,119 +1,144 @@
-// AppDrawer — slide-in detail view for one application.
-// On open, renders header info from the row immediately, then fetches
-// GET /leadership/applications/{id} for full detail (ai_screening, reviews,
-// reviewer_assignments, status_history). The action buttons at the bottom
-// are visible but no-op — Session 6 wires them.
+// AppDrawer — slide-in detail panel for a single application.
+//
+// Visual contract: ARTPARK design system §5.6 + §6.6.
+// On open, fetches GET /leadership/applications/{id} for the full detail
+// payload (ai_screening, reviews, reviewer_assignments, status_history).
+// Footer: Assign reviewer (ghost) + Change status (primary). View scoring
+// remains a no-op tooltip — the reviewer scoring screen ships in Phase 1.5.
 
 import { useEffect, useRef, useState } from "react";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
 import AssignReviewersModal from "../modals/AssignReviewersModal.jsx";
 import StatusChangeModal from "../modals/StatusChangeModal.jsx";
-import ComponentBars from "./ComponentBars.jsx";
-import StatusChip from "./StatusChip.jsx";
+
+const STATUS_DOT_COLOR = {
+  submitted:        "blue",
+  ai_screening:     "amber",
+  screening_failed: "coral",
+  under_review:     "blue",
+  evaluated:        "blue",
+  shortlisted:      "green",
+  interview:        "green",
+  offered:          "green",
+  onboarded:        "green",
+  rejected:         "coral",
+  waitlisted:       "amber",
+  withdrawn:        "dim",
+};
 
 function fmtDate(iso) {
   if (!iso) return "—";
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return iso;
-  return new Date(t).toLocaleString();
+  try {
+    return new Date(iso).toLocaleString("en-IN", {
+      day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
 }
 
-function SectionTitle({ children }) {
-  return <h4 className="lp-drawer-section-title eir-mono">{children}</h4>;
+function StatusInline({ statusId, label }) {
+  const cls = STATUS_DOT_COLOR[statusId] || "";
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span className={`dot ${cls}`} />
+      <span style={{ textTransform: "capitalize" }}>{label || statusId}</span>
+    </span>
+  );
 }
 
 function renderProblemSolution(application) {
   if (!application) return null;
-  // tir_applications uses problem_*/solution_* prefixes; sip_applications uses
-  // its own. We render whatever non-null fields show up under those prefixes.
   const fields = Object.entries(application).filter(
     ([k, v]) =>
       typeof v === "string" &&
       v.trim() !== "" &&
-      (k.startsWith("problem_") || k.startsWith("solution_"))
+      (k.startsWith("problem_") || k.startsWith("solution_")),
   );
   if (fields.length === 0) {
     return (
-      <p className="lp-drawer-empty eir-mono">
-        No problem/solution text on file yet.
+      <p style={{ color: "var(--ink-dim)", fontSize: 13 }}>
+        No problem or solution text on file.
       </p>
     );
   }
   return (
-    <div className="lp-drawer-section-body">
+    <dl className="def">
       {fields.map(([k, v]) => (
-        <p key={k}>
-          <span className="eir-mono eir-dim" style={{ display: "block", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2 }}>
-            {k.replaceAll("_", " ")}
-          </span>
-          {v}
-        </p>
+        <div key={k} className="def-row" style={{ gridTemplateColumns: "180px 1fr" }}>
+          <dt>{k.replace(/_/g, " ")}</dt>
+          <dd style={{ lineHeight: 1.55 }}>{v}</dd>
+        </div>
       ))}
+    </dl>
+  );
+}
+
+function ComponentBars({ aiScreening }) {
+  const components = [
+    { key: "score_problem",    label: "Problem impact" },
+    { key: "score_solution",   label: "Completeness & depth" },
+    { key: "score_tech",       label: "Technical depth" },
+    { key: "score_founders",   label: "Behavioural signal" },
+    { key: "score_commitment", label: "Commitment" },
+  ];
+  return (
+    <div>
+      {components.map((c) => {
+        const v = aiScreening?.[c.key];
+        const pct = typeof v === "number" ? (v / 10) * 100 : 0;
+        return (
+          <div key={c.key} className="bar-row">
+            <span className="bar-label">{c.label}</span>
+            <div className="bar-track">
+              <div className="bar-fill" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="bar-value">
+              {typeof v === "number" ? v.toFixed(1) : "—"}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-// "View scoring" stays a no-op in Phase 1 — the reviewer scoring screen
-// lands in Phase 1.5. The hover tooltip on the button surfaces the same
-// message to leadership users who try clicking it.
 function viewScoringPlaceholder() {
-  // Intentionally inert. The button's title attribute provides the tooltip.
+  // Intentionally inert. Title attribute on the button carries the tooltip.
 }
 
 export default function AppDrawer({ row, onClose, statusLabelById }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  // Bumped after a successful modal action so the useEffect refetches
-  // the drawer's detail (status_history, reviewer_assignments) in place.
   const [reloadKey, setReloadKey] = useState(0);
-  // Mutually-exclusive modal state — only one is open at a time.
-  const [openModal, setOpenModal] = useState(null);  // 'status' | 'assign' | null
+  const [openModal, setOpenModal] = useState(null);
   const panelRef = useRef(null);
 
   useEffect(() => {
     if (!row) return undefined;
     let cancelled = false;
-    // Only clear on initial open (reloadKey === 0); on a refresh we keep the
-    // old data visible while the next fetch lands to avoid a content flash.
     if (reloadKey === 0) {
       setDetail(null);
       setError(null);
       setLoading(true);
     }
-    leadershipApi
-      .getApplication(row.id)
-      .then((d) => {
-        if (!cancelled) {
-          setDetail(d);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err?.message || "Failed to load application detail.");
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    leadershipApi.getApplication(row.id)
+      .then((d) => { if (!cancelled) { setDetail(d); setLoading(false); } })
+      .catch((err) => { if (!cancelled) { setError(err?.message || "Failed to load detail."); setLoading(false); } });
+    return () => { cancelled = true; };
   }, [row, reloadKey]);
 
-  // Modal a11y: Escape closes, body scroll is locked while drawer is mounted,
-  // and initial focus lands on the panel so keyboard users aren't stranded.
   useEffect(() => {
     if (!row) return undefined;
-    const onKey = (e) => {
-      if (e.key === "Escape") onClose();
-    };
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
+    const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     panelRef.current?.focus();
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
+      document.body.style.overflow = prev;
     };
   }, [row, onClose]);
 
@@ -124,257 +149,270 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
   const reviews = detail?.reviews || [];
   const assignments = detail?.reviewer_assignments || [];
   const history = detail?.status_history || [];
-
   const statusLabel = statusLabelById?.[row.status] || row.status;
   const fullName = application?.basic_full_name || row.basic_full_name || "—";
   const email = application?.basic_email || row.basic_email || "";
   const org = application?.basic_org || row.basic_org || "";
-  const phone = application?.basic_phone || "";
 
   return (
-    <div className="lp-drawer-back" onClick={onClose}>
+    <>
+      <div className="drawer-scrim" onClick={onClose} />
       <div
-        className="lp-drawer"
-        onClick={(e) => e.stopPropagation()}
+        className="drawer"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="lp-drawer-title"
+        aria-labelledby="drawer-title"
         tabIndex={-1}
         ref={panelRef}
       >
-        <div className="lp-drawer-head">
-          <div>
-            <div className="eir-mono eir-dim">
-              {row.id?.slice(0, 8)} · {(row.track || "").toUpperCase()}
-            </div>
-            <h3 className="lp-drawer-title" id="lp-drawer-title">{fullName}</h3>
-            <div className="eir-mono eir-dim">
-              {org ? `${org} · ` : ""}
-              {email}
+        <header className="drawer-head">
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <span className="eyebrow">
+              {(row.track || "").toUpperCase()} · {row.id?.slice(0, 8)}
+            </span>
+            <h2 id="drawer-title">{fullName}</h2>
+            <div className="meta">
+              <span>
+                <StatusInline statusId={row.status} label={statusLabel} />
+              </span>
+              {org && <span>{org}</span>}
+              {email && <span>{email}</span>}
+              <span>Submitted {fmtDate(row.submitted_at || row.created_at)}</span>
             </div>
           </div>
           <button
             type="button"
-            className="lp-drawer-close eir-mono"
+            className="drawer-close"
             onClick={onClose}
+            aria-label="Close drawer"
           >
-            close ×
+            ×
           </button>
-        </div>
+        </header>
 
-        <div className="lp-drawer-meta">
-          <div>
-            <span>Track</span>
-            <div>{(row.track || "").toUpperCase()}</div>
+        {error && (
+          <div style={{ padding: "var(--s-4) var(--s-6)" }}>
+            <div className="inline-error">{error}</div>
           </div>
-          <div>
-            <span>Industry</span>
-            <div>{row.industry?.label || "—"}</div>
-          </div>
-          <div>
-            <span>Submitted</span>
-            <div>{fmtDate(row.submitted_at || row.created_at)}</div>
-          </div>
-          <div>
-            <span>Status</span>
-            <div>
-              <StatusChip statusId={row.status} statusLabel={statusLabel} />
-            </div>
-          </div>
-        </div>
+        )}
 
-        {error && <div className="lp-error">Error: {error}</div>}
-
-        <div className="lp-drawer-section">
-          <SectionTitle>Applicant</SectionTitle>
-          <div className="lp-drawer-section-body">
-            <p>
-              <strong>{fullName}</strong>
-              <br />
-              {email && (
-                <>
-                  <span className="eir-mono eir-dim">{email}</span>
-                  <br />
-                </>
-              )}
-              {phone && <span className="eir-mono eir-dim">{phone}</span>}
-              {!phone && !email && <span className="eir-dim">No contact info on file.</span>}
-            </p>
-            {loading && !application && (
-              <div className="lp-loading">loading detail…</div>
-            )}
-          </div>
-        </div>
-
-        <div className="lp-drawer-section">
-          <SectionTitle>Problem &amp; Solution</SectionTitle>
-          {loading && !application ? (
-            <div className="lp-loading">loading…</div>
-          ) : (
-            renderProblemSolution(application)
-          )}
-        </div>
-
-        <div className="lp-drawer-section lp-drawer-score">
-          <div className="lp-drawer-score-head">
-            <span className="eir-mono eir-dim">AI score</span>
-            {aiScreening?.score_overall != null ? (
-              <span className="lp-drawer-score-n">
-                {aiScreening.score_overall.toFixed(1)}
-                <span className="eir-dim">/10</span>
+        <div className="drawer-body">
+          <section className="drawer-section">
+            <span className="section-eyebrow">AI score</span>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "var(--s-3)" }}>
+              <strong
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: 44,
+                  color: aiScreening?.score_overall != null ? "var(--artblue)" : "var(--ink-dim)",
+                  lineHeight: 1,
+                }}
+              >
+                {aiScreening?.score_overall != null ? aiScreening.score_overall.toFixed(1) : "—"}
+              </strong>
+              <span style={{ color: "var(--ink-dim)", fontSize: 14 }}>
+                / 10 overall
               </span>
+            </div>
+            {loading && !detail ? (
+              <div className="inline-loading">Loading score…</div>
+            ) : aiScreening ? (
+              <>
+                <ComponentBars aiScreening={aiScreening} />
+                {aiScreening.summary && (
+                  <div style={{ marginTop: "var(--s-3)" }}>
+                    <span className="section-eyebrow">Summary</span>
+                    <p style={{ marginTop: "var(--s-2)", color: "var(--ink-soft)", lineHeight: 1.55 }}>
+                      {aiScreening.summary}
+                    </p>
+                  </div>
+                )}
+              </>
             ) : (
-              <span className="eir-mono eir-dim">—</span>
+              <p style={{ color: "var(--ink-dim)", fontSize: 13 }}>
+                Not scored yet — AI screening hasn't completed for this application.
+              </p>
             )}
-          </div>
-          {loading && !detail ? (
-            <div className="lp-loading">loading score…</div>
-          ) : aiScreening ? (
-            <>
-              <ComponentBars scores={aiScreening} />
-              {aiScreening.summary && (
-                <p className="lp-drawer-section-body" style={{ marginTop: 8 }}>
-                  <span
-                    className="eir-mono eir-dim"
+          </section>
+
+          <section className="drawer-section">
+            <span className="section-eyebrow">Problem &amp; solution</span>
+            {loading && !application ? (
+              <div className="inline-loading">Loading…</div>
+            ) : (
+              renderProblemSolution(application)
+            )}
+          </section>
+
+          <section className="drawer-section">
+            <span className="section-eyebrow">Reviewer assignments ({assignments.length})</span>
+            {loading && !detail ? (
+              <div className="inline-loading">Loading…</div>
+            ) : assignments.length === 0 ? (
+              <p style={{ color: "var(--ink-dim)", fontSize: 13 }}>
+                No reviewers assigned. Use the "Assign reviewer" button below.
+              </p>
+            ) : (
+              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
+                {assignments.map((a) => {
+                  const dotCls = a.state === "completed" ? "green"
+                    : a.state === "declined" ? "coral"
+                    : a.state === "accepted" ? "green" : "amber";
+                  return (
+                    <li
+                      key={a.id || `${a.reviewer_user_id}-${a.assigned_at}`}
+                      style={{
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        padding: "var(--s-3) var(--s-4)",
+                        background: "var(--paper-soft)",
+                        border: "1px solid var(--line)",
+                        borderRadius: "var(--r-sharp)",
+                        gap: "var(--s-3)",
+                      }}
+                    >
+                      <div>
+                        <strong style={{ fontSize: 14 }}>
+                          {a.reviewer_user_id?.slice(0, 8) || "—"}
+                        </strong>
+                        <div style={{ color: "var(--ink-soft)", fontSize: 12, marginTop: 2 }}>
+                          Assigned {fmtDate(a.assigned_at)}
+                        </div>
+                      </div>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, textTransform: "capitalize" }}>
+                        <span className={`dot ${dotCls}`} />
+                        {a.state || "pending"}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          <section className="drawer-section">
+            <span className="section-eyebrow">Reviews ({reviews.length})</span>
+            {loading && !detail ? (
+              <div className="inline-loading">Loading…</div>
+            ) : reviews.length === 0 ? (
+              <p style={{ color: "var(--ink-dim)", fontSize: 13 }}>
+                No reviews submitted yet.
+              </p>
+            ) : (
+              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
+                {reviews.map((r) => (
+                  <li
+                    key={r.id || `${r.reviewer_user_id}-${r.submitted_at}`}
                     style={{
-                      display: "block",
-                      fontSize: 10,
-                      letterSpacing: "0.08em",
-                      textTransform: "uppercase",
-                      marginBottom: 4,
+                      padding: "var(--s-3) var(--s-4)",
+                      background: "var(--paper-soft)",
+                      border: "1px solid var(--line)",
+                      borderRadius: "var(--r-sharp)",
                     }}
                   >
-                    Summary
-                  </span>
-                  {aiScreening.summary}
-                </p>
-              )}
-            </>
-          ) : (
-            <p className="lp-drawer-empty eir-mono">
-              Not scored yet — AI screening hasn&rsquo;t completed for this
-              application.
-            </p>
-          )}
-        </div>
-
-        <div className="lp-drawer-section">
-          <SectionTitle>Reviews ({reviews.length})</SectionTitle>
-          {loading && !detail ? (
-            <div className="lp-loading">loading…</div>
-          ) : reviews.length === 0 ? (
-            <p className="lp-drawer-empty eir-mono">No reviews yet.</p>
-          ) : (
-            <ul className="lp-drawer-list">
-              {reviews.map((r) => (
-                <li className="lp-drawer-list-item" key={r.id || `${r.reviewer_user_id}-${r.submitted_at}`}>
-                  <div className="lp-drawer-list-item-head">
-                    <span className="eir-mono">
-                      reviewer · {r.reviewer_user_id?.slice(0, 8) || "—"}
-                    </span>
-                    <span className="eir-mono eir-dim">
-                      {fmtDate(r.submitted_at)}
-                    </span>
-                  </div>
-                  <div>
-                    <strong>{r.score_overall != null ? r.score_overall.toFixed(1) : "—"}</strong>
-                    /10
-                    {r.recommendation && <> · {r.recommendation}</>}
-                  </div>
-                  {r.strengths && <p style={{ margin: "4px 0 0" }}>Strengths: {r.strengths}</p>}
-                  {r.concerns && <p style={{ margin: "4px 0 0" }}>Concerns: {r.concerns}</p>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="lp-drawer-section">
-          <SectionTitle>Reviewer assignments ({assignments.length})</SectionTitle>
-          {loading && !detail ? (
-            <div className="lp-loading">loading…</div>
-          ) : assignments.length === 0 ? (
-            <p className="lp-drawer-empty eir-mono">No reviewers assigned yet.</p>
-          ) : (
-            <ul className="lp-drawer-list">
-              {assignments.map((a) => (
-                <li className="lp-drawer-list-item" key={a.id || `${a.reviewer_user_id}-${a.assigned_at}`}>
-                  <div className="lp-drawer-list-item-head">
-                    <span className="eir-mono">
-                      reviewer · {a.reviewer_user_id?.slice(0, 8) || "—"}
-                    </span>
-                    <span className="eir-mono eir-dim">
-                      assigned {fmtDate(a.assigned_at)}
-                    </span>
-                  </div>
-                  <div className="eir-mono eir-dim">
-                    {a.declined_at && <>declined {fmtDate(a.declined_at)} · </>}
-                    {a.completed_at && <>completed {fmtDate(a.completed_at)}</>}
-                    {!a.declined_at && !a.completed_at && <>in progress</>}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="lp-drawer-section">
-          <SectionTitle>Status history ({history.length})</SectionTitle>
-          {loading && !detail ? (
-            <div className="lp-loading">loading…</div>
-          ) : history.length === 0 ? (
-            <p className="lp-drawer-empty eir-mono">No status changes yet.</p>
-          ) : (
-            <ul className="lp-drawer-list">
-              {history.map((h) => (
-                <li className="lp-drawer-list-item" key={h.id || `${h.changed_at}-${h.to_status}`}>
-                  <div className="lp-drawer-list-item-head">
-                    <span className="eir-mono">
-                      {h.from_status || "∅"} → <strong>{h.to_status}</strong>
-                    </span>
-                    <span className="eir-mono eir-dim">
-                      {fmtDate(h.changed_at)}
-                    </span>
-                  </div>
-                  {h.reason && <div>Reason: {h.reason}</div>}
-                  {h.changed_by && (
-                    <div className="eir-mono eir-dim">
-                      by {h.changed_by.slice(0, 8)}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                      <strong style={{ fontSize: 14 }}>
+                        {r.reviewer_user_id?.slice(0, 8) || "—"}
+                      </strong>
+                      <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>
+                        {fmtDate(r.submitted_at)}
+                      </span>
                     </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
+                    {r.score_overall != null && (
+                      <div style={{ marginTop: 6, fontSize: 14 }}>
+                        <strong>{r.score_overall.toFixed(1)}</strong> / 10
+                        {r.recommendation && <> · {r.recommendation}</>}
+                      </div>
+                    )}
+                    {r.strengths && (
+                      <p style={{ margin: "var(--s-2) 0 0", fontSize: 13, lineHeight: 1.55 }}>
+                        <span style={{ color: "var(--ink-dim)", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", marginRight: 6 }}>
+                          Strengths
+                        </span>
+                        {r.strengths}
+                      </p>
+                    )}
+                    {r.concerns && (
+                      <p style={{ margin: "var(--s-2) 0 0", fontSize: 13, lineHeight: 1.55 }}>
+                        <span style={{ color: "var(--ink-dim)", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", marginRight: 6 }}>
+                          Concerns
+                        </span>
+                        {r.concerns}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="drawer-section">
+            <span className="section-eyebrow">Status history ({history.length})</span>
+            {loading && !detail ? (
+              <div className="inline-loading">Loading…</div>
+            ) : history.length === 0 ? (
+              <p style={{ color: "var(--ink-dim)", fontSize: 13 }}>
+                No status changes yet.
+              </p>
+            ) : (
+              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
+                {history.map((h) => (
+                  <li
+                    key={h.id || `${h.changed_at}-${h.to_status}`}
+                    style={{
+                      padding: "var(--s-3) var(--s-4)",
+                      background: "var(--paper-soft)",
+                      border: "1px solid var(--line)",
+                      borderRadius: "var(--r-sharp)",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                      <span style={{ fontSize: 14 }}>
+                        <span style={{ color: "var(--ink-dim)", textTransform: "capitalize" }}>
+                          {h.from_status || "—"}
+                        </span>
+                        <span style={{ margin: "0 8px", color: "var(--ink-dim)" }}>→</span>
+                        <strong style={{ textTransform: "capitalize" }}>{h.to_status}</strong>
+                      </span>
+                      <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>
+                        {fmtDate(h.changed_at)}
+                      </span>
+                    </div>
+                    {h.reason && (
+                      <p style={{ margin: "var(--s-2) 0 0", color: "var(--ink-soft)", fontSize: 13, lineHeight: 1.55 }}>
+                        {h.reason}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </div>
 
-        <div className="lp-drawer-actions">
+        <footer className="drawer-footer">
           <button
             type="button"
-            className="lp-drawer-action-btn is-primary"
-            onClick={() => setOpenModal("status")}
+            className="btn btn-ghost"
+            onClick={viewScoringPlaceholder}
+            title="Reviewer scoring screen ships in Phase 1.5"
           >
-            Change status
+            View scoring
           </button>
           <button
             type="button"
-            className="lp-drawer-action-btn"
+            className="btn btn-ghost"
             onClick={() => setOpenModal("assign")}
           >
             Assign reviewer
           </button>
           <button
             type="button"
-            className="lp-drawer-action-btn"
-            onClick={viewScoringPlaceholder}
-            title="Reviewer scoring screen ships in Phase 1.5"
+            className="btn btn-primary"
+            onClick={() => setOpenModal("status")}
           >
-            View scoring
+            Change status <span className="arrow">→</span>
           </button>
-          <p className="lp-drawer-actions-hint">
-            Reviewer scoring screen ships in Phase 1.5.
-          </p>
-        </div>
+        </footer>
       </div>
 
       {openModal === "status" && (
@@ -386,10 +424,7 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
             basic_full_name: fullName,
           }}
           onClose={() => setOpenModal(null)}
-          onSuccess={() => {
-            setOpenModal(null);
-            setReloadKey((k) => k + 1);
-          }}
+          onSuccess={() => { setOpenModal(null); setReloadKey((k) => k + 1); }}
         />
       )}
 
@@ -403,12 +438,9 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
             reviewer_assignments: assignments,
           }}
           onClose={() => setOpenModal(null)}
-          onSuccess={() => {
-            setOpenModal(null);
-            setReloadKey((k) => k + 1);
-          }}
+          onSuccess={() => { setOpenModal(null); setReloadKey((k) => k + 1); }}
         />
       )}
-    </div>
+    </>
   );
 }
