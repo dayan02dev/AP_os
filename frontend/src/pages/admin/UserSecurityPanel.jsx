@@ -6,7 +6,7 @@
 //   onDeactivated fn     — called after successful deactivation so the parent
 //                          can navigate away
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { adminApi } from "../../lib/adminApi.js";
 import { api } from "../../lib/api.js";
 
@@ -24,12 +24,23 @@ export default function UserSecurityPanel({ userId, email, onDeactivated }) {
 
   // Toast
   const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
 
   function showToast(msg) {
     const id = Date.now();
     setToast({ msg, id });
-    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 3000);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      setToast((t) => (t?.id === id ? null : t));
+      toastTimerRef.current = null;
+    }, 3000);
   }
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   function closeModal() {
     setModal(null);
@@ -50,15 +61,16 @@ export default function UserSecurityPanel({ userId, email, onDeactivated }) {
   }
 
   async function confirmDeactivate() {
-    setModal(null);
     setDeactivateBusy(true);
     setDeactivateError(null);
     try {
       // No adminApi helper for this endpoint — use raw api.post per briefing.
       await api.post(`/admin/users/${userId}/deactivate`, null);
-      onDeactivated();
+      setModal(null);
+      onDeactivated();           // parent navigates away; if it throws we still cleanup
     } catch (err) {
       setDeactivateError(err?.message || "Couldn't deactivate user.");
+    } finally {
       setDeactivateBusy(false);
     }
   }

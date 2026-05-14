@@ -6,7 +6,7 @@
 //   onRolesChanged fn       — called after a successful grant or revoke so the
 //                             parent can re-fetch and pass fresh props
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { adminApi } from "../../lib/adminApi.js";
 
 const ROLE_META = {
@@ -35,11 +35,22 @@ export default function UserRolesPanel({ userId, roles, onRolesChanged }) {
   // Set of role strings currently held by the user
   const grantedSet = new Set((roles ?? []).map((r) => r.role));
 
-  // Per-role loading flag — only disables the relevant card's button
-  const [inflightRole, setInflightRole] = useState(null);
+  // Per-role loading flags — Set of role strings currently in flight.
+  // Using a Set allows concurrent grants/revokes on different roles without
+  // a panel-wide guard that would silently no-op other buttons.
+  const [inflightRoles, setInflightRoles] = useState(() => new Set());
+
+  const setInflight = (role, on) => {
+    setInflightRoles((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(role); else next.delete(role);
+      return next;
+    });
+  };
 
   // Toast: { msg, id } — id lets us clear the right one
   const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
 
   // Confirmation modal for revoke
   const [revokeModal, setRevokeModal] = useState(null); // { role } | null
@@ -50,12 +61,22 @@ export default function UserRolesPanel({ userId, roles, onRolesChanged }) {
   function showToast(msg) {
     const id = Date.now();
     setToast({ msg, id });
-    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 3000);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      setToast((t) => (t?.id === id ? null : t));
+      toastTimerRef.current = null;
+    }, 3000);
   }
 
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
   async function handleGrant(role) {
-    if (inflightRole) return;
-    setInflightRole(role);
+    if (inflightRoles.has(role)) return;
+    setInflight(role, true);
     setPanelError(null);
     try {
       await adminApi.grantRole(userId, role);
@@ -64,7 +85,7 @@ export default function UserRolesPanel({ userId, roles, onRolesChanged }) {
     } catch (err) {
       setPanelError(friendlyError(err, "grant"));
     } finally {
-      setInflightRole(null);
+      setInflight(role, false);
     }
   }
 
@@ -75,13 +96,14 @@ export default function UserRolesPanel({ userId, roles, onRolesChanged }) {
 
   function closeRevokeModal() {
     setRevokeModal(null);
+    setPanelError(null);
   }
 
   async function confirmRevoke() {
     if (!revokeModal) return;
     const { role } = revokeModal;
     setRevokeModal(null);
-    setInflightRole(role);
+    setInflight(role, true);
     setPanelError(null);
     try {
       await adminApi.revokeRole(userId, role);
@@ -90,7 +112,7 @@ export default function UserRolesPanel({ userId, roles, onRolesChanged }) {
     } catch (err) {
       setPanelError(friendlyError(err, "revoke"));
     } finally {
-      setInflightRole(null);
+      setInflight(role, false);
     }
   }
 
@@ -102,7 +124,7 @@ export default function UserRolesPanel({ userId, roles, onRolesChanged }) {
         {ALL_ROLES.map((role) => {
           const meta = ROLE_META[role];
           const granted = grantedSet.has(role);
-          const busy = inflightRole === role;
+          const busy = inflightRoles.has(role);
 
           return (
             <div
