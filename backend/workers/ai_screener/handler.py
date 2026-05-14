@@ -148,7 +148,14 @@ def _process_record(record: dict) -> None:
         application_track,
     )
 
-    # SIP support deferred — sip_applications table doesn't exist on this branch.
+    # SIP support deferred until the SIP router merges into this branch.
+    # INTEGRATION NOTE (when SIP merges):
+    #   1. Delete this whole `if application_track == "sip"` block.
+    #   2. Change the SELECT at the next block from hardcoded `tir_applications`
+    #      to f"{application_track}_applications" — the SIP table has a
+    #      different column set so adjust the column list accordingly.
+    #   3. Add `sqs_publisher.publish(submitted["id"], "sip")` inside the
+    #      SIP submit handler in backend/app/routers/sip_applications.py.
     if application_track == "sip":
         log.warning(
             "application_track='sip' is not yet supported on this branch — "
