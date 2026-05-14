@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 
+import httpx
 import pytest
 
 from app.deps import get_current_user
@@ -65,6 +66,9 @@ def test_classify_industry_health_medtech():
 
 def test_classify_industry_none_falls_back_to_other():
     assert classify_industry(None) == OTHER_BUCKET
+
+
+def test_other_bucket_constant():
     assert OTHER_BUCKET == ("other", "Other")
 
 
@@ -256,7 +260,6 @@ class TestLeadershipStagingIntegration:
     def test_stats_as_leadership_returns_200_with_expected_shape(
         self, staging_leadership_token, staging_base_url,
     ):
-        import httpx
 
         r = httpx.get(
             f"{staging_base_url}/leadership/stats",
@@ -272,7 +275,6 @@ class TestLeadershipStagingIntegration:
     def test_stats_as_reviewer_returns_403(
         self, staging_reviewer_token, staging_base_url,
     ):
-        import httpx
 
         r = httpx.get(
             f"{staging_base_url}/leadership/stats",
@@ -286,7 +288,6 @@ class TestLeadershipStagingIntegration:
     def test_applications_list_as_leadership_returns_200_with_expected_shape(
         self, staging_leadership_token, staging_base_url,
     ):
-        import httpx
 
         r = httpx.get(
             f"{staging_base_url}/leadership/applications",
@@ -303,7 +304,6 @@ class TestLeadershipStagingIntegration:
     def test_applications_list_as_reviewer_returns_403(
         self, staging_reviewer_token, staging_base_url,
     ):
-        import httpx
 
         r = httpx.get(
             f"{staging_base_url}/leadership/applications",
@@ -317,7 +317,6 @@ class TestLeadershipStagingIntegration:
     def test_applications_list_track_filter(
         self, staging_leadership_token, staging_base_url,
     ):
-        import httpx
 
         r = httpx.get(
             f"{staging_base_url}/leadership/applications",
@@ -334,7 +333,6 @@ class TestLeadershipStagingIntegration:
     def test_applications_list_pagination_limit(
         self, staging_leadership_token, staging_base_url,
     ):
-        import httpx
 
         r = httpx.get(
             f"{staging_base_url}/leadership/applications",
@@ -356,7 +354,6 @@ class TestLeadershipStagingIntegration:
         than failing — this test is a happy-path shape check, not a content
         assertion.
         """
-        import httpx
 
         list_r = httpx.get(
             f"{staging_base_url}/leadership/applications",
@@ -385,7 +382,6 @@ class TestLeadershipStagingIntegration:
     def test_application_detail_as_reviewer_returns_403(
         self, staging_reviewer_token, staging_base_url,
     ):
-        import httpx
 
         # Any UUID-shaped string works — capability check fires before the
         # handler so we never need a real row id here.
