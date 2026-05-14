@@ -17,7 +17,7 @@
 //   /apply/submitted        post-submit receipt
 //   /apply/set-password     first-time password setup / reset (Phase B)
 
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, Navigate } from "react-router-dom";
 import App from "./App.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
 import ProtectedRoute from "./pages/ProtectedRoute.jsx";
@@ -27,7 +27,9 @@ import SignInPage from "./pages/SignInPage.jsx";
 import SignUpPage from "./pages/SignUpPage.jsx";
 import SupportPage from "./pages/SupportPage.jsx";
 import VerifyPage from "./pages/VerifyPage.jsx";
-import AdminDashboardStub from "./pages/admin/AdminDashboardStub.jsx";
+import AdminLayout from "./pages/admin/AdminLayout.jsx";
+import UserListPage from "./pages/admin/UserListPage.jsx";
+import UserDetailPage from "./pages/admin/UserDetailPage.jsx";
 import AdminAddUser from "./pages/admin/AdminAddUser.jsx";
 import ReviewerInboxStub from "./pages/reviewer/ReviewerInboxStub.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
@@ -53,6 +55,27 @@ function LeadershipRoute() {
     );
   }
   return <LeadershipDashboard />;
+}
+
+// Capability gate for /admin. ProtectedRoute already enforces auth;
+// this layer enforces the `manage_users` capability (admin role).
+function AdminRoute() {
+  const { user } = useAuth();
+  const roles = user?.roles || [];
+  if (!hasCapability(roles, "manage_users")) {
+    return (
+      <div style={{ padding: 40, fontFamily: "system-ui" }}>
+        <h1>Access denied — admin role required</h1>
+        <p>
+          You need the <code>manage_users</code> capability to view this page.
+        </p>
+        <p>
+          Your roles: <code>{roles.join(", ") || "(none)"}</code>
+        </p>
+      </div>
+    );
+  }
+  return <AdminLayout />;
 }
 
 const SECTION_SLUGS = [
@@ -115,24 +138,21 @@ export default function AppRoutes() {
         element={<ProtectedRoute><SetPasswordPage /></ProtectedRoute>}
       />
 
-      {/* Admin / leadership shell (Phase 1). Session 5 replaces the
-          /admin/dashboard target with the real Leadership Dashboard. */}
+      {/* Admin shell (Session 3). Capability-gated to `manage_users`. */}
       <Route
-        path="/admin/dashboard"
+        path="/admin"
         element={
           <ProtectedRoute>
-            <AdminDashboardStub />
+            <AdminRoute />
           </ProtectedRoute>
         }
-      />
-      <Route
-        path="/admin/users/new"
-        element={
-          <ProtectedRoute>
-            <AdminAddUser />
-          </ProtectedRoute>
-        }
-      />
+      >
+        <Route index element={<Navigate to="users" replace />} />
+        <Route path="dashboard" element={<Navigate to="../users" replace />} />
+        <Route path="users" element={<UserListPage />} />
+        <Route path="users/new" element={<AdminAddUser />} />
+        <Route path="users/:id" element={<UserDetailPage />} />
+      </Route>
 
       {/* Reviewer surface (Phase 1 stub; scoring UI ships in Phase 1.5). */}
       <Route
