@@ -6,6 +6,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
+import AssignReviewersModal from "../modals/AssignReviewersModal.jsx";
+import StatusChangeModal from "../modals/StatusChangeModal.jsx";
 import ComponentBars from "./ComponentBars.jsx";
 import StatusChip from "./StatusChip.jsx";
 
@@ -51,22 +53,34 @@ function renderProblemSolution(application) {
   );
 }
 
-function noopAction() {
-  alert("This action is wired in Session 6.");
+// "View scoring" stays a no-op in Phase 1 — the reviewer scoring screen
+// lands in Phase 1.5. The hover tooltip on the button surfaces the same
+// message to leadership users who try clicking it.
+function viewScoringPlaceholder() {
+  // Intentionally inert. The button's title attribute provides the tooltip.
 }
 
 export default function AppDrawer({ row, onClose, statusLabelById }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Bumped after a successful modal action so the useEffect refetches
+  // the drawer's detail (status_history, reviewer_assignments) in place.
+  const [reloadKey, setReloadKey] = useState(0);
+  // Mutually-exclusive modal state — only one is open at a time.
+  const [openModal, setOpenModal] = useState(null);  // 'status' | 'assign' | null
   const panelRef = useRef(null);
 
   useEffect(() => {
     if (!row) return undefined;
     let cancelled = false;
-    setDetail(null);
-    setError(null);
-    setLoading(true);
+    // Only clear on initial open (reloadKey === 0); on a refresh we keep the
+    // old data visible while the next fetch lands to avoid a content flash.
+    if (reloadKey === 0) {
+      setDetail(null);
+      setError(null);
+      setLoading(true);
+    }
     leadershipApi
       .getApplication(row.id)
       .then((d) => {
@@ -84,7 +98,7 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
     return () => {
       cancelled = true;
     };
-  }, [row]);
+  }, [row, reloadKey]);
 
   // Modal a11y: Escape closes, body scroll is locked while drawer is mounted,
   // and initial focus lands on the panel so keyboard users aren't stranded.
@@ -338,29 +352,63 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
           <button
             type="button"
             className="lp-drawer-action-btn is-primary"
-            onClick={noopAction}
+            onClick={() => setOpenModal("status")}
           >
             Change status
           </button>
           <button
             type="button"
             className="lp-drawer-action-btn"
-            onClick={noopAction}
+            onClick={() => setOpenModal("assign")}
           >
             Assign reviewer
           </button>
           <button
             type="button"
             className="lp-drawer-action-btn"
-            onClick={noopAction}
+            onClick={viewScoringPlaceholder}
+            title="Reviewer scoring screen ships in Phase 1.5"
           >
             View scoring
           </button>
           <p className="lp-drawer-actions-hint">
-            (Session 6 wires these actions)
+            Reviewer scoring screen ships in Phase 1.5.
           </p>
         </div>
       </div>
+
+      {openModal === "status" && (
+        <StatusChangeModal
+          application={{
+            id: row.id,
+            track: row.track,
+            status: row.status,
+            basic_full_name: fullName,
+          }}
+          onClose={() => setOpenModal(null)}
+          onSuccess={() => {
+            setOpenModal(null);
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
+
+      {openModal === "assign" && (
+        <AssignReviewersModal
+          application={{
+            id: row.id,
+            track: row.track,
+            basic_full_name: fullName,
+            user_id: application?.user_id || null,
+            reviewer_assignments: assignments,
+          }}
+          onClose={() => setOpenModal(null)}
+          onSuccess={() => {
+            setOpenModal(null);
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
     </div>
   );
 }
