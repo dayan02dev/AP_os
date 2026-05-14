@@ -49,11 +49,40 @@ class _FakeQuery:
         return SimpleNamespace(data=self._data, count=self._count)
 
 
+class _FakeAuth:
+    """Minimal stand-in for client.auth (and client.auth.admin).
+
+    Used by the reset-password + deactivate tests below. Pre-existing
+    tests don't touch .auth so default construction is safe.
+    """
+
+    def __init__(self, *, raises_on_reset: Exception | None = None,
+                 raises_on_ban: Exception | None = None):
+        self._raises_on_reset = raises_on_reset
+        self._raises_on_ban = raises_on_ban
+        self.last_reset_email: str | None = None
+        self.last_ban: tuple[str, dict] | None = None
+        # client.auth.admin.update_user_by_id(...) — admin namespace is self.
+        self.admin = self
+
+    def reset_password_for_email(self, email):
+        if self._raises_on_reset:
+            raise self._raises_on_reset
+        self.last_reset_email = email
+
+    def update_user_by_id(self, user_id, payload):
+        if self._raises_on_ban:
+            raise self._raises_on_ban
+        self.last_ban = (user_id, payload)
+
+
 class _FakeAdminClient:
     def __init__(self, rows: dict[str, list[dict]] | None = None,
-                 counts: dict[str, int] | None = None):
+                 counts: dict[str, int] | None = None,
+                 auth: _FakeAuth | None = None):
         self._rows = rows or {}
         self._counts = counts or {}
+        self.auth = auth if auth is not None else _FakeAuth()
 
     def table(self, name: str) -> _FakeQuery:
         return _FakeQuery(
@@ -519,6 +548,159 @@ def test_revoke_role_requires_revoke_role_capability(client, _clear_overrides):
 
     res = client.delete(
         "/admin/users/u-1/roles/reviewer",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 403
+    assert res.json()["detail"]["code"] == "missing_capability"
+
+
+# ─── Unit tests: POST /admin/users/{user_id}/reset-password ────────────
+
+
+def test_reset_password_success(client, monkeypatch, _clear_overrides):
+    auth = _FakeAuth()
+    fake = _FakeAdminClient(
+        rows={"profiles": [{"id": "u-1", "email": "a@b.com"}]},
+        auth=auth,
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/u-1/reset-password",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json() == {"ok": True, "email_sent_to": "a@b.com"}
+    assert auth.last_reset_email == "a@b.com"
+
+
+def test_reset_password_user_not_found(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(rows={"profiles": []})
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/nope/reset-password",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 404
+    assert res.json()["detail"]["code"] == "user_not_found"
+
+
+def test_reset_password_supabase_failure_returns_502(client, monkeypatch, _clear_overrides):
+    auth = _FakeAuth(raises_on_reset=Exception("smtp down"))
+    fake = _FakeAdminClient(
+        rows={"profiles": [{"id": "u-1", "email": "a@b.com"}]},
+        auth=auth,
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/u-1/reset-password",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 502
+    detail = res.json()["detail"]
+    assert detail["code"] == "reset_send_failed"
+    assert "smtp" in detail["message"]
+
+
+def test_reset_password_requires_reset_password_capability(client, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user(["reviewer"])
+
+    res = client.post(
+        "/admin/users/u-1/reset-password",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 403
+    assert res.json()["detail"]["code"] == "missing_capability"
+
+
+def test_reset_password_admin_has_capability(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(
+        rows={"profiles": [{"id": "u-1", "email": "a@b.com"}]},
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/u-1/reset-password",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+
+
+# ─── Unit tests: POST /admin/users/{user_id}/deactivate ────────────────
+
+
+def test_deactivate_user_success(client, monkeypatch, _clear_overrides):
+    auth = _FakeAuth()
+    fake = _FakeAdminClient(
+        rows={"profiles": [{"id": "u-1", "email": "a@b.com"}]},
+        auth=auth,
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/u-1/deactivate",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json() == {"ok": True, "user_id": "u-1", "email": "a@b.com"}
+    assert auth.last_ban == ("u-1", {"ban_duration": "876600h"})
+
+
+def test_deactivate_user_not_found(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(rows={"profiles": []})
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/nope/deactivate",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 404
+    assert res.json()["detail"]["code"] == "user_not_found"
+
+
+def test_deactivate_supabase_failure_returns_502(client, monkeypatch, _clear_overrides):
+    auth = _FakeAuth(raises_on_ban=Exception("gotrue 500"))
+    fake = _FakeAdminClient(
+        rows={"profiles": [{"id": "u-1", "email": "a@b.com"}]},
+        auth=auth,
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users/u-1/deactivate",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 502
+    detail = res.json()["detail"]
+    assert detail["code"] == "deactivate_failed"
+    assert "gotrue" in detail["message"]
+
+
+def test_deactivate_requires_manage_users_capability(client, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user(["reviewer"])
+
+    res = client.post(
+        "/admin/users/u-1/deactivate",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 403
+    assert res.json()["detail"]["code"] == "missing_capability"
+
+
+def test_deactivate_leadership_role_lacks_capability(client, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.post(
+        "/admin/users/u-1/deactivate",
         headers={"Authorization": "Bearer test-token"},
     )
     assert res.status_code == 403

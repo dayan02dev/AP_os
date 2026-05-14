@@ -282,3 +282,59 @@ async def revoke_role(user_id: str, role: str):
 
     client.table("user_roles").delete().eq("user_id", user_id).eq("role", role).execute()
     return {"ok": True, "role": role}
+
+
+@router.post(
+    "/{user_id}/reset-password",
+    dependencies=[Depends(require_capability("reset_password"))],
+)
+async def reset_password(user_id: str):
+    """Send a Supabase-managed password reset email."""
+    client = get_admin_client()
+    prof = (
+        client.table("profiles").select("email").eq("id", user_id).limit(1).execute()
+    ).data
+    if not prof:
+        raise HTTPException(404, detail={"code": "user_not_found"})
+    email = prof[0]["email"]
+    try:
+        client.auth.reset_password_for_email(email)
+    except Exception as exc:
+        raise HTTPException(
+            502,
+            detail={"code": "reset_send_failed", "message": str(exc)[:200]},
+        )
+    return {"ok": True, "email_sent_to": email}
+
+
+@router.post(
+    "/{user_id}/deactivate",
+    dependencies=[Depends(require_capability("manage_users"))],
+)
+async def deactivate_user(user_id: str):
+    """Soft-deactivate a user by banning them at the Supabase auth level.
+
+    Uses Supabase's admin API to set a 100-year ban duration (876600h).
+    The user remains in auth.users + profiles; their sessions are
+    invalidated and future signins are refused. Reversible via a
+    separate reactivate endpoint (Phase 2 if/when needed).
+    """
+    client = get_admin_client()
+    # Confirm user exists first — gives a clean 404 instead of a Supabase
+    # error wall.
+    prof = (
+        client.table("profiles").select("id, email").eq("id", user_id).limit(1).execute()
+    ).data
+    if not prof:
+        raise HTTPException(404, detail={"code": "user_not_found"})
+    try:
+        client.auth.admin.update_user_by_id(
+            user_id,
+            {"ban_duration": "876600h"},  # 100 years
+        )
+    except Exception as exc:
+        raise HTTPException(
+            502,
+            detail={"code": "deactivate_failed", "message": str(exc)[:200]},
+        )
+    return {"ok": True, "user_id": user_id, "email": prof[0]["email"]}
