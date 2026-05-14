@@ -11,7 +11,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
-import { shouldRouteToAdminShell } from "../lib/rbac.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 
@@ -49,20 +48,24 @@ export default function SignInPage() {
       const me = await signInWithPassword(trimmedEmail, password);
       // Honour ?next= when it points at a known protected surface.
       // Otherwise branch by role, in this priority order:
-      //   admin / leadership   → /admin/dashboard
-      //   reviewer (no admin)  → /reviewer/inbox
-      //   mentor (no above)    → /mentor/founders  (Phase 2 — page TBD)
-      //   else (applicant)     → /apply
+      //   admin                       → /admin            (the user-mgmt shell)
+      //   leadership (no admin)       → /leadership       (the dashboard shell)
+      //   reviewer (no above)         → /reviewer/inbox
+      //   mentor (no above)           → /mentor/founders  (Phase 2 — page TBD)
+      //   else (applicant)            → /apply
       const allowedNext =
         nextParam &&
         (nextParam.startsWith("/apply/") ||
           nextParam.startsWith("/admin/") ||
+          nextParam.startsWith("/leadership") ||
           nextParam.startsWith("/reviewer/"));
       const roles = me?.roles || [];
       if (allowedNext) {
         navigate(nextParam, { replace: true });
-      } else if (shouldRouteToAdminShell(roles)) {
-        navigate("/admin/dashboard", { replace: true });
+      } else if (roles.includes("admin")) {
+        navigate("/admin", { replace: true });
+      } else if (roles.includes("leadership")) {
+        navigate("/leadership", { replace: true });
       } else if (roles.includes("reviewer")) {
         navigate("/reviewer/inbox", { replace: true });
       } else if (roles.includes("mentor")) {
