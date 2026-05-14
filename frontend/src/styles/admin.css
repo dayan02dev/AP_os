@@ -243,3 +243,259 @@
     padding: 4px 7px;
   }
 }
+
+/* ─── User list ─── */
+
+.user-list-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Header */
+.user-list-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed var(--line-strong);
+  gap: 16px;
+}
+
+.user-list-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.user-list-kicker {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.user-list-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.user-list-add-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Filters */
+.user-list-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.user-list-search {
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+  padding: 7px 10px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  border-radius: var(--radius);
+  outline: none;
+  transition: border-color 120ms;
+}
+
+.user-list-search::placeholder {
+  color: var(--ink-dim);
+}
+
+.user-list-search:focus {
+  border-color: var(--ink-soft);
+}
+
+.user-list-role-select {
+  padding: 7px 10px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+  border-radius: var(--radius);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 120ms, color 120ms;
+}
+
+.user-list-role-select:focus {
+  border-color: var(--ink-soft);
+  color: var(--ink);
+}
+
+.user-list-count {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  margin-left: auto;
+}
+
+/* Feedback states */
+.user-list-loading,
+.user-list-empty {
+  padding: 40px 0;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.user-list-error {
+  padding: 12px 14px;
+  background: color-mix(in srgb, #b00020 8%, var(--bg));
+  border: 1px solid color-mix(in srgb, #b00020 30%, transparent);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: #b00020;
+}
+
+.user-list-error .eir-mono {
+  font-weight: 600;
+}
+
+/* Table */
+.user-list-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.user-list-table {
+  display: flex;
+  flex-direction: column;
+  min-width: 600px;
+}
+
+/* Header row */
+.user-list-tr-head {
+  display: grid;
+  grid-template-columns: 2fr 2.5fr 2fr 1fr;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--line-strong);
+  padding: 0;
+}
+
+.user-list-th {
+  padding: 10px 14px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  text-align: left;
+}
+
+/* Data rows */
+.user-list-tr-row {
+  display: grid;
+  grid-template-columns: 2fr 2.5fr 2fr 1fr;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 100ms;
+}
+
+.user-list-tr-row:last-child {
+  border-bottom: none;
+}
+
+.user-list-tr-row:hover {
+  background: color-mix(in srgb, var(--accent-soft) 35%, transparent);
+}
+
+.user-list-td {
+  padding: 11px 14px;
+  font-size: 13px;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.user-list-td-email {
+  font-size: 12px;
+  color: var(--ink-soft);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-list-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-list-location {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.user-list-td-joined {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* Roles column */
+.user-list-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.user-list-role-chip {
+  display: inline-block;
+  padding: 2px 7px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--chip);
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+  border-radius: var(--radius);
+  white-space: nowrap;
+  line-height: 1.6;
+}
+
+@media (max-width: 768px) {
+  .user-list-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .user-list-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .user-list-search {
+    max-width: 100%;
+  }
+
+  .user-list-count {
+    margin-left: 0;
+  }
+}
