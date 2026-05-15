@@ -168,12 +168,12 @@ export default function ReviewApplicationPage() {
   );
 
   // ─── Handlers ─────────────────────────────────────────────
+  // Back always lands at the leadership dashboard, NOT navigate(-1). Reason:
+  // every Prev/Next step pushes to history, so navigate(-1) would walk back
+  // through the review flow instead of jumping out of it. Browser scroll
+  // restoration still kicks in on the destination route.
   const goBack = useCallback(() => {
-    if (window.history.length > 1) {
-      navigate(-1);
-    } else {
-      navigate("/leadership");
-    }
+    navigate("/leadership");
   }, [navigate]);
 
   const goPrev = useCallback(() => {
