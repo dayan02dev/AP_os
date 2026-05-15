@@ -6,6 +6,7 @@
 // anything stale.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
 import { labelFor, legalNextStates } from "../../../lib/statusMachine.js";
 
@@ -61,7 +62,7 @@ export default function StatusChangeModal({ application, onClose, onSuccess }) {
     }
   }
 
-  return (
+  return createPortal((
     <div
       className="modal-scrim"
       role="presentation"
@@ -162,5 +163,5 @@ export default function StatusChangeModal({ application, onClose, onSuccess }) {
         </form>
       </div>
     </div>
-  );
+  ), document.body);
 }

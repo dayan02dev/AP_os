@@ -7,6 +7,7 @@
 // remains a no-op tooltip — the reviewer scoring screen ships in Phase 1.5.
 
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
 import AssignReviewersModal from "../modals/AssignReviewersModal.jsx";
 import StatusChangeModal from "../modals/StatusChangeModal.jsx";
@@ -108,6 +109,7 @@ function viewScoringPlaceholder() {
 }
 
 export default function AppDrawer({ row, onClose, statusLabelById }) {
+  const navigate = useNavigate();
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -397,6 +399,13 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
             title="Reviewer scoring screen ships in Phase 1.5"
           >
             View scoring
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => navigate(`/leadership/applications/${row.track}/${row.id}/review`)}
+          >
+            Review application <span className="arrow">→</span>
           </button>
           <button
             type="button"

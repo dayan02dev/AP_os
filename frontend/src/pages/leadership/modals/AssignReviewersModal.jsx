@@ -6,6 +6,7 @@
 // don't transiently trip the 3-cap).
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { adminApi } from "../../../lib/adminApi.js";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
 
@@ -125,7 +126,7 @@ export default function AssignReviewersModal({ application, onClose, onSuccess }
     }
   }
 
-  return (
+  return createPortal((
     <div
       className="modal-scrim"
       role="presentation"
@@ -253,5 +254,5 @@ export default function AssignReviewersModal({ application, onClose, onSuccess }
         </form>
       </div>
     </div>
-  );
+  ), document.body);
 }

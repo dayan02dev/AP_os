@@ -403,7 +403,10 @@
 .modal-scrim {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  /* Sits above .drawer (z-index 101) so opening a modal from inside the
+     drawer fully covers it. Modals are also portalled to document.body so
+     no parent stacking context can re-trap them. */
+  z-index: 200;
   background: rgba(36, 36, 36, 0.55);
   display: flex;
   align-items: center;

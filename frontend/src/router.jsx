@@ -33,6 +33,7 @@ import UserDetailPage from "./pages/admin/UserDetailPage.jsx";
 import AdminAddUser from "./pages/admin/AdminAddUser.jsx";
 import ReviewerInboxStub from "./pages/reviewer/ReviewerInboxStub.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
+import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
 import { hasCapability } from "./lib/rbac.js";
 
@@ -55,6 +56,28 @@ function LeadershipRoute() {
     );
   }
   return <LeadershipDashboard />;
+}
+
+// Capability gate for the per-application review surface. Same shape as
+// LeadershipRoute but checks `view_app_detail` — granted to leadership AND
+// admin per backend rbac.ROLE_CAPABILITIES.
+function LeadershipReviewRoute() {
+  const { user } = useAuth();
+  const roles = user?.roles || [];
+  if (!hasCapability(roles, "view_app_detail")) {
+    return (
+      <div style={{ padding: 40, fontFamily: "system-ui" }}>
+        <h1>Access denied — leadership or admin role required</h1>
+        <p>
+          You need the <code>view_app_detail</code> capability to view this page.
+        </p>
+        <p>
+          Your roles: <code>{roles.join(", ") || "(none)"}</code>
+        </p>
+      </div>
+    );
+  }
+  return <ReviewApplicationPage />;
 }
 
 // Capability gate for /admin. ProtectedRoute already enforces auth;
@@ -170,6 +193,17 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <LeadershipRoute />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Per-application review surface — full-page deep dive launched from
+          the leadership dashboard's drawer "Review application" button. */}
+      <Route
+        path="/leadership/applications/:track/:id/review"
+        element={
+          <ProtectedRoute>
+            <LeadershipReviewRoute />
           </ProtectedRoute>
         }
       />
