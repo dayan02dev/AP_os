@@ -591,10 +591,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ─── AI Screening panel (dark, right side) ────────────── */
+/* ─── AI Screening panel (right side — brand purple per ARTPARK §1) ─ */
 
 .ai-panel {
-  background: var(--artblack);
+  /* Brand purple, NOT --artblack. Per ARTPARK design brief §1 rule 3:
+     "Backgrounds are solid --paper, --paper-soft, --artblue, --accent-violet,
+     or --artblack." --artblue is the primary brand surface and gives the
+     panel its identity as "the AI side" rather than reading as a dark slab. */
+  background: var(--artblue);
   color: #fff;
   height: 100%;
   display: flex;

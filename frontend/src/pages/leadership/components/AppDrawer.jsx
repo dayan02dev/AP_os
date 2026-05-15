@@ -104,10 +104,6 @@ function ComponentBars({ aiScreening }) {
   );
 }
 
-function viewScoringPlaceholder() {
-  // Intentionally inert. Title attribute on the button carries the tooltip.
-}
-
 export default function AppDrawer({ row, onClose, statusLabelById }) {
   const navigate = useNavigate();
   const [detail, setDetail] = useState(null);
@@ -392,14 +388,6 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
         </div>
 
         <footer className="drawer-footer">
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={viewScoringPlaceholder}
-            title="Reviewer scoring screen ships in Phase 1.5"
-          >
-            View scoring
-          </button>
           <button
             type="button"
             className="btn btn-ghost"

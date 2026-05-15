@@ -234,14 +234,6 @@ export const TIR_SCHEMA = [
       },
       {
         number: "19",
-        key: "execution_milestone_files",
-        label: "Supporting documents for the milestone plan.",
-        help: "Budget sheet or quarterly plan — PDF / XLS / CSV / image, up to 3 files.",
-        type: "files",
-        required: false,
-      },
-      {
-        number: "20",
         key: "execution_infrastructure",
         label: "Specific advanced infrastructure you need from us.",
         help:
@@ -250,7 +242,7 @@ export const TIR_SCHEMA = [
         required: true,
       },
       {
-        number: "21",
+        number: "20",
         key: "execution_failure",
         label:
           "A significant research direction or prototype failure — how did you pivot?",
@@ -259,7 +251,7 @@ export const TIR_SCHEMA = [
         required: false,
       },
       {
-        number: "22",
+        number: "21",
         key: "execution_hwsw_integration",
         label: "How do you manage complex hardware-software integration?",
         help:
@@ -272,18 +264,19 @@ export const TIR_SCHEMA = [
   {
     section_number: "05",
     section_title: "Evidence",
-    blurb: "Show, don't just tell.",
+    blurb: "Show, don't just tell. Files attached here are what reviewers download.",
     questions: [
       {
-        number: "23",
+        number: "22",
         key: "evidence_files",
         label: "Share evidence — publications, patents, prototype photos.",
-        help: "Optional, but strong signal. Multiple files OK.",
+        help:
+          "PDF / image / Word docs. Multiple files OK. The wizard also folds milestone-plan attachments (budget sheets, quarterly plans) into this list.",
         type: "files",
         required: false,
       },
       {
-        number: "24",
+        number: "23",
         key: "evidence_video_url",
         label: "A video of your prototype or product (under 3 minutes).",
         help: "Loom, YouTube, or Drive link. Optional but strongly encouraged.",
@@ -298,7 +291,7 @@ export const TIR_SCHEMA = [
     blurb: "A few confirmations.",
     questions: [
       {
-        number: "25",
+        number: "24",
         key: "declarations",
         label: "Applicant confirmations.",
         type: "declaration",
