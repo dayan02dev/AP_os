@@ -24,8 +24,9 @@ def assert_url_matches_project(
 ) -> None:
     """Verify ``url`` points at the Supabase project named by ``expected_project_ref``.
 
-    Supabase project URLs look like ``https://<ref>.supabase.co``. We
-    parse the host and check that its first label equals the expected ref.
+    Requires the hostname to be EXACTLY ``<expected_project_ref>.supabase.co``.
+    Partial matches (e.g. subdomain-squatting via
+    ``xtmszlpwgbyoumalgbhs.supabase.co.evil.com``) are rejected.
 
     Raises:
         SafetyCheckFailed: with a message naming ``label`` (e.g. "prod"
@@ -36,18 +37,12 @@ def assert_url_matches_project(
         raise SafetyCheckFailed(
             f"{label} URL is empty — set the relevant env var in .env.import."
         )
-    try:
-        parsed = urlparse(url)
-    except Exception as exc:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    expected_host = f"{expected_project_ref}.supabase.co"
+    if host != expected_host:
         raise SafetyCheckFailed(
-            f"{label} URL {url!r} is not parseable: {exc}"
-        ) from exc
-
-    host = parsed.hostname or ""
-    actual_ref = host.split(".", 1)[0] if host else ""
-    if actual_ref != expected_project_ref:
-        raise SafetyCheckFailed(
-            f"{label} URL points at project {actual_ref!r}, "
-            f"expected {expected_project_ref!r}. Refusing to proceed — "
-            f"a typo here could destroy the wrong database."
+            f"{label} URL host is {host!r}, expected {expected_host!r}. "
+            f"Refusing to proceed — a typo or rebind here could destroy "
+            f"the wrong database."
         )

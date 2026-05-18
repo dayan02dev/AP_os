@@ -62,3 +62,18 @@ def test_malformed_url_raises():
             expected_project_ref="xtmszlpwgbyoumalgbhs",
             label="prod",
         )
+
+
+def test_url_with_evil_subdomain_attack_raises():
+    """An attacker prefixing the legit ref onto an evil hostname must be rejected.
+
+    Without a full-hostname check, host.split('.', 1)[0] would extract
+    'xtmszlpwgbyoumalgbhs' and the comparison would succeed even though
+    the actual hostname is evil.com.
+    """
+    with pytest.raises(SafetyCheckFailed):
+        assert_url_matches_project(
+            url="https://xtmszlpwgbyoumalgbhs.supabase.co.evil.com",
+            expected_project_ref="xtmszlpwgbyoumalgbhs",
+            label="prod",
+        )
