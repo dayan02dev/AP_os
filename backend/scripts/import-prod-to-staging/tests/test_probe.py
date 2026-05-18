@@ -83,16 +83,23 @@ def test_url_with_evil_subdomain_attack_raises():
 
 
 def test_column_inventory_returns_set(fake_prod):
-    # Seed the fake with a synthetic information_schema response.
+    # Seed the fake with a synthetic information_schema response. Each
+    # row needs the filter keys (table_schema, table_name) because the
+    # FakeQuery now filters .eq() per real Supabase semantics — without
+    # those keys the rows would be dropped by the filter.
     fake_prod.tables["information_schema.columns"] = [
-        {"column_name": "id"},
-        {"column_name": "basic_full_name"},
-        {"column_name": "basic_email"},
+        {"column_name": "id", "table_schema": "public", "table_name": "applications"},
+        {"column_name": "basic_full_name", "table_schema": "public", "table_name": "applications"},
+        {"column_name": "basic_email", "table_schema": "public", "table_name": "applications"},
+        # Extra row that should be filtered out (different schema).
+        {"column_name": "other_col", "table_schema": "auth", "table_name": "users"},
     ]
     from lib.probe import column_inventory
 
     cols = column_inventory(fake_prod, schema="public", table="applications")
     assert cols == {"id", "basic_full_name", "basic_email"}
+    # The other_col row had table_schema="auth", so it must NOT be in the result.
+    assert "other_col" not in cols
 
 
 # ─── Seed signature ──────────────────────────────────────────────────
