@@ -22,16 +22,19 @@ class FakeResponse:
 class FakeQuery:
     def __init__(self, rows: list[dict[str, Any]]):
         self._rows = rows
+        self._filters: list[tuple[str, str, Any]] = []
         self.inserts: list[list[dict[str, Any]]] = []
         self.deletes: list[dict[str, Any]] = []
 
     def select(self, *_cols: str) -> "FakeQuery":
         return self
 
-    def eq(self, *_args, **_kwargs) -> "FakeQuery":
+    def eq(self, column: str, value: Any) -> "FakeQuery":
+        self._filters.append(("eq", column, value))
         return self
 
-    def in_(self, *_args, **_kwargs) -> "FakeQuery":
+    def in_(self, column: str, values: list[Any]) -> "FakeQuery":
+        self._filters.append(("in", column, values))
         return self
 
     def neq(self, *_args, **_kwargs) -> "FakeQuery":
@@ -44,7 +47,13 @@ class FakeQuery:
         return self
 
     def execute(self) -> FakeResponse:
-        return FakeResponse(data=list(self._rows))
+        filtered = list(self._rows)
+        for op, column, value in self._filters:
+            if op == "eq":
+                filtered = [r for r in filtered if r.get(column) == value]
+            elif op == "in":
+                filtered = [r for r in filtered if r.get(column) in value]
+        return FakeResponse(data=filtered)
 
     def insert(self, rows: list[dict[str, Any]]) -> "FakeQuery":
         self.inserts.append(rows)
