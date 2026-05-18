@@ -94,7 +94,7 @@ audit_log_v2
 
 | Table | Rows preserved |
 |---|---|
-| `auth.users` | The 3 sign-in test users (`dev@artpark.in`, `manager@artpark.in`, `test@artpark.in`) + everyone with `user_roles.role = 'reviewer'` at wipe time (the 6 seeded reviewer accounts, including `reviewer-1@artpark.in` … `reviewer-3@artpark.in`, `manager@artpark.in`, `test-rv-*@artpark.in`). |
+| `auth.users` | The 3 sign-in test users (`dev@artpark.in`, `manager@artpark.in`, `test@artpark.in`) **plus** every user that currently holds the `reviewer` role in `user_roles` at the moment the script runs (resolved dynamically — the expected set today is the 6 seed reviewer accounts: `reviewer-1@artpark.in` … `reviewer-3@artpark.in`, `manager@artpark.in`, `test-rv-*@artpark.in`, but if you've added more reviewers manually they're preserved automatically). |
 | `profiles` | Same set, joined by `id ← auth.users.id`. |
 | `user_roles` | Same set. |
 
@@ -153,11 +153,11 @@ FROM profiles WHERE id = <prod_uid>;
   ```python
   staging.auth.admin.create_user({
       "email": prod_email,
-      "password": secrets.token_hex(32),    # scrambled — applicant can't sign in
+      "password": secrets.token_hex(32),       # scrambled — applicant can't sign in
       "email_confirm": True,
       "user_metadata": {
           "track": prod_track or "tir",
-          "imported_at": "2026-05-18T...",
+          "imported_at": datetime.utcnow().isoformat() + "Z",
           "source": "prod-import",
       },
   })
@@ -293,16 +293,16 @@ The script doesn't dump entire prod buckets. It copies only objects referenced b
 
 **Pass 1 — resume_uploads scan.** `tir_resume_uploads.storage_path` is a top-level text column. SELECT it directly → set of paths in the `resumes` bucket.
 
-**Pass 2 — JSONB walk.** After §6 inserts complete, walk these JSONB columns on `tir_applications`:
+**Pass 2 — JSONB walk.** After §6 inserts complete, walk these JSONB columns on `tir_applications`. **The bucket is inferred from the source column, not from the path string** — applicant uploads in the wizard store only `<uid>/<filename>` (no bucket prefix), and each question writes to one specific bucket:
 
-```
-evidence_files               array of { storage_path, name, size, mime_type, ... }
-evidence_deck                single { storage_path, ... }   (may be null)
-execution_milestone_files    array of { storage_path, ... } (legacy)
-basic_teammates              no storage paths — skip
-```
+| JSONB column | Source bucket on prod | Destination bucket on staging |
+|---|---|---|
+| `evidence_files[]` (array) | `evidence-files` | `tir-evidence-files` |
+| `evidence_deck` (single, legacy) | `evidence-files` | `tir-evidence-files` |
+| `execution_milestone_files[]` (array, legacy) | `milestone-files` | `tir-milestone-files` |
+| `basic_teammates[]` | no storage paths — skip | — |
 
-For each `storage_path` extracted, infer its bucket from the path convention or from sibling fields. Group paths by bucket.
+For each row in each column, extract `entry["storage_path"]` (skipping null entries). Build `(prod_bucket, staging_bucket, path)` triples and feed them into the per-object copy loop.
 
 **Combined set** = union of pass 1 + pass 2, deduplicated. For a few hundred applications, this is typically 1000-2000 distinct objects.
 
