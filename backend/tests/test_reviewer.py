@@ -21,7 +21,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from app.deps import get_current_user
 from app.main import app
 
@@ -120,10 +119,15 @@ def _clear_overrides():
 
 def _install_db(monkeypatch, tables):
     from app.routers import reviewer as rv
-    from app.services import reviewer_query
+    from app.services import reviewer_query, state_machine
     fake = _FakeAdminClient(tables=tables)
     monkeypatch.setattr(rv, "get_admin_client", lambda: fake)
     monkeypatch.setattr(reviewer_query, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(state_machine, "get_admin_client", lambda: fake)
+    # Capture-only audit so we don't hit a real Supabase from inside
+    # write_audit's own get_admin_client() call. Matches the pattern in
+    # test_leadership_writes._capture_audit_writes.
+    monkeypatch.setattr(rv, "write_audit", lambda **kwargs: None)
     return fake
 
 
@@ -333,3 +337,164 @@ def test_app_detail_strips_ai_when_review_is_draft(
     assert body["my_review"]["submitted_at"] is None
     assert body["ai_screening"] is None, \
         "Draft review must not unlock AI screening (anti-anchoring)"
+
+
+# ─── POST /reviewer/reviews ────────────────────────────────────────────
+
+
+_VALID_SUBMIT = {
+    "application_id": "app1",
+    "application_track": "tir",
+    "assignment_id": "a1",
+    "score_problem": 7,
+    "score_solution": 5,
+    "score_tech": 6,
+    "score_founders": 8,
+    "score_commitment": 7,
+    "recommendation": "maybe",
+    "strengths": None,
+    "concerns": None,
+    "quick_notes": None,
+    "draft": False,
+}
+
+
+def _seed_one_assignment(monkeypatch, reviewer_user_id: str, **extra_rows):
+    tables = {
+        "reviewer_assignments": [
+            {"id": "a1", "reviewer_user_id": reviewer_user_id,
+             "application_id": "app1", "application_track": "tir",
+             "assigned_at": "2026-05-16T09:00:00Z", "assigned_by": "leader-u",
+             "declined_at": None, "reassigned_to": None, "completed_at": None},
+        ],
+        "tir_applications": [
+            {"id": "app1", "answers": {"problem": "x"}, "status": "under_review",
+             "submitted_at": "2026-05-15T00:00:00Z"},
+        ],
+        "sip_applications": [],
+        "reviews": [],
+        "ai_screening": [],
+        "application_status_log": [],
+    }
+    for k, v in extra_rows.items():
+        tables[k] = v
+    return _install_db(monkeypatch, tables)
+
+
+def test_submit_review_rejects_missing_score(client, monkeypatch, _clear_overrides):
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    body = dict(_VALID_SUBMIT)
+    del body["score_problem"]
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 422
+
+
+def test_submit_review_rejects_score_out_of_range(client, monkeypatch, _clear_overrides):
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    body = dict(_VALID_SUBMIT)
+    body["score_solution"] = 11
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 422
+
+
+def test_submit_review_rejects_score_integrity_field(client, monkeypatch, _clear_overrides):
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    body = dict(_VALID_SUBMIT)
+    body["score_integrity"] = 6
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 422
+
+
+def test_submit_review_writes_row_with_60_min_lock(
+    client, monkeypatch, _clear_overrides, freezer,
+):
+    me = "rev-a"
+    freezer.move_to("2026-05-18T10:00:00Z")
+    fake = _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.post("/reviewer/reviews", json=_VALID_SUBMIT)
+    assert r.status_code == 201, r.text
+    # Find the insert into 'reviews'
+    review_inserts = [p for n, p in fake.inserts if n == "reviews"]
+    assert len(review_inserts) == 1
+    row = review_inserts[0]
+    assert row["submitted_at"] == "2026-05-18T10:00:00+00:00"
+    assert row["locked_at"] == "2026-05-18T11:00:00+00:00"
+
+
+def test_submit_review_all_reviewers_complete_triggers_evaluated(
+    client, monkeypatch, _clear_overrides,
+):
+    """Closes spec §14.4."""
+    me = "rev-a"
+    other = "rev-b"
+    fake = _seed_one_assignment(
+        monkeypatch, me,
+        reviewer_assignments=[
+            {"id": "a1", "reviewer_user_id": me,
+             "application_id": "app1", "application_track": "tir",
+             "assigned_at": "2026-05-16T09:00:00Z", "assigned_by": "leader-u",
+             "declined_at": None, "reassigned_to": None, "completed_at": None},
+            {"id": "a2", "reviewer_user_id": other,
+             "application_id": "app1", "application_track": "tir",
+             "assigned_at": "2026-05-16T09:00:00Z", "assigned_by": "leader-u",
+             "declined_at": None, "reassigned_to": None,
+             "completed_at": "2026-05-17T12:00:00Z"},  # other already done
+        ],
+    )
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.post("/reviewer/reviews", json=_VALID_SUBMIT)
+    assert r.status_code == 201, r.text
+    # tir_applications should have an update to status=evaluated
+    status_updates = [u for n, u, eqs in fake.updates if n == "tir_applications"]
+    assert any(u.get("status") == "evaluated" for u in status_updates)
+
+
+def test_submit_review_partial_completion_does_not_transition(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    other = "rev-b"
+    fake = _seed_one_assignment(
+        monkeypatch, me,
+        reviewer_assignments=[
+            {"id": "a1", "reviewer_user_id": me,
+             "application_id": "app1", "application_track": "tir",
+             "assigned_at": "2026-05-16T09:00:00Z", "assigned_by": "leader-u",
+             "declined_at": None, "reassigned_to": None, "completed_at": None},
+            {"id": "a2", "reviewer_user_id": other,
+             "application_id": "app1", "application_track": "tir",
+             "assigned_at": "2026-05-16T09:00:00Z", "assigned_by": "leader-u",
+             "declined_at": None, "reassigned_to": None, "completed_at": None},
+        ],
+    )
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.post("/reviewer/reviews", json=_VALID_SUBMIT)
+    assert r.status_code == 201, r.text
+    status_updates = [u for n, u, eqs in fake.updates if n == "tir_applications"]
+    assert not any(u.get("status") == "evaluated" for u in status_updates)
+
+
+def test_draft_does_not_transition_or_lock(
+    client, monkeypatch, _clear_overrides, freezer,
+):
+    me = "rev-a"
+    freezer.move_to("2026-05-18T10:00:00Z")
+    fake = _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    body = dict(_VALID_SUBMIT)
+    body["draft"] = True
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 201
+    review_inserts = [p for n, p in fake.inserts if n == "reviews"]
+    row = review_inserts[0]
+    assert row["submitted_at"] is None
+    assert row["locked_at"] is None
+    status_updates = [u for n, u, eqs in fake.updates if n == "tir_applications"]
+    assert not any(u.get("status") == "evaluated" for u in status_updates)

@@ -18,11 +18,17 @@ Routes (built up across Tasks 1-7 of the implementation plan):
 from __future__ import annotations
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status as http_status
+from datetime import UTC, datetime, timedelta
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi import status as http_status
+from pydantic import BaseModel, ConfigDict, Field, conint
 
 from ..deps import get_current_user
 from ..rbac import require_capability
-from ..services import reviewer_query
+from ..services import reviewer_query, state_machine
+from ..services.audit import write_audit
 from ..supabase_client import get_admin_client
 
 log = logging.getLogger(__name__)
@@ -65,3 +71,171 @@ async def get_application_for_reviewer(
                     "message": "You have no active assignment for this application."},
         )
     return payload
+
+
+# ─── POST /reviewer/reviews ────────────────────────────────────────────
+
+
+class ReviewSubmitBody(BaseModel):
+    """Payload for submit (or save-as-draft).
+
+    `extra="forbid"` is the load-bearing guard: it rejects anti-anchoring
+    fields like `score_integrity` (spec §6.2 explicitly drops integrity as
+    a scored dimension — any client that ships it is on a stale schema).
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    application_id: str = Field(..., min_length=1)
+    application_track: Literal["tir", "sip"]
+    assignment_id: str = Field(..., min_length=1)
+    score_problem:    conint(ge=0, le=10) | None = None
+    score_solution:   conint(ge=0, le=10) | None = None
+    score_tech:       conint(ge=0, le=10) | None = None
+    score_founders:   conint(ge=0, le=10) | None = None
+    score_commitment: conint(ge=0, le=10) | None = None
+    recommendation:   Literal["yes", "maybe", "no"] | None = None
+    strengths:   str | None = None
+    concerns:    str | None = None
+    quick_notes: str | None = None
+    draft: bool = False
+
+
+def _validate_complete(body: ReviewSubmitBody) -> None:
+    """Non-draft submits require all 5 scores AND a recommendation."""
+    if body.draft:
+        return
+    missing: list[str] = []
+    for col in ("score_problem", "score_solution", "score_tech",
+                "score_founders", "score_commitment"):
+        if getattr(body, col) is None:
+            missing.append(col)
+    if body.recommendation is None:
+        missing.append("recommendation")
+    if missing:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "incomplete_review", "missing": missing},
+        )
+
+
+@router.post(
+    "/reviews",
+    status_code=http_status.HTTP_201_CREATED,
+    dependencies=[Depends(require_capability("score_app"))],
+)
+async def submit_review(
+    body: ReviewSubmitBody,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Create a review row.
+
+    Two modes:
+      * ``draft=True``  — partial save, no submitted_at, no locked_at, no
+        audit, no auto-transition. Reviewer can keep editing.
+      * ``draft=False`` (default) — full submit. All 5 scores + recommendation
+        required. Writes submitted_at = now, locked_at = now + 60min, marks
+        the assignment ``completed_at = now``, audits, and triggers the
+        spec §14.4 auto-transition to ``evaluated`` when every active
+        reviewer for the app has submitted.
+    """
+    _validate_complete(body)
+
+    # Verify the caller actually owns this assignment. The RBAC gate already
+    # confirmed they hold the ``score_app`` capability, but that's role-wide;
+    # this enforces the per-assignment ownership boundary.
+    sb = get_admin_client()
+    try:
+        asg_rows = (
+            sb.table("reviewer_assignments")
+            .select("*")
+            .eq("id", body.assignment_id)
+            .execute()
+            .data
+        ) or []
+    except Exception as exc:
+        log.warning(
+            "submit_review: assignment fetch failed",
+            extra={"assignment_id": body.assignment_id, "err": str(exc)},
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "assignment_lookup_failed"},
+        ) from exc
+
+    if not asg_rows or asg_rows[0].get("reviewer_user_id") != user["user_id"]:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail={"code": "not_your_assignment"},
+        )
+
+    now = datetime.now(UTC)
+    submitted_at = None if body.draft else now.isoformat()
+    locked_at    = None if body.draft else (now + timedelta(minutes=60)).isoformat()
+
+    insert_row = {
+        "application_id":    body.application_id,
+        "application_track": body.application_track,
+        "reviewer_user_id":  user["user_id"],
+        "assignment_id":     body.assignment_id,
+        "score_problem":     body.score_problem,
+        "score_solution":    body.score_solution,
+        "score_tech":        body.score_tech,
+        "score_founders":    body.score_founders,
+        "score_commitment":  body.score_commitment,
+        "recommendation":    body.recommendation,
+        "strengths":         body.strengths,
+        "concerns":          body.concerns,
+        "quick_notes":       body.quick_notes,
+        "submitted_at":      submitted_at,
+        "locked_at":         locked_at,
+    }
+    try:
+        result = sb.table("reviews").insert(insert_row).execute()
+    except Exception as exc:
+        log.warning(
+            "submit_review: reviews insert failed",
+            extra={"application_id": body.application_id,
+                   "reviewer_user_id": user["user_id"],
+                   "err": str(exc)},
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "review_insert_failed"},
+        ) from exc
+
+    review_row = (result.data or [{}])[0]
+    review_id = review_row.get("id")
+
+    if not body.draft:
+        # Mark the assignment complete.
+        try:
+            sb.table("reviewer_assignments").update(
+                {"completed_at": now.isoformat()},
+            ).eq("id", body.assignment_id).execute()
+        except Exception as exc:
+            # Don't fail the whole request — the review row landed; the
+            # assignment-complete flag is a best-effort hygiene marker.
+            log.warning(
+                "submit_review: assignment completed_at update failed",
+                extra={"assignment_id": body.assignment_id, "err": str(exc)},
+            )
+
+        # Audit: kwarg is `after`, not `after_state` (DB col vs kwarg name).
+        write_audit(
+            actor_user_id=user["user_id"],
+            actor_role="reviewer",
+            action_type="submit_review",
+            target_table="reviews",
+            target_id=review_id,
+            after={"recommendation": body.recommendation},
+        )
+
+        # Auto-transition (closes spec §14.4). Pass the just-completed
+        # assignment id so the helper doesn't race a stale read-your-writes.
+        state_machine.auto_transition_to_evaluated_if_complete(
+            body.application_id,
+            body.application_track,
+            just_completed_assignment_id=body.assignment_id,
+        )
+
+    return {"review": review_row}
