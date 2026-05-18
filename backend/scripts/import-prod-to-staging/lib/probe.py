@@ -54,18 +54,27 @@ def assert_url_matches_project(
 def column_inventory(client, *, schema: str = "public", table: str) -> set[str]:
     """Return the set of column names that exist on ``schema.table``.
 
-    Queries Supabase's ``information_schema.columns`` view. Returns an
-    empty set if the table doesn't exist — caller decides whether that
-    is an error or just "skip this table."
+    Supabase's PostgREST API doesn't expose ``information_schema`` over
+    REST (only the ``public`` schema is auto-exposed), so we sample one
+    row from the target table and read its keys. The ``schema`` arg is
+    accepted for forward-compat but currently only ``public`` works
+    over PostgREST.
+
+    Returns an empty set if the table is empty or doesn't exist —
+    caller decides whether that's an error or just "skip this table."
     """
-    res = (
-        client.table("information_schema.columns")
-        .select("column_name")
-        .eq("table_schema", schema)
-        .eq("table_name", table)
-        .execute()
-    )
-    return {row["column_name"] for row in (res.data or [])}
+    if schema != "public":
+        # Non-public schemas aren't reachable via PostgREST. Caller should
+        # know — return empty so the column intersection is empty and the
+        # caller logs the divergence.
+        return set()
+    try:
+        res = client.table(table).select("*").limit(1).execute()
+    except Exception:
+        return set()
+    if not res.data:
+        return set()
+    return set(res.data[0].keys())
 
 
 # ─── Seed-data signature check ──────────────────────────────────────

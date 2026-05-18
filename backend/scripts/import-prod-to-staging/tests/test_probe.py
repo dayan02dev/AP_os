@@ -83,23 +83,32 @@ def test_url_with_evil_subdomain_attack_raises():
 
 
 def test_column_inventory_returns_set(fake_prod):
-    # Seed the fake with a synthetic information_schema response. Each
-    # row needs the filter keys (table_schema, table_name) because the
-    # FakeQuery now filters .eq() per real Supabase semantics — without
-    # those keys the rows would be dropped by the filter.
-    fake_prod.tables["information_schema.columns"] = [
-        {"column_name": "id", "table_schema": "public", "table_name": "applications"},
-        {"column_name": "basic_full_name", "table_schema": "public", "table_name": "applications"},
-        {"column_name": "basic_email", "table_schema": "public", "table_name": "applications"},
-        # Extra row that should be filtered out (different schema).
-        {"column_name": "other_col", "table_schema": "auth", "table_name": "users"},
+    # PostgREST doesn't expose information_schema, so column_inventory
+    # samples one row from the target table and reads its keys.
+    fake_prod.tables["applications"] = [
+        {"id": "app-1", "basic_full_name": "Test User", "basic_email": "t@example.com"},
     ]
     from lib.probe import column_inventory
 
     cols = column_inventory(fake_prod, schema="public", table="applications")
     assert cols == {"id", "basic_full_name", "basic_email"}
-    # The other_col row had table_schema="auth", so it must NOT be in the result.
-    assert "other_col" not in cols
+
+
+def test_column_inventory_returns_empty_for_empty_table(fake_prod):
+    # Empty table → empty set. Caller decides whether to skip or fail.
+    fake_prod.tables["applications"] = []
+    from lib.probe import column_inventory
+
+    cols = column_inventory(fake_prod, schema="public", table="applications")
+    assert cols == set()
+
+
+def test_column_inventory_returns_empty_for_non_public_schema(fake_prod):
+    # Non-public schemas aren't reachable via PostgREST.
+    from lib.probe import column_inventory
+
+    cols = column_inventory(fake_prod, schema="auth", table="users")
+    assert cols == set()
 
 
 # ─── Seed signature ──────────────────────────────────────────────────
