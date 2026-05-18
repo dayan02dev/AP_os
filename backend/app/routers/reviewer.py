@@ -20,7 +20,10 @@ from __future__ import annotations
 import logging
 from fastapi import APIRouter, Depends
 
+from ..deps import get_current_user
 from ..rbac import require_capability
+from ..services import reviewer_query
+from ..supabase_client import get_admin_client
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +34,7 @@ router = APIRouter(prefix="/reviewer", tags=["reviewer"])
     "/assignments",
     dependencies=[Depends(require_capability("view_assigned_apps"))],
 )
-async def list_assignments() -> dict:
-    """Placeholder — fully implemented in Task 2."""
-    return {"assignments": []}
+async def list_assignments(user: dict = Depends(get_current_user)) -> dict:
+    return {
+        "assignments": reviewer_query.fetch_inbox(user["user_id"]),
+    }
