@@ -77,3 +77,39 @@ def test_url_with_evil_subdomain_attack_raises():
             expected_project_ref="xtmszlpwgbyoumalgbhs",
             label="prod",
         )
+
+
+# ─── Column inventory ────────────────────────────────────────────────
+
+
+def test_column_inventory_returns_set(fake_prod):
+    # Seed the fake with a synthetic information_schema response.
+    fake_prod.tables["information_schema.columns"] = [
+        {"column_name": "id"},
+        {"column_name": "basic_full_name"},
+        {"column_name": "basic_email"},
+    ]
+    from lib.probe import column_inventory
+
+    cols = column_inventory(fake_prod, schema="public", table="applications")
+    assert cols == {"id", "basic_full_name", "basic_email"}
+
+
+# ─── Seed signature ──────────────────────────────────────────────────
+
+
+def test_seed_signature_present(fake_staging):
+    fake_staging.tables["tir_applications"] = [
+        {"id": "aaa", "basic_email": "seed-app-001@artpark.test"},
+        {"id": "bbb", "basic_email": "seed-app-002@artpark.test"},
+    ]
+    from lib.probe import seed_signature_present
+
+    assert seed_signature_present(fake_staging) is True
+
+
+def test_seed_signature_absent(fake_staging):
+    fake_staging.tables["tir_applications"] = []
+    from lib.probe import seed_signature_present
+
+    assert seed_signature_present(fake_staging) is False

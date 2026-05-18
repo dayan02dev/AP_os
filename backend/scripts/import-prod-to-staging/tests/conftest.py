@@ -37,6 +37,9 @@ class FakeQuery:
     def neq(self, *_args, **_kwargs) -> "FakeQuery":
         return self
 
+    def like(self, *_args, **_kwargs) -> "FakeQuery":
+        return self
+
     def limit(self, *_args) -> "FakeQuery":
         return self
 

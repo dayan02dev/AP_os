@@ -46,3 +46,45 @@ def assert_url_matches_project(
             f"Refusing to proceed — a typo or rebind here could destroy "
             f"the wrong database."
         )
+
+
+# ─── Column inventory ───────────────────────────────────────────────
+
+
+def column_inventory(client, *, schema: str = "public", table: str) -> set[str]:
+    """Return the set of column names that exist on ``schema.table``.
+
+    Queries Supabase's ``information_schema.columns`` view. Returns an
+    empty set if the table doesn't exist — caller decides whether that
+    is an error or just "skip this table."
+    """
+    res = (
+        client.table("information_schema.columns")
+        .select("column_name")
+        .eq("table_schema", schema)
+        .eq("table_name", table)
+        .execute()
+    )
+    return {row["column_name"] for row in (res.data or [])}
+
+
+# ─── Seed-data signature check ──────────────────────────────────────
+
+
+def seed_signature_present(staging_client) -> bool:
+    """Return True iff staging.tir_applications has at least one row whose
+    basic_email matches the synthetic seed pattern ``%@artpark.test``.
+
+    Used as the final pre-flight safety check before the wipe: if no
+    seed signature is present, the script aborts because either (a) the
+    wipe has already run on this DB, or (b) STAGING_SUPABASE_URL is
+    accidentally pointed at something that ISN'T the seeded staging DB.
+    """
+    res = (
+        staging_client.table("tir_applications")
+        .select("id")
+        .like("basic_email", "%@artpark.test")
+        .limit(1)
+        .execute()
+    )
+    return bool(res.data)
