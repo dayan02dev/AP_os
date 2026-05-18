@@ -17,3 +17,6 @@ build/
 .env.prod
 .env.production
 .env.development
+
+# Exception: commit the .env template files (no real keys)
+!scripts/import-prod-to-staging/.env.import.example
