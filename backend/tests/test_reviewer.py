@@ -290,3 +290,46 @@ def test_app_detail_403_when_not_assigned(
     app.dependency_overrides[get_current_user] = _override_user(me)
     r = client.get("/reviewer/applications/tir/app1")
     assert r.status_code == 403
+
+
+def test_app_detail_strips_ai_when_review_is_draft(
+    client, monkeypatch, _clear_overrides,
+):
+    """Path C of the privacy boundary: caller has an active assignment AND a
+    draft review (submitted_at IS NULL) AND ai_screening data exists — but
+    ai_screening MUST still be stripped because the reviewer hasn't submitted
+    yet. Tests the `my_review.get("submitted_at")` short-circuit explicitly.
+    """
+    me = "rev-a"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [
+            {"id": "a1", "reviewer_user_id": me, "application_id": "app1",
+             "application_track": "tir", "assigned_at": "2026-05-16T09:00:00Z",
+             "assigned_by": "leader-u", "declined_at": None,
+             "reassigned_to": None, "completed_at": None},
+        ],
+        "tir_applications": [
+            {"id": "app1", "answers": {"problem": "x"},
+             "submitted_at": "2026-05-15T00:00:00Z"},
+        ],
+        "sip_applications": [],
+        "reviews": [
+            # Draft: submitted_at IS NULL, locked_at IS NULL
+            {"id": "rev-draft", "application_id": "app1", "application_track": "tir",
+             "reviewer_user_id": me, "submitted_at": None, "locked_at": None,
+             "score_problem": 4, "recommendation": None},
+        ],
+        "ai_screening": [
+            {"id": "ai1", "application_id": "app1", "application_track": "tir",
+             "score_problem": 8, "score_overall": 7.5,
+             "summary": "Strong on problem framing."},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.get("/reviewer/applications/tir/app1")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["my_review"] is not None
+    assert body["my_review"]["submitted_at"] is None
+    assert body["ai_screening"] is None, \
+        "Draft review must not unlock AI screening (anti-anchoring)"

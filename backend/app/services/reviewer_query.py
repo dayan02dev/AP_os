@@ -207,9 +207,10 @@ def fetch_application_for_reviewer(
             .execute()
             .data
         )
-    except Exception:
+    except Exception as exc:
         log.warning("app_detail: assignment fetch failed",
-                    extra={"application_id": application_id, "track": track})
+                    extra={"application_id": application_id, "track": track,
+                           "err": str(exc)})
         return None
     active = [
         a for a in assignment_rows
@@ -223,9 +224,10 @@ def fetch_application_for_reviewer(
     table = "tir_applications" if track == "tir" else "sip_applications"
     try:
         app_rows = sb.table(table).select("*").eq("id", application_id).limit(1).execute().data
-    except Exception:
+    except Exception as exc:
         log.warning("app_detail: app fetch failed",
-                    extra={"application_id": application_id, "track": track})
+                    extra={"application_id": application_id, "track": track,
+                           "err": str(exc)})
         return None
     if not app_rows:
         return None
@@ -242,10 +244,10 @@ def fetch_application_for_reviewer(
             .execute()
             .data
         )
-    except Exception:
+    except Exception as exc:
         log.warning("app_detail: review fetch failed",
                     extra={"application_id": application_id, "track": track,
-                           "reviewer": reviewer_user_id})
+                           "reviewer": reviewer_user_id, "err": str(exc)})
         review_rows = []
     my_review = review_rows[0] if review_rows else None
 
@@ -261,9 +263,10 @@ def fetch_application_for_reviewer(
                 .execute()
                 .data
             )
-        except Exception:
+        except Exception as exc:
             log.warning("app_detail: ai_screening fetch failed",
-                        extra={"application_id": application_id, "track": track})
+                        extra={"application_id": application_id, "track": track,
+                               "err": str(exc)})
             ai_rows = []
         if ai_rows:
             ai_screening = ai_rows[0]
