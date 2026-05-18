@@ -62,6 +62,9 @@ class FakeQuery:
     def delete(self) -> "FakeQuery":
         return self
 
+    def update(self, *_args, **_kwargs) -> "FakeQuery":
+        return self
+
 
 @dataclass
 class FakeSupabase:
