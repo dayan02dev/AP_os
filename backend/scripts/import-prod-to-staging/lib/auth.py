@@ -33,6 +33,37 @@ from typing import Callable
 log = logging.getLogger(__name__)
 
 
+def list_auth_users(client, *, page_size: int = 1000) -> list[dict]:
+    """List every auth.users row via the Supabase Admin API.
+
+    PostgREST doesn't expose the ``auth`` schema, so we can't reach
+    ``auth.users`` via ``client.table(...)``. The Admin API
+    (``client.auth.admin.list_users()``) is the only path. Paginates
+    through every page and returns dicts shaped like
+    ``{"id": ..., "email": ..., "raw_user_meta_data": {...}}``
+    so callers can use them interchangeably with the PostgREST shape.
+    """
+    out: list[dict] = []
+    page = 1
+    while True:
+        try:
+            users = client.auth.admin.list_users(page=page, per_page=page_size)
+        except TypeError:
+            # Older supabase-py signatures took no kwargs — fall back.
+            users = client.auth.admin.list_users()
+        users = users or []
+        for u in users:
+            out.append({
+                "id": getattr(u, "id", None),
+                "email": getattr(u, "email", None),
+                "raw_user_meta_data": dict(getattr(u, "user_metadata", None) or {}),
+            })
+        if len(users) < page_size:
+            break
+        page += 1
+    return out
+
+
 def scrambled_password() -> str:
     """Return a fresh 256-bit hex string used as the staging user password."""
     return secrets.token_hex(32)
@@ -110,12 +141,7 @@ def delete_users_outside_preserve_set(
 
     Returns the number of users actually deleted.
     """
-    all_users = (
-        staging_client.table("auth.users")
-        .select("id")
-        .execute()
-    ).data or []
-
+    all_users = list_auth_users(staging_client)
     users_to_delete = {row["id"] for row in all_users if row.get("id")} - preserve_set
     log.info(
         "Tier 2 auth wipe: %d total staging users, %d preserved, %d to delete",
@@ -159,26 +185,18 @@ def import_users(prod_client, staging_client) -> dict[str, str]:
     if not distinct_ids:
         return {}
 
-    # Pull the prod auth.users rows for those ids.
-    prod_users = (
-        prod_client.table("auth.users")
-        .select("id, email, raw_user_meta_data")
-        .in_("id", list(distinct_ids))
-        .execute()
-    ).data or []
+    # Pull the prod auth.users rows for those ids via the Admin API
+    # (auth schema is not exposed over PostgREST). Python-side filter.
+    all_prod_users = list_auth_users(prod_client)
+    prod_users = [u for u in all_prod_users if u.get("id") in distinct_ids]
 
-    # Pull staging existing users by email so we can short-circuit dupes.
+    # Pull staging existing users so we can short-circuit duplicate emails.
     staging_emails = {pu["email"] for pu in prod_users if pu.get("email")}
-    staging_rows = (
-        staging_client.table("auth.users")
-        .select("id, email")
-        .in_("email", list(staging_emails))
-        .execute()
-    ).data or []
+    all_staging_users = list_auth_users(staging_client)
     staging_existing_by_email = {
-        row["email"]: row["id"]
-        for row in staging_rows
-        if row.get("email") and row.get("id")
+        u["email"]: u["id"]
+        for u in all_staging_users
+        if u.get("email") in staging_emails and u.get("id")
     }
 
     def create_user(**kwargs) -> dict:

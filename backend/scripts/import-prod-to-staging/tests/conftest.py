@@ -66,11 +66,80 @@ class FakeQuery:
         return self
 
 
-@dataclass
-class FakeSupabase:
-    """Minimal stand-in for supabase.Client used in unit tests."""
+class _FakeUser:
+    """Minimal stand-in for the User model returned by supabase-py auth."""
+    def __init__(self, *, id: str, email: str, user_metadata: dict | None = None):
+        self.id = id
+        self.email = email
+        self.user_metadata = user_metadata or {}
 
-    tables: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+
+class _FakeCreateUserResponse:
+    def __init__(self, user: _FakeUser):
+        self.user = user
+
+
+class _FakeAuthAdmin:
+    """Stand-in for client.auth.admin — list_users / create_user / delete_user."""
+    def __init__(self, owner: "FakeSupabase"):
+        self._owner = owner
+
+    def list_users(self, page: int = 1, per_page: int = 1000):
+        # Naive pagination over the owner's auth_users list.
+        users = self._owner.auth_users
+        start = (page - 1) * per_page
+        end = start + per_page
+        slice_ = users[start:end]
+        return [
+            _FakeUser(
+                id=u["id"],
+                email=u.get("email", ""),
+                user_metadata=u.get("raw_user_meta_data", {}),
+            )
+            for u in slice_
+        ]
+
+    def create_user(self, kwargs: dict) -> _FakeCreateUserResponse:
+        new_id = f"new-staging-uid-{len(self._owner.auth_users) + 1}"
+        record = {
+            "id": new_id,
+            "email": kwargs.get("email"),
+            "raw_user_meta_data": dict(kwargs.get("user_metadata") or {}),
+        }
+        self._owner.auth_users.append(record)
+        return _FakeCreateUserResponse(_FakeUser(
+            id=new_id, email=record["email"],
+            user_metadata=record["raw_user_meta_data"],
+        ))
+
+    def delete_user(self, uid: str) -> None:
+        self._owner.auth_users = [u for u in self._owner.auth_users if u["id"] != uid]
+
+
+class _FakeAuth:
+    def __init__(self, owner: "FakeSupabase"):
+        self.admin = _FakeAuthAdmin(owner)
+
+
+class FakeSupabase:
+    """Minimal stand-in for supabase.Client used in unit tests.
+
+    Holds two collections:
+      - tables   — public-schema row collections (used via .table(name))
+      - auth_users — auth.users records, reached via .auth.admin.* (the
+        Admin API path — PostgREST doesn't expose the auth schema, so
+        real code uses client.auth.admin.list_users() instead of
+        client.table("auth.users")).
+    """
+
+    def __init__(
+        self,
+        tables: dict[str, list[dict[str, Any]]] | None = None,
+        auth_users: list[dict[str, Any]] | None = None,
+    ):
+        self.tables = tables if tables is not None else {}
+        self.auth_users = auth_users if auth_users is not None else []
+        self.auth = _FakeAuth(self)
 
     def table(self, name: str) -> FakeQuery:
         if name not in self.tables:

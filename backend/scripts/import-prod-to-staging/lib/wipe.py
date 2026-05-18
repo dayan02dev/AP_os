@@ -41,15 +41,19 @@ def resolve_preserve_set(staging_client) -> set[str]:
 
     Always includes the 3 sign-in test users from PRESERVE_EMAILS. Plus
     every user holding ``role='reviewer'`` in user_roles at this moment.
+
+    auth.users isn't reachable via PostgREST (auth schema not exposed),
+    so we go through the Supabase Admin API via lib/auth.list_auth_users.
     """
-    # Static-preserve users by email lookup.
-    users = (
-        staging_client.table("auth.users")
-        .select("id, email")
-        .in_("email", list(PRESERVE_EMAILS))
-        .execute()
-    ).data or []
-    preserved = {row["id"] for row in users if row.get("id")}
+    # Local import keeps the lib/wipe.py → lib/auth.py edge one-way and
+    # avoids a circular dependency at module load time.
+    from .auth import list_auth_users
+
+    all_users = list_auth_users(staging_client)
+    preserved = {
+        u["id"] for u in all_users
+        if u.get("email") in PRESERVE_EMAILS and u.get("id")
+    }
 
     # Dynamic-preserve: everyone with reviewer role.
     reviewer_grants = (

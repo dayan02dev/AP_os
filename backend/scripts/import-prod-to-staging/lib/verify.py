@@ -72,11 +72,12 @@ def run_verify(
                     .select("user_id").execute().data or [])
         if row.get("user_id")
     }
+    # auth.users isn't reachable via PostgREST — go through Admin API.
+    from .auth import list_auth_users
     auth_ids = {
-        row["id"]
-        for row in (staging_client.table("auth.users")
-                    .select("id").execute().data or [])
-        if row.get("id")
+        u["id"]
+        for u in list_auth_users(staging_client)
+        if u.get("id")
     }
     orphans = app_user_ids - auth_ids
     report.fk_orphan_count = len(orphans)

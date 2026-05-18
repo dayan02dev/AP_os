@@ -34,7 +34,8 @@ def test_wipe_order_children_before_parents():
 def test_resolve_preserve_set_includes_static_emails(fake_staging):
     # No reviewers in user_roles → only the 3 static emails survive.
     fake_staging.tables["user_roles"] = []
-    fake_staging.tables["auth.users"] = [
+    # auth.users now reached via the Admin API — seed fake_staging.auth_users.
+    fake_staging.auth_users = [
         {"id": "u-1", "email": "dev@artpark.in"},
         {"id": "u-2", "email": "manager@artpark.in"},
         {"id": "u-3", "email": "test@artpark.in"},
@@ -55,7 +56,7 @@ def test_resolve_preserve_set_includes_reviewers(fake_staging):
         {"user_id": "u-11", "role": "reviewer"},
         {"user_id": "u-12", "role": "leadership"},   # NOT preserved as a reviewer
     ]
-    fake_staging.tables["auth.users"] = [
+    fake_staging.auth_users = [
         {"id": "u-1", "email": "dev@artpark.in"},
         {"id": "u-10", "email": "reviewer-1@artpark.in"},
         {"id": "u-11", "email": "reviewer-2@artpark.in"},
