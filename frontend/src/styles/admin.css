@@ -937,3 +937,196 @@
   padding-top: var(--s-5);
   margin-top: var(--s-2);
 }
+
+/* =========================================================
+   §5.13 Leadership-specific header
+   Variant used on /leadership pages (no .app-betabar above).
+   Layout: [HOME button] [logos] [role pill] [spacer] [user-chip] [APPLICANT btn] [SIGN OUT btn]
+   ========================================================= */
+
+.app-header.app-header-leadership {
+  padding: var(--s-3) var(--s-5);
+  gap: var(--s-4);
+}
+.app-header .home-btn,
+.app-header .signout-btn,
+.app-header .applicant-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sharp);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+.app-header .home-btn:hover,
+.app-header .signout-btn:hover,
+.app-header .applicant-btn:hover { border-color: var(--ink); color: var(--ink); }
+
+/* Role indicator pill in the header center — purple dot + uppercase label.
+   Uses --r-pill (999px) per documented exception for status-style indicators. */
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 6px 14px;
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.role-pill::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--artblue);
+  flex: 0 0 8px;
+}
+
+/* User chip in the header — slightly more compact than the admin default;
+   keeps initials avatar but includes inline email and optional gear icon slot. */
+.app-header .user-chip-lp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--ink);
+}
+.app-header .user-chip-lp .avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--artblue);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  flex: 0 0 26px;
+}
+.app-header .user-chip-lp .email {
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+.app-header .user-chip-lp .menu-dot {
+  color: var(--ink-dim);
+  font-size: 14px;
+  line-height: 1;
+  margin-left: 2px;
+}
+
+/* =========================================================
+   §5.14 Leadership metric strip variants
+   - .metric.is-highlight  → mint-cyan (--artlight) background, purple num.
+                              Used on the "Average AI score" hero card.
+   - .metric-split         → mini two-row TIR/SIP bars inside a metric card.
+   ========================================================= */
+
+.metric.is-highlight {
+  background: var(--artlight);
+  border-color: transparent;
+}
+.metric.is-highlight .label { color: var(--artblue); font-weight: 700; }
+.metric.is-highlight .num { color: var(--artblue); }
+.metric.is-highlight .delta { color: var(--artblue); opacity: 0.78; }
+
+.metric-split {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  margin-top: var(--s-1);
+}
+.metric-split .split-row {
+  display: grid;
+  grid-template-columns: 32px 1fr 40px;
+  align-items: center;
+  gap: var(--s-2);
+}
+.metric-split .split-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  font-weight: 600;
+}
+.metric-split .split-track {
+  height: 6px;
+  background: var(--paper-soft);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.metric-split .split-fill {
+  display: block;
+  height: 100%;
+  background: var(--artblue);
+}
+.metric-split .split-row.alt .split-fill { background: var(--artblue-deep); }
+.metric-split .split-n {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* =========================================================
+   §5.15 Page footer (leadership view signature + role-switch link)
+   ========================================================= */
+
+.page-foot {
+  margin-top: var(--s-8);
+  padding: var(--s-5) 0;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.page-foot .foot-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sharp);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+.page-foot .foot-link:hover { border-color: var(--ink); color: var(--ink); }
