@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from supabase import create_client
 
-from lib.auth import import_users
+from lib.auth import import_users, delete_users_outside_preserve_set
 from lib.copy import column_intersection, copy_table
 from lib.jsonb_walker import walk_application_storage, walk_resume_storage
 from lib.probe import (
@@ -133,7 +133,20 @@ def main() -> int:
 
     # ─── Phase 3: wipe ────────────────────────────────────────────
     preserve_set = resolve_preserve_set(staging)
-    run_wipe(staging, dry_run=args.dry_run)
+
+    # Count seed apps before wipe so the summary tells the truth.
+    seed_app_count = 0
+    if not args.dry_run:
+        seed_apps = staging.table("tir_applications").select("id").like(
+            "basic_email", "%@artpark.test",
+        ).execute()
+        seed_app_count = len(seed_apps.data or [])
+
+    run_wipe(staging, preserve_set=preserve_set, dry_run=args.dry_run)
+
+    if not args.dry_run:
+        deleted_users = delete_users_outside_preserve_set(staging, preserve_set)
+        log.info("Tier 2 auth wipe: %d staging user(s) deleted", deleted_users)
 
     # ─── Phase 4: auth stubs + remap ──────────────────────────────
     if args.dry_run:
@@ -162,6 +175,7 @@ def main() -> int:
     )
 
     # ─── Phase 6: storage sync ────────────────────────────────────
+    storage_failed = False
     if args.no_storage:
         log.info("Skipping storage sync (--no-storage)")
     else:
@@ -186,6 +200,12 @@ def main() -> int:
         log.info("Storage sync done: %d ok, %d 404, %d failed",
                  storage_result.succeeded, storage_result.skipped_404,
                  len(storage_result.failed))
+        if len(storage_result.failed) > 0:
+            storage_failed = True
+            log.error(
+                "%d storage upload failure(s) — run will exit with code 2",
+                len(storage_result.failed),
+            )
 
     # ─── Phase 7: verify + summary ────────────────────────────────
     if args.dry_run:
@@ -196,10 +216,12 @@ def main() -> int:
         prod_client=prod, staging_client=staging,
         preserve_set_size=len(preserve_set),
     )
+    if storage_failed:
+        report.storage_sanity_ok = False
     print_summary(
         report,
         preserved=len(preserve_set),
-        wiped_seed_apps=0,  # actual seed-app count would be captured pre-wipe; left 0 here for brevity
+        wiped_seed_apps=seed_app_count,
     )
     return 0 if report.all_ok else 2
 

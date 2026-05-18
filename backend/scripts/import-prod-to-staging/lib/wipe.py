@@ -64,23 +64,23 @@ def resolve_preserve_set(staging_client) -> set[str]:
     return preserved
 
 
-def run_wipe(staging_client, *, dry_run: bool = False) -> None:
-    """Execute the full two-tier wipe against the staging Supabase.
+def run_wipe(staging_client, *, preserve_set: set[str], dry_run: bool = False) -> None:
+    """Execute the Tier 1 table truncation against the staging Supabase.
+
+    ``preserve_set`` must be resolved by the caller (via
+    ``resolve_preserve_set``) BEFORE calling this function so the set is
+    computed once and can be shared with the Tier 2 auth cleanup.
 
     Order:
-      1. Resolve preserve set (BEFORE deleting anything).
-      2. Truncate child tables, then parent application tables.
-      3. Delete from auth.users / profiles / user_roles where id NOT IN
-         the preserve set. Per Supabase: auth.users must be deleted via
-         the Admin API (POST /auth/v1/admin/users/{id} DELETE), NOT via
-         a plain SQL DELETE. That call is handled by lib/auth.py
-         (delete_users_outside_preserve_set) — we call it from here.
+      1. Truncate child tables, then parent application tables (Tier 1).
+      2. Tier 2 auth cleanup (auth.users / profiles / user_roles) is
+         handled by the caller via lib/auth.delete_users_outside_preserve_set,
+         which must be called AFTER this function and BEFORE the auth-stub
+         import phase.
     """
-    preserve = resolve_preserve_set(staging_client)
-
     if dry_run:
         log.info("[dry-run] Would truncate: %s", WIPE_ORDER)
-        log.info("[dry-run] Would preserve %d user(s) outside the wipe", len(preserve))
+        log.info("[dry-run] Would preserve %d user(s) outside the wipe", len(preserve_set))
         return
 
     for table in WIPE_ORDER:
@@ -88,7 +88,3 @@ def run_wipe(staging_client, *, dry_run: bool = False) -> None:
         # Supabase doesn't expose TRUNCATE via PostgREST — use DELETE WHERE
         # id IS NOT NULL which is equivalent for our use (no nullable PKs).
         staging_client.table(table).delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
-
-    # auth.users / profiles / user_roles deletes are done by lib/auth.py
-    # because they require the Admin API for auth.users. The caller of
-    # run_wipe() chains the wipe → auth-cleanup → auth-import sequence.

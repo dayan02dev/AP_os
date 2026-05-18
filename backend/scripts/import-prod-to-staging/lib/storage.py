@@ -22,7 +22,6 @@ from .jsonb_walker import BucketPath
 log = logging.getLogger(__name__)
 
 CONCURRENCY = 8
-SANITY_BYTES_THRESHOLD = 500 * 1024 * 1024  # 500 MB
 
 
 @dataclass
@@ -82,9 +81,7 @@ def copy_storage_objects(
 ) -> StorageCopyResult:
     """Copy ``paths`` from prod buckets to staging buckets in parallel.
 
-    On dry-run, prints what WOULD be copied and exits without I/O.
-    Triggers a y/N prompt if estimated bytes > SANITY_BYTES_THRESHOLD —
-    skip the prompt with dry_run=True.
+    On dry-run, logs what WOULD be copied and exits without I/O.
     """
     result = StorageCopyResult()
 

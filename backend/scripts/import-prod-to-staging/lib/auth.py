@@ -3,7 +3,7 @@
 Per project memory: SQL INSERT into auth.users is rejected by Supabase
 GoTrue. Only POST /auth/v1/admin/users creates a usable login row.
 
-This module's two public surfaces:
+This module's public surfaces:
 
   scrambled_password() — 64-char hex string (256 bits of entropy).
     Applied to every imported stub user so they can't sign in.
@@ -13,6 +13,11 @@ This module's two public surfaces:
     Pure-ish orchestration: takes prod user rows, calls create_user_fn
     (a closure over the staging Supabase client), and emits the remap
     every subsequent table copy needs.
+
+  delete_users_outside_preserve_set(staging_client, preserve_set) → int
+    Tier 2 wipe: deletes every auth.users row whose id is NOT in
+    preserve_set. Uses the Admin API so GoTrue state is cleaned up.
+    The cascading FKs on profiles / user_roles handle those tables.
 
   import_users(prod, staging, ...) — the integration entrypoint that
     wires the two together. Called from import.py.
@@ -88,6 +93,45 @@ def build_user_remap(
                 raise
 
     return remap
+
+
+def delete_users_outside_preserve_set(
+    staging_client, preserve_set: set[str]
+) -> int:
+    """Tier 2 wipe: delete every staging auth.users row not in preserve_set.
+
+    Uses the Supabase Admin API (DELETE /auth/v1/admin/users/{id}) so
+    GoTrue's internal state is cleaned up properly. The cascading FKs on
+    profiles and user_roles take care of those child tables automatically.
+
+    Errors on individual user deletions are logged and skipped — we
+    continue with the rest of the set so a single bad row doesn't abort
+    the whole wipe.
+
+    Returns the number of users actually deleted.
+    """
+    all_users = (
+        staging_client.table("auth.users")
+        .select("id")
+        .execute()
+    ).data or []
+
+    users_to_delete = {row["id"] for row in all_users if row.get("id")} - preserve_set
+    log.info(
+        "Tier 2 auth wipe: %d total staging users, %d preserved, %d to delete",
+        len(all_users), len(preserve_set), len(users_to_delete),
+    )
+
+    deleted = 0
+    for uid in users_to_delete:
+        try:
+            staging_client.auth.admin.delete_user(uid)
+            deleted += 1
+        except Exception as exc:
+            log.error("Failed to delete staging auth user %s: %s — continuing", uid, exc)
+
+    log.info("Tier 2 auth wipe complete: %d user(s) deleted", deleted)
+    return deleted
 
 
 def import_users(prod_client, staging_client) -> dict[str, str]:
