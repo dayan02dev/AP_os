@@ -180,3 +180,100 @@ def fetch_inbox(reviewer_user_id: str) -> list[dict]:
             ),
         })
     return out
+
+
+def fetch_application_for_reviewer(
+    reviewer_user_id: str, track: str, application_id: str,
+) -> dict | None:
+    """Return the app payload visible to a reviewer.
+
+    Returns None if the reviewer has no active assignment for this app
+    (the router converts None → 403).
+
+    The `ai_screening` key is always present in the response dict but is
+    None unless the reviewer has a submitted (non-draft) review. This is
+    the load-bearing privacy boundary — see spec §6.3.
+    """
+    sb = get_admin_client()
+
+    # Active assignment check
+    try:
+        assignment_rows = (
+            sb.table("reviewer_assignments")
+            .select("*")
+            .eq("application_id", application_id)
+            .eq("application_track", track)
+            .eq("reviewer_user_id", reviewer_user_id)
+            .execute()
+            .data
+        )
+    except Exception:
+        log.warning("app_detail: assignment fetch failed",
+                    extra={"application_id": application_id, "track": track})
+        return None
+    active = [
+        a for a in assignment_rows
+        if a.get("declined_at") is None and a.get("reassigned_to") is None
+    ]
+    if not active:
+        return None
+    assignment = active[0]
+
+    # Application body
+    table = "tir_applications" if track == "tir" else "sip_applications"
+    try:
+        app_rows = sb.table(table).select("*").eq("id", application_id).limit(1).execute().data
+    except Exception:
+        log.warning("app_detail: app fetch failed",
+                    extra={"application_id": application_id, "track": track})
+        return None
+    if not app_rows:
+        return None
+    application = app_rows[0]
+
+    # My review (if any)
+    try:
+        review_rows = (
+            sb.table("reviews")
+            .select("*")
+            .eq("application_id", application_id)
+            .eq("application_track", track)
+            .eq("reviewer_user_id", reviewer_user_id)
+            .execute()
+            .data
+        )
+    except Exception:
+        log.warning("app_detail: review fetch failed",
+                    extra={"application_id": application_id, "track": track,
+                           "reviewer": reviewer_user_id})
+        review_rows = []
+    my_review = review_rows[0] if review_rows else None
+
+    # ── Privacy boundary ──────────────────────────────────────────
+    ai_screening = None
+    if my_review and my_review.get("submitted_at"):
+        try:
+            ai_rows = (
+                sb.table("ai_screening")
+                .select("*")
+                .eq("application_id", application_id)
+                .eq("application_track", track)
+                .execute()
+                .data
+            )
+        except Exception:
+            log.warning("app_detail: ai_screening fetch failed",
+                        extra={"application_id": application_id, "track": track})
+            ai_rows = []
+        if ai_rows:
+            ai_screening = ai_rows[0]
+
+    return {
+        "application": application,
+        "assignment": {
+            "assignment_id": assignment["id"],
+            "assigned_at": assignment["assigned_at"],
+        },
+        "my_review": my_review,
+        "ai_screening": ai_screening,
+    }

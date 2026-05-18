@@ -18,7 +18,7 @@ Routes (built up across Tasks 1-7 of the implementation plan):
 from __future__ import annotations
 
 import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status as http_status
 
 from ..deps import get_current_user
 from ..rbac import require_capability
@@ -38,3 +38,30 @@ async def list_assignments(user: dict = Depends(get_current_user)) -> dict:
     return {
         "assignments": reviewer_query.fetch_inbox(user["user_id"]),
     }
+
+
+@router.get(
+    "/applications/{track}/{application_id}",
+    dependencies=[Depends(require_capability("view_assigned_apps"))],
+)
+async def get_application_for_reviewer(
+    track: str,
+    application_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    if track not in ("tir", "sip"):
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_track", "message": "Track must be 'tir' or 'sip'."},
+        )
+
+    payload = reviewer_query.fetch_application_for_reviewer(
+        user["user_id"], track, application_id,
+    )
+    if payload is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail={"code": "not_assigned",
+                    "message": "You have no active assignment for this application."},
+        )
+    return payload
