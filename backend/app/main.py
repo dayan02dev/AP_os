@@ -40,6 +40,7 @@ from .routers import (
     leadership_actions,
     milestone_files,
     resume,
+    reviewer,
     support,
     waitlist,
 )
@@ -149,6 +150,7 @@ app.include_router(admin.router)
 app.include_router(admin_users.router)
 app.include_router(leadership.router)
 app.include_router(leadership_actions.router)
+app.include_router(reviewer.router)
 
 log.info(
     "app ready",
