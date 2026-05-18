@@ -5,14 +5,18 @@ layer via require_capability + per-request reviewer_user_id matching.
 
 from __future__ import annotations
 
+import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from ..supabase_client import get_admin_client
 
+log = logging.getLogger(__name__)
+
 
 def _compose_app_identifier(track: str, app_id: str, submitted_at: str | None) -> str:
     prefix = (track or "").upper()
-    year = 2026
+    year = datetime.now().year
     if submitted_at:
         try:
             year = int(submitted_at[:4])
@@ -46,13 +50,21 @@ def fetch_inbox(reviewer_user_id: str) -> list[dict]:
         a single CTE).
     """
     sb = get_admin_client()
-    rows = (
-        sb.table("reviewer_assignments")
-        .select("*")
-        .eq("reviewer_user_id", reviewer_user_id)
-        .execute()
-        .data
-    )
+    try:
+        rows = (
+            sb.table("reviewer_assignments")
+            .select("*")
+            .eq("reviewer_user_id", reviewer_user_id)
+            .execute()
+            .data
+        ) or []
+    except Exception as exc:
+        log.warning(
+            "inbox: reviewer_assignments fetch failed",
+            extra={"reviewer_user_id": reviewer_user_id, "err": str(exc)},
+        )
+        return []
+
     # Filter out declined / reassigned in Python (the fake test client
     # doesn't model IS NULL on chained selects).
     rows = [r for r in rows if r.get("declined_at") is None
@@ -60,21 +72,54 @@ def fetch_inbox(reviewer_user_id: str) -> list[dict]:
 
     # Hydrate each row with its application summary + my_review (if any).
     out = []
-    for a in rows:
-        track = a["application_track"]
+    for assignment in rows:
+        track = assignment["application_track"]
         table = "tir_applications" if track == "tir" else "sip_applications"
-        app_row = next(
-            (x for x in sb.table(table).select("*").execute().data
-             if x["id"] == a["application_id"]),
-            None,
-        )
+        try:
+            app_rows = (
+                sb.table(table)
+                .select("*")
+                .eq("id", assignment["application_id"])
+                .limit(1)
+                .execute()
+                .data
+            ) or []
+            app_row = app_rows[0] if app_rows else None
+        except Exception as exc:
+            log.warning(
+                "inbox: application row fetch failed",
+                extra={
+                    "track": track,
+                    "application_id": assignment.get("application_id"),
+                    "err": str(exc),
+                },
+            )
+            app_row = None
         if app_row is None:
             continue
 
         # my_review lookup
-        reviews = sb.table("reviews").select("*").eq(
-            "application_id", a["application_id"]
-        ).eq("reviewer_user_id", reviewer_user_id).execute().data
+        try:
+            reviews = (
+                sb.table("reviews")
+                .select("*")
+                .eq("application_id", assignment["application_id"])
+                .eq("application_track", track)
+                .eq("reviewer_user_id", reviewer_user_id)
+                .execute()
+                .data
+            ) or []
+        except Exception as exc:
+            log.warning(
+                "inbox: reviews fetch failed",
+                extra={
+                    "track": track,
+                    "application_id": assignment.get("application_id"),
+                    "reviewer_user_id": reviewer_user_id,
+                    "err": str(exc),
+                },
+            )
+            reviews = []
         my_review = reviews[0] if reviews else None
 
         # Filter rule: if review is submitted AND locked, exclude.
@@ -82,7 +127,6 @@ def fetch_inbox(reviewer_user_id: str) -> list[dict]:
             # Compare against now() in production (SQL); in the fake we
             # let through everything — the test below sets locked_at in
             # the future so the assignment surfaces with my_review set.
-            from datetime import datetime, timezone
             try:
                 locked_at = datetime.fromisoformat(
                     my_review["locked_at"].replace("Z", "+00:00")
@@ -94,21 +138,37 @@ def fetch_inbox(reviewer_user_id: str) -> list[dict]:
 
         # assigned_by display name
         assigned_by_display = None
-        if a.get("assigned_by"):
-            profs = sb.table("profiles").select("*").eq("id", a["assigned_by"]).execute().data
+        if assignment.get("assigned_by"):
+            try:
+                profs = (
+                    sb.table("profiles")
+                    .select("*")
+                    .eq("id", assignment["assigned_by"])
+                    .execute()
+                    .data
+                ) or []
+            except Exception as exc:
+                log.warning(
+                    "inbox: profile fetch failed",
+                    extra={
+                        "assigned_by": assignment.get("assigned_by"),
+                        "err": str(exc),
+                    },
+                )
+                profs = []
             if profs:
                 assigned_by_display = profs[0].get("full_name") or profs[0].get("email")
 
         out.append({
-            "assignment_id": a["id"],
-            "application_id": a["application_id"],
+            "assignment_id": assignment["id"],
+            "application_id": assignment["application_id"],
             "application_track": track,
             "app_identifier": _compose_app_identifier(
-                track, a["application_id"], app_row.get("submitted_at"),
+                track, assignment["application_id"], app_row.get("submitted_at"),
             ),
             "industry": app_row.get("basic_org") or "—",
             "problem_one_liner": _problem_one_liner(app_row.get("answers")),
-            "assigned_at": a["assigned_at"],
+            "assigned_at": assignment["assigned_at"],
             "assigned_by_display": assigned_by_display,
             "my_review": (
                 {
