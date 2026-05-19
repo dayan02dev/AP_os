@@ -165,12 +165,34 @@ async def list_users(
     search: str | None = None,
     limit: int = 200,
 ):
-    """List users with optional filters. Joins profiles + user_roles."""
+    """List users with optional filters. Joins profiles + user_roles.
+
+    When `role` is given, we filter user_roles FIRST then fetch matching
+    profiles — otherwise the profiles `.limit(limit)` (ordered newest-first)
+    silently drops older accounts before the role filter runs. With 200+
+    profiles on staging this manifested as the oldest reviewers (e.g. the
+    first admin/leadership account) disappearing from the assign-reviewer
+    modal even though they had the role granted.
+    """
     client = get_admin_client()
+
+    role_user_ids: list[str] | None = None
+    if role:
+        rls_for_role = (
+            client.table("user_roles")
+            .select("user_id")
+            .eq("role", role)
+            .execute()
+        ).data or []
+        role_user_ids = [r["user_id"] for r in rls_for_role]
+        if not role_user_ids:
+            return {"users": [], "total": 0}
 
     q = client.table("profiles").select(
         "id, email, full_name, phone, location_city, active_role, created_at"
     )
+    if role_user_ids is not None:
+        q = q.in_("id", role_user_ids)
     if search:
         q = q.or_(f"email.ilike.%{search}%,full_name.ilike.%{search}%")
     q = q.order("created_at", desc=True).limit(limit)

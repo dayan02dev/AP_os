@@ -37,6 +37,7 @@ class _FakeQuery:
 
     def select(self, *_args, **_kwargs): return self
     def eq(self, *_args, **_kwargs): return self
+    def in_(self, *_args, **_kwargs): return self
     def order(self, *_args, **_kwargs): return self
     def limit(self, *_args, **_kwargs): return self
     def range(self, *_args, **_kwargs): return self
@@ -218,6 +219,39 @@ def test_list_users_role_filter_narrows_results(client, monkeypatch, _clear_over
     assert body["total"] == 1
     assert body["users"][0]["id"] == "u-2"
     assert body["users"][0]["roles"] == ["reviewer"]
+
+
+def test_list_users_role_filter_returns_empty_when_no_grants(
+    client, monkeypatch, _clear_overrides,
+):
+    """Regression test for the staging bug where the role filter ran AFTER
+    a `limit(200)` on profiles ordered by created_at desc, silently dropping
+    older reviewers. The fix queries user_roles first; if no rows match the
+    role, we return early with an empty list (no profiles fetched)."""
+    fake = _FakeAdminClient(
+        rows={
+            "profiles": [
+                {"id": "u-1", "email": "a@x.com", "full_name": "A", "phone": None,
+                 "location_city": None, "active_role": None,
+                 "created_at": "2026-05-01T00:00:00Z"},
+            ],
+            "user_roles": [
+                # `u-1` has admin but NOT reviewer
+                {"user_id": "u-1", "role": "admin", "granted_at": "2026-05-01T00:00:00Z"},
+            ],
+        }
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.get(
+        "/admin/users?role=reviewer",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["total"] == 0
+    assert body["users"] == []
 
 
 def test_list_users_search_uses_ilike_filter(client, monkeypatch, _clear_overrides):
