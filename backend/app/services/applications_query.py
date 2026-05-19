@@ -59,10 +59,33 @@ def track_table(track: str) -> str:
 
 # Columns the list endpoint needs. Keep narrow — the detail endpoint
 # selects `*`. This projection keeps payloads small for the list view.
-LIST_COLUMNS = (
+#
+# The base columns exist on both tracks. The stage column differs:
+#   - TIR uses `solution_stage` (set in the wizard, no SIP equivalent)
+#   - SIP uses `sip_traction` + `sip_trl` (TIR equivalents don't exist)
+# We pick the right superset per track via _list_columns_for_track so a
+# missing-column error doesn't 400 PostgREST.
+_BASE_LIST_COLUMNS = (
     "id,status,basic_full_name,basic_email,basic_org,"
-    "submitted_at,created_at"
+    "submitted_at,created_at,"
+    "solution_describe,solution_core_tech,problem_describe"
 )
+_TIR_EXTRA_COLUMNS = ",solution_stage"
+_SIP_EXTRA_COLUMNS = ",sip_traction,sip_trl"
+
+# Backward-compat alias — some callers (and tests) reference LIST_COLUMNS
+# as the canonical column list. Keep it pointing at the union so a code
+# reader sees the full surface in one place.
+LIST_COLUMNS = _BASE_LIST_COLUMNS + _TIR_EXTRA_COLUMNS + _SIP_EXTRA_COLUMNS
+
+
+def _list_columns_for_track(track: str) -> str:
+    """Return the column projection appropriate for the given track."""
+    if track == "tir":
+        return _BASE_LIST_COLUMNS + _TIR_EXTRA_COLUMNS
+    if track == "sip":
+        return _BASE_LIST_COLUMNS + _SIP_EXTRA_COLUMNS
+    return _BASE_LIST_COLUMNS
 
 
 def fetch_apps_for_track(
@@ -87,7 +110,7 @@ def fetch_apps_for_track(
         q = (
             get_admin_client()
             .table(track_table(track))
-            .select(LIST_COLUMNS)
+            .select(_list_columns_for_track(track))
             .neq("status", "draft")
             .limit(limit)
         )

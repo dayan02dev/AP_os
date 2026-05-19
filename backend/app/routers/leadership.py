@@ -101,12 +101,13 @@ async def get_stats() -> dict:
     }
 
     # ─── Industry breakdown ───────────────────────────────────────────
-    # One SELECT per track of just `basic_org`, classified into buckets.
+    # One SELECT per track of the wizard text fields. classify_industry()
+    # joins them and matches against the keyword buckets — see stats.py.
     industry_totals: dict[str, int] = {}
     industry_labels: dict[str, str] = {}
     for track in stats.TRACKS:
-        for org in stats.fetch_org_texts(track):
-            bucket_id, label = stats.classify_industry(org)
+        for row in stats.fetch_classification_rows(track):
+            bucket_id, label = stats.classify_industry(row)
             industry_totals[bucket_id] = industry_totals.get(bucket_id, 0) + 1
             industry_labels.setdefault(bucket_id, label)
 
@@ -190,11 +191,13 @@ async def list_applications(
             )
         )
 
-    # ─ 2. Industry post-filter (classify basic_org → bucket) ───────────
-    # We classify everything (we need the industry label on every returned
-    # row anyway), then filter if the caller asked for a specific bucket.
+    # ─ 2. Industry post-filter (classify wizard text → bucket) ─────────
+    # Pass the full row so classify_industry can read solution_describe,
+    # solution_core_tech, problem_describe AND basic_org. Using basic_org
+    # alone misclassified almost everything as "Other" because basic_org
+    # is usually an institution name without industry signal.
     classified: list[tuple[dict[str, Any], tuple[str, str]]] = [
-        (r, stats.classify_industry(r.get("basic_org"))) for r in rows
+        (r, stats.classify_industry(r)) for r in rows
     ]
     if industry:
         classified = [(r, ind) for r, ind in classified if ind[0] == industry]
@@ -242,6 +245,11 @@ async def list_applications(
             "created_at":       r.get("created_at"),
             "industry":         {"id": ind[0], "label": ind[1]},
             "ai_score_overall": scores.get((r["track"], r["id"])),
+            # Derived fields for the leadership Applications table — see
+            # stats.py for the rules. The frontend renders "—" for None.
+            "project_name":     stats.derive_project_name(r),
+            "stage_label":      stats.derive_stage_label(r),
+            "display_id":       stats.compose_display_id(r["track"], r["id"]),
         }
         for r, ind in page
     ]

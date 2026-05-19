@@ -69,7 +69,141 @@ def test_classify_industry_none_falls_back_to_other():
 
 
 def test_other_bucket_constant():
-    assert OTHER_BUCKET == ("other", "Other")
+    assert OTHER_BUCKET == ("other", "Other / Frontier")
+
+
+# ─── New: classify_industry over a row dict (multi-field) ───────────────
+
+
+def test_classify_industry_dict_uses_solution_describe():
+    """The classifier should read solution_describe — not just basic_org —
+    so apps with sparse `basic_org` like 'IIT Bombay' still get a real
+    industry assignment when the solution text carries the signal."""
+    row = {
+        "basic_org": "IIT Bombay",
+        "solution_describe": "Wearable AFib detector for cardiac patients",
+        "solution_core_tech": "",
+        "problem_describe": "",
+    }
+    assert classify_industry(row) == ("health", "Healthcare / MedTech")
+
+
+def test_classify_industry_dict_uses_core_tech():
+    row = {
+        "basic_org": "Stealth startup",
+        "solution_describe": "Hardware platform for industrial use",
+        "solution_core_tech": "MEMS gyroscope and accelerometer fusion",
+        "problem_describe": "",
+    }
+    bucket_id, _label = classify_industry(row)
+    assert bucket_id == "semi"
+
+
+def test_classify_industry_dict_falls_back_to_other_when_all_empty():
+    row = {
+        "basic_org": None,
+        "solution_describe": None,
+        "solution_core_tech": None,
+        "problem_describe": None,
+    }
+    assert classify_industry(row) == OTHER_BUCKET
+
+
+def test_classify_industry_dict_health_keywords():
+    """Healthcare bucket should match a wide range of medical terms."""
+    cases = [
+        "Microfluidic dengue test",
+        "Diagnostic imaging for ICU patients",
+        "Biotech vaccine pipeline",
+        "Surgical robot for tumour resection",
+    ]
+    for text in cases:
+        bucket, _ = classify_industry({"solution_describe": text})
+        assert bucket == "health", f"expected health for {text!r}, got {bucket}"
+
+
+def test_classify_industry_dict_defense_keywords():
+    cases = [
+        "Anti-jamming GNSS receiver for military use",
+        "Satellite payload control system",
+        "Launch vehicle telemetry",
+    ]
+    for text in cases:
+        bucket, _ = classify_industry({"solution_describe": text})
+        assert bucket == "defense", f"expected defense for {text!r}, got {bucket}"
+
+
+def test_classify_industry_dict_ai_keywords():
+    cases = [
+        "Agentic ops copilot for MSME operations",
+        "RAG stack for legal precedent search",
+        "Foundation model for code completion",
+    ]
+    for text in cases:
+        bucket, _ = classify_industry({"solution_describe": text})
+        assert bucket == "ai", f"expected ai for {text!r}, got {bucket}"
+
+
+# ─── Stage label, project name, display id derivations ─────────────────
+
+
+def test_derive_stage_label_sip_traction():
+    from app.services.stats import derive_stage_label
+    row = {"sip_traction": "Active pilots (paid or unpaid) with design partners"}
+    assert derive_stage_label(row) == "Pilot"
+
+
+def test_derive_stage_label_sip_trl_fallback():
+    from app.services.stats import derive_stage_label
+    row = {"sip_traction": None, "sip_trl": "TRL 5 — pilot-tested in a relevant environment"}
+    assert derive_stage_label(row) == "Pilot"
+
+
+def test_derive_stage_label_tir_solution_stage_truncates():
+    from app.services.stats import derive_stage_label
+    row = {"solution_stage": "We're somewhere between prototype and pilot"}
+    out = derive_stage_label(row)
+    assert out is not None
+    assert len(out) <= 17  # 16 chars + ellipsis
+
+
+def test_derive_stage_label_none_when_no_data():
+    from app.services.stats import derive_stage_label
+    assert derive_stage_label({}) is None
+    assert derive_stage_label(None) is None
+
+
+def test_derive_project_name_first_sentence():
+    from app.services.stats import derive_project_name
+    row = {"solution_describe": "Microfluidic dengue test. Designed to detect..."}
+    assert derive_project_name(row) == "Microfluidic dengue test"
+
+
+def test_derive_project_name_falls_back_to_basic_org():
+    from app.services.stats import derive_project_name
+    assert derive_project_name({"basic_org": "IIT Bombay"}) == "IIT Bombay"
+    assert derive_project_name({"solution_describe": "", "basic_org": "NIT"}) == "NIT"
+
+
+def test_derive_project_name_none_when_no_data():
+    from app.services.stats import derive_project_name
+    assert derive_project_name({}) is None
+    assert derive_project_name(None) is None
+
+
+def test_compose_display_id_deterministic():
+    from app.services.stats import compose_display_id
+    uuid = "e6045bda-1234-5678-9abc-deadbeef1234"
+    out = compose_display_id("tir", uuid)
+    assert out.startswith("TIR-")
+    assert len(out) == 9  # TIR-NNNNN
+    assert out == compose_display_id("tir", uuid)  # idempotent
+
+
+def test_compose_display_id_handles_missing():
+    from app.services.stats import compose_display_id
+    assert compose_display_id("sip", None) == "SIP-?????"
+    assert compose_display_id("sip", "") == "SIP-?????"
 
 
 def test_classify_industry_empty_string_falls_back_to_other():
