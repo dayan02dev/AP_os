@@ -1,0 +1,106 @@
+/* Reviewer-surface styles. Imports the design system; adds only the
+ * scoring panel + segmented score input. No new tokens, no shadows,
+ * no gradients. */
+
+@import "./colors_and_type.css";
+@import "./admin.css";  /* re-uses .app-shell, .app-header, .app-rail, .page-head, .card */
+
+/* ── Scoring panel container (right rail on /reviewer/:track/:id/score) ── */
+.scoring-panel {
+  background: var(--paper);
+  border-left: 1px solid var(--line);
+  padding: var(--s-6);
+  width: 480px;
+  flex: 0 0 480px;
+  position: sticky;
+  top: 73px;
+  align-self: start;
+  max-height: calc(100vh - 73px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+.scoring-panel .panel-eyebrow {
+  font-family: var(--font-body);
+  font-size: var(--t-eyebrow);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  font-weight: 600;
+}
+
+.scoring-panel .panel-intro {
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+  line-height: var(--lh-body);
+}
+
+.scoring-panel-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+  padding-top: var(--s-4);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s-3);
+}
+
+/* ── Segmented score input (1..10 + Yes/Maybe/No variant) ── */
+.score-seg {
+  display: flex;
+  gap: 4px;
+  margin-top: var(--s-2);
+}
+
+.score-seg button {
+  flex: 1;
+  height: 32px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sharp);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.score-seg button:hover { border-color: var(--ink); }
+.score-seg button:focus { outline: none; border-color: var(--artblue); box-shadow: 0 0 0 3px rgba(50,19,183,0.15); }
+.score-seg button[aria-pressed="true"] {
+  background: var(--artblue);
+  border-color: var(--artblue);
+  color: #fff;
+}
+
+.score-seg.is-rec button { flex: 0 0 80px; height: 36px; font-size: 14px; }
+
+/* ── Edit-window countdown ── */
+.edit-countdown { font-size: var(--t-body-sm); color: var(--ink); }
+.edit-countdown.amber { color: var(--accent-amber); }
+.edit-countdown.coral { color: var(--accent-coral); }
+
+/* ── Mobile fallback for the scoring page ── */
+@media (max-width: 1023px) {
+  .reviewer-scoring-page .scoring-body { display: none; }
+  .reviewer-scoring-page .mobile-block { display: block; }
+}
+@media (min-width: 1024px) {
+  .reviewer-scoring-page .mobile-block { display: none; }
+}
+
+/* ── Inbox card visual nudges (everything else is .card from admin.css) ── */
+.inbox-section { margin-bottom: var(--s-7); }
+.inbox-section + .inbox-section { margin-top: var(--s-7); }
+.inbox-card-meta {
+  display: flex; align-items: center; gap: var(--s-3);
+  font-size: 13px; color: var(--ink-soft);
+}
+.inbox-card-meta .sep {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ink-dim);
+}
