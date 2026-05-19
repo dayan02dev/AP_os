@@ -358,6 +358,21 @@ async def patch_review(
     flipping_to_submitted = (
         body.draft is False and existing.get("submitted_at") is None
     )
+    if flipping_to_submitted:
+        # Compute the final state after the patch is applied.
+        final = {**existing, **patch}
+        missing: list[str] = []
+        for col in ("score_problem", "score_solution", "score_tech",
+                    "score_founders", "score_commitment"):
+            if final.get(col) is None:
+                missing.append(col)
+        if final.get("recommendation") is None:
+            missing.append("recommendation")
+        if missing:
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "incomplete_review", "missing": missing},
+            )
     now = datetime.now(UTC)
     if flipping_to_submitted:
         patch["submitted_at"] = now.isoformat()
@@ -390,13 +405,18 @@ async def patch_review(
                        "err": str(exc)},
             )
 
+        final_rec = (
+            body.recommendation
+            if body.recommendation is not None
+            else existing.get("recommendation")
+        )
         write_audit(
             actor_user_id=user["user_id"],
             actor_role="reviewer",
             action_type="submit_review",
             target_table="reviews",
             target_id=review_id,
-            after={"recommendation": body.recommendation},
+            after={"recommendation": final_rec},
         )
         state_machine.auto_transition_to_evaluated_if_complete(
             existing["application_id"],

@@ -657,3 +657,114 @@ def test_patch_review_caller_must_own(
     app.dependency_overrides[get_current_user] = _override_user(me)
     r = client.patch("/reviewer/reviews/rev1", json={"score_problem": 8})
     assert r.status_code == 403
+
+
+def test_patch_draft_review_no_lock_check(client, monkeypatch, _clear_overrides):
+    """A draft row has locked_at=NULL. PATCH should succeed regardless of
+    'now' because the lock check is conditional on locked_at being set."""
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
+    fake = _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [],
+        "sip_applications": [],
+        "reviews": [
+            {"id": "rev-draft", "reviewer_user_id": me,
+             "application_id": "app1", "application_track": "tir",
+             "submitted_at": None, "locked_at": None,
+             "score_problem": 3, "recommendation": None},
+        ],
+        "application_status_log": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.patch("/reviewer/reviews/rev-draft", json={"score_problem": 6})
+    assert r.status_code == 200, r.text
+    updates = [u for n, u, eqs in fake.updates if n == "reviews"]
+    assert any(u.get("score_problem") == 6 for u in updates)
+
+
+def test_patch_flip_draft_to_submitted_runs_full_pipeline(
+    client, monkeypatch, _clear_overrides,
+):
+    """Closes spec §14.4 for the PATCH flip path: full draft with all
+    scores, PATCH with draft:false, expect submitted_at + locked_at set,
+    assignment completed_at set, and auto-transition fired when sole
+    reviewer."""
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-18T10:00:00Z")
+    fake = _install_db(monkeypatch, {
+        "reviewer_assignments": [
+            {"id": "a1", "reviewer_user_id": me,
+             "application_id": "app1", "application_track": "tir",
+             "assigned_at": "2026-05-16T09:00:00Z", "assigned_by": "leader-u",
+             "declined_at": None, "reassigned_to": None, "completed_at": None},
+        ],
+        "tir_applications": [
+            {"id": "app1", "answers": {"problem": "x"}, "status": "under_review",
+             "submitted_at": "2026-05-15T00:00:00Z"},
+        ],
+        "sip_applications": [],
+        "reviews": [
+            {"id": "rev-draft", "reviewer_user_id": me, "assignment_id": "a1",
+             "application_id": "app1", "application_track": "tir",
+             "submitted_at": None, "locked_at": None,
+             "score_problem": 7, "score_solution": 5, "score_tech": 6,
+             "score_founders": 8, "score_commitment": 7,
+             "recommendation": "maybe"},
+        ],
+        "application_status_log": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.patch("/reviewer/reviews/rev-draft", json={"draft": False})
+    assert r.status_code == 200, r.text
+
+    # The patch should now include submitted_at + locked_at
+    updates = [u for n, u, eqs in fake.updates if n == "reviews"]
+    assert any(
+        "submitted_at" in u and u["submitted_at"] == "2026-05-18T10:00:00+00:00"
+        for u in updates
+    )
+    assert any(
+        "locked_at" in u and u["locked_at"] == "2026-05-18T11:00:00+00:00"
+        for u in updates
+    )
+    # Assignment should be marked complete
+    asg_updates = [u for n, u, eqs in fake.updates if n == "reviewer_assignments"]
+    assert any(u.get("completed_at") == "2026-05-18T10:00:00+00:00" for u in asg_updates)
+    # tir_applications.status should be set to evaluated (sole reviewer, just completed)
+    status_updates = [u for n, u, eqs in fake.updates if n == "tir_applications"]
+    assert any(u.get("status") == "evaluated" for u in status_updates)
+
+
+def test_patch_flip_draft_to_submitted_rejects_incomplete(
+    client, monkeypatch, _clear_overrides,
+):
+    """The draft → submitted flip must enforce the same completeness rule
+    that POST enforces: all 5 scores + recommendation required."""
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-18T10:00:00Z")
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [],
+        "sip_applications": [],
+        "reviews": [
+            {"id": "rev-draft", "reviewer_user_id": me, "assignment_id": "a1",
+             "application_id": "app1", "application_track": "tir",
+             "submitted_at": None, "locked_at": None,
+             # Incomplete: only 2 of 5 scores set, no recommendation
+             "score_problem": 7, "score_solution": 5, "score_tech": None,
+             "score_founders": None, "score_commitment": None,
+             "recommendation": None},
+        ],
+        "application_status_log": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.patch("/reviewer/reviews/rev-draft", json={"draft": False})
+    assert r.status_code == 422, r.text
+    body = r.json()
+    assert body["detail"]["code"] == "incomplete_review"
+    missing = set(body["detail"]["missing"])
+    assert "score_tech" in missing
+    assert "score_founders" in missing
+    assert "score_commitment" in missing
+    assert "recommendation" in missing
