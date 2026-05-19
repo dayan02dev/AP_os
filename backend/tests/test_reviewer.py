@@ -533,3 +533,127 @@ def test_submit_review_409_when_review_already_exists(
     assert r.status_code == 409, r.text
     assert r.json()["detail"]["code"] == "review_already_exists"
     assert r.json()["detail"]["review_id"] == "existing-rev"
+
+
+# ─── PATCH /reviewer/reviews/{id} ──────────────────────────────────────
+
+
+def _freeze_datetime(monkeypatch, iso_utc: str):
+    """Patch datetime.now in the reviewer router to a fixed UTC instant.
+
+    Avoids the SENTRY_DSN + freezegun + FastAPI TestClient hang in this
+    env. The router calls `datetime.now(timezone.utc)` for submitted_at /
+    locked_at math; this swap covers it.
+    """
+    from datetime import datetime as _dt
+    from app.routers import reviewer as rv
+
+    fixed = _dt.fromisoformat(iso_utc.replace("Z", "+00:00"))
+
+    class _Frozen:
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+        @classmethod
+        def fromisoformat(cls, s):
+            return _dt.fromisoformat(s)
+
+    monkeypatch.setattr(rv, "datetime", _Frozen)
+
+
+def test_patch_review_within_window_succeeds(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
+    fake = _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [],
+        "sip_applications": [],
+        "reviews": [
+            {"id": "rev1", "reviewer_user_id": me,
+             "application_id": "app1", "application_track": "tir",
+             "submitted_at": "2026-05-18T10:00:00+00:00",
+             "locked_at": "2026-05-18T11:00:00+00:00",
+             "score_problem": 5, "recommendation": "maybe"},
+        ],
+        "application_status_log": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.patch("/reviewer/reviews/rev1", json={"score_problem": 8})
+    assert r.status_code == 200, r.text
+    updates = [u for n, u, eqs in fake.updates if n == "reviews"]
+    assert any(u.get("score_problem") == 8 for u in updates)
+
+
+def test_patch_review_after_lock_returns_423(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-18T11:01:00Z")
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [],
+        "sip_applications": [],
+        "reviews": [
+            {"id": "rev1", "reviewer_user_id": me,
+             "application_id": "app1", "application_track": "tir",
+             "submitted_at": "2026-05-18T10:00:00+00:00",
+             "locked_at": "2026-05-18T11:00:00+00:00",
+             "score_problem": 5, "recommendation": "maybe"},
+        ],
+        "application_status_log": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.patch("/reviewer/reviews/rev1", json={"score_problem": 8})
+    assert r.status_code == 423
+    assert r.json()["detail"]["code"] == "review_locked"
+
+
+def test_patch_review_does_not_extend_lock(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
+    fake = _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [],
+        "sip_applications": [],
+        "reviews": [
+            {"id": "rev1", "reviewer_user_id": me,
+             "application_id": "app1", "application_track": "tir",
+             "submitted_at": "2026-05-18T10:00:00+00:00",
+             "locked_at": "2026-05-18T11:00:00+00:00",
+             "score_problem": 5, "recommendation": "maybe"},
+        ],
+        "application_status_log": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.patch("/reviewer/reviews/rev1", json={"score_problem": 8})
+    assert r.status_code == 200
+    updates = [u for n, u, eqs in fake.updates if n == "reviews"]
+    # No update should touch locked_at
+    assert not any("locked_at" in u for u in updates)
+
+
+def test_patch_review_caller_must_own(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [],
+        "sip_applications": [],
+        "reviews": [
+            {"id": "rev1", "reviewer_user_id": "rev-b",  # NOT me
+             "application_id": "app1", "application_track": "tir",
+             "submitted_at": "2026-05-18T10:00:00+00:00",
+             "locked_at": "2026-05-18T11:00:00+00:00",
+             "score_problem": 5, "recommendation": "maybe"},
+        ],
+        "application_status_log": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.patch("/reviewer/reviews/rev1", json={"score_problem": 8})
+    assert r.status_code == 403

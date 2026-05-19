@@ -261,3 +261,147 @@ async def submit_review(
         )
 
     return {"review": review_row}
+
+
+# ─── PATCH /reviewer/reviews/{review_id} ───────────────────────────────
+
+
+class ReviewPatchBody(BaseModel):
+    """Edit-in-flight body. Every field optional; only set keys are written.
+
+    `extra="forbid"` again is load-bearing — same anti-anchoring guard as
+    the submit body (no `score_integrity` etc).
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    score_problem:    conint(ge=0, le=10) | None = None
+    score_solution:   conint(ge=0, le=10) | None = None
+    score_tech:       conint(ge=0, le=10) | None = None
+    score_founders:   conint(ge=0, le=10) | None = None
+    score_commitment: conint(ge=0, le=10) | None = None
+    recommendation:   Literal["yes", "maybe", "no"] | None = None
+    strengths:   str | None = None
+    concerns:    str | None = None
+    quick_notes: str | None = None
+    draft: bool | None = None  # flip draft → submitted (stamps submitted_at/locked_at)
+
+
+@router.patch(
+    "/reviews/{review_id}",
+    dependencies=[Depends(require_capability("score_app"))],
+)
+async def patch_review(
+    review_id: str,
+    body: ReviewPatchBody,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Edit a review within its 60-min lock window.
+
+    Two shapes:
+      * Patch fields on an already-submitted review — allowed iff
+        ``datetime.now > locked_at`` is False (returns 423 after).
+      * Flip ``draft: false`` on a draft review — stamps submitted_at/locked_at,
+        marks the assignment complete, audits, triggers auto-transition.
+
+    The lock window is never extended by a PATCH — once stamped, the original
+    locked_at is the hard ceiling. Open question logged in spec §14.4.
+    """
+    sb = get_admin_client()
+    try:
+        rows = (
+            sb.table("reviews").select("*").eq("id", review_id).execute().data
+        ) or []
+    except Exception as exc:
+        log.warning(
+            "patch_review: review fetch failed",
+            extra={"review_id": review_id, "err": str(exc)},
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "review_lookup_failed"},
+        ) from exc
+
+    if not rows:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "review_not_found"},
+        )
+    existing = rows[0]
+    if existing["reviewer_user_id"] != user["user_id"]:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail={"code": "not_your_review"},
+        )
+
+    # Lock check — only meaningful for already-submitted (non-draft) reviews
+    locked_at_str = existing.get("locked_at")
+    if locked_at_str:
+        locked_at = datetime.fromisoformat(locked_at_str.replace("Z", "+00:00"))
+        # Strict `>` so a PATCH at the exact instant is still allowed
+        if datetime.now(UTC) > locked_at:
+            raise HTTPException(
+                status_code=http_status.HTTP_423_LOCKED,
+                detail={
+                    "code": "review_locked",
+                    "message": f"Edit window closed at {locked_at.isoformat()}.",
+                },
+            )
+
+    # Build the patch — only fields the body actually sent (drop `draft`,
+    # which controls the submit-transition rather than being persisted).
+    patch: dict = {
+        k: v for k, v in body.model_dump(exclude_unset=True).items()
+        if k != "draft"
+    }
+
+    # Draft → submitted transition: stamp timestamps NOW.
+    flipping_to_submitted = (
+        body.draft is False and existing.get("submitted_at") is None
+    )
+    now = datetime.now(UTC)
+    if flipping_to_submitted:
+        patch["submitted_at"] = now.isoformat()
+        patch["locked_at"] = (now + timedelta(minutes=60)).isoformat()
+
+    if patch:
+        try:
+            sb.table("reviews").update(patch).eq("id", review_id).execute()
+        except Exception as exc:
+            log.warning(
+                "patch_review: review update failed",
+                extra={"review_id": review_id, "err": str(exc)},
+            )
+            raise HTTPException(
+                status_code=http_status.HTTP_502_BAD_GATEWAY,
+                detail={"code": "review_update_failed"},
+            ) from exc
+
+    if flipping_to_submitted:
+        # Same post-submit fan-out as POST /reviews (assignment hygiene + audit
+        # + auto-transition). Best-effort on the assignment update.
+        try:
+            sb.table("reviewer_assignments").update(
+                {"completed_at": now.isoformat()},
+            ).eq("id", existing["assignment_id"]).execute()
+        except Exception as exc:
+            log.warning(
+                "patch_review: assignment completed_at update failed",
+                extra={"assignment_id": existing.get("assignment_id"),
+                       "err": str(exc)},
+            )
+
+        write_audit(
+            actor_user_id=user["user_id"],
+            actor_role="reviewer",
+            action_type="submit_review",
+            target_table="reviews",
+            target_id=review_id,
+            after={"recommendation": body.recommendation},
+        )
+        state_machine.auto_transition_to_evaluated_if_complete(
+            existing["application_id"],
+            existing["application_track"],
+            just_completed_assignment_id=existing.get("assignment_id"),
+        )
+
+    return {"review_id": review_id, "patched": list(patch.keys())}
