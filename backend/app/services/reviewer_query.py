@@ -280,3 +280,126 @@ def fetch_application_for_reviewer(
         "my_review": my_review,
         "ai_screening": ai_screening,
     }
+
+
+# Score weights per spec §4.3 — keep in lockstep with frontend
+# ScoreSegmentInput's display labels and the leadership AI overall calc.
+_SCORE_WEIGHTS = {
+    "score_problem":    22,
+    "score_solution":   30,
+    "score_tech":       22,
+    "score_founders":   14,
+    "score_commitment": 12,
+}
+
+
+def _weighted_overall(review: dict) -> float | None:
+    """Returns None iff any required score is missing."""
+    total = 0
+    for col, w in _SCORE_WEIGHTS.items():
+        v = review.get(col)
+        if v is None:
+            return None
+        total += v * w
+    return round(total / 100, 2)
+
+
+def fetch_completed_reviews(
+    reviewer_user_id: str, track: str = "all", page: int = 1, page_size: int = 20,
+) -> dict:
+    """Return the reviewer's locked reviews, paginated, with app context."""
+    sb = get_admin_client()
+    try:
+        rows = (
+            sb.table("reviews")
+            .select("*")
+            .eq("reviewer_user_id", reviewer_user_id)
+            .execute()
+            .data
+        )
+    except Exception as exc:
+        log.warning(
+            "completed_list: reviews fetch failed",
+            extra={"reviewer": reviewer_user_id, "err": str(exc)},
+        )
+        return {"reviews": [], "page": page, "total_pages": 1, "total": 0}
+
+    now = datetime.now(timezone.utc)
+    locked_mine: list[dict] = []
+    for r in rows:
+        locked_at = r.get("locked_at")
+        if not locked_at:
+            continue
+        try:
+            t = datetime.fromisoformat(locked_at.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        if t > now:
+            continue
+        if track != "all" and r.get("application_track") != track:
+            continue
+        locked_mine.append(r)
+
+    # Sort by submitted_at DESC
+    locked_mine.sort(key=lambda x: x.get("submitted_at") or "", reverse=True)
+
+    total = len(locked_mine)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_rows = locked_mine[start:end]
+
+    out: list[dict] = []
+    for r in page_rows:
+        table = "tir_applications" if r["application_track"] == "tir" else "sip_applications"
+        try:
+            app_rows = sb.table(table).select("*").eq("id", r["application_id"]).limit(1).execute().data
+        except Exception as exc:
+            log.warning(
+                "completed_list: app fetch failed",
+                extra={"application_id": r["application_id"], "err": str(exc)},
+            )
+            continue
+        if not app_rows:
+            continue
+        a = app_rows[0]
+        out.append({
+            "review_id": r["id"],
+            "application_id": r["application_id"],
+            "application_track": r["application_track"],
+            "app_identifier": _compose_app_identifier(
+                r["application_track"], r["application_id"], a.get("submitted_at"),
+            ),
+            "problem_one_liner": _problem_one_liner(a.get("answers")),
+            "score_overall_mine": _weighted_overall(r),
+            "recommendation": r.get("recommendation"),
+            "submitted_at": r.get("submitted_at"),
+        })
+
+    return {
+        "reviews": out,
+        "page": page,
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+        "total": total,
+    }
+
+
+def fetch_my_review_for_application(
+    reviewer_user_id: str, application_id: str,
+) -> dict | None:
+    sb = get_admin_client()
+    try:
+        rows = (
+            sb.table("reviews")
+            .select("*")
+            .eq("reviewer_user_id", reviewer_user_id)
+            .eq("application_id", application_id)
+            .execute()
+            .data
+        )
+    except Exception as exc:
+        log.warning(
+            "mine_probe: fetch failed",
+            extra={"reviewer": reviewer_user_id, "application_id": application_id, "err": str(exc)},
+        )
+        return None
+    return rows[0] if rows else None

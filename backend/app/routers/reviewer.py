@@ -21,7 +21,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from pydantic import BaseModel, ConfigDict, Field, conint
 
@@ -507,3 +507,49 @@ async def decline_assignment(
         log.exception("decline email best-effort send failed; ignored")
 
     return {"assignment_id": assignment_id, "declined_at": now}
+
+
+# ─── GET /reviewer/reviews (completed list) + /reviews/mine (probe) ────
+
+
+@router.get(
+    "/reviews",
+    dependencies=[Depends(require_capability("view_assigned_apps"))],
+)
+async def list_reviews(
+    mine: bool = Query(False),
+    locked: bool = Query(False),
+    track: Literal["tir", "sip", "all"] = Query("all"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    if not mine:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail={"code": "mine_required",
+                    "message": "Phase 1.5 only exposes self-reviews. Pass mine=true."},
+        )
+    if not locked:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail={"code": "locked_filter_required",
+                    "message": "Phase 1.5 list endpoint only returns locked reviews."},
+        )
+    return reviewer_query.fetch_completed_reviews(
+        user["user_id"], track=track, page=page, page_size=page_size,
+    )
+
+
+@router.get(
+    "/reviews/mine",
+    dependencies=[Depends(require_capability("view_assigned_apps"))],
+)
+async def get_my_review(
+    application_id: str = Query(..., min_length=1),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    row = reviewer_query.fetch_my_review_for_application(
+        user["user_id"], application_id,
+    )
+    return {"review": row}

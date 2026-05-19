@@ -547,6 +547,7 @@ def _freeze_datetime(monkeypatch, iso_utc: str):
     """
     from datetime import datetime as _dt
     from app.routers import reviewer as rv
+    from app.services import reviewer_query as rq
 
     fixed = _dt.fromisoformat(iso_utc.replace("Z", "+00:00"))
 
@@ -559,6 +560,7 @@ def _freeze_datetime(monkeypatch, iso_utc: str):
             return _dt.fromisoformat(s)
 
     monkeypatch.setattr(rv, "datetime", _Frozen)
+    monkeypatch.setattr(rq, "datetime", _Frozen)
 
 
 def test_patch_review_within_window_succeeds(
@@ -860,3 +862,135 @@ def test_decline_404_when_assignment_not_found(
         json={"reason": "Trying to decline a missing assignment."},
     )
     assert r.status_code == 404
+
+
+# ─── GET /reviewer/reviews?mine=true&locked=true ───────────────────────
+
+
+def test_completed_list_returns_only_my_locked(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-20T10:00:00Z")
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [
+            {"id": "app1", "answers": {"problem": "Locked one"},
+             "submitted_at": "2026-05-15T00:00:00Z"},
+            {"id": "app2", "answers": {"problem": "Unlocked one"},
+             "submitted_at": "2026-05-15T00:00:00Z"},
+        ],
+        "sip_applications": [],
+        "reviews": [
+            {"id": "r1", "reviewer_user_id": me, "application_id": "app1",
+             "application_track": "tir", "submitted_at": "2026-05-18T10:00:00+00:00",
+             "locked_at": "2026-05-18T11:00:00+00:00",
+             "score_problem": 7, "score_solution": 6, "score_tech": 7,
+             "score_founders": 8, "score_commitment": 7, "recommendation": "yes"},
+            {"id": "r2", "reviewer_user_id": me, "application_id": "app2",
+             "application_track": "tir", "submitted_at": "2026-05-20T09:50:00+00:00",
+             "locked_at": "2026-05-20T10:50:00+00:00",  # locked_at > now → not locked yet
+             "score_problem": 5, "recommendation": "maybe"},
+            {"id": "r3", "reviewer_user_id": "rev-b", "application_id": "app1",
+             "application_track": "tir", "submitted_at": "2026-05-18T10:00:00+00:00",
+             "locked_at": "2026-05-18T11:00:00+00:00",
+             "score_problem": 7, "recommendation": "no"},  # not mine
+        ],
+        "ai_screening": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.get("/reviewer/reviews?mine=true&locked=true")
+    assert r.status_code == 200
+    ids = [x["review_id"] for x in r.json()["reviews"]]
+    assert "r1" in ids
+    assert "r2" not in ids   # locked_at > now → not yet locked
+    assert "r3" not in ids   # not mine
+
+
+def test_completed_list_computes_weighted_overall(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-20T10:00:00Z")
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [
+            {"id": "app1", "answers": {"problem": "X"},
+             "submitted_at": "2026-05-15T00:00:00Z"},
+        ],
+        "sip_applications": [],
+        "reviews": [
+            {"id": "r1", "reviewer_user_id": me, "application_id": "app1",
+             "application_track": "tir", "submitted_at": "2026-05-18T10:00:00+00:00",
+             "locked_at": "2026-05-18T11:00:00+00:00",
+             "score_problem": 8, "score_solution": 6, "score_tech": 7,
+             "score_founders": 9, "score_commitment": 5, "recommendation": "yes"},
+        ],
+        "ai_screening": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.get("/reviewer/reviews?mine=true&locked=true")
+    rows = r.json()["reviews"]
+    # Weights: P22 S30 T22 F14 C12 → (8*22 + 6*30 + 7*22 + 9*14 + 5*12) / 100
+    # = (176 + 180 + 154 + 126 + 60) / 100 = 696/100 = 6.96
+    assert abs(rows[0]["score_overall_mine"] - 6.96) < 0.01
+
+
+def test_completed_list_requires_mine_true(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [], "tir_applications": [], "sip_applications": [],
+        "reviews": [], "ai_screening": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.get("/reviewer/reviews?locked=true")  # missing mine=true
+    assert r.status_code == 400
+
+
+def test_completed_list_requires_locked_true(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [], "tir_applications": [], "sip_applications": [],
+        "reviews": [], "ai_screening": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.get("/reviewer/reviews?mine=true")  # missing locked=true
+    assert r.status_code == 400
+
+
+def test_mine_probe_returns_my_review_for_app(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [], "tir_applications": [], "sip_applications": [],
+        "reviews": [
+            {"id": "r1", "reviewer_user_id": me, "application_id": "app1",
+             "application_track": "tir", "submitted_at": "2026-05-18T10:00:00+00:00",
+             "locked_at": "2026-05-18T11:00:00+00:00",
+             "score_problem": 7, "recommendation": "yes"},
+        ],
+        "ai_screening": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.get("/reviewer/reviews/mine?application_id=app1")
+    assert r.status_code == 200
+    assert r.json()["review"]["id"] == "r1"
+
+
+def test_mine_probe_returns_null_when_no_review(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [], "tir_applications": [], "sip_applications": [],
+        "reviews": [], "ai_screening": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.get("/reviewer/reviews/mine?application_id=app1")
+    assert r.status_code == 200
+    assert r.json()["review"] is None
