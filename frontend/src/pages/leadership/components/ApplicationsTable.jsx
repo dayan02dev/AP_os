@@ -70,6 +70,12 @@ export default function ApplicationsTable({
           return statusLabelById?.[row.status] || row.status || "";
         case "submitted_at":
           return row.submitted_at ? Date.parse(row.submitted_at) : 0;
+        case "project_name":
+          return row.project_name || row.basic_full_name || "";
+        case "stage_label":
+          return row.stage_label || "";
+        case "display_id":
+          return row.display_id || row.id || "";
         default:
           return row[key];
       }
@@ -109,17 +115,18 @@ export default function ApplicationsTable({
     <div className="lp-table-wrap">
       <div className="lp-table">
         <div className="lp-tr lp-tr-head">
-          <div className="lp-td lp-td-id">{headBtn("id", "ID")}</div>
           <div className="lp-td lp-td-project">
-            {headBtn("basic_full_name", "Founder / project")}
+            {headBtn("project_name", "Project")}
           </div>
           <div className="lp-td lp-td-founder">
-            {headBtn("basic_org", "Organization")}
+            {headBtn("basic_full_name", "Founder")}
           </div>
           <div className="lp-td lp-td-ind">
             {headBtn("industry", "Industry")}
           </div>
-          <div className="lp-td lp-td-stage">{headBtn("track", "Track")}</div>
+          <div className="lp-td lp-td-stage">
+            {headBtn("stage_label", "Stage")}
+          </div>
           <div className="lp-td lp-td-score">
             {headBtn("ai_score_overall", "AI score", "right")}
           </div>
@@ -127,50 +134,61 @@ export default function ApplicationsTable({
           <div className="lp-td lp-td-sub">
             {headBtn("submitted_at", "Submitted")}
           </div>
+          <div className="lp-td lp-td-id">{headBtn("display_id", "ID")}</div>
         </div>
-        {sorted.map((a) => (
-          <button
-            type="button"
-            className="lp-tr lp-tr-row"
-            key={a.id}
-            onClick={() => onOpen(a)}
-          >
-            <div className="lp-td lp-td-id eir-mono">
-              {a.id ? a.id.slice(0, 8) : ""}
-            </div>
-            <div className="lp-td lp-td-project" title={a.basic_full_name || ""}>
-              <span className="lp-project-title">
-                {a.basic_full_name || <span className="eir-dim">—</span>}
-              </span>
-              <span className="lp-project-meta eir-mono eir-dim">
-                {a.basic_email || ""}
-              </span>
-            </div>
-            <div className="lp-td lp-td-founder">
-              <span className="lp-founder">
-                {a.basic_org || <span className="eir-dim">—</span>}
-              </span>
-            </div>
-            <div className="lp-td lp-td-ind">
-              {a.industry?.label || <span className="eir-dim">—</span>}
-            </div>
-            <div className="lp-td lp-td-stage eir-mono">
-              {(a.track || "").toUpperCase()}
-            </div>
-            <div className="lp-td lp-td-score">
-              <ScorePill score={a.ai_score_overall} />
-            </div>
-            <div className="lp-td lp-td-status">
-              <StatusChip
-                statusId={a.status}
-                statusLabel={statusLabelById?.[a.status] || a.status}
-              />
-            </div>
-            <div className="lp-td lp-td-sub eir-mono eir-dim">
-              {relTimeFromIso(a.submitted_at || a.created_at)}
-            </div>
-          </button>
-        ))}
+        {sorted.map((a) => {
+          const projectName = a.project_name || a.basic_full_name || "";
+          const displayId = a.display_id || (a.id ? a.id.slice(0, 8) : "");
+          const trackUpper = (a.track || "").toUpperCase();
+          return (
+            <button
+              type="button"
+              className="lp-tr lp-tr-row"
+              key={a.id}
+              onClick={() => onOpen(a)}
+            >
+              <div className="lp-td lp-td-project" title={projectName}>
+                <span className="lp-project-title">
+                  {projectName || <span className="eir-dim">—</span>}
+                </span>
+                <span className="lp-project-meta eir-mono eir-dim">
+                  {displayId}{trackUpper ? ` · ${trackUpper}` : ""}
+                </span>
+              </div>
+              <div className="lp-td lp-td-founder">
+                <span className="lp-founder">
+                  {a.basic_full_name || <span className="eir-dim">—</span>}
+                </span>
+                {a.basic_org && (
+                  <span className="lp-project-meta eir-dim">
+                    {a.basic_org}
+                  </span>
+                )}
+              </div>
+              <div className="lp-td lp-td-ind">
+                {a.industry?.label || <span className="eir-dim">—</span>}
+              </div>
+              <div className="lp-td lp-td-stage">
+                {a.stage_label || <span className="eir-dim">—</span>}
+              </div>
+              <div className="lp-td lp-td-score">
+                <ScorePill score={a.ai_score_overall} />
+              </div>
+              <div className="lp-td lp-td-status">
+                <StatusChip
+                  statusId={a.status}
+                  statusLabel={statusLabelById?.[a.status] || a.status}
+                />
+              </div>
+              <div className="lp-td lp-td-sub eir-mono eir-dim">
+                {relTimeFromIso(a.submitted_at || a.created_at)}
+              </div>
+              <div className="lp-td lp-td-id eir-mono eir-dim">
+                {displayId}
+              </div>
+            </button>
+          );
+        })}
         {sorted.length === 0 && (
           <div className="lp-table-empty eir-mono eir-dim">
             no applications match the current filters
