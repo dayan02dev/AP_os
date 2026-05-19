@@ -89,19 +89,27 @@ def auto_transition_to_evaluated_if_complete(
     track: str,
     just_completed_assignment_id: str | None = None,
 ) -> bool:
-    """If every active assignment for this app is complete, move the app
-    from ``under_review`` → ``evaluated``. Returns True iff the transition
-    fired. Closes spec §14.4.
+    """If every active assignment for this app has completed_at set, move the
+    app's status from under_review → evaluated. Returns True iff the
+    transition fired. Idempotent.
 
-    ``just_completed_assignment_id`` is the assignment the caller just
-    marked complete in the same request. We treat it as complete even if
-    a fresh DB read still shows ``completed_at IS NULL`` — this avoids a
-    read-your-writes race when Supabase replication lags, and (incidentally)
-    makes the helper deterministic under the test fake which doesn't mutate
-    its in-memory table on UPDATE.
+    The optional `just_completed_assignment_id` parameter lets the caller mark
+    its own assignment as complete *for the purposes of this check*, without
+    relying on the UPDATE the caller just issued having become visible to the
+    subsequent SELECT in this function. This matters for two reasons:
 
-    Idempotent. Best-effort: any DB failure is swallowed (logged) and the
-    caller's primary write is preserved.
+    1. Same-request ordering: the router PATCHes
+       `reviewer_assignments.completed_at` and then immediately calls this
+       helper. Treating the just-completed row as done here makes the helper
+       deterministic regardless of how the underlying client handles
+       read-your-writes — the *contract* is "all reviewers have submitted by
+       the time we check," and at this point in the request, that is true.
+
+    2. As a defensive secondary: if a future caller runs this from a worker
+       that happens to read from a replica, the same shortcut still produces
+       the right answer.
+
+    Closes spec §14.4.
     """
     sb = get_admin_client()
 

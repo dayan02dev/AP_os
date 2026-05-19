@@ -168,6 +168,28 @@ async def submit_review(
             detail={"code": "not_your_assignment"},
         )
 
+    # Reject duplicate (UNIQUE constraint guard with a clean 409 instead
+    # of a 502 from the DB). Pulls only one row; cheap.
+    existing = (
+        sb.table("reviews")
+        .select("id, submitted_at, locked_at")
+        .eq("application_id", body.application_id)
+        .eq("application_track", body.application_track)
+        .eq("reviewer_user_id", user["user_id"])
+        .limit(1)
+        .execute()
+        .data
+    )
+    if existing:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail={
+                "code": "review_already_exists",
+                "message": "You already have a review for this application. Use PATCH to edit it.",
+                "review_id": existing[0]["id"],
+            },
+        )
+
     now = datetime.now(UTC)
     submitted_at = None if body.draft else now.isoformat()
     locked_at    = None if body.draft else (now + timedelta(minutes=60)).isoformat()

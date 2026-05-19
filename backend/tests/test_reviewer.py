@@ -498,3 +498,38 @@ def test_draft_does_not_transition_or_lock(
     assert row["locked_at"] is None
     status_updates = [u for n, u, eqs in fake.updates if n == "tir_applications"]
     assert not any(u.get("status") == "evaluated" for u in status_updates)
+
+
+def test_submit_review_403_when_not_my_assignment(
+    client, monkeypatch, _clear_overrides,
+):
+    """The capability gate `score_app` is role-wide; this test pins the
+    per-assignment ownership check at the route layer."""
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, "rev-someone-else")  # assigned to other
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.post("/reviewer/reviews", json=_VALID_SUBMIT)
+    assert r.status_code == 403, r.text
+    assert r.json()["detail"]["code"] == "not_your_assignment"
+
+
+def test_submit_review_409_when_review_already_exists(
+    client, monkeypatch, _clear_overrides,
+):
+    """Migration 014 has UNIQUE(application_id, application_track, reviewer_user_id)
+    on `reviews`. The router pre-checks so the client sees a clean 409 instead
+    of a 502 from the DB unique-violation."""
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me, reviews=[
+        {"id": "existing-rev", "application_id": "app1", "application_track": "tir",
+         "reviewer_user_id": me, "score_problem": 6, "score_solution": 6,
+         "score_tech": 6, "score_founders": 6, "score_commitment": 6,
+         "recommendation": "maybe",
+         "submitted_at": "2026-05-17T10:00:00Z",
+         "locked_at": "2026-05-17T11:00:00Z"},
+    ])
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.post("/reviewer/reviews", json=_VALID_SUBMIT)
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "review_already_exists"
+    assert r.json()["detail"]["review_id"] == "existing-rev"

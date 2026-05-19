@@ -686,7 +686,9 @@ Anything caught gets fixed, not whitelisted.
 
 ## 9. Migration / DB changes
 
-**None.** Schema is the same as Phase 1 (migration 014_admin_platform_phase1 + 015 status CHECK). All work is route handlers + frontend.
+**Migration 016** (`backend/migrations/016_reviewer_pages_columns.sql`) adds 7 nullable columns to `reviews` that the Phase 1.5 reviewer surface needs but migration 014 didn't include: `assignment_id` (FK), `recommendation`, `strengths`, `concerns`, `quick_notes`, `locked_at`, `disagree_with_ai`. Adds two indexes (`idx_reviews_locked_at`, `idx_reviews_assignment_id`). Idempotent.
+
+Apply to staging Supabase (project `exqmxvdtcsvpgtftwjml`) via the SQL editor when this PR opens — same workflow as migration 015.
 
 ---
 
