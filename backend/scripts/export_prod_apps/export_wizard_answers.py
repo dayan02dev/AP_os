@@ -208,6 +208,25 @@ def paginate(client, table: str) -> list[dict[str, Any]]:
     return out
 
 
+def paginate_with_fallback(client, primary: str, fallback: str | None) -> tuple[list[dict[str, Any]], str | None]:
+    """Try `primary` first; if it returns 0 rows (likely because the table
+    doesn't exist in the schema cache), retry against `fallback`. Returns
+    (rows, table_used). table_used is None when both fail.
+
+    This handles the prod-vs-staging schema split: migration 010 renamed
+    `applications` → `tir_applications` and added `sip_applications`. Prod
+    may still be on the legacy schema.
+    """
+    rows = paginate(client, primary)
+    if rows:
+        return rows, primary
+    if not fallback:
+        return rows, primary if rows else None
+    log.info("  %s returned 0 rows — trying legacy table %s", primary, fallback)
+    rows = paginate(client, fallback)
+    return rows, (fallback if rows else None)
+
+
 def cell_value(v: Any) -> Any:
     """Convert a column value into something Excel can store.
 
@@ -331,9 +350,11 @@ def main() -> int:
 
     client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    log.info("fetching tir_applications…")
-    tir_all = paginate(client, "tir_applications")
-    log.info("  %d total rows", len(tir_all))
+    log.info("fetching tir_applications (with legacy `applications` fallback)…")
+    tir_all, tir_table = paginate_with_fallback(
+        client, "tir_applications", fallback="applications",
+    )
+    log.info("  %d total rows (from %s)", len(tir_all), tir_table or "(none)")
     tir = [r for r in tir_all if r.get("status") and r.get("status") != "draft"]
     log.info("  %d non-draft (will be exported)", len(tir))
     for r in tir:
@@ -341,7 +362,7 @@ def main() -> int:
         r["display_id"] = compose_display_id("tir", r.get("id"))
 
     log.info("fetching sip_applications…")
-    sip_all = paginate(client, "sip_applications")
+    sip_all, _ = paginate_with_fallback(client, "sip_applications", fallback=None)
     log.info("  %d total rows", len(sip_all))
     sip = [r for r in sip_all if r.get("status") and r.get("status") != "draft"]
     log.info("  %d non-draft (will be exported)", len(sip))
