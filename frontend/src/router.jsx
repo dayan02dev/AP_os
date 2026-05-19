@@ -31,7 +31,10 @@ import AdminLayout from "./pages/admin/AdminLayout.jsx";
 import UserListPage from "./pages/admin/UserListPage.jsx";
 import UserDetailPage from "./pages/admin/UserDetailPage.jsx";
 import AdminAddUser from "./pages/admin/AdminAddUser.jsx";
-import ReviewerInboxStub from "./pages/reviewer/ReviewerInboxStub.jsx";
+import ReviewerAppShell from "./pages/reviewer/ReviewerAppShell.jsx";
+import ReviewerInboxPage from "./pages/reviewer/ReviewerInboxPage.jsx";
+import ReviewerCompletedPage from "./pages/reviewer/ReviewerCompletedPage.jsx";
+import ReviewerScoringPage from "./pages/reviewer/ReviewerScoringPage.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
 import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
@@ -177,12 +180,23 @@ export default function AppRoutes() {
         <Route path="users/:id" element={<UserDetailPage />} />
       </Route>
 
-      {/* Reviewer surface (Phase 1 stub; scoring UI ships in Phase 1.5). */}
+      {/* Reviewer surface (Phase 1.5). */}
       <Route
-        path="/reviewer/inbox"
         element={
           <ProtectedRoute>
-            <ReviewerInboxStub />
+            <ReviewerAppShell />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/reviewer" element={<Navigate to="/reviewer/inbox" replace />} />
+        <Route path="/reviewer/inbox" element={<ReviewerInboxPage />} />
+        <Route path="/reviewer/completed" element={<ReviewerCompletedPage />} />
+      </Route>
+      <Route
+        path="/reviewer/:track/:id/score"
+        element={
+          <ProtectedRoute>
+            <ReviewerScoringPage />
           </ProtectedRoute>
         }
       />
