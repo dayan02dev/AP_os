@@ -768,3 +768,95 @@ def test_patch_flip_draft_to_submitted_rejects_incomplete(
     assert "score_founders" in missing
     assert "score_commitment" in missing
     assert "recommendation" in missing
+
+
+# ─── POST /reviewer/assignments/{id}/decline ───────────────────────────
+
+
+def test_decline_sets_declined_at_and_reason(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-18T10:00:00Z")
+    fake = _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.post(
+        "/reviewer/assignments/a1/decline",
+        json={"reason": "Not my domain — defer to someone with healthcare context."},
+    )
+    assert r.status_code == 200, r.text
+    updates = [u for n, u, eqs in fake.updates if n == "reviewer_assignments"]
+    assert len(updates) == 1
+    assert updates[0]["declined_at"] == "2026-05-18T10:00:00+00:00"
+    assert "healthcare" in updates[0]["decline_reason"]
+
+
+def test_decline_requires_min_10_char_reason(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.post("/reviewer/assignments/a1/decline", json={"reason": "no"})
+    assert r.status_code == 422
+
+
+def test_decline_blocked_when_not_my_assignment(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, "rev-b")  # assigned to someone else
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.post(
+        "/reviewer/assignments/a1/decline",
+        json={"reason": "I shouldn't be able to decline this."},
+    )
+    assert r.status_code == 403
+
+
+def test_decline_409_when_already_declined(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [
+            {"id": "a1", "reviewer_user_id": me,
+             "application_id": "app1", "application_track": "tir",
+             "assigned_at": "2026-05-16T09:00:00Z", "assigned_by": "leader-u",
+             "declined_at": "2026-05-17T00:00:00Z",  # already declined
+             "decline_reason": "earlier reason",
+             "reassigned_to": None, "completed_at": None},
+        ],
+        "tir_applications": [],
+        "sip_applications": [],
+        "reviews": [],
+        "ai_screening": [],
+        "application_status_log": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.post(
+        "/reviewer/assignments/a1/decline",
+        json={"reason": "Trying to decline again."},
+    )
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "already_declined"
+
+
+def test_decline_404_when_assignment_not_found(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [],
+        "sip_applications": [],
+        "reviews": [],
+        "ai_screening": [],
+        "application_status_log": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.post(
+        "/reviewer/assignments/does-not-exist/decline",
+        json={"reason": "Trying to decline a missing assignment."},
+    )
+    assert r.status_code == 404

@@ -425,3 +425,85 @@ async def patch_review(
         )
 
     return {"review_id": review_id, "patched": list(patch.keys())}
+
+
+# ─── POST /reviewer/assignments/{id}/decline ───────────────────────────
+
+
+class DeclineBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(..., min_length=10, max_length=2000)
+
+
+@router.post(
+    "/assignments/{assignment_id}/decline",
+    dependencies=[Depends(require_capability("decline_assignment"))],
+)
+async def decline_assignment(
+    assignment_id: str,
+    body: DeclineBody,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    sb = get_admin_client()
+    rows = (
+        sb.table("reviewer_assignments")
+        .select("*")
+        .eq("id", assignment_id)
+        .execute()
+        .data
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "assignment_not_found"},
+        )
+    assignment = rows[0]
+    if assignment["reviewer_user_id"] != user["user_id"]:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail={"code": "not_your_assignment"},
+        )
+    if assignment.get("declined_at") is not None:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail={"code": "already_declined"},
+        )
+
+    now = datetime.now(UTC).isoformat()
+    sb.table("reviewer_assignments").update({
+        "declined_at": now,
+        "decline_reason": body.reason,
+    }).eq("id", assignment_id).execute()
+
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role="reviewer",
+        action_type="decline_assignment",
+        target_table="reviewer_assignments",
+        target_id=assignment_id,
+        after={"declined_at": now, "decline_reason": body.reason},
+    )
+
+    # Email is best-effort — see spec §8 rule for swallowing Resend failures.
+    # `send_assignment_declined` template lands in a follow-up task; the
+    # hasattr guard means this endpoint works today without it.
+    try:
+        from ..services import email_service as _email_module
+        send_fn = getattr(_email_module, "send_assignment_declined", None)
+        if send_fn is None:
+            # Look for it as a bound method on the singleton service instance
+            # (the codebase uses both module-level and instance APIs).
+            svc = getattr(_email_module, "email_service", None) or getattr(_email_module, "service", None)
+            if svc is not None:
+                send_fn = getattr(svc, "send_assignment_declined", None)
+        if send_fn is not None:
+            send_fn(
+                application_id=assignment["application_id"],
+                application_track=assignment["application_track"],
+                reviewer_user_id=user["user_id"],
+                reason=body.reason,
+            )
+    except Exception:
+        log.exception("decline email best-effort send failed; ignored")
+
+    return {"assignment_id": assignment_id, "declined_at": now}
