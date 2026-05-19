@@ -82,34 +82,48 @@ log = logging.getLogger("wizard")
 # ─── What to exclude from the sheets ───────────────────────────────────
 
 
-# Internal / non-answer columns. Kept on the Index sheet for context but
-# stripped from the per-track answer sheets so they're just Q&A.
-_INTERNAL_COLUMNS: set[str] = {
+# Internal / non-answer columns. Pinned at the END of the sheet so the
+# Q&A is the leftmost content (analysts read these last). Set to empty
+# if you want them suppressed entirely.
+_TRAILING_COLUMNS: set[str] = {
     "id",
     "user_id",
-    "created_at",
-    "updated_at",
     "current_section",
     "completion_pct",
-    # status + submitted_at are interesting; kept on the answer sheets.
+    "created_at",
+    "updated_at",
 }
 
-# File-reference JSONB columns. Their contents are storage paths, not
-# answers — they'd just clutter the sheet. The full-export script
-# (export.py) handles file downloads; this one stays clean.
-_FILE_COLUMNS: set[str] = {
-    # TIR
-    "evidence_files",
-    "video",
-    "deck",
-    # SIP
-    "sip_pitch_deck",
-    "sip_cap_table_file",
-    "sip_traction_files",
-    "sip_patents_files",
-    # both
-    "execution_milestone_files",
-}
+# Section grouping — column prefix → (sort order, section label). Columns
+# without a matching prefix go into the trailing "Other" group.
+_SECTION_ORDER: list[tuple[str, str]] = [
+    ("display_id",          "Reference"),       # the synthetic id column
+    ("track",               "Reference"),
+    ("status",              "Reference"),
+    ("submitted_at",        "Reference"),
+    ("basic_",              "Section 02 · Basic information"),
+    ("sip_incorporated",    "Section 02 · Basic information"),
+    ("sip_trl",             "Section 02 · Basic information"),
+    ("sip_founders",        "Section 02 · Basic information"),
+    ("problem_",            "Section 03 · Problem & importance"),
+    ("solution_",           "Section 04 · Your solution"),
+    ("sip_traction",        "Section 04 · Your solution"),       # SIP traction lives in §04 per the wizard
+    ("execution_",          "Section 05 · Execution plan"),
+    ("evidence_",           "Section 06 · Evidence"),
+    ("sip_pitch_deck",      "Section 06 · Evidence"),
+    ("sip_cap_table_file",  "Section 06 · Evidence"),
+    ("sip_demo_video_url",  "Section 06 · Evidence"),
+    ("sip_patents_files",   "Section 06 · Evidence"),
+    ("declaration_",        "Section 07 · Declaration"),
+]
+
+
+def section_for(col: str) -> tuple[int, str]:
+    """Return (order_index, label) for a given column. Lower index = leftmost."""
+    for idx, (prefix, label) in enumerate(_SECTION_ORDER):
+        if col == prefix or (prefix.endswith("_") and col.startswith(prefix)):
+            return (idx, label)
+    return (len(_SECTION_ORDER), "Other / metadata")
 
 
 # ─── Friendly column names ─────────────────────────────────────────────
@@ -118,53 +132,78 @@ _FILE_COLUMNS: set[str] = {
 # Pretty headers for known columns. Anything not in here renders the raw
 # snake_case name, capitalized.
 _LABELS: dict[str, str] = {
-    # Basic info
-    "basic_full_name":            "Full name",
-    "basic_phone":                "Phone",
-    "basic_email":                "Email",
-    "basic_org":                  "Organization",
-    "basic_degree":               "Education",
-    "basic_incubator_association":"Incubator association?",
-    "basic_incubator_details":    "Incubator details",
-    "basic_hear_about":           "Where they heard about ARTPARK",
-    # SIP-specific basics
-    "sip_incorporated":           "Incorporated?",
-    "sip_trl":                    "TRL",
-    "sip_founders":               "Founders cap table (JSON)",
-    # Problem
-    "problem_describe":           "Q · Problem description",
-    "problem_defined":            "Q · Problem defined",
-    # Solution
-    "solution_describe":          "Q · Solution description",
-    "solution_core_tech":         "Q · Core technology",
-    "solution_contrarian_insight":"Q · Contrarian insight",
-    "solution_stage":             "Q · Solution stage",
-    "solution_executation_will_break":"Q · What will break in execution",
-    # Traction (SIP)
-    "sip_traction":               "Q · Traction status",
-    "sip_traction_details":       "Q · Traction details",
-    # Execution
-    "execution_milestone":        "Q · Next milestone",
-    "execution_infrastructure":   "Q · Infrastructure needs",
-    "execution_failure":          "Q · How could this fail",
-    "execution_hwsw_integration": "Q · Hardware/software integration",
-    "execution_will_break":       "Q · What will break in execution",
-    # Team (TIR)
-    "team_has_team":              "Has a team?",
-    "team_members":               "Team members (JSON)",
-    "team_teammates":             "Teammates",
-    # Demo (SIP)
-    "sip_demo_video_url":         "Demo video URL",
-    # Declaration
-    "declaration_truthful":       "✓ Truthful declaration",
-    "declaration_ref_checks":     "✓ Reference checks allowed",
-    "declaration_terms":          "✓ Terms accepted",
-    "declaration_newsletter":     "✓ Newsletter opt-in",
-    # Metadata
-    "status":                     "Status",
-    "submitted_at":               "Submitted at",
-    "display_id":                 "ID",
-    "track":                      "Track",
+    # Reference / metadata
+    "display_id":                      "ID",
+    "track":                           "Track",
+    "status":                          "Status",
+    "submitted_at":                    "Submitted at",
+    "id":                              "(internal uuid)",
+    "user_id":                         "(applicant user uuid)",
+    "current_section":                 "(last wizard section)",
+    "completion_pct":                  "Completion %",
+    "created_at":                      "Created at",
+    "updated_at":                      "Updated at",
+
+    # Section 02 · Basic information (TIR legacy + shared)
+    "basic_full_name":                 "Full name",
+    "basic_phone":                     "Phone",
+    "basic_email":                     "Email",
+    "basic_org":                       "Organization",
+    "basic_degree":                    "Education",
+    "basic_has_team":                  "Q · Do you have a team?",
+    "basic_teammates":                 "Q · Teammates (JSON)",
+    "basic_incubators":                "Q · Incubator(s) (legacy field)",
+    "basic_incubator_association":     "Q · Incubator association?",
+    "basic_incubator_details":         "Q · Incubator details",
+    "basic_hear_about":                "Q · How did you hear about ARTPARK?",
+    # Section 02 · SIP-specific
+    "sip_incorporated":                "Q · Incorporated as Pvt Ltd?",
+    "sip_trl":                         "Q · Technology Readiness Level (TRL)",
+    "sip_founders":                    "Q · Founders cap table (JSON)",
+
+    # Section 03 · Problem & importance
+    "problem_defined":                 "Q · Have you defined the problem precisely?",
+    "problem_describe":                "Q · Describe the problem you are solving",
+    "problem_importance":              "Q · Why does this problem matter?",
+
+    # Section 04 · Your solution
+    "solution_stage":                  "Q · What stage is your solution at?",
+    "solution_describe":               "Q · Describe your solution",
+    "solution_core_tech":              "Q · What is the core technology?",
+    "solution_ten_x":                  "Q · How is your solution 10× better?",
+    "solution_hurdles":                "Q · Hurdles to building this",
+    "solution_moat":                   "Q · What is your moat?",
+    "solution_national_scale":         "Q · How does this scale nationally?",
+    "solution_customers":              "Q · Who are your customers?",
+    "solution_contrarian_insight":     "Q · Contrarian insight",
+    # SIP traction (lives in section 04 per the wizard)
+    "sip_traction":                    "Q · Current traction status",
+    "sip_traction_details":            "Q · Traction details",
+    "sip_traction_files":              "Q · Traction supporting files (paths)",
+
+    # Section 05 · Execution plan
+    "execution_will_break":            "Q · What will break in execution?",
+    "execution_milestone":             "Q · Next 12-month milestone",
+    "execution_milestone_files":       "Q · Milestone supporting files (paths)",
+    "execution_budget":                "Q · Budget breakdown",
+    "execution_failure":               "Q · How could the execution fail?",
+    "execution_infrastructure":        "Q · Infrastructure / resource needs",
+    "execution_hwsw_integration":      "Q · Hardware-software integration approach",
+
+    # Section 06 · Evidence (TIR legacy + SIP)
+    "evidence_files":                  "Evidence files (paths)",
+    "evidence_video_url":              "Demo video URL (TIR)",
+    "evidence_deck":                   "Pitch deck (TIR)",
+    "sip_pitch_deck":                  "Pitch deck (SIP, JSON)",
+    "sip_cap_table_file":              "Cap table file (SIP, JSON)",
+    "sip_demo_video_url":              "Demo video URL (SIP)",
+    "sip_patents_files":               "Patents / publications (paths)",
+
+    # Section 07 · Declaration
+    "declaration_truthful":            "✓ Truthful declaration",
+    "declaration_ref_checks":          "✓ Reference checks allowed",
+    "declaration_terms":               "✓ Terms accepted",
+    "declaration_newsletter":          "✓ Newsletter opt-in",
 }
 
 
@@ -246,27 +285,29 @@ def cell_value(v: Any) -> Any:
 
 
 def _column_order(rows: list[dict[str, Any]]) -> list[str]:
-    """Pick the answer columns from the row union, excluding internal /
-    file columns. Stable order: id-ish metadata first, then Q&A in the
-    order it first appeared in the rows."""
-    seen: list[str] = []
-    seen_set: set[str] = set()
-    # Pin a few keys first
-    for k in ("display_id", "track", "status", "submitted_at",
-              "basic_full_name", "basic_email", "basic_org"):
-        if k not in seen_set:
-            seen.append(k)
-            seen_set.add(k)
-    # Then everything else from the row union
+    """Order every column from the row union by wizard section, falling
+    back to insertion order within a section. Trailing metadata columns
+    (id, user_id, timestamps) land at the very end."""
+    all_cols: list[str] = []
+    seen: set[str] = set()
     for r in rows:
         for k in r.keys():
-            if k in seen_set:
-                continue
-            if k in _INTERNAL_COLUMNS or k in _FILE_COLUMNS:
-                continue
-            seen.append(k)
-            seen_set.add(k)
-    return seen
+            if k not in seen:
+                seen.add(k)
+                all_cols.append(k)
+    # Make sure the synthesised reference columns are in the set even
+    # if the row dict didn't carry them yet.
+    for k in ("display_id", "track"):
+        if k not in seen:
+            all_cols.append(k)
+            seen.add(k)
+
+    def sort_key(col: str) -> tuple[int, int]:
+        # Trailing cols → very large index so they end up rightmost.
+        trail_idx = 999 if col in _TRAILING_COLUMNS else section_for(col)[0]
+        return (trail_idx, all_cols.index(col))
+
+    return sorted(all_cols, key=sort_key)
 
 
 def _write_track_sheet(wb: Workbook, name: str, rows: list[dict[str, Any]]) -> int:
@@ -277,41 +318,76 @@ def _write_track_sheet(wb: Workbook, name: str, rows: list[dict[str, Any]]) -> i
 
     cols = _column_order(rows)
 
-    # Header
+    # ── Row 1: section header (merged across each section's columns) ──
+    # Walk the columns left-to-right, group consecutive runs of the same
+    # section label, merge their cells in row 1.
+    run_start_ci = 1
+    run_label = section_for(cols[0])[1] if cols[0] not in _TRAILING_COLUMNS else "Reference / metadata"
     for ci, col in enumerate(cols, start=1):
-        c = ws.cell(row=1, column=ci, value=label_for(col))
-        c.font = Font(bold=True, size=11)
-        c.fill = PatternFill("solid", fgColor="EFEFEF")
-        c.alignment = Alignment(horizontal="left", vertical="center", wrap_text=False)
+        label = ("Reference / metadata" if col in _TRAILING_COLUMNS
+                 else section_for(col)[1])
+        if ci == 1:
+            run_label = label
+            continue
+        if label != run_label:
+            if ci - 1 > run_start_ci:
+                ws.merge_cells(start_row=1, start_column=run_start_ci,
+                               end_row=1, end_column=ci - 1)
+            hcell = ws.cell(row=1, column=run_start_ci, value=run_label)
+            hcell.font = Font(bold=True, size=11, color="FFFFFF")
+            hcell.fill = PatternFill("solid", fgColor="3213B7")  # ARTBlue
+            hcell.alignment = Alignment(horizontal="center", vertical="center")
+            run_start_ci = ci
+            run_label = label
+    # close the final run
+    if len(cols) > run_start_ci:
+        ws.merge_cells(start_row=1, start_column=run_start_ci,
+                       end_row=1, end_column=len(cols))
+    hcell = ws.cell(row=1, column=run_start_ci, value=run_label)
+    hcell.font = Font(bold=True, size=11, color="FFFFFF")
+    hcell.fill = PatternFill("solid", fgColor="3213B7")
+    hcell.alignment = Alignment(horizontal="center", vertical="center")
 
-    # Rows
-    for ri, row in enumerate(rows, start=2):
+    # ── Row 2: question labels ────────────────────────────────────────
+    for ci, col in enumerate(cols, start=1):
+        c = ws.cell(row=2, column=ci, value=label_for(col))
+        c.font = Font(bold=True, size=10)
+        c.fill = PatternFill("solid", fgColor="EFEFEF")
+        c.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    # ── Rows 3+: data ─────────────────────────────────────────────────
+    for ri, row in enumerate(rows, start=3):
         for ci, col in enumerate(cols, start=1):
             v = cell_value(row.get(col))
             cell = ws.cell(row=ri, column=ci, value=v)
             cell.alignment = Alignment(vertical="top", wrap_text=True)
 
-    # Freeze the header + first 3 columns (display_id / track / status)
-    ws.freeze_panes = "D2"
+    # Freeze the two header rows + first 3 columns (id/track/status).
+    ws.freeze_panes = "D3"
 
-    # Reasonable column widths. Excel doesn't auto-fit, so we set defaults:
-    # narrow for short metadata, wider for free-text Q&A.
+    # Column widths.
     narrow = {"display_id", "track", "status", "submitted_at",
-              "basic_degree", "sip_incorporated", "sip_trl"}
+              "basic_degree", "sip_incorporated", "sip_trl",
+              "completion_pct", "declaration_truthful", "declaration_ref_checks",
+              "declaration_terms", "declaration_newsletter"}
     medium = {"basic_full_name", "basic_email", "basic_org", "basic_phone",
-              "basic_hear_about", "basic_incubator_association"}
+              "basic_hear_about", "basic_incubator_association",
+              "basic_has_team", "id", "user_id"}
     for ci, col in enumerate(cols, start=1):
-        letter = ws.cell(row=1, column=ci).column_letter
+        letter = ws.cell(row=2, column=ci).column_letter
         if col in narrow:
             ws.column_dimensions[letter].width = 16
         elif col in medium:
             ws.column_dimensions[letter].width = 28
         else:
-            ws.column_dimensions[letter].width = 60  # free-text answer columns
+            ws.column_dimensions[letter].width = 60
 
-    # Row height — let the wrap_text take effect on the answer rows
-    for ri in range(2, len(rows) + 2):
-        ws.row_dimensions[ri].height = 45
+    # Tall enough for wrap on the question-label row.
+    ws.row_dimensions[1].height = 22
+    ws.row_dimensions[2].height = 40
+    # Tall enough for wrap on the answer rows.
+    for ri in range(3, len(rows) + 3):
+        ws.row_dimensions[ri].height = 60
 
     return len(rows)
 
