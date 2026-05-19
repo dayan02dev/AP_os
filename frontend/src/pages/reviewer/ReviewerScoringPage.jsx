@@ -33,6 +33,7 @@ export default function ReviewerScoringPage() {
   const [error, setError] = useState(null);
   const [reload, setReload] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [tooNarrow, setTooNarrow] = useState(
     typeof window !== "undefined" && window.innerWidth < 1024
   );
@@ -70,6 +71,7 @@ export default function ReviewerScoringPage() {
   }, [track, id, reload]);
 
   const state = useMemo(() => pickState(detail?.myReview), [detail?.myReview]);
+  const effectiveState = editing ? "scoring" : state;
   const schema = useMemo(() => schemaFor(track), [track]);
   const appIdent = useMemo(
     () => composeAppId(track, id, detail?.application?.submitted_at),
@@ -78,24 +80,39 @@ export default function ReviewerScoringPage() {
 
   const onBack = useCallback(() => navigate("/reviewer/inbox"), [navigate]);
 
+  const onEditClick = useCallback(() => setEditing(true), []);
+
+  const onExpire = useCallback(() => setReload((n) => n + 1), []);
+
   const onSubmit = useCallback(async (form) => {
     if (submitting) return;
     setSubmitting(true);
     try {
-      await reviewerApi.submitReview({
-        application_id: id,
-        application_track: track,
-        assignment_id: detail.assignment.assignment_id,
-        ...form,
-        draft: false,
-      });
+      if (editing && detail?.myReview) {
+        await reviewerApi.patchReview(detail.myReview.id, { ...form, draft: false });
+      } else {
+        await reviewerApi.submitReview({
+          application_id: id,
+          application_track: track,
+          assignment_id: detail.assignment.assignment_id,
+          ...form,
+          draft: false,
+        });
+      }
+      setEditing(false);
       setReload((n) => n + 1);
     } catch (err) {
-      window.alert(err?.message || "Submit failed.");
+      if (err?.status === 423) {
+        window.alert("Edit window closed. Your last submitted version is final.");
+        setEditing(false);
+        setReload((n) => n + 1);
+      } else {
+        window.alert(err?.message || "Submit failed.");
+      }
     } finally {
       setSubmitting(false);
     }
-  }, [id, track, detail, submitting]);
+  }, [id, track, detail, submitting, editing]);
 
   const onSaveDraft = useCallback(async (form) => {
     try {
@@ -152,12 +169,13 @@ export default function ReviewerScoringPage() {
         </main>
         {detail && (
           <ReviewerScoringPanel
-            state={state}
+            state={effectiveState}
             myReview={detail.myReview}
             aiScreening={detail.aiScreening}
             onSubmit={onSubmit}
             onSaveDraft={onSaveDraft}
-            onEdit={() => {}}
+            onEdit={onEditClick}
+            onExpire={onExpire}
           />
         )}
       </div>

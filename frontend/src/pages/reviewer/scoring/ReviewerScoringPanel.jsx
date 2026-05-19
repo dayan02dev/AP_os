@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import ScoreSegmentInput from "./ScoreSegmentInput.jsx";
 import RecommendationInput from "./RecommendationInput.jsx";
+import EditWindowCountdown from "./EditWindowCountdown.jsx";
+import AIComparisonView from "./AIComparisonView.jsx";
 
 const CATEGORIES = [
   { col: "score_problem",    label: "Problem importance & clarity" },
@@ -109,17 +111,54 @@ function StateAForm({ initial, onSubmit, onSaveDraft }) {
   );
 }
 
+function StateBSubmitted({ myReview, aiScreening, onEdit, onExpire }) {
+  return (
+    <>
+      <span className="panel-eyebrow" style={{ color: "var(--accent-green)" }}>
+        Review submitted · ✓
+      </span>
+      <p className="panel-intro">
+        You can edit until <EditWindowCountdown lockedAt={myReview.locked_at} onExpire={onExpire} />
+        .
+      </p>
+      <AIComparisonView myReview={myReview} aiScreening={aiScreening} />
+      <div className="scoring-panel-footer">
+        <button type="button" className="btn btn-primary" onClick={onEdit}>
+          Edit my review <span className="arrow">→</span>
+        </button>
+      </div>
+    </>
+  );
+}
+
+function StateCLocked({ myReview, aiScreening }) {
+  return (
+    <>
+      <span className="panel-eyebrow">Review submitted · LOCKED</span>
+      <AIComparisonView myReview={myReview} aiScreening={aiScreening} />
+    </>
+  );
+}
+
 export default function ReviewerScoringPanel({
-  state, myReview, aiScreening, onSubmit, onSaveDraft, onEdit,
+  state, myReview, aiScreening, onSubmit, onSaveDraft, onEdit, onExpire,
 }) {
-  // States B and C are added in Task 12.
   return (
     <aside className="scoring-panel" aria-label="Reviewer scoring panel">
       {state === "scoring" && (
         <StateAForm initial={myReview} onSubmit={onSubmit} onSaveDraft={onSaveDraft} />
       )}
-      {/* state === "editable" → State B (Task 12) */}
-      {/* state === "locked"   → State C (Task 12) */}
+      {state === "editable" && (
+        <StateBSubmitted
+          myReview={myReview}
+          aiScreening={aiScreening}
+          onEdit={onEdit}
+          onExpire={onExpire}
+        />
+      )}
+      {state === "locked" && (
+        <StateCLocked myReview={myReview} aiScreening={aiScreening} />
+      )}
     </aside>
   );
 }

@@ -49,3 +49,46 @@ describe("ReviewerScoringPanel — State A (scoring)", () => {
     expect(onSaveDraft).toHaveBeenCalledWith(expect.objectContaining({ score_problem: 4 }));
   });
 });
+
+describe("ReviewerScoringPanel — State B (editable)", () => {
+  it("shows submitted eyebrow + comparison view + Edit button", () => {
+    const future = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    render(
+      <ReviewerScoringPanel
+        state="editable"
+        myReview={{
+          id: "r1", score_problem: 7, score_solution: 6, score_tech: 6,
+          score_founders: 8, score_commitment: 7, recommendation: "maybe",
+          submitted_at: "2026-05-18T15:00:00Z", locked_at: future,
+        }}
+        aiScreening={{
+          score_problem: 8, score_solution: 7, score_tech: 7,
+          score_founders: 7, score_commitment: 8, summary: "Strong.",
+        }}
+        onEdit={() => {}}
+        onExpire={() => {}}
+      />,
+    );
+    expect(screen.getByText(/Review submitted · ✓/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Edit my review/i })).toBeInTheDocument();
+    expect(screen.getByText(/Your scores vs AI/i)).toBeInTheDocument();
+  });
+});
+
+describe("ReviewerScoringPanel — State C (locked)", () => {
+  it("shows LOCKED eyebrow and no edit button", () => {
+    render(
+      <ReviewerScoringPanel
+        state="locked"
+        myReview={{
+          id: "r1", score_problem: 7, score_solution: 6, score_tech: 6,
+          score_founders: 8, score_commitment: 7, recommendation: "no",
+          submitted_at: "2026-05-15T10:00:00Z", locked_at: "2026-05-15T11:00:00Z",
+        }}
+        aiScreening={{ score_problem: 8, summary: "Strong." }}
+      />,
+    );
+    expect(screen.getByText(/LOCKED/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Edit my review/i })).not.toBeInTheDocument();
+  });
+});
