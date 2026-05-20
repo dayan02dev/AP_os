@@ -41,3 +41,9 @@ mangum==0.19.*
 
 # Error tracking.
 sentry-sdk[fastapi]==2.*
+
+# LangGraph + LangChain for the AI scoring pipeline (spec §2).
+# Pinned to major to allow patch updates; revisit when major bumps.
+langgraph==0.2.*
+langchain==0.3.*
+langchain-google-genai==2.0.*
