@@ -15,6 +15,7 @@ import { useAuth } from "../../hooks/useAuth.jsx";
 import { hasCapability } from "../../lib/rbac.js";
 import { leadershipApi } from "../../lib/leadershipApi.js";
 import AppDrawer from "./components/AppDrawer.jsx";
+import { bucketFor } from "./components/statusBuckets.js";
 import "../../styles/admin.css";
 import "../../styles/leadership.css";
 
@@ -674,21 +675,18 @@ export default function LeadershipDashboard() {
                 <div className="lp-loading">Loading status counts…</div>
               ) : (
                 <div className="lp-status-grid">
-                  {(stats?.status_counts || []).map((s) => {
-                    const dotCls = STATUS_DOT_COLOR[s.id] || "";
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        className={`lp-status-cell${statusFilter === s.id ? " is-on" : ""}`}
-                        onClick={() => filterAndShow(setStatusFilter)(statusFilter === s.id ? null : s.id)}
-                      >
-                        <span className={`dot ${dotCls}`} />
-                        <span className="lp-status-cell-label">{s.label}</span>
-                        <span className="lp-status-cell-n">{s.n}</span>
-                      </button>
-                    );
-                  })}
+                  {(stats?.status_counts || []).map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className={`lp-status-cell${statusFilter === s.id ? " is-on" : ""}`}
+                      onClick={() => filterAndShow(setStatusFilter)(statusFilter === s.id ? null : s.id)}
+                    >
+                      <span className={`lp-status-dot lp-status-${bucketFor(s.id)}`} />
+                      <span className="lp-status-cell-label">{s.label}</span>
+                      <span className="lp-status-cell-n">{s.n}</span>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
