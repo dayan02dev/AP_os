@@ -164,89 +164,176 @@ def classify_industry(source: str | dict | None) -> tuple[str, str]:
     return OTHER_BUCKET
 
 
-# ─── Stage label derivation ─────────────────────────────────────────────
+# ─── Stage label derivation (spec §4) ────────────────────────────────────
 #
-# Used by the leadership Applications table's "Stage" column. SIP applicants
-# pick a `sip_traction` value from a closed enum; TIR has `solution_stage`.
-# We collapse both to a short label that fits the table cell.
-_SIP_TRACTION_TO_STAGE: dict[str, str] = {
+# Used by the leadership Applications table's "Stage" column. TIR applicants
+# pick `solution_stage` from a closed enum; SIP applicants pick `sip_traction`.
+# We collapse both to a short label that fits the table cell while keeping
+# the raw value available for hover (frontend reads `raw` into a title attr).
+
+# TIR: solution_stage → short label (spec §4a)
+_TIR_STAGE_MAP: dict[str, str] = {
+    "Still exploring":                              "Exploring",
+    "Literature / research stage":                  "Research",
+    "Simulations completed":                        "Simulation",
+    "Lab demos / proof of concept":                 "Lab demo",
+    "Prototype built":                              "Prototype",
+    "Pilot-ready product":                          "Pilot-ready",
+    "Deployed in real setting with real users":     "Deployed",
+}
+
+# SIP: sip_traction → short label (spec §4b)
+_SIP_STAGE_MAP: dict[str, str] = {
     "Pre-revenue — building toward our first pilot":          "Pre-revenue",
-    "Active pilots (paid or unpaid) with design partners":    "Pilot",
-    "Paying pilots — customers have paid for early access":   "Early revenue",
+    "Active pilots (paid or unpaid) with design partners":    "Active pilots",
+    "Paying pilots — customers have paid for early access":   "Paying pilots",
     "Live paying customers — repeat revenue":                 "Live revenue",
 }
 
-_SIP_TRL_TO_STAGE: dict[str, str] = {
-    "TRL 3 or earlier — research stage":                  "Research",
-    "TRL 4 — lab-validated prototype":                    "Prototype",
-    "TRL 5 — pilot-tested in a relevant environment":     "Pilot",
-    "TRL 6+ — demonstrated in operational setting":       "Operational",
-}
 
+def derive_stage_label(row: dict | None) -> dict | None:
+    """Return ``{"raw": <original>, "label": <short>}`` or None.
 
-def derive_stage_label(row: dict | None) -> str | None:
-    """Short stage label for the leadership Applications table.
+    Per-track maps; falls back to using ``raw`` as ``label`` when the raw
+    text isn't in the map (better than dropping the cell entirely). Returns
+    None only when no source field is populated.
 
-    Resolution order:
-      1. SIP `sip_traction` (revenue-stage enum)
-      2. SIP `sip_trl` (technology readiness fallback)
-      3. TIR `solution_stage` (free text — truncated)
-      4. None — frontend renders "—"
+    For SIP, if `sip_traction` is missing, falls back to `sip_trl`.
     """
     if not row:
         return None
-    traction = row.get("sip_traction")
-    if traction and traction in _SIP_TRACTION_TO_STAGE:
-        return _SIP_TRACTION_TO_STAGE[traction]
-    trl = row.get("sip_trl")
-    if trl and trl in _SIP_TRL_TO_STAGE:
-        return _SIP_TRL_TO_STAGE[trl]
-    sol_stage = row.get("solution_stage")
-    if sol_stage:
-        s = str(sol_stage).strip()
-        return s[:16] + ("…" if len(s) > 16 else "")
-    return None
+    track = (row.get("track") or "").lower()
+
+    if track == "tir":
+        raw = row.get("solution_stage")
+        if not raw:
+            return None
+        return {"raw": raw, "label": _TIR_STAGE_MAP.get(raw, raw)}
+
+    if track == "sip":
+        raw = row.get("sip_traction")
+        if raw:
+            return {"raw": raw, "label": _SIP_STAGE_MAP.get(raw, raw)}
+        trl = row.get("sip_trl")
+        if trl:
+            return {"raw": trl, "label": str(trl)[:24]}
+        return None
+
+    # Unknown / missing track — try both fields opportunistically.
+    raw = row.get("solution_stage") or row.get("sip_traction")
+    if not raw:
+        return None
+    return {
+        "raw": raw,
+        "label": _TIR_STAGE_MAP.get(raw, _SIP_STAGE_MAP.get(raw, raw)),
+    }
 
 
-# ─── Project name derivation ────────────────────────────────────────────
+# ─── Project name derivation (spec §2) ──────────────────────────────────
+
+# Case-insensitive filler prefixes stripped from the start of the derived
+# name so the cell focuses on what the venture actually does.
+_PROJECT_FILLER_PREFIXES: tuple[str, ...] = (
+    "we are building ",
+    "we're building ",
+    "we are developing ",
+    "we're developing ",
+    "we are creating ",
+    "we're creating ",
+    "we are working on ",
+    "we're working on ",
+    "our solution is ",
+    "our product is ",
+    "this is ",
+)
+
+
+def _strip_filler_prefix(text: str) -> str:
+    """Drop a leading filler prefix (case-insensitive) if any matches."""
+    lower = text.lower()
+    for filler in _PROJECT_FILLER_PREFIXES:
+        if lower.startswith(filler):
+            return text[len(filler):].lstrip()
+    return text
+
+
+def _truncate_at_word(text: str, max_chars: int) -> str:
+    """Truncate to at most ``max_chars`` chars, breaking at the last
+    whitespace boundary. Returns text with a trailing ellipsis."""
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    cut = cut.rstrip(",.;:- ")
+    return f"{cut}…"
 
 
 def derive_project_name(row: dict | None) -> str | None:
-    """Short project name for the leadership Applications table.
+    """Short project name for the leadership Applications table (spec §2).
 
-    Takes the first sentence (or first 60 chars) of `solution_describe`.
-    Falls back to `basic_org` so the cell isn't blank. Returns None only
-    when nothing is available — the frontend then renders "—".
+    Algorithm:
+      1. Source ``solution_describe``; fall back to ``basic_org`` if empty.
+      2. Take the first sentence (split on ``.``, ``?``, ``!`` followed by
+         whitespace, or newline).
+      3. Strip leading filler (e.g. "We're building ", "Our solution is ").
+      4. If the first sentence is < 20 chars and more text exists, take
+         the first 80 chars of the full description instead (also
+         filler-stripped).
+      5. If the first sentence is > 60 chars, truncate at the last word
+         boundary before 60 with a trailing ellipsis.
+      6. Capitalize the first character.
     """
     if not row:
         return None
     text = (row.get("solution_describe") or "").strip()
-    if text:
-        first = text.split(".")[0].split("\n")[0].strip()
-        if len(first) > 60:
-            return first[:57] + "…"
-        return first or None
-    org = (row.get("basic_org") or "").strip()
-    return org or None
+    if not text:
+        org = (row.get("basic_org") or "").strip()
+        return org or None
+
+    # Step 2: first sentence
+    first = text
+    for sep in (". ", "? ", "! ", "\n"):
+        first = first.split(sep)[0]
+    first = first.strip().rstrip(".?!")
+
+    # Step 3: strip filler
+    first = _strip_filler_prefix(first)
+
+    # Step 4: if too short and more text exists, extend
+    if len(first) < 20 and len(text) > len(first):
+        extended = _strip_filler_prefix(text)
+        first = _truncate_at_word(extended, 80)
+
+    # Step 5: long first sentence → truncate at word boundary
+    elif len(first) > 60:
+        first = _truncate_at_word(first, 60)
+
+    if not first:
+        return None
+
+    # Step 6: capitalize
+    return first[0].upper() + first[1:]
 
 
-# ─── Display ID derivation ──────────────────────────────────────────────
+# ─── Display ID derivation (spec §5) ────────────────────────────────────
 
 
-def compose_display_id(track: str, app_id: str | None) -> str:
-    """Stable short identifier for the table + emails (e.g. ``TIR-26225``).
+def compose_display_id(track: str, display_seq: int | str | None) -> str:
+    """Render the human-readable per-track ID, e.g. ``TIR-26013``.
 
-    Last 5 decimal digits of the uuid's first 8 hex chars interpreted as
-    a number. Deterministic per row.
+    ``display_seq`` is the integer from the ``{track}_display_seq`` sequence
+    (populated by migration 017). Returns ``<TRACK>-?????`` when the seq is
+    missing — rows where the migration hasn't been applied yet will show
+    this placeholder.
     """
     prefix = (track or "?").upper()
-    if not app_id:
+    if display_seq is None or display_seq == "":
         return f"{prefix}-?????"
     try:
-        n = int(str(app_id).replace("-", "")[:8], 16) % 100_000
-        return f"{prefix}-{n:05d}"
-    except (ValueError, TypeError):
-        return f"{prefix}-{str(app_id)[:5]}"
+        return f"{prefix}-{int(display_seq)}"
+    except (TypeError, ValueError):
+        return f"{prefix}-?????"
 
 
 # ─── Count helpers (SQL aggregation only) ──────────────────────────────

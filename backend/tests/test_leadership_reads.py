@@ -144,66 +144,9 @@ def test_classify_industry_dict_ai_keywords():
         assert bucket == "ai", f"expected ai for {text!r}, got {bucket}"
 
 
-# ─── Stage label, project name, display id derivations ─────────────────
-
-
-def test_derive_stage_label_sip_traction():
-    from app.services.stats import derive_stage_label
-    row = {"sip_traction": "Active pilots (paid or unpaid) with design partners"}
-    assert derive_stage_label(row) == "Pilot"
-
-
-def test_derive_stage_label_sip_trl_fallback():
-    from app.services.stats import derive_stage_label
-    row = {"sip_traction": None, "sip_trl": "TRL 5 — pilot-tested in a relevant environment"}
-    assert derive_stage_label(row) == "Pilot"
-
-
-def test_derive_stage_label_tir_solution_stage_truncates():
-    from app.services.stats import derive_stage_label
-    row = {"solution_stage": "We're somewhere between prototype and pilot"}
-    out = derive_stage_label(row)
-    assert out is not None
-    assert len(out) <= 17  # 16 chars + ellipsis
-
-
-def test_derive_stage_label_none_when_no_data():
-    from app.services.stats import derive_stage_label
-    assert derive_stage_label({}) is None
-    assert derive_stage_label(None) is None
-
-
-def test_derive_project_name_first_sentence():
-    from app.services.stats import derive_project_name
-    row = {"solution_describe": "Microfluidic dengue test. Designed to detect..."}
-    assert derive_project_name(row) == "Microfluidic dengue test"
-
-
-def test_derive_project_name_falls_back_to_basic_org():
-    from app.services.stats import derive_project_name
-    assert derive_project_name({"basic_org": "IIT Bombay"}) == "IIT Bombay"
-    assert derive_project_name({"solution_describe": "", "basic_org": "NIT"}) == "NIT"
-
-
-def test_derive_project_name_none_when_no_data():
-    from app.services.stats import derive_project_name
-    assert derive_project_name({}) is None
-    assert derive_project_name(None) is None
-
-
-def test_compose_display_id_deterministic():
-    from app.services.stats import compose_display_id
-    uuid = "e6045bda-1234-5678-9abc-deadbeef1234"
-    out = compose_display_id("tir", uuid)
-    assert out.startswith("TIR-")
-    assert len(out) == 9  # TIR-NNNNN
-    assert out == compose_display_id("tir", uuid)  # idempotent
-
-
-def test_compose_display_id_handles_missing():
-    from app.services.stats import compose_display_id
-    assert compose_display_id("sip", None) == "SIP-?????"
-    assert compose_display_id("sip", "") == "SIP-?????"
+# derive_stage_label / derive_project_name / compose_display_id moved to
+# test_stats_helpers.py (they were rewritten per spec
+# 2026-05-20-leadership-applications-table-redesign).
 
 
 def test_classify_industry_empty_string_falls_back_to_other():
