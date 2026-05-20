@@ -1,0 +1,35 @@
+{
+  "application_id": "REPLACE_WITH_UUID",
+  "reviewer_name": "REPLACE",
+  "reviewed_at": "REPLACE_ISO_TIMESTAMP",
+  "scores": {
+    "problem_impact": {
+      "score": 0,
+      "rationale": "1-2 sentences citing specific Q9/Q10 evidence."
+    },
+    "completeness": {
+      "score": 0,
+      "rationale": "1-2 sentences citing Q11/Q15/Q16/Q17/Q20/Q21 evidence."
+    },
+    "technical_depth": {
+      "score": 0,
+      "rationale": "1-2 sentences citing Q11/Q12/Q15/Q19 evidence."
+    },
+    "behavioural": {
+      "score": 0,
+      "rationale": "1-2 sentences citing Q18/voice/CV evidence ONLY. Do not read Q4/Q6/Q7/Q16."
+    },
+    "commitment": {
+      "score": 0,
+      "rationale": "1-2 sentences citing Q4/Q6/Q7/Q16/CV evidence ONLY. Do not read Q18."
+    }
+  },
+  "worked_example_candidates": {
+    "note": "For each signal, if this score is a clear anchor for the rubric, paste one short excerpt and one-sentence reasoning. Used to extract worked examples for the prompts.",
+    "problem_impact": null,
+    "completeness": null,
+    "technical_depth": null,
+    "behavioural": null,
+    "commitment": null
+  }
+}
