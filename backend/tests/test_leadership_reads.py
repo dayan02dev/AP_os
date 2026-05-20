@@ -290,6 +290,167 @@ def test_get_application_detail_with_reviewer_only_returns_403(
     assert body["detail"]["required"] == "view_app_detail"
 
 
+# ─── Unit tier: /industry-categories endpoint (added 2026-05-20) ─────────
+
+
+def test_industry_categories_endpoint_shape(client, _clear_overrides, monkeypatch):
+    """GET /leadership/industry-categories returns categories + cap + slots."""
+    from app.services import industry_categories as ic_mod
+
+    monkeypatch.setattr(
+        ic_mod,
+        "categories_with_counts",
+        lambda: {
+            "categories": [
+                {"id": "robotics", "label": "Robotics & Automation", "count": 3},
+                {"id": "ai", "label": "AI", "count": 2},
+            ],
+            "total": 5,
+            "cap": 12,
+            "remaining_slots": 5,
+        },
+    )
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.get(
+        "/leadership/industry-categories",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["cap"] == 12
+    assert body["total"] == 5
+    assert body["remaining_slots"] == 5
+    assert body["categories"][0]["id"] == "robotics"
+    assert body["categories"][0]["count"] == 3
+
+
+def test_industry_categories_requires_view_stats_capability(client, _clear_overrides):
+    """Reviewer-only role must be rejected with 403."""
+    app.dependency_overrides[get_current_user] = _override_user(["reviewer"])
+    res = client.get(
+        "/leadership/industry-categories",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 403
+
+
+def test_list_applications_row_has_new_shape(client, _clear_overrides, monkeypatch):
+    """Row shape per spec §6a: display_id, display_seq, founder, industry,
+    stage, project_name."""
+    fake_rows = [
+        {
+            "id": "aaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "track": "tir",
+            "status": "submitted",
+            "basic_full_name": "Devika Shetty",
+            "basic_org": "Anna University",
+            "basic_email": "d@example.com",
+            "submitted_at": "2026-05-12T08:14:00Z",
+            "created_at": "2026-05-10T11:00:00Z",
+            "solution_describe": (
+                "ESD-safe wearable for shop-floor technicians. Long tail."
+            ),
+            "solution_stage": "Lab demos / proof of concept",
+            "display_seq": 26013,
+        }
+    ]
+
+    def _fake_fetch(track, **kw):
+        if track == "tir":
+            return [dict(r) for r in fake_rows]
+        return []
+
+    monkeypatch.setattr(applications_query, "fetch_apps_for_track", _fake_fetch)
+    monkeypatch.setattr(
+        applications_query,
+        "fetch_ai_scores_for",
+        lambda pairs: {p: 7.8 for p in pairs},
+    )
+    monkeypatch.setattr(
+        applications_query,
+        "fetch_industry_for_pairs",
+        lambda pairs: {
+            p: {"id": "industry", "label": "Advanced Manufacturing"} for p in pairs
+        },
+    )
+
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.get(
+        "/leadership/applications?track=tir",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    apps = body["applications"]
+    assert len(apps) == 1
+    a = apps[0]
+    assert a["display_id"] == "TIR-26013"
+    assert a["display_seq"] == 26013
+    assert a["founder"] == {"name": "Devika Shetty", "affiliation": "Anna University"}
+    assert a["industry"] == {"id": "industry", "label": "Advanced Manufacturing"}
+    assert a["stage"]["label"] == "Lab demo"
+    assert a["stage"]["raw"] == "Lab demos / proof of concept"
+    assert a["ai_score_overall"] == 7.8
+    assert a["project_name"].startswith("ESD-safe")
+
+
+def test_list_applications_industry_filter_matches_category_id(
+    client, _clear_overrides, monkeypatch
+):
+    """The ?industry=<id> filter must match the new industry_category_id,
+    not the legacy keyword bucket."""
+    fake_rows = [
+        {
+            "id": "id-1",
+            "track": "tir",
+            "status": "submitted",
+            "basic_full_name": "A",
+            "submitted_at": "2026-05-12T08:00:00Z",
+            "created_at": "2026-05-10T11:00:00Z",
+            "display_seq": 26001,
+        },
+        {
+            "id": "id-2",
+            "track": "tir",
+            "status": "submitted",
+            "basic_full_name": "B",
+            "submitted_at": "2026-05-12T09:00:00Z",
+            "created_at": "2026-05-10T11:00:00Z",
+            "display_seq": 26002,
+        },
+    ]
+
+    def _fake_fetch(track, **kw):
+        if track == "tir":
+            return [dict(r) for r in fake_rows]
+        return []
+
+    monkeypatch.setattr(applications_query, "fetch_apps_for_track", _fake_fetch)
+    monkeypatch.setattr(
+        applications_query, "fetch_ai_scores_for", lambda pairs: {p: 5.0 for p in pairs}
+    )
+    monkeypatch.setattr(
+        applications_query,
+        "fetch_industry_for_pairs",
+        lambda pairs: {
+            ("tir", "id-1"): {"id": "robotics", "label": "Robotics & Automation"},
+            ("tir", "id-2"): {"id": "ai", "label": "Artificial Intelligence"},
+        },
+    )
+
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/applications?industry=robotics&track=tir",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200
+    apps = res.json()["applications"]
+    assert len(apps) == 1
+    assert apps[0]["id"] == "id-1"
+
+
 # ─── Integration tier (skipped unless RUN_STAGING_TESTS=1) ───────────────
 #
 # Fixtures here are LOCAL to this module — conftest.py does not (yet) define
