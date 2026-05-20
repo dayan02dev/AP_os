@@ -807,6 +807,36 @@ export default function LeadershipDashboard() {
               </div>
             </div>
 
+            {industryCategories.length > 0 && (
+              <div className="filter-bar" style={{ marginBottom: "var(--s-5)" }}>
+                <span className="eyebrow" style={{ marginRight: "var(--s-3)" }}>Industry</span>
+                <div className="filter-chips">
+                  <button
+                    type="button"
+                    className={`chip${!industry ? " active" : ""}`}
+                    onClick={() => { setIndustry(null); setOffset(0); }}
+                  >
+                    All
+                  </button>
+                  {industryCategories.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className={`chip${industry === c.id ? " active" : ""}`}
+                      onClick={() => {
+                        setIndustry(industry === c.id ? null : c.id);
+                        setOffset(0);
+                      }}
+                      title={`${c.count} application${c.count === 1 ? "" : "s"}`}
+                    >
+                      {c.label}{" "}
+                      <span className="lp-pill-count">{c.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {appsError && <div className="inline-error">{appsError}</div>}
 
             {appsLoading && !appsError && (
