@@ -29,6 +29,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from app.services import industry_categories
 from app.supabase_client import get_admin_client
 
 from .scoring import ScoreResult
@@ -55,13 +56,28 @@ def _is_stub_mode() -> bool:
     return val not in ("false", "0", "no")
 
 
-def _score(application_id: str, app_row: dict) -> ScoreResult:
-    """Dispatch to stub or real scorer based on AI_STUB env var."""
+def _score(
+    application_id: str,
+    app_row: dict,
+    *,
+    categories: list[dict],
+    slots_remaining: int,
+) -> ScoreResult:
+    """Dispatch to stub or real scorer based on AI_STUB env var.
+
+    The stub ignores `categories` / `slots_remaining` (industry fields stay
+    None). The real OpenRouter client uses them to classify alongside the
+    five score dimensions.
+    """
     if _is_stub_mode():
         log.info("AI_STUB=true — using deterministic stub scorer")
         return stub_module.score(application_id)
     log.info("AI_STUB=false — calling OpenRouter")
-    return openrouter_client.score_application(app_row)
+    return openrouter_client.score_application(
+        app_row,
+        categories=categories,
+        slots_remaining=slots_remaining,
+    )
 
 
 def _upsert_ai_screening(
@@ -89,15 +105,18 @@ def _upsert_ai_screening(
         "model": result.model,
         "ran_at": now,
         "error": None,
+        "industry_category_id": result.industry_category_id,
+        "industry_confidence": result.industry_confidence,
     }
     client.table("ai_screening").upsert(
         row, on_conflict="application_id,application_track"
     ).execute()
     log.info(
-        "Upserted ai_screening for application_id=%s track=%s overall=%.1f",
+        "Upserted ai_screening for application_id=%s track=%s overall=%.1f industry=%s",
         application_id,
         application_track,
         result.score_overall,
+        result.industry_category_id,
     )
 
 
@@ -195,8 +214,41 @@ def _process_record(record: dict) -> None:
         )
         return
 
-    # ── 3. Score ──────────────────────────────────────────────────────────
-    result = _score(application_id, app_row)
+    # ── 3. Score (load category list first so the LLM can choose) ─────────
+    cats = industry_categories.fetch_categories()
+    slots_remaining = max(0, industry_categories.CATEGORY_CAP - len(cats))
+    result = _score(
+        application_id,
+        app_row,
+        categories=cats,
+        slots_remaining=slots_remaining,
+    )
+
+    # ── 3a. New category creation if LLM proposed one and we have slots ───
+    if (
+        result.new_industry_proposal
+        and slots_remaining > 0
+        and result.industry_confidence is not None
+        and result.industry_confidence >= 0.7
+    ):
+        proposal = result.new_industry_proposal
+        created = industry_categories.create_category_if_under_cap(
+            category_id=proposal["id"],
+            label=proposal["label"],
+            created_by_app_id=application_id,
+        )
+        if created:
+            # Frozen dataclass — rebuild via dataclasses.replace to attach
+            # the newly-inserted category id so the upsert writes it.
+            from dataclasses import replace as _replace
+
+            result = _replace(result, industry_category_id=proposal["id"])
+            log.info(
+                "Created industry category %s (%s) from application_id=%s",
+                proposal["id"],
+                proposal["label"],
+                application_id,
+            )
 
     # ── 4. Upsert ai_screening ────────────────────────────────────────────
     _upsert_ai_screening(client, application_id, application_track, result)

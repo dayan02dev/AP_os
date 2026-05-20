@@ -554,6 +554,189 @@ def test_score_application_uses_new_model(monkeypatch):
     assert openrouter_client._MODEL == "google/gemini-2.5-flash"
 
 
+@patch.dict("os.environ", {"AI_STUB": "false"})
+@patch("workers.ai_screener.handler.get_admin_client")
+def test_handler_upserts_industry_category(mock_get_client, monkeypatch):
+    """When the real scorer returns an industry_category_id, the handler
+    must include it in the ai_screening upsert."""
+    from workers.ai_screener.handler import lambda_handler
+    from workers.ai_screener.scoring import ScoreResult
+
+    app_id = "aaaaaaaa-0000-0000-0000-0000aaaaaaaa"
+    app_row = {
+        "id": app_id,
+        "status": "submitted",
+        "basic_full_name": "Test",
+        "basic_org": "Org",
+        "problem_describe": "p",
+        "solution_describe": "robotic arm",
+        "solution_core_tech": "ros",
+    }
+
+    upsert_rows: list[dict] = []
+
+    def _make_table(name: str) -> MagicMock:
+        tbl = MagicMock()
+        select_chain = MagicMock()
+        select_chain.eq.return_value = select_chain
+        select_chain.maybe_single.return_value = select_chain
+        select_chain.execute.return_value = SimpleNamespace(data=app_row)
+        tbl.select.return_value = select_chain
+
+        def _upsert(row, **kwargs):
+            upsert_rows.append(row)
+            chain = MagicMock()
+            chain.execute.return_value = SimpleNamespace(data=[])
+            return chain
+
+        tbl.upsert.side_effect = _upsert
+
+        chain = MagicMock()
+        chain.execute.return_value = SimpleNamespace(data=[])
+        tbl.insert.return_value = chain
+
+        update_chain = MagicMock()
+        update_chain.eq.return_value = update_chain
+        update_chain.execute.return_value = SimpleNamespace(data=[])
+        tbl.update.return_value = update_chain
+        return tbl
+
+    fake_client = MagicMock()
+    fake_client.table.side_effect = _make_table
+    mock_get_client.return_value = fake_client
+
+    # Stub the category list + real scorer.
+    monkeypatch.setattr(
+        "workers.ai_screener.handler.industry_categories.fetch_categories",
+        lambda: [{"id": "robotics", "label": "Robotics", "is_seed": True}],
+    )
+
+    fake_result = ScoreResult(
+        score_problem=7.0,
+        score_solution=8.0,
+        score_tech=7.0,
+        score_founders=6.0,
+        score_commitment=7.0,
+        score_overall=7.2,
+        summary="ok",
+        model="google/gemini-2.5-flash",
+        raw_response="{}",
+        industry_category_id="robotics",
+        industry_confidence=0.92,
+        new_industry_proposal=None,
+    )
+    monkeypatch.setattr(
+        "workers.ai_screener.openrouter_client.score_application",
+        lambda app_row, categories, slots_remaining: fake_result,
+    )
+
+    event = _make_sqs_event({"application_id": app_id, "application_track": "tir"})
+    result = lambda_handler(event, None)
+
+    assert result["batchItemFailures"] == []
+    assert upsert_rows, "ai_screening was not upserted"
+    assert upsert_rows[0]["industry_category_id"] == "robotics"
+    assert upsert_rows[0]["industry_confidence"] == 0.92
+
+
+@patch.dict("os.environ", {"AI_STUB": "false"})
+@patch("workers.ai_screener.handler.get_admin_client")
+def test_handler_creates_new_category_when_under_cap(mock_get_client, monkeypatch):
+    """When LLM proposes a new category and slots remain + confidence ≥ 0.7,
+    the handler must INSERT the category row and write its id to ai_screening."""
+    from workers.ai_screener.handler import lambda_handler
+    from workers.ai_screener.scoring import ScoreResult
+
+    app_id = "bbbbbbbb-0000-0000-0000-0000bbbbbbbb"
+    app_row = {
+        "id": app_id,
+        "status": "submitted",
+        "basic_full_name": "Test",
+        "basic_org": "Org",
+        "problem_describe": "carbon",
+        "solution_describe": "DAC",
+        "solution_core_tech": "absorbent",
+    }
+
+    upsert_rows: list[dict] = []
+
+    def _make_table(name: str) -> MagicMock:
+        tbl = MagicMock()
+        select_chain = MagicMock()
+        select_chain.eq.return_value = select_chain
+        select_chain.maybe_single.return_value = select_chain
+        select_chain.execute.return_value = SimpleNamespace(data=app_row)
+        tbl.select.return_value = select_chain
+
+        def _upsert(row, **kwargs):
+            upsert_rows.append(row)
+            chain = MagicMock()
+            chain.execute.return_value = SimpleNamespace(data=[])
+            return chain
+
+        tbl.upsert.side_effect = _upsert
+
+        chain = MagicMock()
+        chain.execute.return_value = SimpleNamespace(data=[])
+        tbl.insert.return_value = chain
+
+        update_chain = MagicMock()
+        update_chain.eq.return_value = update_chain
+        update_chain.execute.return_value = SimpleNamespace(data=[])
+        tbl.update.return_value = update_chain
+        return tbl
+
+    fake_client = MagicMock()
+    fake_client.table.side_effect = _make_table
+    mock_get_client.return_value = fake_client
+
+    monkeypatch.setattr(
+        "workers.ai_screener.handler.industry_categories.fetch_categories",
+        lambda: [{"id": "robotics", "label": "Robotics", "is_seed": True}],
+    )
+
+    create_calls: list[dict] = []
+
+    def fake_create(*, category_id, label, created_by_app_id):
+        create_calls.append(
+            {"id": category_id, "label": label, "app_id": created_by_app_id}
+        )
+        return True
+
+    monkeypatch.setattr(
+        "workers.ai_screener.handler.industry_categories.create_category_if_under_cap",
+        fake_create,
+    )
+
+    fake_result = ScoreResult(
+        score_problem=7.0,
+        score_solution=8.0,
+        score_tech=7.0,
+        score_founders=6.0,
+        score_commitment=7.0,
+        score_overall=7.2,
+        summary="ok",
+        model="google/gemini-2.5-flash",
+        raw_response="{}",
+        industry_category_id=None,
+        industry_confidence=0.85,
+        new_industry_proposal={"id": "climate_tech", "label": "Climate Tech"},
+    )
+    monkeypatch.setattr(
+        "workers.ai_screener.openrouter_client.score_application",
+        lambda app_row, categories, slots_remaining: fake_result,
+    )
+
+    event = _make_sqs_event({"application_id": app_id, "application_track": "tir"})
+    result = lambda_handler(event, None)
+
+    assert result["batchItemFailures"] == []
+    assert len(create_calls) == 1
+    assert create_calls[0]["id"] == "climate_tech"
+    assert create_calls[0]["app_id"] == app_id
+    assert upsert_rows[0]["industry_category_id"] == "climate_tech"
+
+
 def test_score_application_no_categories_omits_industry(monkeypatch):
     """When categories is None/empty, industry fields stay None."""
     from workers.ai_screener import openrouter_client
