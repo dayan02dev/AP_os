@@ -11,6 +11,8 @@ from pathlib import Path
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from .._json_utils import extract_json_text
+
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "extract_evidence.txt"
 _PROMPT_TEXT = _PROMPT_PATH.read_text()
 
@@ -30,6 +32,6 @@ def run(state: dict, *, llm: BaseChatModel) -> dict:
     ]
     response = llm.invoke(messages)
     text = response.content if hasattr(response, "content") else str(response)
-    evidence = json.loads(text)
+    evidence = json.loads(extract_json_text(text))
 
     return {"evidence": evidence}

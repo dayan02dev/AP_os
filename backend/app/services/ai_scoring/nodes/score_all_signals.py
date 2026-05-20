@@ -13,6 +13,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
+from .._json_utils import extract_json_text
 from ..state import SignalScore
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts" / "signals"
@@ -84,7 +85,7 @@ def run(state: dict, *, llm: BaseChatModel) -> dict:
     ]
     response = llm.invoke(messages)
     text = response.content if hasattr(response, "content") else str(response)
-    parsed = _AllSignalsResponse.model_validate_json(text)
+    parsed = _AllSignalsResponse.model_validate_json(extract_json_text(text))
     return {
         "score_problem_impact":  parsed.problem_impact,
         "score_completeness":    parsed.completeness,

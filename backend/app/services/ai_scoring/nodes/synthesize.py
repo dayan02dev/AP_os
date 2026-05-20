@@ -14,6 +14,7 @@ from pathlib import Path
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from .._json_utils import extract_json_text
 from ..state import Round1Summary
 
 _BASE = Path(__file__).resolve().parent.parent
@@ -46,5 +47,5 @@ def run(state: dict, *, llm: BaseChatModel) -> dict:
     ]
     response = llm.invoke(messages)
     text = response.content if hasattr(response, "content") else str(response)
-    summary = Round1Summary.model_validate_json(text)
+    summary = Round1Summary.model_validate_json(extract_json_text(text))
     return {"summary_round_1": summary}
