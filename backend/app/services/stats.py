@@ -134,6 +134,10 @@ def _row_classify_text(row: dict) -> str:
     return " ".join(str(row.get(f) or "") for f in _CLASSIFY_FIELDS)
 
 
+# DEPRECATED 2026-05-20 — the leadership list endpoint now reads industry
+# from ai_screening.industry_category_id (joined to industry_categories).
+# Kept for one release so any in-flight callers don't break; delete after
+# 100% of apps have industry_category_id populated.
 def classify_industry(source: str | dict | None) -> tuple[str, str]:
     """Map free-text wizard data to an industry bucket.
 
@@ -150,10 +154,7 @@ def classify_industry(source: str | dict | None) -> tuple[str, str]:
     """
     if source is None:
         return OTHER_BUCKET
-    if isinstance(source, dict):
-        text = _row_classify_text(source)
-    else:
-        text = str(source)
+    text = _row_classify_text(source) if isinstance(source, dict) else str(source)
     if not text.strip():
         return OTHER_BUCKET
     s = text.lower()
