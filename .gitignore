@@ -59,3 +59,4 @@ __pycache__/
 *.pyc.superpowers/
 backend/scripts/import-prod-to-staging/.env.import
 backend/scripts/import-prod-to-staging/runs/
+backend/scripts/ai-scoring/runs/*.json
