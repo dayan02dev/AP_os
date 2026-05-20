@@ -2,7 +2,7 @@
 // Used in two modes:
 //   1. Dashboard tab: no per-component data available (list endpoint only
 //      returns overall). Caller passes `placeholder` and we render hint copy.
-//   2. AppDrawer: caller passes `scores` = { score_problem, score_solution,
+//   2. AppDrawer: caller passes `scores` = { score_problem, score_completeness,
 //      score_tech, score_founders, score_commitment }, each 0–10 or null.
 //
 // Keys match the ai_screening table columns; labels & weights mirror the
@@ -10,7 +10,7 @@
 
 const KEYS = [
   { id: "score_problem",    label: "Problem Impact & Importance",      weight: 22 },
-  { id: "score_solution",   label: "Completeness & Depth of Solution", weight: 30 },
+  { id: "score_completeness", label: "Completeness & Depth of Solution", weight: 30 },
   { id: "score_tech",       label: "Technical Depth",                  weight: 22 },
   { id: "score_founders",   label: "Behavioral Parameters",            weight: 14 },
   { id: "score_commitment", label: "Commitment",                       weight: 12 },

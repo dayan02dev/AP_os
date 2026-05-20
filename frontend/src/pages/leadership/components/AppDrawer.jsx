@@ -78,7 +78,7 @@ function renderProblemSolution(application) {
 function ComponentBars({ aiScreening }) {
   const components = [
     { key: "score_problem",    label: "Problem impact" },
-    { key: "score_solution",   label: "Completeness & depth" },
+    { key: "score_completeness", label: "Completeness & depth" },
     { key: "score_tech",       label: "Technical depth" },
     { key: "score_founders",   label: "Behavioural signal" },
     { key: "score_commitment", label: "Commitment" },
