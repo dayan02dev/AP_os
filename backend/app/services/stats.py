@@ -245,8 +245,18 @@ _PROJECT_FILLER_PREFIXES: tuple[str, ...] = (
     "we're working on ",
     "our solution is ",
     "our product is ",
+    "my solution is ",
+    "my product is ",
+    "the solution is ",
     "this is ",
+    "a ",
+    "an ",
+    "the ",
 )
+
+# Max words shown in the table cell. Leadership wants a 3-4 word
+# scan-able label, not a full sentence (spec §2 v2).
+_PROJECT_MAX_WORDS = 4
 
 
 def _strip_filler_prefix(text: str) -> str:
@@ -271,19 +281,17 @@ def _truncate_at_word(text: str, max_chars: int) -> str:
 
 
 def derive_project_name(row: dict | None) -> str | None:
-    """Short project name for the leadership Applications table (spec §2).
+    """Short 3-4 word project name for the leadership Applications table.
 
-    Algorithm:
+    Algorithm (spec §2 v2 — leadership wants a scan-able label, not a
+    full sentence):
       1. Source ``solution_describe``; fall back to ``basic_org`` if empty.
-      2. Take the first sentence (split on ``.``, ``?``, ``!`` followed by
-         whitespace, or newline).
-      3. Strip leading filler (e.g. "We're building ", "Our solution is ").
-      4. If the first sentence is < 20 chars and more text exists, take
-         the first 80 chars of the full description instead (also
-         filler-stripped).
-      5. If the first sentence is > 60 chars, truncate at the last word
-         boundary before 60 with a trailing ellipsis.
-      6. Capitalize the first character.
+      2. Take the first sentence (split on ``.``/``?``/``!`` + whitespace,
+         or newline).
+      3. Strip leading filler ("We're building ", "Our solution is ",
+         "A ", "The ", etc.) iteratively in case multiple stack.
+      4. Take the first 4 words.
+      5. Capitalize the first character. Append ``…`` if we truncated.
     """
     if not row:
         return None
@@ -296,25 +304,39 @@ def derive_project_name(row: dict | None) -> str | None:
     first = text
     for sep in (". ", "? ", "! ", "\n"):
         first = first.split(sep)[0]
-    first = first.strip().rstrip(".?!")
+    first = first.strip().rstrip(".?!,;:")
 
-    # Step 3: strip filler
-    first = _strip_filler_prefix(first)
-
-    # Step 4: if too short and more text exists, extend
-    if len(first) < 20 and len(text) > len(first):
-        extended = _strip_filler_prefix(text)
-        first = _truncate_at_word(extended, 80)
-
-    # Step 5: long first sentence → truncate at word boundary
-    elif len(first) > 60:
-        first = _truncate_at_word(first, 60)
+    # Step 3: strip filler — iterate so "Our solution is a robot" → "robot"
+    prev = None
+    while prev != first:
+        prev = first
+        first = _strip_filler_prefix(first)
 
     if not first:
         return None
 
-    # Step 6: capitalize
-    return first[0].upper() + first[1:]
+    # Step 4: first 4 words
+    words = first.split()
+    truncated = len(words) > _PROJECT_MAX_WORDS
+    capped = " ".join(words[:_PROJECT_MAX_WORDS])
+    # Strip trailing punctuation introduced by partial truncation.
+    capped = capped.rstrip(",.;:- ")
+    if not capped:
+        return None
+
+    # If after truncation we're left with something that doesn't look like
+    # a word (e.g. "1" because the sentence started with a list marker),
+    # fall back to basic_org so the cell isn't an opaque single character.
+    has_letter = any(c.isalpha() for c in capped)
+    if not has_letter:
+        org = (row.get("basic_org") or "").strip()
+        return org or None
+
+    if truncated:
+        capped = f"{capped}…"
+
+    # Step 5: capitalize first letter
+    return capped[0].upper() + capped[1:]
 
 
 # ─── Display ID derivation (spec §5) ────────────────────────────────────

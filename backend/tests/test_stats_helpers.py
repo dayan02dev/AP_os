@@ -28,45 +28,36 @@ def test_derive_project_name_strips_filler():
     assert name[0].isupper()
 
 
-def test_derive_project_name_first_sentence_kept_when_short():
+def test_derive_project_name_caps_at_four_words():
+    """Long first sentences truncate to 4 words + ellipsis."""
     row = {
         "solution_describe": (
-            "ESD-safe wearable for shop-floor technicians. Solves static "
-            "damage in semicon fabs."
-        )
-    }
-    assert (
-        stats.derive_project_name(row)
-        == "ESD-safe wearable for shop-floor technicians"
-    )
-
-
-def test_derive_project_name_no_truncation_when_under_60():
-    row = {
-        "solution_describe": (
-            "On-device speech-to-text for 22 Indian languages."
-        )
-    }
-    assert (
-        stats.derive_project_name(row)
-        == "On-device speech-to-text for 22 Indian languages"
-    )
-
-
-def test_derive_project_name_truncates_long_first_sentence():
-    row = {
-        "solution_describe": (
-            "A human-cobot assembly cell that lets factory workers train "
-            "robots by demonstration on a touchscreen UI."
+            "ESD-safe wearable for shop-floor technicians that ships in Q3."
         )
     }
     name = stats.derive_project_name(row)
     assert name is not None
-    assert len(name) <= 61  # 60 + ellipsis
+    # 4 words max → ESD-safe wearable for shop-floor + ellipsis
+    body = name.rstrip("…")
+    assert len(body.split()) <= 4
     assert name.endswith("…")
-    # Must break at a whitespace, not mid-word
-    body = name.rstrip("…").rstrip()
-    assert " " in body  # not a single mid-word fragment
+
+
+def test_derive_project_name_short_sentence_no_ellipsis():
+    """If the sentence already has <= 4 words, no ellipsis."""
+    row = {"solution_describe": "Microfluidic dengue test."}
+    name = stats.derive_project_name(row)
+    assert name == "Microfluidic dengue test"
+
+
+def test_derive_project_name_strips_a_an_the_filler():
+    """Leading 'A ' / 'An ' / 'The ' are filler; strip before counting words."""
+    row = {"solution_describe": "A cobot for warehouse picking and palletization."}
+    name = stats.derive_project_name(row)
+    assert name is not None
+    # 'A' is stripped; first 4 words of "cobot for warehouse picking and..." → "Cobot for warehouse picking…"
+    assert name.lower().startswith("cobot for warehouse picking")
+    assert name[0] == "C"
 
 
 def test_derive_project_name_falls_back_to_basic_org():
@@ -79,26 +70,13 @@ def test_derive_project_name_returns_none_when_blank():
     assert stats.derive_project_name(None) is None
 
 
-def test_derive_project_name_capitalizes_first_letter():
-    row = {"solution_describe": "a cobot for warehouse picking."}
+def test_derive_project_name_iterative_filler_strip():
+    """Filler stack ('Our solution is a robot') strips repeatedly."""
+    row = {"solution_describe": "Our solution is a robot arm for assembly lines."}
     name = stats.derive_project_name(row)
     assert name is not None
-    assert name[0] == "A"
-
-
-def test_derive_project_name_uses_extended_text_when_first_sentence_too_short():
-    """If the first sentence is < 20 chars but more text exists, use up to
-    80 chars of the full description."""
-    row = {
-        "solution_describe": (
-            "We do AI. We make foundation models for code generation and "
-            "developer tooling across many languages."
-        )
-    }
-    name = stats.derive_project_name(row)
-    assert name is not None
-    # First sentence "We do AI." is 9 chars (< 20) so we extend.
-    assert len(name) > 9
+    # 'Our solution is' + 'a' both strip; remaining starts with 'robot'
+    assert name.lower().startswith("robot")
 
 
 # ─── derive_stage_label (spec §4) ───────────────────────────────────────
