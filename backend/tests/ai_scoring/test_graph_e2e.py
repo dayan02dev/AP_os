@@ -36,9 +36,10 @@ def _evidence_response(sample_row):
     }
 
 
-def _signal_response(signal):
-    return {
-        "signal": signal, "score": 8,
+def _combined_signals_response():
+    """Single response containing all 5 SignalScore objects."""
+    sig = lambda name: {
+        "signal": name, "score": 7,
         "rationale": "Specific, evidence-anchored.",
         "evidence_citations": [{"source": "Q1", "quote": "x"}],
         "confidence_factors": {
@@ -47,6 +48,13 @@ def _signal_response(signal):
             "answer_granularity": 0.9,
         },
         "flags": [],
+    }
+    return {
+        "problem_impact":  sig("problem_impact"),
+        "completeness":    sig("completeness"),
+        "technical_depth": sig("technical_depth"),
+        "behavioural":     sig("behavioural"),
+        "commitment":      sig("commitment"),
     }
 
 
@@ -89,19 +97,14 @@ def _summary_response():
 
 
 def test_graph_end_to_end_happy_path(sample_application_row):
-    """Full graph traversal — Pass 1 → 5 scorers → Pass 3 → Pass 4 → done."""
+    """Full graph traversal — Pass 1 → combined scorer → Pass 3 → Pass 4 → done."""
     # Order of LLM calls in the graph (single LLM instance scripted):
     #   1× evidence extractor
-    #   5× signal scorers (order matters — graph fans out alphabetically
-    #      by signal name in our implementation)
+    #   1× combined signal scorer (all 5 signals in one call)
     #   1× synthesize
     scripted = [
         json.dumps(_evidence_response(sample_application_row)),
-        json.dumps(_signal_response("behavioural")),
-        json.dumps(_signal_response("commitment")),
-        json.dumps(_signal_response("completeness")),
-        json.dumps(_signal_response("problem_impact")),
-        json.dumps(_signal_response("technical_depth")),
+        json.dumps(_combined_signals_response()),
         json.dumps(_summary_response()),
     ]
     llm = FakeListChatModel(responses=scripted)
@@ -115,10 +118,7 @@ def test_graph_end_to_end_happy_path(sample_application_row):
         "tsp_context": None,
         "qg_retries": 0,
     }
-    # max_concurrency=1 forces sequential fan-out so FakeListChatModel
-    # (which uses a simple non-thread-safe counter) consumes responses in
-    # the scripted alphabetical order.
-    final = graph.invoke(initial_state, config={"max_concurrency": 1})
+    final = graph.invoke(initial_state)
 
     # Pass 1 ran
     assert "evidence" in final

@@ -1,9 +1,8 @@
 """LangGraph state-machine assembly.
 
 build_graph(llm) returns a compiled LangGraph App. Each pass is its own
-node; the 5 Pass-2 scorers fan out in parallel via standard LangGraph
-fan-in (each writes to a unique state slot, so no Send-based reducer
-is needed — LangGraph's default merge handles it).
+node; Pass 2 is a single combined scorer that scores all 5 signals in
+one LLM call instead of fanning out to 5 parallel nodes.
 """
 from __future__ import annotations
 
@@ -14,29 +13,20 @@ from .nodes.apply_caps import run as apply_caps_run
 from .nodes.compute_confidence import run as compute_conf_run
 from .nodes.extract_evidence import run as extract_evidence_run
 from .nodes.quality_gate import evaluate_summary
-from .nodes.score_signals import make_scorer_node
+from .nodes.score_all_signals import run as score_all_run
 from .nodes.synthesize import run as synthesize_run
 from .state import ScoringState
 
 
 MAX_QG_RETRIES = 3
-_SIGNAL_NAMES_SORTED = (
-    "behavioural", "commitment", "completeness",
-    "problem_impact", "technical_depth",
-)  # alphabetical so the fake-LLM test can script in known order
 
 
 def build_graph(*, llm: BaseChatModel):
     g = StateGraph(ScoringState)
 
     # ─── Nodes ──────────────────────────────────────────────────
-    # Note: node names must not collide with ScoringState keys, so scorer
-    # nodes are named "scorer_<sig>" while they write to "score_<sig>".
     g.add_node("extract_evidence", lambda s: extract_evidence_run(s, llm=llm))
-
-    for sig in _SIGNAL_NAMES_SORTED:
-        g.add_node(f"scorer_{sig}", make_scorer_node(sig, llm))
-
+    g.add_node("score_all_signals", lambda s: score_all_run(s, llm=llm))
     g.add_node("apply_caps", apply_caps_run)
     g.add_node("compute_confidence", compute_conf_run)
     g.add_node("synthesize", lambda s: synthesize_run(s, llm=llm))
@@ -44,12 +34,8 @@ def build_graph(*, llm: BaseChatModel):
 
     # ─── Edges ──────────────────────────────────────────────────
     g.add_edge(START, "extract_evidence")
-    # Fan out: evidence → 5 scorers
-    for sig in _SIGNAL_NAMES_SORTED:
-        g.add_edge("extract_evidence", f"scorer_{sig}")
-    # Fan in: all scorers → apply_caps. LangGraph waits for all parents.
-    for sig in _SIGNAL_NAMES_SORTED:
-        g.add_edge(f"scorer_{sig}", "apply_caps")
+    g.add_edge("extract_evidence", "score_all_signals")
+    g.add_edge("score_all_signals", "apply_caps")
     g.add_edge("apply_caps", "compute_confidence")
     g.add_edge("compute_confidence", "synthesize")
     g.add_edge("synthesize", "quality_gate_check")

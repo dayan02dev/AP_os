@@ -52,15 +52,30 @@ def _load_resume_meta(supabase, user_id: str | None, track: str) -> dict | None:
 
 
 def _build_llm():
-    """Real production LLM — only called when no fake is injected.
+    """Real production LLM via OpenRouter.
 
-    Imported lazily so the test path that injects a fake doesn't need
-    GOOGLE_API_KEY in the environment.
+    Lazy import so test paths that inject a fake don't require
+    langchain-openai installed nor OPENROUTER_API_KEY in env.
     """
-    from langchain.chat_models import init_chat_model
-    provider = os.environ.get("AI_SCORING_PROVIDER", "google_genai")
-    model = os.environ.get("AI_SCORING_MODEL", "gemini-2.5-flash")
-    return init_chat_model(model, model_provider=provider, temperature=0)
+    from langchain_openai import ChatOpenAI
+
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "OPENROUTER_API_KEY env var is required to run AI scoring."
+        )
+    return ChatOpenAI(
+        model=os.environ.get("AI_SCORING_MODEL", "google/gemini-2.5-flash"),
+        base_url=os.environ.get(
+            "AI_SCORING_BASE_URL", "https://openrouter.ai/api/v1"
+        ),
+        api_key=api_key,
+        temperature=0,
+        default_headers={
+            "HTTP-Referer": "https://apply.artpark.info",
+            "X-Title": "ARTPARK AI Scoring",
+        },
+    )
 
 
 def score_application(
@@ -96,7 +111,7 @@ def score_application(
         "resume_meta": resume_meta,
         "tsp_context": None,
         "qg_retries": 0,
-        "model": os.environ.get("AI_SCORING_MODEL", "gemini-2.5-flash"),
+        "model": os.environ.get("AI_SCORING_MODEL", "google/gemini-2.5-flash"),
         "started_at": datetime.now(timezone.utc),
     }
 

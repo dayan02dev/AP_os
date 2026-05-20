@@ -30,6 +30,21 @@ def _scripted_llm(sample_row):
         ),
         "recommendation": "ACCEPT within 14 days pending Patent Office confirmation and written LOI.",
     }
+    _combined_signals = {
+        sig: {
+            "signal": sig, "score": 7,
+            "rationale": "x",
+            "evidence_citations": [{"source": "Q1", "quote": "x"}],
+            "confidence_factors": {
+                "data_completeness": 0.9, "evidence_specificity": 0.9,
+                "internal_consistency": 0.9, "verifiability": 0.9,
+                "answer_granularity": 0.9,
+            },
+            "flags": [],
+        }
+        for sig in ("problem_impact", "completeness", "technical_depth",
+                    "behavioural", "commitment")
+    }
     return FakeListChatModel(responses=[
         # 1× evidence extractor
         json.dumps({
@@ -46,19 +61,8 @@ def _scripted_llm(sample_row):
             "derived": {"has_10x": True, "has_baseline_number": True,
                         "has_patent_keyword": False, "problem_word_count": 30},
         }),
-        # 5× signal scorers (alphabetical)
-        *[json.dumps({
-            "signal": sig, "score": 7,
-            "rationale": "x",
-            "evidence_citations": [{"source": "Q1", "quote": "x"}],
-            "confidence_factors": {
-                "data_completeness": 0.9, "evidence_specificity": 0.9,
-                "internal_consistency": 0.9, "verifiability": 0.9,
-                "answer_granularity": 0.9,
-            },
-            "flags": [],
-        }) for sig in ("behavioural", "commitment", "completeness",
-                       "problem_impact", "technical_depth")],
+        # 1× combined signal scorer (all 5 signals in one call)
+        json.dumps(_combined_signals),
         # 1-4× synthesize (may be retried by quality gate up to 3 times)
         json.dumps(_synthesize_response),
         json.dumps(_synthesize_response),
@@ -95,7 +99,6 @@ def test_score_application_runs_end_to_end(sample_application_row):
     result = score_application(
         application_id="app-uuid-1", track="tir",
         supabase=client, llm=llm,
-        graph_config={"max_concurrency": 1},
     )
     assert result["composite_percentage"] > 0
     assert result["summary_round_1"] is not None
