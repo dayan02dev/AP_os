@@ -79,6 +79,89 @@ def test_derive_project_name_iterative_filler_strip():
     assert name.lower().startswith("robot")
 
 
+# Brand-name preamble stripping (the 2026-05-20 v3 update — leadership
+# wanted the cell to describe what the project does, not echo "<Brand> is a")
+
+def test_derive_project_name_strips_brand_is_a_preamble():
+    """'<Brand> is a <description>' should drop the brand+verb+article."""
+    row = {"solution_describe": "Foucault is a full-stack defense platform."}
+    name = stats.derive_project_name(row)
+    assert name is not None
+    assert not name.lower().startswith("foucault")
+    assert name.lower().startswith("full-stack defense platform")
+
+
+def test_derive_project_name_strips_brand_is_designed_to():
+    """'<Brand> is designed to <verb> <desc>' strips through 'designed to'."""
+    row = {
+        "solution_describe": "Lino is designed to deliver smart packaging at scale."
+    }
+    name = stats.derive_project_name(row)
+    assert name is not None
+    assert not name.lower().startswith("lino")
+    # Remaining starts with the actual action: "deliver smart packaging..."
+    assert name.lower().startswith("deliver smart packaging")
+
+
+def test_derive_project_name_strips_two_word_brand():
+    """Two-word brand names ('Olive Orange is an X') strip correctly."""
+    row = {"solution_describe": "Olive Orange is an AI-powered nutrition app."}
+    name = stats.derive_project_name(row)
+    assert name is not None
+    assert not name.lower().startswith("olive orange")
+    assert name.lower().startswith("ai-powered nutrition app")
+
+
+def test_derive_project_name_keeps_long_subject_with_is():
+    """If the subject itself is descriptive (>3 words before 'is'), keep it.
+
+    'Pet healthcare in India is needed because...' — the noun phrase IS
+    the description; don't over-strip down to 'needed'.
+    """
+    row = {
+        "solution_describe": "Pet healthcare in India is underserved by current vets."
+    }
+    name = stats.derive_project_name(row)
+    assert name is not None
+    assert name.lower().startswith("pet healthcare in india")
+
+
+def test_derive_project_name_strips_label_prefix():
+    """Doc-style 'Solution:' / 'Answer:' labels get peeled before the
+    4-word window so we don't waste cells on the label."""
+    row = {
+        "solution_describe": "Solution: Accessible and scalable telemedicine for rural India."
+    }
+    name = stats.derive_project_name(row)
+    assert name is not None
+    assert not name.lower().startswith("solution")
+    assert name.lower().startswith("accessible and scalable")
+
+
+def test_derive_project_name_strips_quote_marker_noise():
+    """Sentences that start with '>>>' or list markers strip the junk
+    before counting words."""
+    row = {
+        "solution_describe": ">>> ANSWER Q11 START: Lino delivers smart packaging."
+    }
+    name = stats.derive_project_name(row)
+    assert name is not None
+    # ">>> ANSWER Q11 START:" → label-prefix strip removes the "Q11:"
+    # tail, so the cell lands on something readable rather than ">>> ANSWER".
+    assert not name.startswith(">")
+
+
+def test_derive_project_name_strips_to_infinitive():
+    """'To develop a smart X' should drop the 'To' marker."""
+    row = {"solution_describe": "To develop a smart wearable for ICU patients."}
+    name = stats.derive_project_name(row)
+    assert name is not None
+    assert not name.lower().startswith("to ")
+    assert name.lower().startswith("develop a smart wearable") or name.lower().startswith(
+        "smart wearable"
+    )
+
+
 # ─── derive_stage_label (spec §4) ───────────────────────────────────────
 
 

@@ -98,11 +98,16 @@ def create_category_if_under_cap(
 def categories_with_counts() -> dict[str, Any]:
     """Compose the payload used by `GET /leadership/industry-categories`.
 
+    Seed categories (``is_seed=true`` in the DB) are always returned even
+    when their count is 0 — leadership wants the canonical taxonomy locked
+    into the filter row, not hidden when no apps happen to match. Non-seed
+    (LLM-proposed) categories still only surface when they have at least
+    one application, otherwise the filter row would grow noisy fast.
+
     Returns:
         {
           "categories": [{"id", "label", "count"}, ...]
-                        sorted by count desc, is_seed desc, id asc;
-                        empty categories (count = 0) are hidden,
+                        sorted by count desc, is_seed desc, id asc,
           "total":      sum of all counts,
           "cap":        CATEGORY_CAP,
           "remaining_slots": CATEGORY_CAP - len(all_categories)
@@ -132,18 +137,20 @@ def categories_with_counts() -> dict[str, Any]:
         if cid:
             counts[cid] = counts.get(cid, 0) + 1
 
-    by_id = {c["id"]: c for c in cats}
     visible: list[dict[str, Any]] = []
-    for cid, n in counts.items():
-        cat = by_id.get(cid)
-        if not cat:
+    for cat in cats:
+        cid = cat["id"]
+        n = counts.get(cid, 0)
+        is_seed = bool(cat.get("is_seed", False))
+        # Lock seeds in; only show non-seeds once an app lands in them.
+        if not is_seed and n == 0:
             continue
         visible.append(
             {
                 "id": cid,
                 "label": cat["label"],
                 "count": n,
-                "is_seed": bool(cat.get("is_seed", False)),
+                "is_seed": is_seed,
             }
         )
 

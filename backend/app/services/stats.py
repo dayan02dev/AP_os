@@ -24,6 +24,7 @@ the route handler stays a thin compositor.
 from __future__ import annotations
 
 import logging
+import re
 
 from ..supabase_client import get_admin_client
 
@@ -249,9 +250,51 @@ _PROJECT_FILLER_PREFIXES: tuple[str, ...] = (
     "my product is ",
     "the solution is ",
     "this is ",
+    "to ",
     "a ",
     "an ",
     "the ",
+)
+
+# Leading non-letter junk: ">>>", "***", "1.", "1)", bullet dashes, etc.
+# Anchored so it only fires on prefix garbage — we don't want to strip
+# legit dashes in the middle of a name.
+_LEADING_NOISE_RE = re.compile(r"^[\s>#*\-•\d().:;]+")
+
+# Document-style labels people sometimes prefix to the answer field:
+# "Solution: ...", "Answer: ...", "Q11: ...", "Section 2:". Strip the
+# label so the descriptive sentence underneath becomes the candidate.
+_LABEL_PREFIX_RE = re.compile(
+    r"^(?:solution|answer|response|description|problem|q\s*\d+|section\s*\d+)\s*[:\-]\s*",
+    re.IGNORECASE,
+)
+
+# Subject-verb preamble: "<1-3 word subject> is/are/builds/aims-to/etc.
+# [purpose phrase] [article]". Strips brand-name preambles like
+# "Foucault is a", "Lino is designed to", "Olive Orange is an", so the
+# 4-word window lands on the actual product description.
+_SUBJECT_VERB_RE = re.compile(
+    r"""
+    ^
+    (?:[A-Za-z][\w\-']*)            # subject word 1
+    (?:\s+[A-Za-z][\w\-']*){0,2}    # optionally 2 more subject words
+    \s+
+    (?:                              # linking / action verb
+        is | are | was | were |
+        will\s+be | has\s+been | have\s+been |
+        provides? | offers? | delivers? | enables? |
+        builds? | creates? | develops? | designs? |
+        aims\s+to | seeks\s+to | strives\s+to |
+        focuses\s+on | works\s+on
+    )
+    \s+
+    (?:                              # optional purpose phrase / article
+        designed\s+to\s+ | built\s+to\s+ | meant\s+to\s+ |
+        going\s+to\s+ | here\s+to\s+ | able\s+to\s+ |
+        a\s+ | an\s+ | the\s+ | that\s+ | which\s+
+    )?
+    """,
+    re.IGNORECASE | re.VERBOSE,
 )
 
 # Max words shown in the table cell. Leadership wants a 3-4 word
@@ -268,30 +311,52 @@ def _strip_filler_prefix(text: str) -> str:
     return text
 
 
-def _truncate_at_word(text: str, max_chars: int) -> str:
-    """Truncate to at most ``max_chars`` chars, breaking at the last
-    whitespace boundary. Returns text with a trailing ellipsis."""
-    if len(text) <= max_chars:
+def _strip_all_filler(text: str) -> str:
+    """Iteratively strip stacked filler prefixes."""
+    prev = None
+    while prev != text:
+        prev = text
+        text = _strip_filler_prefix(text)
+    return text
+
+
+def _strip_subject_verb_preamble(text: str) -> str:
+    """If the sentence starts with a short '<Subject> is/aims-to/etc.'
+    preamble, drop it so the descriptive noun phrase becomes the head.
+
+    Only fires when the remainder still contains a real word — otherwise
+    we'd over-strip "Pet healthcare is needed" down to "needed".
+    """
+    m = _SUBJECT_VERB_RE.match(text)
+    if not m:
         return text
-    cut = text[:max_chars]
-    if " " in cut:
-        cut = cut.rsplit(" ", 1)[0]
-    cut = cut.rstrip(",.;:- ")
-    return f"{cut}…"
+    rest = text[m.end():].strip()
+    if not rest or not any(c.isalpha() for c in rest):
+        return text
+    # If what's left is a single word or starts with another preamble verb,
+    # the strip probably went too deep — keep the original.
+    if len(rest.split()) < 2:
+        return text
+    return rest
 
 
 def derive_project_name(row: dict | None) -> str | None:
     """Short 3-4 word project name for the leadership Applications table.
 
-    Algorithm (spec §2 v2 — leadership wants a scan-able label, not a
-    full sentence):
-      1. Source ``solution_describe``; fall back to ``basic_org`` if empty.
-      2. Take the first sentence (split on ``.``/``?``/``!`` + whitespace,
-         or newline).
-      3. Strip leading filler ("We're building ", "Our solution is ",
-         "A ", "The ", etc.) iteratively in case multiple stack.
-      4. Take the first 4 words.
-      5. Capitalize the first character. Append ``…`` if we truncated.
+    Goal: the cell should describe what the project *does*, not echo the
+    brand-name preamble. So "Foucault is a full-stack defense platform"
+    becomes "Full-stack defense platform", not "Foucault is a full-stack".
+
+    Algorithm:
+      1. Source ``solution_describe``; fall back to ``basic_org``.
+      2. Take the first sentence.
+      3. Strip leading noise (">>>", "*", "1.", etc.) and label prefixes
+         ("Solution:", "Q11:").
+      4. Iteratively strip filler ("We're building ", "A ", "The ", "To ").
+      5. Strip a short "<Subject> is/are/builds/aims-to [a/an/the]"
+         preamble if one is present.
+      6. Strip filler again (handles "Lino is designed to a foo" → "foo").
+      7. Take the first 4 words. Capitalize. Append ``…`` if truncated.
     """
     if not row:
         return None
@@ -306,16 +371,23 @@ def derive_project_name(row: dict | None) -> str | None:
         first = first.split(sep)[0]
     first = first.strip().rstrip(".?!,;:")
 
-    # Step 3: strip filler — iterate so "Our solution is a robot" → "robot"
-    prev = None
-    while prev != first:
-        prev = first
-        first = _strip_filler_prefix(first)
+    # Step 3: leading noise + label prefix
+    first = _LEADING_NOISE_RE.sub("", first).strip()
+    first = _LABEL_PREFIX_RE.sub("", first).strip()
+
+    # Step 4: strip filler — iterate so "Our solution is a robot" → "robot"
+    first = _strip_all_filler(first)
+
+    # Step 5: strip a brand-name preamble like "Foucault is a"
+    first = _strip_subject_verb_preamble(first)
+
+    # Step 6: strip filler again after preamble strip
+    first = _strip_all_filler(first)
 
     if not first:
         return None
 
-    # Step 4: first 4 words
+    # Step 7: first 4 words
     words = first.split()
     truncated = len(words) > _PROJECT_MAX_WORDS
     capped = " ".join(words[:_PROJECT_MAX_WORDS])
@@ -335,7 +407,6 @@ def derive_project_name(row: dict | None) -> str | None:
     if truncated:
         capped = f"{capped}…"
 
-    # Step 5: capitalize first letter
     return capped[0].upper() + capped[1:]
 
 

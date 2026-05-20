@@ -137,3 +137,58 @@ def test_categories_with_counts_payload(monkeypatch):
     ids = [c["id"] for c in payload["categories"]]
     assert ids == ["robotics", "ai", "climate"]
     assert payload["categories"][0]["count"] == 3
+
+
+def test_categories_with_counts_locks_in_zero_count_seeds(monkeypatch):
+    """Seed categories are always returned, even when no apps land in them.
+
+    Leadership wants the canonical 6+ seed industries pinned to the filter
+    bar regardless of current data, so they never 'disappear' between
+    deploys. Non-seed (LLM-created) categories still only show when used.
+    """
+    cats = [
+        # Two seeds with apps, one seed with none, plus an unused LLM-created
+        # category that should NOT appear in the payload.
+        {"id": "robotics", "label": "Robotics",  "is_seed": True,  "created_at": "2026-05-20T00:00:00Z"},
+        {"id": "ai",       "label": "AI",        "is_seed": True,  "created_at": "2026-05-20T00:00:00Z"},
+        {"id": "defense",  "label": "Defense",   "is_seed": True,  "created_at": "2026-05-20T00:00:00Z"},
+        {"id": "climate",  "label": "Climate",   "is_seed": False, "created_at": "2026-05-20T00:00:00Z"},
+    ]
+    assignments = [
+        {"industry_category_id": "robotics"},
+        {"industry_category_id": "robotics"},
+        {"industry_category_id": "ai"},
+    ]
+
+    client = MagicMock()
+
+    def table_router(name: str):
+        sub = MagicMock()
+        if name == "industry_categories":
+            sub.select.return_value.order.return_value.order.return_value.execute.return_value = (
+                SimpleNamespace(data=cats)
+            )
+        elif name == "ai_screening":
+            chain = sub.select.return_value
+            chain.not_.is_.return_value.limit.return_value.execute.return_value = (
+                SimpleNamespace(data=assignments)
+            )
+        return sub
+
+    client.table.side_effect = table_router
+    monkeypatch.setattr(industry_categories, "get_admin_client", lambda: client)
+
+    payload = industry_categories.categories_with_counts()
+
+    ids = [c["id"] for c in payload["categories"]]
+    # robotics and ai have counts; defense is a seed with 0 apps -> still present;
+    # climate is a non-seed with 0 apps -> filtered out.
+    assert "defense" in ids
+    assert "climate" not in ids
+    # Sorted by count desc, with the zero-count seed at the tail.
+    assert ids == ["robotics", "ai", "defense"]
+    by_id = {c["id"]: c for c in payload["categories"]}
+    assert by_id["defense"]["count"] == 0
+    assert by_id["robotics"]["count"] == 2
+    # total tracks actual assignments, not the locked-in seed count.
+    assert payload["total"] == 3
