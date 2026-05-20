@@ -639,3 +639,40 @@
 
 /* Note: .eir-mono, .eir-dim, and .eir-chip-btn are defined globally in
    ../styles.css and used as-is here. */
+
+
+/* ── Leadership Applications table (8-column redesign, spec 2026-05-20) ── */
+
+.lp-apps-table .lp-cell-project,
+.lp-apps-table .lp-cell-founder {
+  vertical-align: top;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  line-height: 1.35;
+}
+
+.lp-cell-primary {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.lp-cell-sub {
+  font-size: 12px;
+  color: var(--ink-dim);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lp-id-col {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", monospace);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ink-dim);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.lp-apps-table th.lp-id-col {
+  text-align: right;
+}
+
