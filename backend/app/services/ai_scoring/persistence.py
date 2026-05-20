@@ -6,7 +6,9 @@ Maps the in-memory signal names onto the existing ai_screening columns:
   technical_depth  → score_tech
   behavioural      → score_founders       (existing legacy column name)
   commitment       → score_commitment
-  composite (×100) → score_overall
+  composite (÷10)  → score_overall        (stored as 0-10 to match the
+                                            "/ 10 overall" label on the
+                                            leadership dashboard + drawer)
 """
 from __future__ import annotations
 
@@ -41,7 +43,11 @@ def persist_score(client, state: dict) -> None:
         if state.get(slot) is not None:
             payload[column] = state[slot].score
 
-    payload["score_overall"] = state.get("composite_percentage")
+    # composite_percentage is 0-100; UI labels are "/10" so divide.
+    composite_pct = state.get("composite_percentage")
+    payload["score_overall"] = (
+        round(composite_pct / 10, 1) if composite_pct is not None else None
+    )
     payload["confidence"]    = state.get("confidence_overall")
 
     # Summary as JSON-encoded text

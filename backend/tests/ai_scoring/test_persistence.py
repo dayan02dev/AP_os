@@ -46,7 +46,7 @@ def _state():
         "score_behavioural": _sig("behavioural", 6),
         "score_commitment": _sig("commitment", 7),
         "caps_applied": [],
-        "composite_percentage": 75.5,
+        "composite_percentage": 75.0,
         "strength_label": "STRONG",
         "confidence_overall": 0.85,
         "summary_round_1": Round1Summary(
@@ -70,7 +70,7 @@ def test_persist_writes_to_ai_screening():
     assert payload["score_tech"] == 9
     assert payload["score_founders"] == 6   # Behavioural → score_founders
     assert payload["score_commitment"] == 7
-    assert payload["score_overall"] == 75.5
+    assert payload["score_overall"] == 7.5   # composite 75.0 ÷ 10
     assert payload["model"] == "gemini-2.5-flash"
     assert payload["error"] is None
 

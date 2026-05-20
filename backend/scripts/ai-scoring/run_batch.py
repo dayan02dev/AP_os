@@ -53,12 +53,20 @@ def _build_supabase():
     )
 
 
-def _fetch_target_ids(sb, limit: int | None, app_id: str | None) -> list[str]:
+def _fetch_target_ids(
+    sb, limit: int | None, app_id: str | None, status: str | None,
+    newest_first: bool = True,
+) -> list[str]:
     if app_id:
         return [app_id]
-    q = sb.table("tir_applications").select("id, created_at").order(
-        "created_at", desc=False
+    # Order by submitted_at desc so the apps showing at the top of the
+    # leadership dashboard (newest first) get scored first — operator
+    # sees results immediately when refreshing.
+    q = sb.table("tir_applications").select("id, submitted_at, created_at").order(
+        "submitted_at", desc=newest_first
     )
+    if status:
+        q = q.eq("status", status)
     if limit:
         q = q.limit(limit)
     res = q.execute()
@@ -75,6 +83,8 @@ def main() -> int:
                    help="Single application UUID to score")
     p.add_argument("--skip-existing", action="store_true",
                    help="Skip applications that already have an ai_screening row")
+    p.add_argument("--status", type=str, default=None,
+                   help="Only score applications with this status (e.g. 'submitted')")
     args = p.parse_args()
 
     if not (args.limit or args.all or args.app_id):
@@ -83,7 +93,7 @@ def main() -> int:
 
     sb = _build_supabase()
 
-    target_ids = _fetch_target_ids(sb, args.limit, args.app_id)
+    target_ids = _fetch_target_ids(sb, args.limit, args.app_id, args.status)
 
     if args.skip_existing and not args.app_id:
         existing = sb.table("ai_screening").select("application_id").execute()
