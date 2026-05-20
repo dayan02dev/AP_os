@@ -2955,3 +2955,62 @@ These are inline fixes added to the relevant tasks:
 - `industry_categories.create_category_if_under_cap(category_id, label, created_by_app_id)` — kwargs in Task 2 match call sites in Task 4 and Task 5. ✅
 
 ---
+
+## Production Deploy Checklist (prod environment)
+
+Staging shipped on the `staging-role_based_dashboard` branch (commits
+e953f05 → 7e2c3eb, 2026-05-20). Migration 017 was applied to the staging
+Supabase project (`exqmxvdtcsvpgtftwjml`) out-of-band on the same day.
+
+When promoting to prod:
+
+1. **Confirm the Lambda env has `OPENROUTER_API_KEY` set** (staging already does;
+   prod stack is `artpark-eir-api` in `ap-south-1`). The handler reads
+   `OPENROUTER_API_KEY` at runtime; missing key + `AI_STUB=false` would
+   raise.
+
+2. **Deploy the backend Lambda** (push the merged branch). The list
+   endpoint is tolerant of `industry_category_id = NULL` and
+   `display_seq = NULL`, so deploying backend before running the migration
+   is safe (rows just show `—` and the placeholder ID).
+
+3. **Run migration 017** in the prod Supabase SQL editor. Paste the
+   contents of `backend/migrations/017_leadership_table_redesign.sql`
+   verbatim. Verify with:
+   ```sql
+   SELECT COUNT(*) FROM industry_categories;        -- expect 7
+   SELECT MAX(display_seq) FROM tir_applications;   -- expect 26000 + N_tir
+   SELECT MAX(display_seq) FROM sip_applications;   -- expect 26000 + N_sip
+   ```
+
+4. **Run the backfill** pointed at prod (dry-run first):
+   ```bash
+   cd backend
+   OPENROUTER_API_KEY=$PROD_OPENROUTER_KEY \
+     SUPABASE_URL=$PROD_SUPABASE_URL \
+     SUPABASE_SERVICE_ROLE_KEY=$PROD_SERVICE_ROLE_KEY \
+     python -m scripts.backfill_industry --dry-run --limit 5
+   ```
+   Review the log: did the LLM pick sensible categories for the first 5
+   prod apps? If yes, drop `--dry-run` and `--limit` and run for real
+   (~$0.05 for ~65 apps).
+
+5. **Deploy the frontend** to prod via Vercel (push to main / production
+   branch). Frontend is fully reversible — redeploy previous build if
+   something looks off.
+
+6. **Smoke test** on https://apply.artpark.info/leadership:
+   - 8-column table renders
+   - `display_id`s are `TIR-26xxx` / `SIP-26xxx`
+   - Industry pills populated and counts > 0
+   - Drawer header reads `TIR-26xxx · TIR` / project_name / founder · org · "Submitted Nd ago"
+   - Search "26013" or "TIR-26013" finds the row
+
+**Rollback notes:**
+- The migration is hard to reverse cleanly (display_seq SET NOT NULL).
+  Prefer rolling forward with a fix migration.
+- Frontend: redeploy previous build.
+- Industry classifications are stored — if the LLM provider has an
+  outage, the existing data stays intact.
+
+---
