@@ -398,3 +398,205 @@ def test_handler_failed_record_appears_in_batchItemFailures(mock_get_client):
     assert "msg-0" not in failed_ids, "Good record incorrectly appears in batchItemFailures"
     # Bad record MUST be in failures.
     assert "msg-1" in failed_ids, "Bad record missing from batchItemFailures"
+
+
+# ─── openrouter_client industry tests ────────────────────────────────────────
+
+
+def _openrouter_response_text(content_json: str) -> str:
+    """Wrap a model-content string in the OpenRouter outer envelope.
+
+    Mirrors what the real API returns so the parser exercises both layers.
+    """
+    escaped = json.dumps(content_json)
+    return f'{{"choices":[{{"message":{{"content":{escaped}}}}}]}}'
+
+
+def test_score_application_includes_categories_in_prompt(monkeypatch):
+    """The category list and slots_remaining must appear in the user
+    message so the LLM can pick or propose appropriately."""
+    from workers.ai_screener import openrouter_client
+
+    captured: dict = {}
+
+    inner = json.dumps(
+        {
+            "problem": 7,
+            "solution": 8,
+            "tech": 7,
+            "founders": 6,
+            "commitment": 7,
+            "summary": "ok",
+            "industry": {
+                "category_id": "robotics",
+                "industry_confidence": 0.9,
+            },
+        }
+    )
+    envelope = _openrouter_response_text(inner)
+
+    class _Resp:
+        text = envelope
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        def json(self):
+            return json.loads(envelope)
+
+    class _Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, headers, json):
+            captured["payload"] = json
+            return _Resp()
+
+    monkeypatch.setattr(openrouter_client.httpx, "Client", _Client)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    categories = [
+        {"id": "robotics", "label": "Robotics & Automation", "is_seed": True},
+        {"id": "ai", "label": "Artificial Intelligence", "is_seed": True},
+    ]
+
+    result = openrouter_client.score_application(
+        app_row={
+            "basic_full_name": "Test",
+            "problem_describe": "warehouse picking is slow",
+            "solution_describe": "an autonomous robot arm",
+            "solution_core_tech": "vision + ROS",
+        },
+        categories=categories,
+        slots_remaining=10,
+    )
+
+    assert result.industry_category_id == "robotics"
+    assert result.industry_confidence == 0.9
+    assert result.new_industry_proposal is None
+
+    user_msg = captured["payload"]["messages"][1]["content"]
+    assert "robotics" in user_msg
+    assert "Robotics & Automation" in user_msg
+    assert "slots_remaining" in user_msg.lower()
+
+
+def test_score_application_handles_new_category_proposal(monkeypatch):
+    """When LLM proposes a new category, ScoreResult.new_industry_proposal
+    is populated and industry_category_id stays None — the handler decides
+    whether to create the new category row."""
+    from workers.ai_screener import openrouter_client
+
+    inner = json.dumps(
+        {
+            "problem": 7,
+            "solution": 8,
+            "tech": 7,
+            "founders": 6,
+            "commitment": 7,
+            "summary": "ok",
+            "industry": {
+                "new_category": {"id": "climate_tech", "label": "Climate Tech"},
+                "industry_confidence": 0.85,
+            },
+        }
+    )
+    envelope = _openrouter_response_text(inner)
+
+    class _Resp:
+        text = envelope
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        def json(self):
+            return json.loads(envelope)
+
+    class _Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, *a, **kw):
+            return _Resp()
+
+    monkeypatch.setattr(openrouter_client.httpx, "Client", _Client)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    result = openrouter_client.score_application(
+        app_row={"solution_describe": "carbon capture"},
+        categories=[{"id": "ai", "label": "AI", "is_seed": True}],
+        slots_remaining=11,
+    )
+
+    assert result.industry_category_id is None
+    assert result.new_industry_proposal == {"id": "climate_tech", "label": "Climate Tech"}
+    assert result.industry_confidence == 0.85
+
+
+def test_score_application_uses_new_model(monkeypatch):
+    """The model constant must be google/gemini-2.5-flash."""
+    from workers.ai_screener import openrouter_client
+
+    assert openrouter_client._MODEL == "google/gemini-2.5-flash"
+
+
+def test_score_application_no_categories_omits_industry(monkeypatch):
+    """When categories is None/empty, industry fields stay None."""
+    from workers.ai_screener import openrouter_client
+
+    inner = json.dumps(
+        {
+            "problem": 7,
+            "solution": 8,
+            "tech": 7,
+            "founders": 6,
+            "commitment": 7,
+            "summary": "ok",
+        }
+    )
+    envelope = _openrouter_response_text(inner)
+
+    class _Resp:
+        text = envelope
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        def json(self):
+            return json.loads(envelope)
+
+    class _Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, *a, **kw):
+            return _Resp()
+
+    monkeypatch.setattr(openrouter_client.httpx, "Client", _Client)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    result = openrouter_client.score_application(app_row={"basic_full_name": "X"})
+    assert result.industry_category_id is None
+    assert result.industry_confidence is None
+    assert result.new_industry_proposal is None

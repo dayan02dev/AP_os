@@ -32,6 +32,11 @@ class ScoreResult:
 
     score_integrity is intentionally absent — it stays NULL in Phase 1 and
     the worker sets it to None when upserting to ai_screening.
+
+    Industry fields (added 2026-05-20) are optional so the stub can keep
+    returning None for them. The OpenRouter client populates them from the
+    same single LLM call that produces the scores; the handler may then
+    insert a new category row from `new_industry_proposal` before upserting.
     """
 
     score_problem: float
@@ -43,6 +48,9 @@ class ScoreResult:
     summary: str
     model: str
     raw_response: str
+    industry_category_id: str | None = None
+    industry_confidence: float | None = None
+    new_industry_proposal: dict | None = None
 
 
 def compute_overall(
