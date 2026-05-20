@@ -6,6 +6,7 @@
 // pills so the design space stays visible.
 
 import { useState } from "react";
+import AISummaryBlock from "../components/AISummaryBlock.jsx";
 
 const CATEGORY_BARS = [
   { key: "score_problem",    label: "Problem impact" },
@@ -42,7 +43,6 @@ function shortId(uid) {
 function ScoreTab({ aiScreening }) {
   const overall = aiScreening?.score_overall;
   const hasOverall = typeof overall === "number" && Number.isFinite(overall);
-  const isStub = !!(aiScreening?.summary && /\bstub mode\b/i.test(aiScreening.summary));
   return (
     <div className="ai-panel-body">
       <span className="ai-score-eyebrow">Composite score</span>
@@ -71,11 +71,10 @@ function ScoreTab({ aiScreening }) {
 
       {aiScreening?.summary && (
         <div className="ai-summary">
-          <div className="head">
-            AI Summary
-            {isStub && <span className="stub-badge">STUB</span>}
+          <div className="head">AI Summary</div>
+          <div className="body">
+            <AISummaryBlock aiScreening={aiScreening} />
           </div>
-          <div className="body">{aiScreening.summary}</div>
         </div>
       )}
 

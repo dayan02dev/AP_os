@@ -11,6 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
 import AssignReviewersModal from "../modals/AssignReviewersModal.jsx";
 import StatusChangeModal from "../modals/StatusChangeModal.jsx";
+import AISummaryBlock from "./AISummaryBlock.jsx";
 
 const STATUS_DOT_COLOR = {
   submitted:        "blue",
@@ -219,10 +220,10 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
                 <ComponentBars aiScreening={aiScreening} />
                 {aiScreening.summary && (
                   <div style={{ marginTop: "var(--s-3)" }}>
-                    <span className="section-eyebrow">Summary</span>
-                    <p style={{ marginTop: "var(--s-2)", color: "var(--ink-soft)", lineHeight: 1.55 }}>
-                      {aiScreening.summary}
-                    </p>
+                    <span className="section-eyebrow">AI summary</span>
+                    <div style={{ marginTop: "var(--s-2)" }}>
+                      <AISummaryBlock aiScreening={aiScreening} />
+                    </div>
                   </div>
                 )}
               </>
