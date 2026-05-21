@@ -185,9 +185,14 @@
 }
 .lp-funnel-bar-n {
   position: absolute;
-  right: 10px; top: 50%; transform: translateY(-50%);
+  right: 8px; top: 50%; transform: translateY(-50%);
   font-size: 12px; font-weight: 600;
   color: var(--ink);
+  /* Backing chip keeps the number readable whether it sits over the filled
+     bar (dark) or the empty track (light). */
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  padding: 1px 7px;
+  border-radius: 10px;
 }
 .lp-funnel-meta { display: flex; flex-direction: column; gap: 2px; }
 .lp-funnel-label { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
@@ -260,7 +265,7 @@
 .lp-ind { display: flex; flex-direction: column; gap: 10px; }
 .lp-ind-row {
   display: grid;
-  grid-template-columns: 200px 1fr;
+  grid-template-columns: 200px 1fr auto;
   gap: 14px;
   align-items: center;
 }
@@ -270,11 +275,14 @@
   height: 100%;
   background: color-mix(in srgb, var(--accent) 75%, var(--ink));
   transition: width 300ms;
+  min-width: 2px;
 }
 .lp-ind-n {
-  position: absolute;
-  right: 8px; top: 50%; transform: translateY(-50%);
   font-size: 11px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  min-width: 72px;
+  text-align: right;
 }
 .lp-ind-n strong { color: var(--ink); font-weight: 600; }
 

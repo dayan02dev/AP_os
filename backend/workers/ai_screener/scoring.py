@@ -37,6 +37,12 @@ class ScoreResult:
     returning None for them. The OpenRouter client populates them from the
     same single LLM call that produces the scores; the handler may then
     insert a new category row from `new_industry_proposal` before upserting.
+
+    project_name (added 2026-05-21) is the founder-stated venture name the
+    LLM lifts from the application text — a 3-4 word scan-able label. Stays
+    None in stub mode (the stub only sees the application_id, not the row),
+    in which case the leadership router falls back to the solution_describe
+    heuristic.
     """
 
     score_problem: float
@@ -51,6 +57,7 @@ class ScoreResult:
     industry_category_id: str | None = None
     industry_confidence: float | None = None
     new_industry_proposal: dict | None = None
+    project_name: str | None = None
 
 
 def compute_overall(

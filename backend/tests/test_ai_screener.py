@@ -783,3 +783,81 @@ def test_score_application_no_categories_omits_industry(monkeypatch):
     assert result.industry_category_id is None
     assert result.industry_confidence is None
     assert result.new_industry_proposal is None
+
+
+# ─── openrouter_client project_name tests (added 2026-05-21) ──────────────
+
+
+def test_parse_project_name_sanitises():
+    """_parse_project_name trims, caps at 4 words, capitalises, drops junk."""
+    from workers.ai_screener.openrouter_client import _parse_project_name
+
+    assert _parse_project_name({"project_name": "autonomous warehouse robots"}) == (
+        "Autonomous warehouse robots"
+    )
+    # >4 words → truncated to 4
+    assert _parse_project_name(
+        {"project_name": "a smart wearable for icu patients today"}
+    ) == "A smart wearable for"
+    # whitespace + quotes + trailing punctuation collapse
+    assert _parse_project_name({"project_name": '  "Lino smart packaging."  '}) == (
+        "Lino smart packaging"
+    )
+    # missing / blank / non-string / no-alpha → None
+    assert _parse_project_name({}) is None
+    assert _parse_project_name({"project_name": ""}) is None
+    assert _parse_project_name({"project_name": 123}) is None
+    assert _parse_project_name({"project_name": "123 !!!"}) is None
+
+
+def test_score_application_extracts_project_name(monkeypatch):
+    """A project_name in the LLM JSON lands on ScoreResult.project_name."""
+    from workers.ai_screener import openrouter_client
+
+    inner = json.dumps(
+        {
+            "problem": 7,
+            "solution": 8,
+            "tech": 7,
+            "founders": 6,
+            "commitment": 7,
+            "summary": "ok",
+            "project_name": "Autonomous water cleaning robot",
+            "industry": {"category_id": "robotics", "industry_confidence": 0.9},
+        }
+    )
+    envelope = _openrouter_response_text(inner)
+
+    class _Resp:
+        text = envelope
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        def json(self):
+            return json.loads(envelope)
+
+    class _Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, *a, **kw):
+            return _Resp()
+
+    monkeypatch.setattr(openrouter_client.httpx, "Client", _Client)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    result = openrouter_client.score_application(
+        app_row={"solution_describe": "a robot that cleans water surfaces"},
+        categories=[{"id": "robotics", "label": "Robotics", "is_seed": True}],
+        slots_remaining=10,
+    )
+    assert result.project_name == "Autonomous water cleaning robot"
+    assert "project_name" in openrouter_client._SYSTEM_PROMPT

@@ -35,16 +35,22 @@ _TIMEOUT = 30.0
 
 _SYSTEM_PROMPT = (
     "You are an evaluator for ARTPARK's startup incubation programme. "
-    "Score the applicant on 5 dimensions (each 0.0–10.0) AND classify the "
+    "Score the applicant on 5 dimensions (each 0.0–10.0), classify the "
     "venture into an industry category from a closed list provided in the "
-    "user message. "
+    "user message, AND extract a short project name. "
     "Reply ONLY with valid JSON of the shape: "
     '{"problem": float, "solution": float, "tech": float, '
     '"founders": float, "commitment": float, '
     '"summary": string of up to 200 words, '
+    '"project_name": string of 3-4 words, '
     '"industry": {"category_id": "<existing id from the list>" '
     'OR "new_category": {"id": "<slug>", "label": "<display>"}, '
     '"industry_confidence": 0.0-1.0}}. '
+    "For `project_name`: give the venture the name its founder uses if one is "
+    "stated (a product/company/project name). If no explicit name is given, "
+    "write a 3-4 word noun phrase that says what the project IS or DOES (e.g. "
+    "'Autonomous warehouse robots', 'AI dengue diagnostics') — never a full "
+    "sentence, never the founder's personal name, never the affiliation. "
     "Use `category_id` for existing matches, `new_category` for proposals. "
     "Prefer reusing existing categories. Only propose a new one if NONE of "
     "the existing categories describes the venture's primary domain AND "
@@ -54,6 +60,10 @@ _SYSTEM_PROMPT = (
     "differentiator described in solution_core_tech. Fall back to 'other' "
     "only when no bucket dominates."
 )
+
+# Hard cap on words kept from the LLM's project_name, mirroring the
+# heuristic in stats.derive_project_name so the two paths render alike.
+_PROJECT_NAME_MAX_WORDS = 4
 
 
 class OpenRouterParseError(Exception):
@@ -123,6 +133,26 @@ def _parse_industry(parsed: dict) -> tuple[str | None, float | None, dict | None
         return cid, conf, None
 
     return None, conf, None
+
+
+def _parse_project_name(parsed: dict) -> str | None:
+    """Extract + sanitise the LLM-provided project name.
+
+    Trims to ``_PROJECT_NAME_MAX_WORDS`` words and capitalises the first
+    letter so it renders consistently with the heuristic fallback. Returns
+    None when the field is missing, blank, or has no alphabetic content.
+    """
+    raw = parsed.get("project_name")
+    if not isinstance(raw, str):
+        return None
+    name = " ".join(raw.split())  # collapse whitespace
+    name = name.strip().strip("\"'").rstrip(".?!,;:")
+    if not name or not any(c.isalpha() for c in name):
+        return None
+    words = name.split()
+    if len(words) > _PROJECT_NAME_MAX_WORDS:
+        name = " ".join(words[:_PROJECT_NAME_MAX_WORDS])
+    return name[0].upper() + name[1:]
 
 
 def _strip_json_fence(content: str) -> str:
@@ -219,6 +249,7 @@ def score_application(
 
     overall = compute_overall(p, sol, t, f, c)
     industry_id, industry_conf, new_proposal = _parse_industry(parsed)
+    project_name = _parse_project_name(parsed)
 
     return ScoreResult(
         score_problem=p,
@@ -233,4 +264,5 @@ def score_application(
         industry_category_id=industry_id,
         industry_confidence=industry_conf,
         new_industry_proposal=new_proposal,
+        project_name=project_name,
     )

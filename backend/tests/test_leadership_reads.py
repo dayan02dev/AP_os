@@ -230,6 +230,42 @@ def test_list_columns_contains_expected_fields():
         assert expected in cols, f"LIST_COLUMNS missing {expected!r}"
 
 
+# ─── Unit tier: /stats funnel + score sample shape ──────────────────────
+
+
+def test_get_stats_funnel_and_score_sample(client, _clear_overrides, monkeypatch):
+    """The /stats funnel reports all six stages from DB counts (drafted +
+    in_review wired to real data), and bundles the AI score sample for the
+    histogram."""
+    # 2 drafts per track (status='draft'), some submitted/shortlisted.
+    def _count_by_status(track, status_id):
+        return {"draft": 2, "shortlisted": 1, "interview": 1, "offered": 1}.get(
+            status_id, 0
+        )
+
+    monkeypatch.setattr(stats, "count_apps_by_status", _count_by_status)
+    monkeypatch.setattr(stats, "count_apps_total", lambda track: 30)
+    monkeypatch.setattr(stats, "count_profiles", lambda: 288)
+    monkeypatch.setattr(stats, "count_ai_screening_rows", lambda: 47)
+    monkeypatch.setattr(stats, "fetch_ai_score_overalls", lambda: [5.0, 6.0, 7.0])
+
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/stats", headers={"Authorization": "Bearer test-token"}
+    )
+    assert res.status_code == 200
+    body = res.json()
+
+    funnel = body["funnel"]
+    assert funnel["profiles"] == 288
+    assert funnel["drafted"] == 4          # 2 per track × 2 tracks
+    assert funnel["submitted"] == 60       # 30 per track × 2 tracks
+    assert funnel["in_review"] == 47       # screened-row count drives this
+    assert funnel["advanced"] == 4         # (shortlisted+interview) × 2 tracks
+    assert funnel["decided"] == 2          # offered × 2 tracks
+    assert body["ai_score_overalls"] == [5.0, 6.0, 7.0]
+
+
 # ─── Unit tier: router auth (401 on missing Bearer) ──────────────────────
 
 
@@ -374,6 +410,12 @@ def test_list_applications_row_has_new_shape(client, _clear_overrides, monkeypat
             p: {"id": "industry", "label": "Advanced Manufacturing"} for p in pairs
         },
     )
+    # No AI-extracted name → row falls back to the solution_describe heuristic.
+    monkeypatch.setattr(
+        applications_query,
+        "fetch_project_names_for",
+        lambda pairs: {p: None for p in pairs},
+    )
 
     app.dependency_overrides[get_current_user] = _override_user(["leadership"])
 
@@ -394,6 +436,53 @@ def test_list_applications_row_has_new_shape(client, _clear_overrides, monkeypat
     assert a["stage"]["raw"] == "Lab demos / proof of concept"
     assert a["ai_score_overall"] == 7.8
     assert a["project_name"].startswith("ESD-safe")
+
+
+def test_list_applications_prefers_ai_project_name(
+    client, _clear_overrides, monkeypatch
+):
+    """When ai_screening has a project_name, the list uses it over the
+    solution_describe heuristic."""
+    fake_rows = [
+        {
+            "id": "aaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "track": "tir",
+            "status": "submitted",
+            "basic_full_name": "Devika Shetty",
+            "basic_org": "Anna University",
+            "basic_email": "d@example.com",
+            "submitted_at": "2026-05-12T08:14:00Z",
+            "created_at": "2026-05-10T11:00:00Z",
+            "solution_describe": "ESD-safe wearable for shop-floor technicians.",
+            "solution_stage": "Lab demos / proof of concept",
+            "display_seq": 26013,
+        }
+    ]
+
+    def _fake_fetch(track, **kw):
+        return [dict(r) for r in fake_rows] if track == "tir" else []
+
+    monkeypatch.setattr(applications_query, "fetch_apps_for_track", _fake_fetch)
+    monkeypatch.setattr(
+        applications_query, "fetch_ai_scores_for", lambda pairs: {p: 7.8 for p in pairs}
+    )
+    monkeypatch.setattr(
+        applications_query, "fetch_industry_for_pairs", lambda pairs: {p: None for p in pairs}
+    )
+    monkeypatch.setattr(
+        applications_query,
+        "fetch_project_names_for",
+        lambda pairs: {p: "GuardBand wearable" for p in pairs},
+    )
+
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/applications?track=tir",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200
+    a = res.json()["applications"][0]
+    assert a["project_name"] == "GuardBand wearable"
 
 
 def test_list_applications_industry_filter_matches_category_id(
@@ -506,8 +595,11 @@ class TestLeadershipStagingIntegration:
         )
         assert r.status_code == 200, r.text
         body = r.json()
-        for key in ("totals", "funnel", "status_counts", "industry"):
+        for key in ("totals", "funnel", "status_counts", "ai_score_overalls"):
             assert key in body, f"missing key {key!r} in stats response"
+        # Funnel exposes all six pipeline stages.
+        for stage in ("profiles", "drafted", "submitted", "in_review", "advanced", "decided"):
+            assert stage in body["funnel"], f"missing funnel stage {stage!r}"
 
     @_staging_skip
     def test_stats_as_reviewer_returns_403(

@@ -70,6 +70,18 @@ async def get_stats() -> dict:
     sip_count = stats.count_apps_total("sip")
     apps_submitted = tir_count + sip_count
 
+    # Draft apps (started but not submitted) — feeds the funnel's "drafted"
+    # stage. count_apps_total above counts non-draft, so we query draft
+    # separately per track.
+    drafted = sum(
+        stats.count_apps_by_status(track, "draft") for track in stats.TRACKS
+    )
+
+    # Apps that have been AI-screened (have an ai_screening row), regardless
+    # of whether their status was advanced past `submitted`. Drives the
+    # funnel's "in review" stage off real data.
+    screened = stats.count_ai_screening_rows()
+
     advanced_past_review = sum(
         per_status_total[s] for s in stats.ADVANCED_PAST_REVIEW
     )
@@ -91,14 +103,26 @@ async def get_stats() -> dict:
     }
 
     # ─── Funnel ───────────────────────────────────────────────────────
-    # Each funnel bucket is the sum of its constituent statuses. Reuses the
-    # counts we already computed above — no extra DB calls.
+    # Six-stage pipeline reach, all from real Supabase counts:
+    #   profiles  — everyone signed up
+    #   drafted   — apps still in `draft` (started, not submitted)
+    #   submitted — non-draft apps (reached submit)
+    #   in_review — apps with an ai_screening row (reached AI review). Uses
+    #               the row count rather than status so it stays correct even
+    #               when the screener wrote scores without advancing status.
+    #   advanced  — shortlisted + interview (by status)
+    #   decided   — offered + onboarded (by status)
+    status_bucket = {
+        bucket: sum(per_status_total.get(s, 0) for s in statuses)
+        for bucket, statuses in stats.FUNNEL_BUCKETS.items()
+    }
     funnel = {
-        "profiles": profiles_signed_up,
-        **{
-            bucket: sum(per_status_total.get(s, 0) for s in statuses)
-            for bucket, statuses in stats.FUNNEL_BUCKETS.items()
-        },
+        "profiles":  profiles_signed_up,
+        "drafted":   drafted,
+        "submitted": apps_submitted,
+        "in_review": max(screened, status_bucket.get("in_review", 0)),
+        "advanced":  status_bucket.get("advanced", 0),
+        "decided":   status_bucket.get("decided", 0),
     }
 
     # Industry breakdown moved to GET /leadership/industry-categories so the
@@ -106,9 +130,13 @@ async def get_stats() -> dict:
     # LLM-classified ai_screening.industry_category_id) instead of running
     # the keyword classifier here.
     return {
-        "totals":        totals,
-        "funnel":        funnel,
-        "status_counts": status_counts,
+        "totals":            totals,
+        "funnel":            funnel,
+        "status_counts":     status_counts,
+        # Full list of AI overall scores (0–10) across all screened apps so
+        # the dashboard can render the score-distribution histogram from the
+        # complete set, not a capped page of the applications list.
+        "ai_score_overalls": scores,
     }
 
 
@@ -183,6 +211,7 @@ async def list_applications(
     # ─ 3. AI score join + filter ───────────────────────────────────────
     pairs = [(r["track"], r["id"]) for r in rows]
     scores = applications_query.fetch_ai_scores_for(pairs)
+    project_names = applications_query.fetch_project_names_for(pairs)
 
     filter_ai = ai_score_min is not None or ai_score_max is not None
     if filter_ai:
@@ -215,7 +244,8 @@ async def list_applications(
             "display_id":       stats.compose_display_id(track, r.get("display_seq")),
             "track":            track,
             "status":           r.get("status"),
-            "project_name":     stats.derive_project_name(r),
+            "project_name":     project_names.get((track, r["id"]))
+                                or stats.derive_project_name(r),
             "founder": {
                 "name":         r.get("basic_full_name"),
                 "affiliation":  r.get("basic_org"),
@@ -298,7 +328,8 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
         "track":                track,
         "display_seq":          app_row.get("display_seq"),
         "display_id":           stats.compose_display_id(track, app_row.get("display_seq")),
-        "project_name":         stats.derive_project_name(app_row),
+        "project_name":         (ai_screening or {}).get("project_name")
+                                or stats.derive_project_name(app_row),
         "founder": {
             "name":             app_row.get("basic_full_name"),
             "affiliation":      app_row.get("basic_org"),

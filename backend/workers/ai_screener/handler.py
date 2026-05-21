@@ -107,6 +107,7 @@ def _upsert_ai_screening(
         "error": None,
         "industry_category_id": result.industry_category_id,
         "industry_confidence": result.industry_confidence,
+        "project_name": result.project_name,
     }
     client.table("ai_screening").upsert(
         row, on_conflict="application_id,application_track"

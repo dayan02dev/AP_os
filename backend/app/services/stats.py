@@ -483,6 +483,28 @@ def count_apps_total(track: str) -> int:
         return 0
 
 
+def count_ai_screening_rows() -> int:
+    """count(*) of ai_screening rows — i.e. apps that have been AI-screened.
+
+    Used by the dashboard funnel's "in review" stage. Counts rows across
+    both tracks (the table is keyed by (application_id, application_track)).
+    An app that has been screened has exactly one row, so this is a clean
+    proxy for "reached AI review" even when the app's status hasn't been
+    advanced past `submitted` (e.g. scores written by the backfill script).
+    """
+    try:
+        res = (
+            get_admin_client()
+            .table("ai_screening")
+            .select("application_id", count="exact")
+            .execute()
+        )
+        return res.count or 0
+    except Exception as exc:
+        log.warning("stats.count_ai_screening_rows failed", extra={"err": str(exc)})
+        return 0
+
+
 def count_profiles() -> int:
     """count(*) of profiles — proxy for total signed-up users."""
     try:

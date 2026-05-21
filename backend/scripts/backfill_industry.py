@@ -72,19 +72,43 @@ _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 _MODEL = "google/gemini-2.5-flash"
 
 _SYSTEM_PROMPT = (
-    "You are classifying a startup application into an industry category. "
+    "You are classifying a startup application into an industry category and "
+    "extracting a short project name. "
     "Reply ONLY with valid JSON of the shape: "
-    '{"industry": {"category_id": "<existing id>" OR '
+    '{"project_name": "<3-4 words>", '
+    '"industry": {"category_id": "<existing id>" OR '
     '"new_category": {"id": "<slug>", "label": "<display>"}, '
     '"industry_confidence": 0.0-1.0}}. '
-    "Pick the best EXISTING match. Only propose a new category if NONE "
-    "of the existing categories describes the venture's primary domain "
+    "For `project_name`: give the venture the name its founder uses if one is "
+    "stated (a product/company/project name). If no explicit name is given, "
+    "write a 3-4 word noun phrase that says what the project IS or DOES (e.g. "
+    "'Autonomous warehouse robots', 'AI dengue diagnostics') — never a full "
+    "sentence, never the founder's personal name, never the affiliation. "
+    "For industry: pick the best EXISTING match. Only propose a new category "
+    "if NONE of the existing categories describes the venture's primary domain "
     "AND slots_remaining > 0 AND the new category would clearly fit "
     ">= 3 plausible future ventures. For multi-domain ventures (e.g. a "
     "medical robot), prefer the bucket matching the primary differentiator "
     "described in solution_core_tech. Fall back to 'other' only when no "
     "bucket dominates."
 )
+
+# Mirror stats.derive_project_name / openrouter_client cap so backfilled
+# names render identically to the live-screener path.
+_PROJECT_NAME_MAX_WORDS = 4
+
+
+def _sanitise_project_name(raw: Any) -> str | None:
+    """Trim the LLM project name to <= 4 words and capitalise it."""
+    if not isinstance(raw, str):
+        return None
+    name = " ".join(raw.split()).strip().strip("\"'").rstrip(".?!,;:")
+    if not name or not any(c.isalpha() for c in name):
+        return None
+    words = name.split()
+    if len(words) > _PROJECT_NAME_MAX_WORDS:
+        name = " ".join(words[:_PROJECT_NAME_MAX_WORDS])
+    return name[0].upper() + name[1:]
 
 
 def _build_user_message(
@@ -154,12 +178,16 @@ def _call_openrouter(user_message: str) -> dict:
     return json.loads(_strip_json_fence(content))
 
 
-def _classify(app_row: dict) -> tuple[str | None, float | None, dict | None]:
-    """Return ``(category_id, confidence, new_proposal)`` for one app."""
+def _classify(
+    app_row: dict,
+) -> tuple[str | None, float | None, dict | None, str | None]:
+    """Return ``(category_id, confidence, new_proposal, project_name)``."""
     cats = industry_categories.fetch_categories()
     slots_remaining = max(0, industry_categories.CATEGORY_CAP - len(cats))
     user_msg = _build_user_message(app_row, cats, slots_remaining)
     parsed = _call_openrouter(user_msg)
+
+    project_name = _sanitise_project_name(parsed.get("project_name"))
 
     ind = parsed.get("industry") or {}
     conf_raw = ind.get("industry_confidence")
@@ -170,17 +198,23 @@ def _classify(app_row: dict) -> tuple[str | None, float | None, dict | None]:
 
     new_cat = ind.get("new_category")
     if isinstance(new_cat, dict) and new_cat.get("id") and new_cat.get("label"):
-        return None, conf, {"id": str(new_cat["id"]), "label": str(new_cat["label"])}
+        return (
+            None,
+            conf,
+            {"id": str(new_cat["id"]), "label": str(new_cat["label"])},
+            project_name,
+        )
 
     cid = ind.get("category_id")
     if isinstance(cid, str) and cid:
-        return cid, conf, None
-    return None, conf, None
+        return cid, conf, None, project_name
+    return None, conf, None, project_name
 
 
 def _fetch_apps_to_backfill(track: str, client) -> list[dict]:
-    """Return non-draft apps on ``track`` that don't yet have
-    ``ai_screening.industry_category_id`` populated."""
+    """Return non-draft apps on ``track`` missing ai_screening
+    ``industry_category_id`` OR ``project_name`` — both are filled in one
+    LLM call, so an app needs a pass if either is still NULL."""
     table = f"{track}_applications"
     res = (
         client.table(table)
@@ -204,28 +238,42 @@ def _fetch_apps_to_backfill(track: str, client) -> list[dict]:
         chunk = ids[i : i + 500]
         sres = (
             client.table("ai_screening")
-            .select("application_id,industry_category_id")
+            .select("application_id,industry_category_id,project_name")
             .eq("application_track", track)
             .in_("application_id", chunk)
             .execute()
         )
         for r in sres.data or []:
-            if r.get("industry_category_id") is not None:
+            if (
+                r.get("industry_category_id") is not None
+                and r.get("project_name") is not None
+            ):
                 populated.add(r["application_id"])
 
     return [a for a in apps if a["id"] not in populated]
 
 
-def _update_industry(
+def _update_screening(
     client,
     application_id: str,
     track: str,
-    category_id: str,
+    category_id: str | None,
     confidence: float | None,
+    project_name: str | None,
 ) -> None:
-    """UPDATE the industry columns on ai_screening, or INSERT a minimal row
-    if none exists (an app submitted before AI screener landed has no
-    ai_screening row at all)."""
+    """UPDATE industry + project_name on ai_screening, or INSERT a minimal
+    row if none exists (an app submitted before AI screener landed has no
+    ai_screening row at all). Only writes the fields we resolved — a NULL
+    stays NULL so a partial result doesn't clobber an existing value."""
+    fields: dict[str, Any] = {}
+    if category_id is not None:
+        fields["industry_category_id"] = category_id
+        fields["industry_confidence"] = confidence
+    if project_name is not None:
+        fields["project_name"] = project_name
+    if not fields:
+        return
+
     res = (
         client.table("ai_screening")
         .select("application_id")
@@ -235,22 +283,16 @@ def _update_industry(
         .execute()
     )
     if res.data:
-        client.table("ai_screening").update(
-            {
-                "industry_category_id": category_id,
-                "industry_confidence": confidence,
-            }
-        ).eq("application_id", application_id).eq(
-            "application_track", track
-        ).execute()
+        client.table("ai_screening").update(fields).eq(
+            "application_id", application_id
+        ).eq("application_track", track).execute()
     else:
         client.table("ai_screening").insert(
             {
                 "application_id": application_id,
                 "application_track": track,
-                "industry_category_id": category_id,
-                "industry_confidence": confidence,
                 "flags": [],
+                **fields,
             }
         ).execute()
 
@@ -270,7 +312,7 @@ def run(*, dry_run: bool, limit: int | None) -> None:
             app_id = app["id"]
             log.info("[%s %d/%d] app_id=%s", track, i, len(apps), app_id)
             try:
-                cid, conf, new_proposal = _classify(app)
+                cid, conf, new_proposal, project_name = _classify(app)
             except Exception as exc:
                 log.warning("Classification failed for %s: %s", app_id, exc)
                 skipped += 1
@@ -291,21 +333,22 @@ def run(*, dry_run: bool, limit: int | None) -> None:
                         app_id,
                     )
 
-            if not cid:
-                log.info("No industry resolved for %s — leaving null", app_id)
+            if not cid and not project_name:
+                log.info("Nothing resolved for %s — leaving as-is", app_id)
                 skipped += 1
                 continue
 
             if dry_run:
                 log.info(
-                    "[dry-run] would set %s.industry_category_id=%s confidence=%s",
+                    "[dry-run] would set %s industry=%s confidence=%s name=%r",
                     app_id,
                     cid,
                     conf,
+                    project_name,
                 )
                 continue
 
-            _update_industry(client, app_id, track, cid, conf)
+            _update_screening(client, app_id, track, cid, conf, project_name)
             grand_total += 1
 
     log.info(

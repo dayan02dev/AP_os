@@ -195,6 +195,53 @@ def fetch_ai_scores_for(
     return out
 
 
+def fetch_project_names_for(
+    pairs: list[tuple[str, str]],
+) -> dict[tuple[str, str], str | None]:
+    """Bulk-load the AI-extracted `project_name` for `(track, id)` pairs.
+
+    The leadership list prefers this founder-stated name over the
+    solution_describe heuristic. One query per track; missing pairs (or
+    rows with a NULL project_name, e.g. stub-scored apps) map to None so
+    the caller can fall back to ``stats.derive_project_name``.
+    """
+    out: dict[tuple[str, str], str | None] = {(t, a): None for t, a in pairs}
+    if not pairs:
+        return out
+
+    by_track: dict[str, list[str]] = {t: [] for t in stats.TRACKS}
+    for t, a in pairs:
+        if t in by_track:
+            by_track[t].append(a)
+
+    for track, ids in by_track.items():
+        if not ids:
+            continue
+        try:
+            res = (
+                get_admin_client()
+                .table("ai_screening")
+                .select("application_id,project_name")
+                .eq("application_track", track)
+                .in_("application_id", ids)
+                .execute()
+            )
+            for row in res.data or []:
+                aid = row.get("application_id")
+                name = row.get("project_name")
+                if aid is None:
+                    continue
+                out[(track, aid)] = name or None
+        except Exception as exc:
+            log.warning(
+                "applications_query.fetch_project_names_for failed",
+                extra={"track": track, "err": str(exc)},
+            )
+            continue
+
+    return out
+
+
 # ─── Industry join helper ──────────────────────────────────────────────
 
 

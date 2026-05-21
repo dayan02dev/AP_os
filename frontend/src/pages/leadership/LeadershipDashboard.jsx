@@ -147,17 +147,23 @@ export default function LeadershipDashboard() {
     let cancelled = false;
     setStatsLoading(true);
     leadershipApi.getStats()
-      .then((s) => { if (!cancelled) { setStats(s); setStatsLoading(false); } })
-      .catch((err) => { if (!cancelled) { setStatsError(err?.message || "Failed to load stats."); setStatsLoading(false); } });
-    leadershipApi.listApplications({ limit: 500, offset: 0 })
-      .then((page) => {
+      .then((s) => {
         if (cancelled) return;
-        const ss = (page?.applications || [])
-          .map((a) => a.ai_score_overall)
+        setStats(s);
+        setStatsLoading(false);
+        // Score-distribution histogram reads the full set of AI overall
+        // scores the stats endpoint bundles in (all screened apps), not a
+        // capped page of the applications list.
+        const ss = (s?.ai_score_overalls || [])
           .filter((v) => typeof v === "number" && Number.isFinite(v));
         setScoreSample(ss);
       })
-      .catch(() => { if (!cancelled) setScoreSample([]); });
+      .catch((err) => {
+        if (cancelled) return;
+        setStatsError(err?.message || "Failed to load stats.");
+        setStatsLoading(false);
+        setScoreSample([]);
+      });
     leadershipApi.getIndustryCategories()
       .then((data) => {
         if (cancelled) return;
@@ -664,10 +670,10 @@ export default function LeadershipDashboard() {
                           <span className="lp-ind-label">{i.label}</span>
                           <div className="lp-ind-bar-wrap">
                             <div className="lp-ind-bar" style={{ width: `${pct}%` }} />
-                            <span className="lp-ind-n">
-                              <strong>{i.n}</strong> · {i.pct}%
-                            </span>
                           </div>
+                          <span className="lp-ind-n">
+                            <strong>{i.n}</strong> · {i.pct}%
+                          </span>
                         </button>
                       );
                     })}
