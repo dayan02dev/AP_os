@@ -90,6 +90,24 @@ const SECTIONS_SIP = [
           a.sipIncorporated === "Yes — Pvt Ltd, registered in India",
       },
       {
+        id: "sipDpiit",
+        kind: "dpiit",
+        prompt: "Is your startup DPIIT registered?",
+        help:
+          "ARTPARK can invest only in DPIIT-recognised startups, and we report this for every applicant. If you're recognised, share your recognition number and date — both are on your DPIIT certificate. \"Not yet\" is a perfectly valid answer.",
+        // Only an incorporated Pvt Ltd can hold DPIIT recognition, so this
+        // mirrors sipTRL's gate — the question is hidden for pre-incorporation
+        // applicants (who get routed to the fit-check screen anyway).
+        conditional: (a) =>
+          a.sipIncorporated === "Yes — Pvt Ltd, registered in India",
+        required: true,
+        // Frontend-only for now: deliberately absent from fieldMap-sip.js, so
+        // its answer rides AppSip's local-only channel instead of the backend
+        // row. See LOCAL_ONLY_IDS in AppSip.jsx. Wire a column + add this id to
+        // fieldMap-sip.js to persist it.
+        localOnly: true,
+      },
+      {
         id: "sipFounders",
         kind: "captable",
         prompt: "Who's on the cap table?",

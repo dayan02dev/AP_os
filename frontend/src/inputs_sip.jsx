@@ -175,6 +175,89 @@ function CapTableInput({ q, value, onChange }) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// DpiitInput — "Is your startup DPIIT registered?" A Yes/No choice that, when
+// "Yes" is picked, reveals the recognition number + recognition date inline on
+// the same page (one question, one screen — matches Raghu's spec).
+//
+// Value shape: { registered: "Yes …" | "No …", number: string, date: string }.
+//
+// NOTE: frontend-only for now. There's no sip_dpiit_* column yet, so the
+// wizard holds this answer in AppSip's local-only channel — nothing is PATCHed
+// to /sip-applications. See LOCAL_ONLY_IDS in AppSip.jsx.
+
+const DPIIT_OPTIONS = ["Yes — we're DPIIT recognised", "No — not yet"];
+
+function DpiitInput({ q, value, onChange }) {
+  const v = value && typeof value === "object" ? value : {};
+  const registered = v.registered || "";
+  const isYes = registered.startsWith("Yes");
+  // A recognition date can't be in the future — cap the picker at today.
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const pick = (opt) => {
+    // Clear the detail fields when switching to "No" so stale values don't
+    // linger if the applicant flips back and forth.
+    if (opt.startsWith("No")) onChange({ registered: opt, number: "", date: "" });
+    else onChange({ ...v, registered: opt });
+  };
+
+  return (
+    <div className="eir-dpiit">
+      <div className="eir-options">
+        {DPIIT_OPTIONS.map((opt, i) => {
+          const letter = String.fromCharCode(65 + i);
+          const selected = registered === opt;
+          return (
+            <button
+              key={opt}
+              type="button"
+              className={`eir-option ${selected ? "is-selected" : ""}`}
+              onClick={() => pick(opt)}
+            >
+              <span className="eir-option-key">{letter}</span>
+              <span className="eir-option-label">{opt}</span>
+              <span className="eir-option-check">{selected ? "●" : "○"}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {isYes && (
+        <div className="eir-dpiit-details">
+          <div className="eir-dpiit-field">
+            <label className="eir-mono eir-link-label" htmlFor="dpiit-number">
+              DPIIT recognition number
+            </label>
+            <input
+              id="dpiit-number"
+              type="text"
+              className="eir-input"
+              placeholder="e.g. DIPP123456"
+              value={v.number || ""}
+              onChange={(e) => onChange({ ...v, number: e.target.value })}
+              autoFocus
+            />
+          </div>
+          <div className="eir-dpiit-field">
+            <label className="eir-mono eir-link-label" htmlFor="dpiit-date">
+              Recognition date
+            </label>
+            <input
+              id="dpiit-date"
+              type="date"
+              className="eir-input eir-dpiit-date"
+              max={todayStr}
+              value={v.date || ""}
+              onChange={(e) => onChange({ ...v, date: e.target.value })}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Single-file evidence slot (pitch deck / cap-table file).
 // Backed by /sip-applications/me/evidence-files?kind=<k>. The backend stores
 // the file metadata in the corresponding sip_pitch_deck / sip_cap_table_file
@@ -744,6 +827,8 @@ export function SipQuestionInput(props) {
       return <DeclarationsInput {...props} />;
     case "captable":
       return <CapTableInput {...props} />;
+    case "dpiit":
+      return <DpiitInput {...props} />;
     case "sipPitchDeck":
       return <SingleEvidenceInput {...props} kind="pitch-deck" />;
     case "sipCapTableFile":
@@ -810,6 +895,14 @@ export function isAnsweredSip(q, value) {
       );
       return Math.abs(total - 100) < 0.01;
     }
+    case "dpiit": {
+      if (!value || typeof value !== "object" || !value.registered) return false;
+      // "Yes" requires both the recognition number and date; "No" stands alone.
+      if (value.registered.startsWith("Yes")) {
+        return !!(value.number && value.number.trim() && value.date);
+      }
+      return true;
+    }
     case "sipPitchDeck":
     case "sipCapTableFile":
       return !!(value && (value.file_uuid || value.name));
@@ -873,6 +966,16 @@ export function whyBlockedSip(q, value) {
         return `total share is ${totalRounded.toFixed(2)}% — must equal 100% exactly`;
       if (totalRounded < 99.99)
         return `total share is ${totalRounded.toFixed(2)}% — ${(100 - totalRounded).toFixed(2)}% still unallocated`;
+      return null;
+    }
+    case "dpiit": {
+      if (!value || typeof value !== "object" || !value.registered)
+        return "let us know if your startup is DPIIT registered";
+      if (value.registered.startsWith("Yes")) {
+        if (!value.number || !value.number.trim())
+          return "enter your DPIIT recognition number";
+        if (!value.date) return "enter your DPIIT recognition date";
+      }
       return null;
     }
     case "sipPitchDeck":

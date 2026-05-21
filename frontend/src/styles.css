@@ -951,6 +951,28 @@ kbd {
 .eir-option.is-selected .eir-option-check { color: var(--accent); }
 .eir-hint { font-size: 11px; color: var(--ink-dim); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 6px; }
 
+/* DPIIT registration — Yes/No reuses .eir-options; the recognition number +
+   date reveal inline under the choice when "Yes" is selected. */
+.eir-dpiit-details {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px dashed var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  animation: eir-dpiit-reveal 200ms ease;
+}
+.eir-dpiit-field { display: flex; flex-direction: column; gap: 4px; }
+.eir-dpiit-field .eir-link-label { padding-bottom: 2px; }
+/* The detail inputs sit below their labels, so they don't need the oversized
+   22px display size the standalone short-answer inputs use. */
+.eir-dpiit-field .eir-input { font-size: 18px; }
+.eir-dpiit-date { max-width: 240px; color-scheme: light; }
+@keyframes eir-dpiit-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* Links */
 .eir-links { display: flex; flex-direction: column; gap: 18px; }
 .eir-link-row {

@@ -80,6 +80,15 @@ const CELEBRATE_MESSAGES = [
   "Evidence uploaded. Home stretch.",
 ];
 
+// Questions flagged `localOnly: true` in questions_sip.jsx have no backend
+// column yet, so they can't ride the row-derived `answers` object. We hold
+// them in a small client-only channel (see localExtras below), mirrored to
+// localStorage so they survive a page reload during review. When the backend
+// grows the matching columns: drop the id from this set, add it to
+// fieldMap-sip.js, and the rest of the wizard treats it like any other answer.
+const LOCAL_ONLY_IDS = new Set(["sipDpiit"]);
+const LOCAL_EXTRAS_KEY = "sip_local_extras";
+
 function pickSlug(pathname) {
   const m = pathname.replace(/\/+$/, "").match(/^\/apply-sip(?:\/([^/]*))?$/);
   return m ? m[1] || "" : null;
@@ -161,6 +170,34 @@ export default function AppSip() {
   const [celebMsg, setCelebMsg] = useState("");
   const [prevPhase, setPrevPhase] = useState(null);
   const [viewingApp, setViewingApp] = useState(null);
+
+  // Frontend-only answers (questions in LOCAL_ONLY_IDS). Kept out of the
+  // backend `answers` row; persisted to localStorage so a reload mid-review
+  // doesn't wipe them. Remove this whole channel once these fields are wired
+  // to real columns.
+  const [localExtras, setLocalExtras] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(LOCAL_EXTRAS_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  });
+  const setLocalExtra = (qid, val) => {
+    setLocalExtras((prev) => {
+      const next = { ...prev, [qid]: val };
+      try {
+        localStorage.setItem(LOCAL_EXTRAS_KEY, JSON.stringify(next));
+      } catch {
+        /* storage disabled / over quota — keep it in memory only */
+      }
+      return next;
+    });
+  };
+  // Read/write the right channel for a given question id.
+  const valueFor = (qid) =>
+    LOCAL_ONLY_IDS.has(qid) ? localExtras[qid] : answers[qid];
+  const changeFor = (qid, val) =>
+    LOCAL_ONLY_IDS.has(qid) ? setLocalExtra(qid, val) : save({ [qid]: val });
 
   // Apply the SIP violet accent at the document level so it wins against
   // any --accent App.jsx set earlier in the session. Also apply the
@@ -440,8 +477,6 @@ export default function AppSip() {
     setPrevPhase(null);
   };
 
-  const handleAnswerChange = (qid, value) => save({ [qid]: value });
-
   const onUploadedReal = async (uploaded) => {
     const file =
       uploaded?.cv?.file instanceof File
@@ -542,7 +577,7 @@ export default function AppSip() {
           return;
         }
         if (phase === PHASES.QUESTION && currentFQ) {
-          const v = answers[currentFQ.q.id];
+          const v = valueFor(currentFQ.q.id);
           if (isAnsweredSip(currentFQ.q, v)) {
             e.preventDefault();
             goNextQuestion();
@@ -553,7 +588,7 @@ export default function AppSip() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, currentFQ, answers, stepIdx]);
+  }, [phase, currentFQ, answers, localExtras, stepIdx]);
 
   const totalSections = SECTIONS_SIP.length;
   const currentSection = currentFQ?.section || SECTIONS_SIP[sectionIdx];
@@ -709,9 +744,9 @@ export default function AppSip() {
               fq={currentFQ}
               total={totalQ}
               stepIdx={stepIdx}
-              value={answers[currentFQ.q.id]}
-              onChange={(v) => handleAnswerChange(currentFQ.q.id, v)}
-              onAnswerById={handleAnswerChange}
+              value={valueFor(currentFQ.q.id)}
+              onChange={(v) => changeFor(currentFQ.q.id, v)}
+              onAnswerById={changeFor}
               onNext={goNextQuestion}
               onPrev={goPrevQuestion}
               canPrev={stepIdx > 0}
@@ -751,7 +786,7 @@ export default function AppSip() {
           )}
           {phase === PHASES.REVIEW && (
             <ReviewSubmitPanel
-              answers={answers}
+              answers={{ ...answers, ...localExtras }}
               completion={completion}
               onSubmit={handleSubmit}
               locked={locked}
@@ -1294,6 +1329,14 @@ function ReviewSubmitPanel({
             : e?.name || JSON.stringify(e),
         )
         .join(", ");
+    // DPIIT registration { registered, number, date }.
+    if (v && typeof v === "object" && "registered" in v) {
+      if (v.registered && v.registered.startsWith("Yes")) {
+        const bits = [v.registered, v.number, v.date].filter(Boolean);
+        return bits.join(" · ");
+      }
+      return v.registered || "—";
+    }
     if (v && typeof v === "object" && v.name) return v.name;
     if (v && typeof v === "object") {
       const labels = { truthful: "Truthful", refChecks: "Reference checks", terms: "Terms accepted", newsletter: "Newsletter" };
@@ -1403,6 +1446,14 @@ function formatSipAnswerValue(q, value) {
     return q.items
       .map((it) => `  ${value[it.key] ? "[x]" : "[ ]"} ${it.label}`)
       .join("\n");
+  }
+  if (q.kind === "dpiit" && value && typeof value === "object") {
+    if (value.registered && value.registered.startsWith("Yes")) {
+      return [value.registered, value.number, value.date]
+        .filter(Boolean)
+        .join(" · ");
+    }
+    return value.registered || "(not provided)";
   }
   if (q.kind === "sipPitchDeck" || q.kind === "sipCapTableFile") {
     if (value && typeof value === "object" && value.name) {
