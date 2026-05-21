@@ -162,10 +162,15 @@ function CelebrationScreen({ message, onContinue }) {
   );
 }
 
-function DoneScreen({ answers, onRestart, submission, onBack, onDownload, questionPrompts }) {
+function DoneScreen({ answers, onRestart, submission, onBack, onDownload, questionPrompts, track = "tir" }) {
   const name = (answers?.fullName || "").split(" ")[0] || "there";
   const isPast = !!submission;
-  const stampId = submission?.id || ("TIR-" + Math.floor(Math.random() * 9000 + 1000));
+  // Track-aware cycle label so the SIP wizard doesn't read "TIR.2026" on its
+  // own receipt / past-submission screens. Falls back to the per-submission
+  // cycle when one was passed in (e.g. from the past-submissions list).
+  const cycleLabel = track === "sip" ? "SIP.2026" : "TIR.2026";
+  const idPrefix = track === "sip" ? "SIP-" : "TIR-";
+  const stampId = submission?.id || (idPrefix + Math.floor(Math.random() * 9000 + 1000));
   const stampDate = submission?.ts
     ? new Date(submission.ts).toISOString().slice(0, 10)
     : new Date().toISOString().slice(0, 10);
@@ -189,7 +194,7 @@ function DoneScreen({ answers, onRestart, submission, onBack, onDownload, questi
   return (
     <div className="eir-screen eir-done">
       <div className="eir-coord eir-mono">
-        <span>ARTPARK / TIR.2026</span>
+        <span>ARTPARK / {cycleLabel}</span>
         <span>{isPast ? `past submission · ${cycle || "archive"}` : "submission received ✓"}</span>
       </div>
       <div className="eir-done-body">

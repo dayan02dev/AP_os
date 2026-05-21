@@ -835,6 +835,7 @@ export default function AppSip() {
                   }}
                   onDownload={() => downloadSipResponses(targetAnswers, target)}
                   questionPrompts={QUESTION_PROMPTS_SIP}
+                  track="sip"
                 />
               );
             })()}
