@@ -215,14 +215,35 @@
   align-items: end;
 }
 .lp-hist-col { display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; }
+.lp-hist-col-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  width: 100%;
+}
+.lp-hist-col-btn:disabled,
+.lp-hist-col-btn.is-empty {
+  cursor: default;
+}
+.lp-hist-col-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .lp-hist-bar-wrap { width: 100%; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; position: relative; }
 .lp-hist-bar {
   width: 100%;
   background: var(--ink);
   min-height: 2px;
-  transition: height 400ms ease;
+  transition: height 400ms ease, background 120ms ease, opacity 120ms ease;
 }
 .lp-hist-bar.is-peak { background: var(--accent); }
+.lp-hist-bar.is-selected { background: var(--accent); }
+.lp-hist-col-btn:hover:not(:disabled) .lp-hist-bar { opacity: 0.78; }
+.lp-hist-col-btn:hover:not(:disabled) .lp-hist-bar.is-selected { opacity: 1; }
 .lp-hist-bar-n {
   font-size: 10px;
   color: var(--ink-soft);

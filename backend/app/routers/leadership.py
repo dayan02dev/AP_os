@@ -167,6 +167,7 @@ async def list_applications(
     industry: str | None = Query(default=None),
     ai_score_min: float | None = Query(default=None),
     ai_score_max: float | None = Query(default=None),
+    ai_score_bucket: int | None = Query(default=None, ge=0, le=9),
     search: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -177,6 +178,10 @@ async def list_applications(
       - status / track / search → pushed to PostgREST per-track
       - industry → keyword-classified post-fetch (no stored column yet)
       - ai_score_min/max → joined per-row from ai_screening, then filtered
+      - ai_score_bucket → integer 0..9, matches the dashboard histogram's
+        floor()-bucketing exactly (bucket i = [i, i+1), bucket 9 = [9, 10]).
+        Lets the histogram click-through filter the list with semantics
+        that line up with the bar the user clicked.
 
     Phase 1 scale (~hundreds of apps) means a Python-side filter pass on a
     capped-fetch is simpler than a two-step PostgREST join. See FETCH_CAP
@@ -213,7 +218,11 @@ async def list_applications(
     scores = applications_query.fetch_ai_scores_for(pairs)
     project_names = applications_query.fetch_project_names_for(pairs)
 
-    filter_ai = ai_score_min is not None or ai_score_max is not None
+    filter_ai = (
+        ai_score_min is not None
+        or ai_score_max is not None
+        or ai_score_bucket is not None
+    )
     if filter_ai:
         kept: list[dict[str, Any]] = []
         for r in rows:
@@ -225,6 +234,13 @@ async def list_applications(
                 continue
             if ai_score_max is not None and s > ai_score_max:
                 continue
+            if ai_score_bucket is not None:
+                # Mirror the frontend's Math.floor((s/10)*10) bucketing —
+                # clamp 10.0 into bucket 9 so the top bar's click-through
+                # finds perfect scores.
+                bucket = int(s) if s < 10 else 9
+                if bucket != ai_score_bucket:
+                    continue
             kept.append(r)
         rows = kept
 

@@ -131,6 +131,10 @@ export default function LeadershipDashboard() {
   const [industry, setIndustry] = useState(null);
   const [statusFilter, setStatusFilter] = useState(null);
   const [trackFilter, setTrackFilter] = useState(null);
+  // AI score bucket filter (0–9). Matches the histogram's floor()-bucketing
+  // exactly — bucket i covers scores [i, i+1), bucket 9 also catches 10.
+  // Set by clicking a histogram bar; the click also flips view to Applications.
+  const [scoreBucket, setScoreBucket] = useState(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [offset, setOffset] = useState(0);
@@ -202,6 +206,7 @@ export default function LeadershipDashboard() {
       industry: industry || undefined,
       status: statusFilter || undefined,
       track: trackFilter ? trackFilter.toLowerCase() : undefined,
+      ai_score_bucket: scoreBucket ?? undefined,
       search: search || undefined,
       limit: PAGE_SIZE,
       offset,
@@ -218,7 +223,7 @@ export default function LeadershipDashboard() {
         setAppsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [industry, statusFilter, trackFilter, search, offset]);
+  }, [industry, statusFilter, trackFilter, scoreBucket, search, offset]);
 
   const filterAndShow = useCallback(
     (setter) => (val) => {
@@ -295,11 +300,14 @@ export default function LeadershipDashboard() {
     setIndustry(null);
     setStatusFilter(null);
     setTrackFilter(null);
+    setScoreBucket(null);
     setSearchInput("");
     setSearch("");
     setOffset(0);
   }
-  const filtersActive = !!(industry || statusFilter || trackFilter || search);
+  const filtersActive = !!(
+    industry || statusFilter || trackFilter || scoreBucket !== null || search
+  );
 
   // Human-readable snapshot timestamp for the hero subline.
   const snapshotAt = useMemo(() => {
@@ -557,20 +565,48 @@ export default function LeadershipDashboard() {
                       {histogram.bins.map((b, i) => {
                         const maxCount = Math.max(1, ...histogram.bins.map((x) => x.count));
                         const heightPct = (b.count / maxCount) * 100;
+                        const isSelected = scoreBucket === i;
+                        const isEmpty = b.count === 0;
+                        const cls = [
+                          "lp-hist-bar",
+                          isSelected ? "is-selected" : "",
+                          !isSelected && i === histogram.medianIdx ? "is-peak" : "",
+                        ].filter(Boolean).join(" ");
+                        const labelRange = `${b.from.toFixed(0)}–${b.to.toFixed(0)}`;
                         return (
-                          <div key={i} className="lp-hist-col">
+                          <button
+                            key={i}
+                            type="button"
+                            className={`lp-hist-col lp-hist-col-btn${isEmpty ? " is-empty" : ""}`}
+                            onClick={() => {
+                              if (isEmpty) return;
+                              const next = isSelected ? null : i;
+                              setScoreBucket(next);
+                              setOffset(0);
+                              if (next !== null) setView("applications");
+                            }}
+                            disabled={isEmpty}
+                            aria-pressed={isSelected}
+                            aria-label={
+                              isEmpty
+                                ? `No applications in score range ${labelRange}`
+                                : `Show ${b.count} application${b.count === 1 ? "" : "s"} in score range ${labelRange}`
+                            }
+                            title={
+                              isEmpty
+                                ? `Score ${labelRange} · 0 applications`
+                                : `Score ${labelRange} · ${b.count} application${b.count === 1 ? "" : "s"} — click to filter`
+                            }
+                          >
                             <span className="lp-hist-bar-n">{b.count}</span>
                             <div className="lp-hist-bar-wrap">
                               <div
-                                className={`lp-hist-bar${i === histogram.medianIdx ? " is-peak" : ""}`}
+                                className={cls}
                                 style={{ height: `${heightPct}%` }}
-                                title={`${b.from.toFixed(1)}–${b.to.toFixed(1)} · ${b.count}`}
                               />
                             </div>
-                            <span className="lp-hist-label">
-                              {i}–{i + 1}
-                            </span>
-                          </div>
+                            <span className="lp-hist-label">{labelRange}</span>
+                          </button>
                         );
                       })}
                     </div>
@@ -810,6 +846,40 @@ export default function LeadershipDashboard() {
                     {s.label}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            <div className="filter-bar" style={{ marginBottom: "var(--s-5)" }}>
+              <span className="eyebrow" style={{ marginRight: "var(--s-3)" }}>AI score</span>
+              <div className="filter-chips">
+                <button
+                  type="button"
+                  className={`chip${scoreBucket === null ? " active" : ""}`}
+                  onClick={() => { setScoreBucket(null); setOffset(0); }}
+                >
+                  All
+                </button>
+                {Array.from({ length: HISTOGRAM_BIN_COUNT }, (_, i) => {
+                  const count = histogram.bins[i]?.count ?? 0;
+                  const isActive = scoreBucket === i;
+                  const isEmpty = count === 0 && !isActive;
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      className={`chip${isActive ? " active" : ""}`}
+                      onClick={() => {
+                        setScoreBucket(isActive ? null : i);
+                        setOffset(0);
+                      }}
+                      disabled={isEmpty}
+                      title={`Score ${i}–${i + 1} · ${count} application${count === 1 ? "" : "s"}`}
+                    >
+                      {i}–{i + 1}{" "}
+                      <span className="lp-pill-count">{count}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
