@@ -1106,7 +1106,33 @@ If any step fails, fix the issue in source, re-deploy steps 2-3 of Task 9, and r
 
 **Gate:** Task 10 must be 100% green before doing any step here.
 
-- [ ] **Step 1: Backend Lambda — prod stack**
+**⚠ CRITICAL CONSTRAINT (per user 2026-05-22):** Do NOT merge the staging branch into main. The staging branch contains many other in-flight changes (SIP work, role-based dashboard, etc.) that are not ready for production. Only the commits related to *this* feature ship to production. Use cherry-pick, not merge.
+
+The commits that belong to this feature (must be cherry-picked together, in order):
+- `9230df6` — spec + both 019 migration files
+- `ffaad8c` — implementation plan (optional for prod — docs only)
+- All commits added by Tasks 1–8 in this plan (record their SHAs as each task commits)
+
+- [ ] **Step 1: Stage the prod-bound commits onto main**
+
+From the repo root, with staging at the current head (Tasks 1–8 committed):
+```bash
+git checkout main
+git pull --ff-only origin main
+# Cherry-pick ONLY the feature commits. Replace the SHA list with the
+# actual commits added by Tasks 1–8 (record them as each task commits).
+git cherry-pick 9230df6 <task1-sha> <task2-sha> <task3-sha> <task4-sha> <task5-sha> <task6-sha> <task7-sha> <task8-sha>
+```
+If a cherry-pick conflicts because main has diverged in a touched file, resolve the conflict in favor of the feature change but preserve unrelated main changes. Verify with `git diff origin/main..HEAD --stat` that ONLY the feature files are touched.
+
+- [ ] **Step 2: Push main**
+
+```bash
+git push origin main
+```
+This triggers Vercel's production deploy automatically. Confirm in the Vercel dashboard that the production build picks up the right commit.
+
+- [ ] **Step 3: Backend Lambda — prod stack**
 
 Run from `infra/sam/`:
 ```bash
@@ -1114,16 +1140,12 @@ Run from `infra/sam/`:
 ```
 (If the script doesn't exist, mirror `deploy-staging.sh` but pointing at the prod stack name — confirm with the user before creating it.) Wait for `Successfully created/updated stack`.
 
-- [ ] **Step 2: Confirm prod Lambda last-modified is current**
+- [ ] **Step 4: Confirm prod Lambda last-modified is current**
 
 ```bash
 aws lambda get-function --function-name artpark-eir-api --region ap-south-1 --query "Configuration.LastModified"
 ```
 (Adjust function name to match the prod stack outputs.)
-
-- [ ] **Step 3: Promote the frontend to prod Vercel**
-
-Per your team's promote-to-prod convention — typically `git merge staging --ff-only` into `main` and push, which triggers Vercel's production deploy. Confirm with the user before merging if unsure.
 
 ---
 
