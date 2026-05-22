@@ -611,6 +611,31 @@ async def submit_application(
     # 2026-05-22 are hard-required.
     missing, invalid = _validate_submission(row)
 
+    # Storage-existence check for resume_file_id — defense-in-depth so a
+    # client can't bypass the upload step by PATCHing a fabricated UUID.
+    # Done in the handler (not the validator) so the validator stays a pure
+    # function unit-testable without a DB.
+    rfi = row.get("resume_file_id")
+    if rfi and "resume_file_id" not in missing:
+        try:
+            res = (
+                get_admin_client()
+                .table("tir_resume_uploads")
+                .select("id")
+                .eq("id", str(rfi))
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+            if not (res.data or []):
+                invalid.append({"field": "resume_file_id",
+                                "reason": "no matching upload on file"})
+        except Exception:
+            log.exception("submit: resume_file_id existence check failed",
+                          extra={"request_id": req_id, "user_id": user_id})
+            invalid.append({"field": "resume_file_id",
+                            "reason": "could not verify uploaded file"})
+
     blocking_missing = [f for f in missing if f in _MANDATORY_FIELDS]
     blocking_invalid = [i for i in invalid if i["field"] in _MANDATORY_FIELDS]
     if blocking_missing or blocking_invalid:

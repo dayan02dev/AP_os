@@ -9,6 +9,8 @@ import { EmailInput as EnhancedEmailInput, validateEmail } from "./validators.js
 // user can't type them in the first place; the regex below is used to
 // flag the red-shadow state once the user has typed enough to evaluate.
 const PHONE_VALID_RE = /^\+?[\d\s\-()]{7,}$/;
+const LINKEDIN_VALID_RE = /linkedin\.com\//i;
+const GITHUB_VALID_RE = /github\.com\//i;
 
 function ShortInput({ q, value, onChange, autoFocus }) {
   const ref = useRef(null);
@@ -41,9 +43,16 @@ function ShortInput({ q, value, onChange, autoFocus }) {
   };
 
   const text = value || "";
+  const isLinkedin = q.id === "linkedinUrl";
+  const isGithub = q.id === "githubUrl";
   const phoneInvalid =
     isPhone && touched && text.trim().length > 0 && !PHONE_VALID_RE.test(text);
-  const cls = `eir-input${phoneInvalid ? " eir-input-invalid" : ""}`;
+  const linkedinInvalid =
+    isLinkedin && touched && text.trim().length > 0 && !LINKEDIN_VALID_RE.test(text);
+  const githubInvalid =
+    isGithub && touched && text.trim().length > 0 && !GITHUB_VALID_RE.test(text);
+  const fieldInvalid = phoneInvalid || linkedinInvalid || githubInvalid;
+  const cls = `eir-input${fieldInvalid ? " eir-input-invalid" : ""}`;
 
   return (
     <>
@@ -57,11 +66,21 @@ function ShortInput({ q, value, onChange, autoFocus }) {
         onBlur={() => setTouched(true)}
         placeholder={q.placeholder || "Type your answer…"}
         autoComplete={isPhone ? "tel" : "off"}
-        aria-invalid={phoneInvalid || undefined}
+        aria-invalid={fieldInvalid || undefined}
       />
       {nameHint && (
         <span className="eir-mono eir-dim" style={{ fontSize: "12px", marginTop: "6px", display: "block", color: "var(--accent)" }}>
           Only letters, spaces, hyphens, periods, and apostrophes are allowed.
+        </span>
+      )}
+      {linkedinInvalid && (
+        <span className="eir-mono eir-dim" style={{ fontSize: "12px", marginTop: "6px", display: "block", color: "var(--accent)" }}>
+          Enter a linkedin.com URL.
+        </span>
+      )}
+      {githubInvalid && (
+        <span className="eir-mono eir-dim" style={{ fontSize: "12px", marginTop: "6px", display: "block", color: "var(--accent)" }}>
+          Enter a github.com URL.
         </span>
       )}
     </>
@@ -756,6 +775,8 @@ function isAnswered(q, value) {
     case "short":
       if (!(value && value.trim().length > 0)) return false;
       if (q.id === "phone" && !PHONE_VALID_RE.test(value.trim())) return false;
+      if (q.id === "linkedinUrl" && !LINKEDIN_VALID_RE.test(value.trim())) return false;
+      if (q.id === "githubUrl" && !GITHUB_VALID_RE.test(value.trim())) return false;
       return true;
     case "email":
       return !!(value && value.trim().length > 0 && validateEmail(value).valid);
@@ -800,6 +821,12 @@ function whyBlocked(q, value) {
       // applicant doesn't get to advance with "abc" in the box.
       if (q.id === "phone" && !PHONE_VALID_RE.test(value.trim())) {
         return "enter a valid phone number (digits only)";
+      }
+      if (q.id === "linkedinUrl" && !LINKEDIN_VALID_RE.test(value.trim())) {
+        return "enter a valid linkedin.com URL";
+      }
+      if (q.id === "githubUrl" && !GITHUB_VALID_RE.test(value.trim())) {
+        return "enter a valid github.com URL";
       }
       return null;
     case "email":

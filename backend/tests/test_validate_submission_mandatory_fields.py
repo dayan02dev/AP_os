@@ -138,6 +138,19 @@ def submit_client(monkeypatch):
     monkeypatch.setattr(apps_router, "_audit", fake_audit)
     # Bypass email side-effect if the handler calls one
     monkeypatch.setattr(apps_router, "_send_submission_email", fake_email, raising=False)
+
+    # Default fake for the storage-existence check: by default, the resume
+    # row exists in tir_resume_uploads. Tests can override per-case.
+    class _DefaultRes:
+        data = [{"id": fake_row["resume_file_id"]}]
+    class _DefaultQuery:
+        def select(self, *a, **k): return self
+        def eq(self, *a, **k): return self
+        def limit(self, *a, **k): return self
+        def execute(self): return _DefaultRes()
+    class _DefaultTable:
+        def table(self, name): return _DefaultQuery()
+    monkeypatch.setattr(apps_router, "get_admin_client", lambda: _DefaultTable())
     # Bypass auth — use whatever the existing test harness uses; if there
     # is no shared override, the implementer should mirror what
     # tests/test_applications.py uses (search for "get_current_user"
@@ -237,3 +250,63 @@ def test_grandfathered_submitted_row_is_readable(monkeypatch):
     assert body["github_url"] is None
 
     fastapi_app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_submit_blocks_when_resume_file_id_is_orphan_uuid(submit_client, monkeypatch):
+    """A client sends a random UUID that isn't in storage — submit must 422."""
+    from app.routers import applications as apps_router
+    tc, state = submit_client
+    # Override the supabase client's behavior to return no rows
+    class _FakeRes:
+        data = []
+    class _FakeQuery:
+        def select(self, *a, **k): return self
+        def eq(self, *a, **k): return self
+        def limit(self, *a, **k): return self
+        def execute(self): return _FakeRes()
+    class _FakeTable:
+        def table(self, name): return _FakeQuery()
+    monkeypatch.setattr(apps_router, "get_admin_client", lambda: _FakeTable())
+    state["row"]["resume_file_id"] = "12345678-1234-1234-1234-123456789abc"
+    r = tc.post("/applications/me/submit")
+    assert r.status_code == 422
+    invalid_fields = r.json()["error"]["invalid_fields"]
+    assert any(i["field"] == "resume_file_id" for i in invalid_fields)
+
+
+def test_submit_allows_resume_file_id_that_exists_in_storage(submit_client, monkeypatch):
+    """Storage check confirms the UUID is real — submit must succeed."""
+    from app.routers import applications as apps_router
+    tc, state = submit_client
+    # Fake a row in tir_resume_uploads matching the existing default UUID
+    class _FakeRes:
+        data = [{"id": state["row"]["resume_file_id"]}]
+    class _FakeQuery:
+        def select(self, *a, **k): return self
+        def eq(self, *a, **k): return self
+        def limit(self, *a, **k): return self
+        def execute(self): return _FakeRes()
+    class _FakeTable:
+        def table(self, name): return _FakeQuery()
+    monkeypatch.setattr(apps_router, "get_admin_client", lambda: _FakeTable())
+    r = tc.post("/applications/me/submit")
+    assert r.status_code == 200, r.text
+
+
+def test_submit_blocks_with_all_three_fields_missing_at_once(submit_client):
+    tc, state = submit_client
+    state["row"]["resume_file_id"] = None
+    state["row"]["linkedin_url"] = None
+    state["row"]["github_url"] = None
+    r = tc.post("/applications/me/submit")
+    assert r.status_code == 422
+    missing = r.json()["error"]["missing_fields"]
+    assert set(missing) == {"resume_file_id", "linkedin_url", "github_url"}
+
+
+def test_validate_linkedin_at_exactly_500_chars_passes():
+    # The DB CHECK allows up to 500 inclusive; validator should agree.
+    url = "https://linkedin.com/in/" + ("x" * (500 - len("https://linkedin.com/in/")))
+    assert len(url) == 500
+    _, invalid = _validate_submission(_draft_with(linkedin_url=url))
+    assert not any(i["field"] == "linkedin_url" for i in invalid)
