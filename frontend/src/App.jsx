@@ -879,8 +879,15 @@ export default function App() {
               onBack={canGoBackUniversal ? goBackUniversal : null}
             />
           )}
-          {phase === PHASES.DONE && (viewingApp || application) && (() => {
-            const target = viewingApp || application;
+          {phase === PHASES.DONE && (() => {
+            // Only show DoneScreen for an actually-submitted row. Without
+            // the status guard, a draft user landing on /apply/submitted
+            // (refresh, stale link) sees their draft rendered as a past
+            // submission.
+            const safeApp =
+              application && application.status === "submitted" ? application : null;
+            const target = viewingApp || safeApp;
+            if (!target) return null;
             const targetAnswers = viewingApp ? collapseFromRow(viewingApp) : answers;
             return (
               <DoneScreen
