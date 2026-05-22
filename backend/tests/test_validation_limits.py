@@ -106,3 +106,18 @@ def test_support_ticket_bad_category():
             email="a@b.com", subject="valid subject",
             body="z" * 50, category="not-a-category",
         )
+
+
+def test_application_linkedin_url_over_cap():
+    with pytest.raises(ValidationError):
+        ApplicationUpdate(linkedin_url="https://linkedin.com/in/" + "x" * 500)
+
+
+def test_application_github_url_over_cap():
+    with pytest.raises(ValidationError):
+        ApplicationUpdate(github_url="https://github.com/" + "x" * 500)
+
+
+def test_application_resume_file_id_rejects_non_uuid():
+    with pytest.raises(ValidationError):
+        ApplicationUpdate(resume_file_id="not-a-uuid")

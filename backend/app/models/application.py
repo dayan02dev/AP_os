@@ -34,6 +34,7 @@ _MAX_EMAIL = 320         # RFC 5321 practical ceiling
 _MAX_ORG = 300
 _MAX_URL = 1000          # arbitrary long-URL ceiling; format checked at submit
 _MAX_SHORT_TEXT = 500
+_MAX_PROFILE_URL = 500   # mirrors check constraint in migration 019
 _MAX_LONG_TEXT = 5000
 _MAX_XLONG_TEXT = 10000  # execution_budget and other essay-style fields
 _MAX_SECTION = 50
@@ -125,8 +126,8 @@ class ApplicationUpdate(BaseModel):
     basic_full_name: str | None = Field(default=None, max_length=_MAX_NAME)
     basic_phone: str | None = Field(default=None, max_length=_MAX_PHONE)
     resume_file_id: uuid.UUID | None = None
-    linkedin_url: str | None = Field(default=None, max_length=500)
-    github_url: str | None = Field(default=None, max_length=500)
+    linkedin_url: str | None = Field(default=None, max_length=_MAX_PROFILE_URL)
+    github_url: str | None = Field(default=None, max_length=_MAX_PROFILE_URL)
     basic_email: str | None = Field(default=None, max_length=_MAX_EMAIL)
     basic_org: str | None = Field(default=None, max_length=_MAX_ORG)
     basic_degree: DegreeValue | None = None
@@ -188,6 +189,8 @@ class ApplicationRead(ApplicationUpdate):
 
     model_config = ConfigDict(extra="ignore")
 
+    # Override the inherited fields to drop the input-side max_length cap;
+    # the DB CHECK constraint (migration 019) guarantees length on reads.
     resume_file_id: uuid.UUID | None = None
     linkedin_url: str | None = None
     github_url: str | None = None
