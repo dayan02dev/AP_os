@@ -200,3 +200,40 @@ def test_submit_still_lets_OTHER_missing_fields_through(submit_client):
     r = tc.post("/applications/me/submit")
     assert r.status_code == 200, r.text
     assert state["updated"]["status"] == "submitted"
+
+
+def test_grandfathered_submitted_row_is_readable(monkeypatch):
+    """A row submitted before the rule shipped — NULLs for all 3 fields.
+    GET /applications/me must return it without re-validating."""
+    from app.routers import applications as apps_router
+    from app.main import app as fastapi_app
+    from app.deps import get_current_user
+
+    old_row = _draft_with(
+        status="submitted",
+        resume_file_id=None,
+        linkedin_url=None,
+        github_url=None,
+        submitted_at="2026-05-01T00:00:00+00:00",
+        created_at="2026-05-01T00:00:00+00:00",
+        updated_at="2026-05-01T00:00:00+00:00",
+    )
+
+    def fake_fetch(user_id):
+        return old_row
+
+    monkeypatch.setattr(apps_router, "_fetch_application", fake_fetch)
+    fastapi_app.dependency_overrides[get_current_user] = lambda: {
+        "user_id": old_row["user_id"], "email": "old@example.com", "roles": ["applicant"],
+    }
+    apps_router._reset_patch_rate_limits()
+
+    with TestClient(fastapi_app) as tc:
+        r = tc.get("/applications/me")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["resume_file_id"] is None
+    assert body["linkedin_url"] is None
+    assert body["github_url"] is None
+
+    fastapi_app.dependency_overrides.pop(get_current_user, None)
