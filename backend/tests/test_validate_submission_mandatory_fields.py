@@ -101,3 +101,101 @@ def test_validate_linkedin_too_long():
         i["field"] == "linkedin_url" and "500" in i["reason"]
         for i in invalid
     )
+
+
+# ──────────────────────────────────────────────────────────────────
+# Integration tests at the router boundary — monkey-patch the DB
+# helpers so we can assert HTTP-level behaviour without Supabase.
+# ──────────────────────────────────────────────────────────────────
+import pytest
+from fastapi.testclient import TestClient
+
+from app.routers import applications as apps_router
+
+
+@pytest.fixture
+def client(monkeypatch):
+    # Patch the DB helpers used inside submit_application
+    fake_row = _draft_with()  # fully-valid by default; tests below override
+    state = {"row": fake_row, "updated": None}
+
+    def fake_fetch(user_id):
+        return state["row"]
+
+    def fake_update(app_id, patch):
+        merged = {**state["row"], **patch}
+        state["updated"] = merged
+        return merged
+
+    def fake_audit(**kwargs):
+        return None
+
+    def fake_email(*a, **kw):
+        return True
+
+    monkeypatch.setattr(apps_router, "_fetch_application", fake_fetch)
+    monkeypatch.setattr(apps_router, "_update_application", fake_update)
+    monkeypatch.setattr(apps_router, "_audit", fake_audit)
+    # Bypass email side-effect if the handler calls one
+    monkeypatch.setattr(apps_router, "_send_submission_email", fake_email, raising=False)
+    # Bypass auth — use whatever the existing test harness uses; if there
+    # is no shared override, the implementer should mirror what
+    # tests/test_applications.py uses (search for "get_current_user"
+    # overrides in that file).
+    from app.main import app as fastapi_app
+    from app.deps import get_current_user
+    fastapi_app.dependency_overrides[get_current_user] = lambda: {
+        "user_id": fake_row["user_id"], "email": "test@example.com", "roles": ["applicant"],
+    }
+    # Bypass rate-limit deps the same way the existing app tests do
+    apps_router._reset_patch_rate_limits()
+
+    with TestClient(fastapi_app) as tc:
+        yield tc, state
+
+    # Cleanup — don't leak overrides into the next test in the session.
+    fastapi_app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_submit_succeeds_when_all_three_fields_present(client):
+    tc, state = client
+    r = tc.post("/applications/me/submit")
+    assert r.status_code == 200, r.text
+    assert state["updated"]["status"] == "submitted"
+
+
+def test_submit_blocks_when_resume_missing(client):
+    tc, state = client
+    state["row"]["resume_file_id"] = None
+    r = tc.post("/applications/me/submit")
+    assert r.status_code == 422
+    body = r.json()
+    assert body["error"]["code"] == "incomplete_application"
+    assert "resume_file_id" in body["error"]["missing_fields"]
+    assert state["updated"] is None  # status was NOT flipped
+
+
+def test_submit_blocks_when_linkedin_blank(client):
+    tc, state = client
+    state["row"]["linkedin_url"] = ""
+    r = tc.post("/applications/me/submit")
+    assert r.status_code == 422
+    assert "linkedin_url" in r.json()["error"]["missing_fields"]
+
+
+def test_submit_blocks_when_github_wrong_domain(client):
+    tc, state = client
+    state["row"]["github_url"] = "https://gitlab.com/me"
+    r = tc.post("/applications/me/submit")
+    assert r.status_code == 422
+    body = r.json()
+    assert "github_url" in [i["field"] for i in body["error"]["invalid_fields"]]
+
+
+def test_submit_still_lets_OTHER_missing_fields_through(client):
+    """Existing soft-validation policy must remain: ONLY the 3 new fields hard-block."""
+    tc, state = client
+    state["row"]["problem_describe"] = ""  # an OLD field, intentionally blank
+    r = tc.post("/applications/me/submit")
+    assert r.status_code == 200, r.text
+    assert state["updated"]["status"] == "submitted"

@@ -97,6 +97,12 @@ def _fresh_draft_row(overrides: dict | None = None) -> dict:
         "declaration_ref_checks": False,
         "declaration_terms": False,
         "declaration_newsletter": False,
+        # Mandatory Identity & Links fields (added 2026-05-22) — defaulted
+        # to valid values so existing submit fixtures aren't 422'd by the
+        # hard-block branch. Tests that need them empty override here.
+        "resume_file_id": "00000000-0000-0000-0000-000000000099",
+        "linkedin_url": "https://linkedin.com/in/test",
+        "github_url": "https://github.com/test",
     }
     if overrides:
         row.update(overrides)

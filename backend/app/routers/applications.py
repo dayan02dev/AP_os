@@ -600,10 +600,33 @@ async def submit_application(
             f"Application is already {row.get('status')}.",
         )
 
-    # Soft validation — log what's missing for analytics, but do NOT
-    # block the submit. Per product call, applicants can ship at any
-    # completion %; the reviewer sees "not provided" for empty fields.
+    # Validation pass — most fields stay soft per product policy
+    # (applicants can ship with shallow answers; reviewers see "not
+    # provided"), but the three Identity & Links fields added on
+    # 2026-05-22 are hard-required.
     missing, invalid = _validate_submission(row)
+
+    _MANDATORY_NEW = {"resume_file_id", "linkedin_url", "github_url"}
+    blocking_missing = [f for f in missing if f in _MANDATORY_NEW]
+    blocking_invalid = [i for i in invalid if i["field"] in _MANDATORY_NEW]
+    if blocking_missing or blocking_invalid:
+        log.info(
+            "applications.submit blocked — mandatory fields missing/invalid",
+            extra={
+                "request_id": req_id,
+                "user_id": user_id,
+                "missing_fields": blocking_missing,
+                "invalid_fields": blocking_invalid,
+            },
+        )
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "incomplete_application",
+            "Please complete required fields before submitting.",
+            missing_fields=blocking_missing,
+            invalid_fields=blocking_invalid,
+        )
+
     if missing or invalid:
         log.info(
             "applications.submit accepted with gaps",
