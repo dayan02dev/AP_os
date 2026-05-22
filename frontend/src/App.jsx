@@ -10,7 +10,7 @@
 // All screen components live in /screens.jsx, /auth_upload.jsx, /profile.jsx —
 // their markup is unchanged; we only wire them up differently.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -122,7 +122,7 @@ export default function App() {
   const navigate = useNavigate();
   const urlSyncRef = useRef({ applying: false });
 
-  const { user, logout, loading: authLoading } = useAuth();
+  const { user, logout: rawLogout, loading: authLoading } = useAuth();
   const {
     application,
     answers,
@@ -133,10 +133,28 @@ export default function App() {
     flushNow,
     submit,
     refetch,
+    flushNow,
     completion,
     submittedApps,
     startNew,
   } = useApplication();
+
+  // Sign-out has to flush the debounced autosave first. Without this, a
+  // user who pastes an answer and immediately clicks "sign out" loses
+  // the paste — the 800ms debounce timer never fires (auth flips, the
+  // bearer token is cleared, and the queued PATCH dies in flight).
+  // Incident 2026-05-22: at least one applicant repeatedly reported a
+  // long answer "disappearing" because of this exact race.
+  const logout = useCallback(async () => {
+    try {
+      await flushNow();
+    } catch {
+      // Don't block sign-out on a save failure — the toast/footer
+      // already surfaced the error, and forcing the user to stay
+      // signed-in to retry would be worse UX than losing the last edit.
+    }
+    return rawLogout();
+  }, [flushNow, rawLogout]);
   const resume = useResume();
   const { push: pushToast } = useToast();
 
