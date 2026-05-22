@@ -278,6 +278,33 @@ def _validate_submission(row: dict[str, Any]) -> tuple[list[str], list[dict[str,
                         "reason": f"missing: {', '.join(missing_keys)}",
                     })
 
+    # ── Identity & links (mandatory per spec 2026-05-22) ────────────
+    # Presence-only via _is_filled keeps the existing missing[] semantics.
+    for field in ("resume_file_id", "linkedin_url", "github_url"):
+        if not _is_filled(row.get(field)):
+            missing.append(field)
+
+    # URL format & length — DB has the same regex in a CHECK constraint,
+    # but we run it here so the wizard surfaces a clear error before the
+    # submit hits the DB.
+    li = row.get("linkedin_url")
+    if li and isinstance(li, str):
+        if len(li) > 500:
+            invalid.append({"field": "linkedin_url",
+                            "reason": "must be 500 characters or fewer"})
+        elif "linkedin.com/" not in li.lower():
+            invalid.append({"field": "linkedin_url",
+                            "reason": "must be a linkedin.com URL"})
+
+    gh = row.get("github_url")
+    if gh and isinstance(gh, str):
+        if len(gh) > 500:
+            invalid.append({"field": "github_url",
+                            "reason": "must be 500 characters or fewer"})
+        elif "github.com/" not in gh.lower():
+            invalid.append({"field": "github_url",
+                            "reason": "must be a github.com URL"})
+
     return missing, invalid
 
 
