@@ -22,6 +22,10 @@ export const QUESTION_TO_COLUMN = Object.freeze({
   incubatorAssociation: "basic_incubator_association",
   incubatorDetails: "basic_incubator_details",
   hearAbout: "basic_hear_about",
+  // Identity & links (added 2026-05-22 — see migration 019)
+  linkedinUrl:    "linkedin_url",
+  githubUrl:      "github_url",
+  resumeFileId:   "resume_file_id",
 
   // Section 03 — problem
   problemDefined: "problem_defined",
