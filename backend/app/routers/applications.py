@@ -100,6 +100,11 @@ LONG_TEXT_MIN_WORDS: dict[str, int] = {}
 _PHONE_RE = re.compile(r"^\+?[\d][\d\s\-\(\)]{5,19}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# Fields added 2026-05-22 — hard-required at submit time. Used by both the
+# validator (presence check) and the submit handler (hard-block branch) so
+# the field list is defined in exactly one place.
+_MANDATORY_FIELDS: tuple[str, ...] = ("resume_file_id", "linkedin_url", "github_url")
+
 
 # ─── Per-user rate-limit dependencies ────────────────────────────────
 # Backed by utils/rate_limit.per_user_rate_limit (in-memory sliding window
@@ -280,7 +285,7 @@ def _validate_submission(row: dict[str, Any]) -> tuple[list[str], list[dict[str,
 
     # ── Identity & links (mandatory per spec 2026-05-22) ────────────
     # Presence-only via _is_filled keeps the existing missing[] semantics.
-    for field in ("resume_file_id", "linkedin_url", "github_url"):
+    for field in _MANDATORY_FIELDS:
         if not _is_filled(row.get(field)):
             missing.append(field)
 
@@ -606,9 +611,8 @@ async def submit_application(
     # 2026-05-22 are hard-required.
     missing, invalid = _validate_submission(row)
 
-    _MANDATORY_NEW = {"resume_file_id", "linkedin_url", "github_url"}
-    blocking_missing = [f for f in missing if f in _MANDATORY_NEW]
-    blocking_invalid = [i for i in invalid if i["field"] in _MANDATORY_NEW]
+    blocking_missing = [f for f in missing if f in _MANDATORY_FIELDS]
+    blocking_invalid = [i for i in invalid if i["field"] in _MANDATORY_FIELDS]
     if blocking_missing or blocking_invalid:
         log.info(
             "applications.submit blocked — mandatory fields missing/invalid",
@@ -617,6 +621,9 @@ async def submit_application(
                 "user_id": user_id,
                 "missing_fields": blocking_missing,
                 "invalid_fields": blocking_invalid,
+                "all_missing_fields": sorted(set(missing)),
+                "all_invalid_fields": invalid,
+                "completion_pct": row.get("completion_pct"),
             },
         )
         return _error(

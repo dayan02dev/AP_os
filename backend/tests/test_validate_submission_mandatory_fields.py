@@ -114,7 +114,7 @@ from app.routers import applications as apps_router
 
 
 @pytest.fixture
-def client(monkeypatch):
+def submit_client(monkeypatch):
     # Patch the DB helpers used inside submit_application
     fake_row = _draft_with()  # fully-valid by default; tests below override
     state = {"row": fake_row, "updated": None}
@@ -155,17 +155,18 @@ def client(monkeypatch):
 
     # Cleanup — don't leak overrides into the next test in the session.
     fastapi_app.dependency_overrides.pop(get_current_user, None)
+    apps_router._reset_patch_rate_limits()
 
 
-def test_submit_succeeds_when_all_three_fields_present(client):
-    tc, state = client
+def test_submit_succeeds_when_all_three_fields_present(submit_client):
+    tc, state = submit_client
     r = tc.post("/applications/me/submit")
     assert r.status_code == 200, r.text
     assert state["updated"]["status"] == "submitted"
 
 
-def test_submit_blocks_when_resume_missing(client):
-    tc, state = client
+def test_submit_blocks_when_resume_missing(submit_client):
+    tc, state = submit_client
     state["row"]["resume_file_id"] = None
     r = tc.post("/applications/me/submit")
     assert r.status_code == 422
@@ -175,16 +176,16 @@ def test_submit_blocks_when_resume_missing(client):
     assert state["updated"] is None  # status was NOT flipped
 
 
-def test_submit_blocks_when_linkedin_blank(client):
-    tc, state = client
+def test_submit_blocks_when_linkedin_blank(submit_client):
+    tc, state = submit_client
     state["row"]["linkedin_url"] = ""
     r = tc.post("/applications/me/submit")
     assert r.status_code == 422
     assert "linkedin_url" in r.json()["error"]["missing_fields"]
 
 
-def test_submit_blocks_when_github_wrong_domain(client):
-    tc, state = client
+def test_submit_blocks_when_github_wrong_domain(submit_client):
+    tc, state = submit_client
     state["row"]["github_url"] = "https://gitlab.com/me"
     r = tc.post("/applications/me/submit")
     assert r.status_code == 422
@@ -192,9 +193,9 @@ def test_submit_blocks_when_github_wrong_domain(client):
     assert "github_url" in [i["field"] for i in body["error"]["invalid_fields"]]
 
 
-def test_submit_still_lets_OTHER_missing_fields_through(client):
+def test_submit_still_lets_OTHER_missing_fields_through(submit_client):
     """Existing soft-validation policy must remain: ONLY the 3 new fields hard-block."""
-    tc, state = client
+    tc, state = submit_client
     state["row"]["problem_describe"] = ""  # an OLD field, intentionally blank
     r = tc.post("/applications/me/submit")
     assert r.status_code == 200, r.text
