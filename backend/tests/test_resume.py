@@ -330,3 +330,94 @@ def test_get_resume_by_id_forbids_other_user(client, fake_supabase):
     ]
     r = client.get("/resume/r-other")
     assert r.status_code == 403
+
+
+def test_apply_to_application_links_resume_file_id(client, fake_supabase):
+    """Task 7: apply-to-application must populate applications.resume_file_id
+    on the open draft, so that the submit-time mandatory check (migration 019
+    + _MANDATORY_FIELDS) is satisfied automatically by the upload flow."""
+    fake_supabase.tables["tir_resume_uploads"] = [
+        {
+            "id": "resume-xyz",
+            "user_id": TEST_USER_ID,
+            "parse_status": "completed",
+            "parsed_data": SAMPLE_PARSED,
+            "created_at": "2026-05-19T00:00:00Z",
+        }
+    ]
+    fake_supabase.tables["profiles"] = [
+        {
+            "id": TEST_USER_ID,
+            "email": TEST_USER_EMAIL,
+            "full_name": None,
+            "phone": None,
+            "linkedin_url": None,
+            "location_city": None,
+        }
+    ]
+    fake_supabase.tables["tir_applications"] = [
+        {
+            "id": "app-draft-1",
+            "user_id": TEST_USER_ID,
+            "status": "draft",
+            "basic_full_name": None,
+            "basic_phone": None,
+            "basic_email": None,
+            "resume_file_id": None,
+            "created_at": "2026-05-18T00:00:00Z",
+        }
+    ]
+
+    r = client.post("/resume/me/apply-to-application")
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    assert "applications.resume_file_id" in body["applied_fields"]
+
+    # The patch on tir_applications must include resume_file_id = the row id.
+    app_updates = fake_supabase.updates.get("tir_applications", [])
+    assert app_updates, "no patch was sent to tir_applications"
+    patch = app_updates[-1]["payload"]
+    assert patch.get("resume_file_id") == "resume-xyz"
+
+
+def test_apply_to_application_skips_resume_file_id_when_already_linked(
+    client, fake_supabase
+):
+    """If the draft already points at the latest CV, don't re-write the link."""
+    fake_supabase.tables["tir_resume_uploads"] = [
+        {
+            "id": "resume-xyz",
+            "user_id": TEST_USER_ID,
+            "parse_status": "completed",
+            "parsed_data": SAMPLE_PARSED,
+            "created_at": "2026-05-19T00:00:00Z",
+        }
+    ]
+    fake_supabase.tables["profiles"] = [
+        {
+            "id": TEST_USER_ID,
+            "email": TEST_USER_EMAIL,
+            "full_name": "Ada",
+            "phone": "+91-1",
+            "linkedin_url": "https://linkedin.com/in/ada",
+            "location_city": "Bengaluru",
+        }
+    ]
+    fake_supabase.tables["tir_applications"] = [
+        {
+            "id": "app-draft-1",
+            "user_id": TEST_USER_ID,
+            "status": "draft",
+            "basic_full_name": "Ada",
+            "basic_phone": "+91-1",
+            "basic_email": "ada@example.com",
+            "resume_file_id": "resume-xyz",
+            "created_at": "2026-05-18T00:00:00Z",
+        }
+    ]
+
+    r = client.post("/resume/me/apply-to-application")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "applications.resume_file_id" not in body["applied_fields"]

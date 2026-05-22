@@ -126,6 +126,22 @@ const SECTIONS = [
         ],
         required: true,
       },
+      {
+        id: "linkedinUrl",
+        kind: "short",
+        prompt: "Your LinkedIn URL?",
+        help: "Required. Must be a linkedin.com URL.",
+        placeholder: "https://linkedin.com/in/yourname",
+        required: true,
+      },
+      {
+        id: "githubUrl",
+        kind: "short",
+        prompt: "Your GitHub URL?",
+        help: "Required. Must be a github.com URL.",
+        placeholder: "https://github.com/yourname",
+        required: true,
+      },
     ],
   },
   {
