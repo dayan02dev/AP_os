@@ -17,6 +17,7 @@ Two user-facing models:
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any, Literal
 
@@ -123,6 +124,9 @@ class ApplicationUpdate(BaseModel):
     basic_teammates: list[dict[str, Any]] | None = Field(default=None, max_length=_MAX_TEAMMATES)
     basic_full_name: str | None = Field(default=None, max_length=_MAX_NAME)
     basic_phone: str | None = Field(default=None, max_length=_MAX_PHONE)
+    resume_file_id: uuid.UUID | None = None
+    linkedin_url: str | None = Field(default=None, max_length=500)
+    github_url: str | None = Field(default=None, max_length=500)
     basic_email: str | None = Field(default=None, max_length=_MAX_EMAIL)
     basic_org: str | None = Field(default=None, max_length=_MAX_ORG)
     basic_degree: DegreeValue | None = None
@@ -183,6 +187,10 @@ class ApplicationRead(ApplicationUpdate):
     """Full row as returned from Supabase. Permissive: unknown columns ignored."""
 
     model_config = ConfigDict(extra="ignore")
+
+    resume_file_id: uuid.UUID | None = None
+    linkedin_url: str | None = None
+    github_url: str | None = None
 
     id: str
     user_id: str
