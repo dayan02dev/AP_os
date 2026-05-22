@@ -4601,3 +4601,15 @@ kbd {
     min-height: auto;
   }
 }
+
+/* ResumeUploadCard — added 2026-05-22 */
+.resume-card { display: flex; flex-direction: column; gap: 8px; padding: 14px;
+  border: 1px dashed var(--line, #d4d0c8); border-radius: 6px; background: var(--surface-soft, #fafafa); }
+.resume-card-empty .resume-card-dropzone { background: transparent; border: none;
+  color: var(--ink-dim, #777); font: inherit; cursor: pointer; padding: 10px; text-align: center; }
+.resume-card-empty .resume-card-dropzone:hover { color: var(--ink, #222); }
+.resume-card-row { display: flex; gap: 12px; align-items: baseline; }
+.resume-card-name { font-weight: 500; color: var(--ink, #222); }
+.resume-card-size { font-size: 12px; color: var(--ink-dim, #777); }
+.resume-card-actions { display: flex; gap: 8px; }
+.resume-card-error { color: var(--coral, #c0392b); font-size: 12px; }
