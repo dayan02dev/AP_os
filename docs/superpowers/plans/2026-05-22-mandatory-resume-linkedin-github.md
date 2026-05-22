@@ -1106,41 +1106,127 @@ If any step fails, fix the issue in source, re-deploy steps 2-3 of Task 9, and r
 
 **Gate:** Task 10 must be 100% green before doing any step here.
 
-**⚠ CRITICAL CONSTRAINT (per user 2026-05-22):** Do NOT merge the staging branch into main. The staging branch contains many other in-flight changes (SIP work, role-based dashboard, etc.) that are not ready for production. Only the commits related to *this* feature ship to production. Use cherry-pick, not merge.
+**⚠ CRITICAL CONSTRAINTS (per user 2026-05-22):**
 
-The commits that belong to this feature (must be cherry-picked together, in order):
-- `9230df6` — spec + both 019 migration files
-- `ffaad8c` — implementation plan (optional for prod — docs only)
-- All commits added by Tasks 1–8 in this plan (record their SHAs as each task commits)
+1. Do NOT merge the staging branch into main. The staging branch contains many other in-flight changes (SIP work, role-based dashboard, etc.) that are not ready for production. Only this single feature ships.
+2. Do NOT cherry-pick the staging commits onto main verbatim either. Staging and production have **divergent schemas** — different table names, different routers, different code paths. Cherry-picking would break prod immediately because every DB call would reference a table that doesn't exist.
+3. Re-implement the same logical change against the prod schema, run the tests, deploy, then test rigorously.
 
-- [ ] **Step 1: Stage the prod-bound commits onto main**
+| | Staging | Production |
+|---|---|---|
+| TIR applications table | `tir_applications` (post migration 010) | `applications` (pre migration 010 — legacy) |
+| Resume uploads table | `tir_resume_uploads` | `resume_uploads` (verify on disk before editing) |
+| Storage bucket name | `tir-resumes` (probable) | `resumes` (verify) |
+| Backend code | references `tir_*` everywhere | references bare names |
+| Frontend code | identical (DB-agnostic) | identical (DB-agnostic) |
 
-From the repo root, with staging at the current head (Tasks 1–8 committed):
+So the prod path **reimplements** the same logical changes against the prod code paths. Migration 019 already shipped to prod with the correct schema (the `_prod.sql` variant — confirmed applied). Frontend changes will likely apply cleanly because they don't touch DB names — but each frontend cherry-pick must be verified.
+
+- [ ] **Step 1: Identify the prod-deploy branch + verify prod-code shape**
+
 ```bash
 git checkout main
 git pull --ff-only origin main
-# Cherry-pick ONLY the feature commits. Replace the SHA list with the
-# actual commits added by Tasks 1–8 (record them as each task commits).
-git cherry-pick 9230df6 <task1-sha> <task2-sha> <task3-sha> <task4-sha> <task5-sha> <task6-sha> <task7-sha> <task8-sha>
+# What does prod actually call its tables?
+grep -rn '"applications"\|"resume_uploads"\|"tir_applications"\|"tir_resume_uploads"' \
+  backend/app/routers/applications.py backend/app/routers/resume.py | head -20
 ```
-If a cherry-pick conflicts because main has diverged in a touched file, resolve the conflict in favor of the feature change but preserve unrelated main changes. Verify with `git diff origin/main..HEAD --stat` that ONLY the feature files are touched.
+Record the exact table names prod uses. The reimplementation must match these.
 
-- [ ] **Step 2: Push main**
+- [ ] **Step 2: Re-implement the backend Pydantic schema additions on main**
+
+Cherry-pick the Pydantic-only commits — these are DB-agnostic and should apply cleanly:
+```bash
+git cherry-pick f90e1ee 496f6ee   # Task 1 + Task 1 polish
+```
+If conflict, resolve in favor of adding the three fields + the `_MAX_PROFILE_URL` constant.
+
+Verify with `python -c "from app.models.application import ApplicationRead, ApplicationUpdate; print('OK')"` from `backend/`.
+
+- [ ] **Step 3: Re-implement the backend validator on main**
+
+The validator block from `_validate_submission` is DB-agnostic — it operates on plain dicts. Cherry-pick:
+```bash
+git cherry-pick 40f5e5a   # Task 2: validator block + 7 unit tests
+```
+The 7 unit tests are pure-function tests so they don't care about prod table names. Run:
+```bash
+cd backend && python -m pytest tests/test_validate_submission_mandatory_fields.py -v --no-cov
+```
+Expect 7 passes.
+
+- [ ] **Step 4: Re-implement the hard-block + analytics polish + _MANDATORY_FIELDS constant**
+
+```bash
+git cherry-pick d26a176 b73d050   # Task 3 + Task 3 polish
+```
+The handler change references `_validate_submission` (already in) and uses `_error()`. No DB names involved. Submit-integration tests use monkey-patched `_fetch_application` so they don't hit prod DB either.
+
+Run `python -m pytest tests/test_validate_submission_mandatory_fields.py` — expect 12 passes.
+
+- [ ] **Step 5: Grandfather readback test**
+
+```bash
+git cherry-pick f43c995   # Task 4
+```
+This test monkeypatches `_fetch_application` — DB-agnostic. Should apply cleanly. Run — expect 13 passes.
+
+- [ ] **Step 6: REIMPLEMENT the resume-link logic against prod table names**
+
+DO NOT cherry-pick commit `28b97fb` (or `836cba6` on the older staging history) verbatim — it hard-codes `tir_resume_uploads` and `tir_applications`. Instead:
+
+a) Open the prod version of `backend/app/routers/resume.py` and find the `apply_parsed_to_application` handler.
+b) Apply the SAME logical change as the staging commit, but with prod's table names:
+   - Add `id` to the `.select(...)` from the resume uploads table (whatever prod calls it)
+   - Extract `resume_file_id = rows[0]["id"]`
+   - After the existing `for src, dest in APPLICATION_MAP:` loop, inside the `else: app_row = app_rows[0]` branch, add:
+     ```python
+     if app_row.get("resume_file_id") != resume_file_id:
+         app_patch["resume_file_id"] = resume_file_id
+         applied.append("applications.resume_file_id")
+     ```
+   - Update the second-stage `.table(...)` call so it targets the prod applications table.
+c) Re-implement the storage-existence check from `78a2bc0` (Task 7 polish) — same logic, but the `.table("tir_resume_uploads")` becomes whatever prod calls it.
+d) Write fresh tests against prod table names. Don't reuse the staging test file verbatim — copy + rename the table strings.
+
+- [ ] **Step 7: Re-cherry-pick frontend changes (DB-agnostic)**
+
+Frontend doesn't reference DB names:
+```bash
+git cherry-pick 7c90b5a   # Task 5: fieldMap entries
+git cherry-pick f022ccf   # Task 6: ResumeUploadCard component (on shelf)
+# Skip 28b97fb (Task 7 backend bits already covered in Step 6 with prod names)
+# But take its FRONTEND bits — the questions in questions.jsx
+git show 28b97fb -- frontend/src/questions.jsx | git apply
+git cherry-pick 78a2bc0   # Polish — frontend inputs.jsx blur-time validation is DB-agnostic
+```
+If `git apply` doesn't work cleanly, manually port the two `linkedinUrl` + `githubUrl` question objects into `frontend/src/questions.jsx`.
+
+- [ ] **Step 8: Run full prod test suite**
+
+```bash
+cd backend && python -m pytest tests/ -q --no-cov -m "not integration" 2>&1 | tail -10
+cd ../frontend && npm test -- --run 2>&1 | tail -5
+cd frontend && npm run build 2>&1 | tail -5
+```
+All NEW tests must pass. Pre-existing failures (if any) must match the prod-baseline pre-existing-failure count — record before/after.
+
+- [ ] **Step 9: Push main**
 
 ```bash
 git push origin main
 ```
-This triggers Vercel's production deploy automatically. Confirm in the Vercel dashboard that the production build picks up the right commit.
+This triggers Vercel's production deploy automatically.
 
-- [ ] **Step 3: Backend Lambda — prod stack**
+- [ ] **Step 10: Backend Lambda — prod stack**
 
 Run from `infra/sam/`:
 ```bash
 ./deploy-prod.sh
 ```
-(If the script doesn't exist, mirror `deploy-staging.sh` but pointing at the prod stack name — confirm with the user before creating it.) Wait for `Successfully created/updated stack`.
+(If the script doesn't exist, mirror `deploy-staging.sh` against the prod stack name — confirm with the user before creating it.) Wait for `Successfully created/updated stack`.
 
-- [ ] **Step 4: Confirm prod Lambda last-modified is current**
+- [ ] **Step 11: Confirm prod Lambda last-modified is current**
 
 ```bash
 aws lambda get-function --function-name artpark-eir-api --region ap-south-1 --query "Configuration.LastModified"
@@ -1149,28 +1235,126 @@ aws lambda get-function --function-name artpark-eir-api --region ap-south-1 --qu
 
 ---
 
-## Task 12: Prod smoke test (5 steps)
+## Task 12: Prod smoke test — full regression, not just our feature
 
 **Files:** none (manual QA)
 
-Run through the spec's §6.4 smoke on the prod URL with a throwaway account:
+Per user 2026-05-22: **rigorously test the entire wizard and all existing features**, not just what we changed. The schema-aware reimplementation against the prod codebase could regress unrelated paths because the reimplementation touched code that lots of features depend on (the submit handler, the resume-apply handler). An applicant must not face any issue due to our work.
 
-- [ ] **Step 1: Sign in as a throwaway test account**
-- [ ] **Step 2: Confirm the three new fields appear on Basic with `*` markers**
-- [ ] **Step 3: Try to submit with all three blank → expect 422 toast**
-- [ ] **Step 4: Fill all three correctly → submit succeeds**
-- [ ] **Step 5: Open one of the existing grandfathered submitted apps (via leadership dashboard or admin) → confirm it still loads with `—` for the three fields, no errors**
+This task has two halves:
 
-**If any step fails:**
-1. Revert the Vercel prod deployment (Vercel dashboard → "Promote previous deployment")
-2. Redeploy previous Lambda version: `aws lambda update-function-code --function-name <prod-name> --s3-bucket <stack-artifacts> --s3-key <previous-key>`
-3. File a bug; do NOT roll back the DB columns — they're NULL-allowed and harmless.
+- **Part A — Feature smoke (our changes work)** — Steps 1–12 below
+- **Part B — Whole-wizard regression (nothing else broke)** — Steps 13–28 below
 
-- [ ] **Step 6: Tag the rollout**
+Use a throwaway account on the prod URL. Each step should be ticked only after a real-browser verification.
 
+### Happy paths
+
+- [ ] **Step 1: Sign in fresh** — create a new account or sign in with a throwaway. Confirm the wizard loads.
+- [ ] **Step 2: Resume upload phase still works** — the existing pre-wizard CV upload screen must accept a PDF and parse it as before. (Sanity check: my changes to `apply-to-application` could break the existing path if I touched the wrong line.)
+- [ ] **Step 3: Click "apply to application"** — verify the parsed data still lands in the application row (basic_full_name, phone, email), AND verify `resume_file_id` is now populated on the row. Confirm via Supabase prod SQL:
+  ```sql
+  SELECT resume_file_id, basic_full_name, basic_email
+    FROM applications
+   WHERE user_id = '<your-throwaway-user-id>' AND status='draft';
+  ```
+- [ ] **Step 4: Confirm Basic step shows the three new fields** with the required asterisk.
+- [ ] **Step 5: Fill LinkedIn and GitHub with valid URLs** → tab away → no red border, no error text.
+
+### Negative paths (must hard-block)
+
+- [ ] **Step 6: Try to submit with all three blank** — the wizard's Next button on Basic shouldn't allow advancing without the URLs (per polish commit). Force a direct POST if possible — expect 422 with all three field names in `missing_fields`.
+- [ ] **Step 7: Set LinkedIn to `https://example.com` and tab away** — expect red border + inline "Enter a valid linkedin.com URL" hint AND wizard Next button disabled. Same for GitHub with `https://gitlab.com/foo`.
+- [ ] **Step 8: Submit with a real but malicious `resume_file_id`** — open browser DevTools, PATCH `/applications/me` with `resume_file_id = "12345678-1234-1234-1234-123456789abc"` (a random UUID). Then try to submit. Expect 422 with `invalid_fields` mentioning `resume_file_id` and "no matching upload on file" — proves the storage-existence check works in prod.
+
+### Grandfathered row sanity
+
+- [ ] **Step 9: Open an EXISTING submitted application** (one of the 87 grandfathered ones) via the leadership dashboard or admin route. Confirm:
+  - The detail page loads with no errors
+  - `resume_file_id`, `linkedin_url`, `github_url` all render as `—` or empty
+  - No re-validation fires (no 422)
+
+### AI flow sanity
+
+- [ ] **Step 10: Submit a fresh complete application** with all three fields filled. Verify:
+  - Submit returns 200
+  - Application row's status flips to `submitted`
+  - If AI screening runs automatically: confirm it doesn't choke on the new columns
+  - Submission confirmation email goes out (existing behavior unchanged)
+
+### Audit trail
+
+- [ ] **Step 11: Check `audit_logs` table** for the new applicant's row:
+  ```sql
+  SELECT action, metadata->'applied_fields' AS applied
+    FROM audit_logs
+   WHERE user_id = '<throwaway-user-id>'
+   ORDER BY created_at DESC LIMIT 5;
+  ```
+  Confirm `resume.applied_to_application` audit entry includes `applications.resume_file_id` in the applied list.
+
+### Part B — Whole-wizard regression (nothing else broke)
+
+This part exercises every other applicant-facing path that our changes could have inadvertently touched. Use a SECOND throwaway account so Part A's state doesn't bleed into these tests.
+
+**Auth + sign-up**
+- [ ] **Step 13: Email + password sign-up** — new account creation works; verification email arrives; password set succeeds.
+- [ ] **Step 14: OTP sign-in** — request OTP; receive email; enter code; land in wizard. (Common login path; could regress if the auth router shares any helpers we touched.)
+- [ ] **Step 15: Password sign-in** — old account with password signs in fine.
+- [ ] **Step 16: Forgot password** — reset email sends; new password works.
+
+**CV upload + parse (pre-wizard)**
+- [ ] **Step 17: First-time CV upload** — clean account uploads a PDF; backend parses successfully; PARSE_REVIEW screen shows extracted name + email + phone.
+- [ ] **Step 18: CV apply-to-application** — clicking "use this CV" populates the draft AND the new `resume_file_id` column without error. Already covered as Step 3 in Part A but verify the unhappy path: an unparseable PDF (just blanks).
+
+**Wizard navigation**
+- [ ] **Step 19: Basic section — every existing field** — fullName, email, phone, org, degree, hasTeam, incubatorAssociation, incubatorDetails (conditional), hearAbout. Type / pick / save each one. Confirm no field breaks because the form's onChange/onBlur pattern got touched.
+- [ ] **Step 20: TeamInvite question (when `hasTeam = Yes`)** — add a teammate; backend saves the JSONB array; reload preserves it.
+- [ ] **Step 21: Problem section** — problemDescribe (long-text with 80 minWords), problemDefined (single). Both save and validate as before.
+- [ ] **Step 22: Solution section** — solutionDescribe, coreTech, stage, contrarianInsight (optional). All render and save.
+- [ ] **Step 23: Execution section** — milestone, infrastructure, failure, hwswIntegration, will-break (conditional on stage), budget. All five long-text fields accept input and save.
+- [ ] **Step 24: Evidence section** — videoUrl (optional), deck, evidenceFiles, milestoneFiles. Upload one file to each multi-file question. Confirm uploads still hit Supabase storage and the file IDs land on the application row.
+- [ ] **Step 25: Declarations** — tick truthful + refChecks + terms. Newsletter optional. Submit becomes enabled only when the three required boxes are ticked.
+
+**Submission + post-submit**
+- [ ] **Step 26: Successful submit** — already done as Step 10. Verify the confirmation email arrives (existing flow — could regress if the submit handler change broke email side effect).
+- [ ] **Step 27: Submitted page** — `/apply/submitted` loads with the application number, status badge, and a "view your application" link. No crash on the new fields.
+- [ ] **Step 28: Returning user — past application** — sign out, sign back in, confirm the wizard correctly detects the previously-submitted application and routes to the post-submit chooser (TIR + SIP if applicable). The chooser must not crash on the new fields.
+
+### Existing leadership / admin / reviewer paths (only if you have access)
+
+- [ ] **Step 29: Leadership dashboard `/leadership`** — loads; the applications list shows the new submission; row click opens the detail view with `resume_file_id`, `linkedin_url`, `github_url` populated.
+- [ ] **Step 30: Admin user management `/admin/users`** — list still loads; existing users editable.
+- [ ] **Step 31: Reviewer inbox** — if assigned, the application appears; opening it shows all fields including the new three.
+
+### Cross-cutting health checks
+
+- [ ] **Step 32: API health** — `GET https://api.artpark.info/health` returns `{"status":"ok"}`.
+- [ ] **Step 33: Lambda CloudWatch logs** — no 5xx spikes since deploy time. Search for `ERROR` and `applications.submit blocked` for the last 10 minutes.
+- [ ] **Step 34: Supabase prod DB integrity** — quick spot check:
+  ```sql
+  -- No NULLs sneaking into submitted rows after the rule shipped:
+  SELECT count(*) AS new_submits_missing_fields
+    FROM applications
+   WHERE status != 'draft'
+     AND submitted_at >= '2026-05-22 12:00:00+00'
+     AND (resume_file_id IS NULL OR linkedin_url IS NULL OR github_url IS NULL);
+  -- Expected: 0 (rule enforces this for fresh submits).
+  ```
+
+### If ANY step fails
+
+1. Revert the Vercel prod deployment (Vercel dashboard → "Promote previous deployment") — instant.
+2. Redeploy previous Lambda version from CloudFormation rollback or `aws lambda update-function-code` against the previous S3 artifact.
+3. The DB columns stay in place — they're NULL-allowed and harmless. NOT a rollback target.
+4. File a bug with: failing step number, observed vs expected, screenshot, the SQL row that caused it, and Lambda log excerpt.
+
+- [ ] **Step 35: Tag the rollout**
+
+Once ALL 34 prior steps pass (12 feature + 16 wizard regression + 3 leadership/admin + 3 health):
 ```bash
-git tag mandatory-identity-fields-2026-05-22
-git push origin mandatory-identity-fields-2026-05-22
+git tag mandatory-identity-fields-prod-2026-05-22
+git push origin mandatory-identity-fields-prod-2026-05-22
 ```
 
 ---
