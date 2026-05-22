@@ -890,7 +890,12 @@ export default function App() {
               Array.isArray(submittedApps) && submittedApps.length > 0
                 ? submittedApps[0]
                 : null;
-            const target = viewingApp || lastSubmitted || application;
+            // Only fall back to the live row if it's actually been submitted
+            // — otherwise a draft user landing on /apply/submitted (refresh,
+            // stale link) sees their draft rendered as a past submission.
+            const safeApp =
+              application && application.status === "submitted" ? application : null;
+            const target = viewingApp || lastSubmitted || safeApp;
             if (!target) return null;
             const targetAnswers =
               viewingApp || lastSubmitted
