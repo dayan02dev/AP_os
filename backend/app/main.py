@@ -37,6 +37,7 @@ from .routers import (
     health,
     milestone_files,
     resume,
+    sip_application_templates,
     sip_applications,
     sip_evidence_files,
     sip_milestone_files,
@@ -150,6 +151,7 @@ app.include_router(sip_applications.router)
 app.include_router(sip_milestone_files.router)
 app.include_router(sip_evidence_files.router)
 app.include_router(sip_resume.router)
+app.include_router(sip_application_templates.router)
 # Shared
 app.include_router(support.router)
 app.include_router(waitlist.router)
