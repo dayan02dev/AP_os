@@ -121,6 +121,10 @@ function urlForState(phase, sectionIdx) {
   // see slug==="" and flip the phase back to RETURNING/UPLOAD before the
   // fit-check screen can render.
   if (phase === PHASES.EARLY_EXIT) return "/apply-sip/fit-check";
+  // SIP_TEMPLATE also gets its own slug — without one, a browser refresh
+  // on the template screen would re-resolve slug==="" and bounce the user
+  // back to RETURNING/UPLOAD.
+  if (phase === PHASES.SIP_TEMPLATE) return "/apply-sip/sip-template";
   if (
     phase === PHASES.WELCOME ||
     phase === PHASES.RETURNING ||
@@ -251,6 +255,10 @@ export default function AppSip() {
       setPhase(PHASES.EARLY_EXIT);
       return;
     }
+    if (slug === "sip-template") {
+      setPhase(PHASES.SIP_TEMPLATE);
+      return;
+    }
     if (SECTION_ORDER_SIP.includes(slug)) {
       const idx = SECTION_ORDER_SIP.indexOf(slug);
       if (idx !== sectionIdx) {
@@ -323,9 +331,12 @@ export default function AppSip() {
       setPhase(PHASES.UPLOAD);
       return;
     }
+    // Resume already parsed → route through the SIP template offer
+    // before dropping into Section 01. Founders can skip the template
+    // step; this just ensures it's visible at least once per session.
     setSectionIdx(0);
     setStepIdx(0);
-    setPhase(PHASES.SECTION_INTRO);
+    setPhase(PHASES.SIP_TEMPLATE);
   };
 
   const onStartNew = async () => {
@@ -342,9 +353,12 @@ export default function AppSip() {
   };
 
   const onResumeDraft = () => {
+    // Returning user clicked "Continue existing". Always pass through
+    // the SIP template offer first — founders who already filled the
+    // template can skip it, founders who haven't seen it yet finally do.
     setSectionIdx(0);
     setStepIdx(0);
-    setPhase(PHASES.SECTION_INTRO);
+    setPhase(PHASES.SIP_TEMPLATE);
   };
 
   const onViewPast = (entry) => {
