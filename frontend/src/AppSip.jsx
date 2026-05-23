@@ -46,6 +46,7 @@ import {
   SECTION_ORDER_SIP,
   collapseFromRowSip,
 } from "./lib/fieldMap-sip.js";
+import { SipTemplateScreen } from "./components/SipTemplateScreen.jsx";
 
 // SIP violet palette — overrides the TIR blue --accent + --accent-soft
 // tokens that the shared theme tokens otherwise set. Applied to
@@ -63,6 +64,7 @@ const PHASES = {
   UPLOAD: "upload",
   PARSING: "parsing",
   PARSE_REVIEW: "parse_review",
+  SIP_TEMPLATE: "sip_template",
   REVIEW: "review",
   SECTION_INTRO: "section_intro",
   QUESTION: "question",
@@ -357,7 +359,7 @@ export default function AppSip() {
   const skipUpload = () => {
     setSectionIdx(0);
     setStepIdx(0);
-    setPhase(PHASES.SECTION_INTRO);
+    setPhase(PHASES.SIP_TEMPLATE);
   };
 
   const goNextQuestion = () => {
@@ -422,7 +424,7 @@ export default function AppSip() {
     }
     if (phase === PHASES.SECTION_INTRO) {
       if (sectionIdx === 0) {
-        setPhase(resume.resume ? PHASES.PARSE_REVIEW : PHASES.UPLOAD);
+        setPhase(PHASES.SIP_TEMPLATE);
         return;
       }
       const prevSectionLastFQ = [...flat]
@@ -448,6 +450,10 @@ export default function AppSip() {
       }
       return;
     }
+    if (phase === PHASES.SIP_TEMPLATE) {
+      setPhase(resume.resume ? PHASES.PARSE_REVIEW : PHASES.UPLOAD);
+      return;
+    }
     if (phase === PHASES.PARSE_REVIEW || phase === PHASES.PARSING) {
       setPhase(PHASES.UPLOAD);
     }
@@ -461,6 +467,7 @@ export default function AppSip() {
       PHASES.REVIEW,
       PHASES.PARSE_REVIEW,
       PHASES.PARSING,
+      PHASES.SIP_TEMPLATE,
     ].includes(phase) &&
     !(
       phase === PHASES.SECTION_INTRO &&
@@ -521,7 +528,7 @@ export default function AppSip() {
         message: err?.message || "Couldn't apply parsed data.",
       });
     }
-    setPhase(PHASES.SECTION_INTRO);
+    setPhase(PHASES.SIP_TEMPLATE);
     setSectionIdx(0);
     setStepIdx(0);
   };
@@ -725,6 +732,19 @@ export default function AppSip() {
             ) : (
               <ParseStillRunningScreen onSkip={skipUpload} />
             )
+          )}
+          {phase === PHASES.SIP_TEMPLATE && (
+            <SipTemplateScreen
+              onBack={goBackUniversal}
+              onContinue={() => {
+                setSectionIdx(0);
+                setStepIdx(0);
+                setPhase(PHASES.SECTION_INTRO);
+              }}
+              onTemplateApplied={() => {
+                refetch?.();
+              }}
+            />
           )}
           {phase === PHASES.SECTION_INTRO && currentSection && (
             <SectionIntroScreen
