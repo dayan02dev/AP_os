@@ -289,6 +289,40 @@ async def get_my_latest_sip_template(current_user: dict = Depends(get_current_us
     return rows[0]
 
 
+# ── Apply helpers (SIP-specific) ──────────────────────────────────────────
+
+# Enum-shaped target columns and their canonical value lists. Imported
+# from llm_service so there's a single source of truth.
+from ..services.llm_service import (
+    SIP_TEMPLATE_Q5_OPTIONS,
+    SIP_TEMPLATE_Q6_OPTIONS,
+    SIP_TEMPLATE_Q8_OPTIONS,
+    SIP_TEMPLATE_Q10_OPTIONS,
+    SIP_TEMPLATE_Q15_OPTIONS,
+)
+
+_ENUM_GUARDS: dict[str, list[str]] = {
+    "sip_incorporated":            SIP_TEMPLATE_Q5_OPTIONS,
+    "sip_trl":                     SIP_TEMPLATE_Q6_OPTIONS,
+    "basic_incubator_association": SIP_TEMPLATE_Q8_OPTIONS,
+    "basic_hear_about":            SIP_TEMPLATE_Q10_OPTIONS,
+    "sip_traction":                SIP_TEMPLATE_Q15_OPTIONS,
+}
+
+# Q24 → sip_demo_video_url is a URL. Use a light validator (http/https
+# scheme + ≤ 2000 chars). Wizard does richer blur-time validation; this
+# is the apply-time backstop.
+_URL_MAX = 2000
+
+
+def _looks_like_url(value: str) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    if len(value) > _URL_MAX:
+        return False
+    return value.startswith("http://") or value.startswith("https://")
+
+
 # ── POST /me/apply-to-application ─────────────────────────────────────────
 
 @router.post(
@@ -343,16 +377,33 @@ async def apply_sip_template_to_application(current_user: dict = Depends(get_cur
     missing: list[str] = []
     patch: dict[str, Any] = {}
 
-    # NULL-only writes — skip if target column already has a value.
-    for qid, dest_col in QUESTION_TO_SIP_COLUMN.items():
+    for qid in SIP_QUESTION_IDS:
+        dest_col = QUESTION_TO_SIP_COLUMN[qid]
         val = parsed.get(qid)
+
+        # 1. Empty/null parsed value → missing.
         if not val:
             missing.append(qid)
             continue
+
+        # 2. Enum guard (Q5/Q6/Q8/Q10/Q15).
+        if dest_col in _ENUM_GUARDS:
+            if val not in _ENUM_GUARDS[dest_col]:
+                missing.append(qid)
+                continue
+
+        # 3. URL guard (Q24).
+        if dest_col == "sip_demo_video_url" and not _looks_like_url(val):
+            missing.append(qid)
+            continue
+
+        # 4. NULL-only: if the draft column already has a non-null value,
+        #    record the column as skipped and leave the value alone.
         existing = app_row.get(dest_col)
-        if existing:
+        if existing not in (None, ""):
             skipped.append(dest_col)
             continue
+
         patch[dest_col] = val
         applied.append(dest_col)
 
