@@ -216,9 +216,12 @@ function getStatusLabel(sub) {
 
 // Shown after login. Three tabs: start new / continue draft / past applications.
 function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, pastSubmissions, onResume, onViewPast, onStartNew, warmCopy, track = "tir" }) {
-  // Pick a sensible default tab: if draft exists, show Continue; else if past subs, show Past; else Start
-  const defaultTab = hasDraft ? "continue" : (pastSubmissions.length > 0 ? "past" : "start");
-  const [tab, setTab] = useAS(defaultTab);
+  // Always default to the "Start new" tab on login. Founders can still
+  // click into "Continue existing" or "Past applications" if they want.
+  // Previously this defaulted to "continue" when hasDraft was true, but
+  // that buried the new-application affordance and surprised users who
+  // signed in expecting to start fresh.
+  const [tab, setTab] = useAS("start");
   const navigate = useNavigate();
   const cycleLabel = track === "sip" ? "SIP.2026" : "TIR.2026";
 
