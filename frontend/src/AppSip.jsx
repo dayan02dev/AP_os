@@ -331,12 +331,9 @@ export default function AppSip() {
       setPhase(PHASES.UPLOAD);
       return;
     }
-    // Resume already parsed → route through the SIP template offer
-    // before dropping into Section 01. Founders can skip the template
-    // step; this just ensures it's visible at least once per session.
     setSectionIdx(0);
     setStepIdx(0);
-    setPhase(PHASES.SIP_TEMPLATE);
+    setPhase(PHASES.SECTION_INTRO);
   };
 
   const onStartNew = async () => {
@@ -353,12 +350,9 @@ export default function AppSip() {
   };
 
   const onResumeDraft = () => {
-    // Returning user clicked "Continue existing". Always pass through
-    // the SIP template offer first — founders who already filled the
-    // template can skip it, founders who haven't seen it yet finally do.
     setSectionIdx(0);
     setStepIdx(0);
-    setPhase(PHASES.SIP_TEMPLATE);
+    setPhase(PHASES.SECTION_INTRO);
   };
 
   const onViewPast = (entry) => {
@@ -438,6 +432,11 @@ export default function AppSip() {
     }
     if (phase === PHASES.SECTION_INTRO) {
       if (sectionIdx === 0) {
+        setPhase(resume.resume ? PHASES.PARSE_REVIEW : PHASES.UPLOAD);
+        return;
+      }
+      // Section 02 intro ← SIP_TEMPLATE (which sits between 01 and 02).
+      if (sectionIdx === 1) {
         setPhase(PHASES.SIP_TEMPLATE);
         return;
       }
@@ -465,7 +464,17 @@ export default function AppSip() {
       return;
     }
     if (phase === PHASES.SIP_TEMPLATE) {
-      setPhase(resume.resume ? PHASES.PARSE_REVIEW : PHASES.UPLOAD);
+      // SIP_TEMPLATE now sits between Section 01 and Section 02. Back-nav
+      // goes to Section 01's last question (the step just before the
+      // section transition that triggered CELEBRATE → SIP_TEMPLATE).
+      if (stepIdx > 0) {
+        const prev = flat[stepIdx - 1];
+        setStepIdx(stepIdx - 1);
+        setSectionIdx(prev.sectionIdx);
+        setPhase(PHASES.QUESTION);
+      } else {
+        setPhase(PHASES.SECTION_INTRO);
+      }
       return;
     }
     if (phase === PHASES.PARSE_REVIEW || phase === PHASES.PARSING) {
@@ -542,7 +551,7 @@ export default function AppSip() {
         message: err?.message || "Couldn't apply parsed data.",
       });
     }
-    setPhase(PHASES.SIP_TEMPLATE);
+    setPhase(PHASES.SECTION_INTRO);
     setSectionIdx(0);
     setStepIdx(0);
   };
@@ -751,8 +760,9 @@ export default function AppSip() {
             <SipTemplateScreen
               onBack={goBackUniversal}
               onContinue={() => {
-                setSectionIdx(0);
-                setStepIdx(0);
+                // sectionIdx + stepIdx were already advanced into Section 02
+                // by goNextQuestion before CELEBRATE fired — just transition
+                // into Section 02's section-intro screen.
                 setPhase(PHASES.SECTION_INTRO);
               }}
               onTemplateApplied={() => {
@@ -770,7 +780,17 @@ export default function AppSip() {
           {phase === PHASES.CELEBRATE && (
             <CelebrationScreen
               message={celebMsg || "Section complete."}
-              onContinue={() => setPhase(PHASES.SECTION_INTRO)}
+              onContinue={() => {
+                // After Section 01 completes (sectionIdx now points at
+                // Section 02), insert the offline SIP template offer
+                // before the next section intro. Other inter-section
+                // transitions go straight to the next intro.
+                if (sectionIdx === 1) {
+                  setPhase(PHASES.SIP_TEMPLATE);
+                } else {
+                  setPhase(PHASES.SECTION_INTRO);
+                }
+              }}
             />
           )}
           {phase === PHASES.QUESTION && currentFQ && (
