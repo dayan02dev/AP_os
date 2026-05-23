@@ -103,3 +103,25 @@ async def test_normalize_sip_template_answers_strict_keys() -> None:
     with patch.object(client, "_post_and_read", side_effect=fake_post_and_read):
         with pytest.raises(LLMParseError, match="missing required keys"):
             await client.normalize_sip_template_answers({}, user_id="u")
+
+
+def test_sip_system_prompt_normalises_q10_other_variant() -> None:
+    """The SIP anchor-based prompt instructs the LLM to normalize verbose
+    'Other' variants to the canonical 'Other' string."""
+    from app.services.llm_service import OpenRouterClient
+    prompt = OpenRouterClient._SIP_TEMPLATE_SYSTEM_PROMPT
+    # The rule must mention Q10 specifically AND the canonical "Other".
+    assert "Q10" in prompt
+    # Must explicitly mention the verbose label or the normalization intent.
+    assert "Other (please specify" in prompt or "parenthetical" in prompt.lower()
+    # Must say to emit "Other" without the suffix.
+    assert 'emit exactly the string "Other"' in prompt or "canonical" in prompt.lower()
+
+
+def test_sip_freeform_prompt_normalises_q10_other_variant() -> None:
+    """Same normalization rule must apply to the freeform-fallback prompt."""
+    from app.services.llm_service import OpenRouterClient
+    prompt = OpenRouterClient._SIP_TEMPLATE_FREEFORM_SYSTEM_PROMPT
+    assert "Q10" in prompt
+    assert "Other (please specify" in prompt or "parenthetical" in prompt.lower()
+    assert 'emit exactly the string "Other"' in prompt or "canonical" in prompt.lower()

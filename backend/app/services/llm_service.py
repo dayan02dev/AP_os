@@ -622,6 +622,12 @@ Rules:
   or empty, emit null.
 - Q8 ("Yes"/"No"): also accept "yes"/"y"/"no"/"n" case-insensitively in
   free_text when no checkbox is ticked.
+- Q10 special-case: option H in the .docx is labeled "Other (please
+  specify in the wizard)" but the canonical value is just "Other".
+  If the applicant ticks option H, or free_text matches "Other" /
+  "H" / starts with "Other", emit exactly the string "Other" (no
+  parenthetical suffix). The wizard separately captures the
+  custom hear-about text.
 - Never invent content. Never paraphrase. Never reorder.
 - Do not include keys other than the 17 listed above.
 """
@@ -667,6 +673,12 @@ Return STRICT JSON — no prose, no markdown — with these keys exactly:
 Rules:
 - MCQ questions → the exact canonical option string the applicant chose,
   or null if unclear.
+- Q10 special-case: option H in the .docx is labeled "Other (please
+  specify in the wizard)" but the canonical value is just "Other".
+  If the applicant ticks option H, or free_text matches "Other" /
+  "H" / starts with "Other", emit exactly the string "Other" (no
+  parenthetical suffix). The wizard separately captures the
+  custom hear-about text.
 - Q24 → a valid http(s) URL or null.
 - Other Qs → applicant's answer as-is (whitespace-trimmed).
 - If you cannot identify an answer with reasonable confidence, return
