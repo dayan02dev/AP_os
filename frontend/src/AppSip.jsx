@@ -365,9 +365,14 @@ export default function AppSip() {
   };
 
   const skipUpload = () => {
+    // "Skip for now — I'll fill it in manually" on the resume upload
+    // screen. Drop the user into Section 01 (Basic Info) so they can
+    // type the CV-derived fields by hand. The SIP template offer sits
+    // between Section 01 and Section 02 in the natural flow and isn't
+    // shown here.
     setSectionIdx(0);
     setStepIdx(0);
-    setPhase(PHASES.SIP_TEMPLATE);
+    setPhase(PHASES.SECTION_INTRO);
   };
 
   const goNextQuestion = () => {
