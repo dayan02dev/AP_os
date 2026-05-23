@@ -64,6 +64,44 @@ TEMPLATE_Q14_STAGE_OPTIONS = [
 # Q10 is the "is the problem well-defined?" Yes/No selector.
 TEMPLATE_Q10_OPTIONS = ["Yes", "No"]
 
+# ── SIP template option lists ────────────────────────────────────────────
+# Keep these in sync with the CHECK constraints on sip_applications
+# (migration 011 + 013) AND with frontend/src/questions_sip.jsx.
+
+SIP_TEMPLATE_Q5_OPTIONS = [
+    "Yes — Pvt Ltd, registered in India",
+    "Not yet — we're still pre-incorporation",
+]
+SIP_TEMPLATE_Q6_OPTIONS = [
+    "TRL 3 or earlier — research stage",
+    "TRL 4 — lab-validated prototype",
+    "TRL 5 — pilot-tested in a relevant environment",
+    "TRL 6+ — demonstrated in operational setting",
+]
+SIP_TEMPLATE_Q8_OPTIONS = ["Yes", "No"]
+SIP_TEMPLATE_Q10_OPTIONS = [
+    "Referral from friend/colleague",
+    "IISc faculty or staff",
+    "Social media (LinkedIn, Twitter, etc.)",
+    "Event or conference",
+    "Search engine",
+    "Partner organization",
+    "News article or press",
+    "Other",
+]
+SIP_TEMPLATE_Q15_OPTIONS = [
+    "Pre-revenue — building toward our first pilot",
+    "Active pilots (paid or unpaid) with design partners",
+    "Paying pilots — customers have paid for early access",
+    "Live paying customers — repeat revenue",
+]
+
+# All 17 SIP template question IDs (Q5–Q24, minus Q7/Q22/Q23).
+SIP_TEMPLATE_REQUIRED_KEYS: set[str] = {
+    "Q5", "Q6", "Q8", "Q9", "Q10", "Q11", "Q12", "Q13", "Q14",
+    "Q15", "Q16", "Q17", "Q18", "Q19", "Q20", "Q21", "Q24",
+}
+
 log = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -546,6 +584,242 @@ Rules:
                 return self._parse_template_response(body_dict, user_id=user_id)
 
         raise LLMParseError(f"exhausted retries: {last_err}")
+
+    # ── SIP template normalisation ────────────────────────────────────────
+
+    _SIP_TEMPLATE_SYSTEM_PROMPT = """You normalise answers from a Word/PDF
+SIP application template. The applicant filled 17 questions: Q5, Q6, Q8,
+Q9, Q10, Q11, Q12, Q13, Q14, Q15, Q16, Q17, Q18, Q19, Q20, Q21, Q24.
+
+For each question you receive either:
+  - {"free_text": "..."}                          (essay / URL questions)
+  - {"free_text": "...", "options": [...]}        (multiple-choice; Q5, Q6, Q8, Q10, Q15)
+
+Each option entry has shape:
+    {"letter": "A", "label": "Yes — Pvt Ltd, registered in India",
+     "checked": true|false|null}
+
+Return STRICT JSON — no prose, no code fences — with exactly these keys:
+{"Q5":  string|null, "Q6":  string|null, "Q8":  string|null,
+ "Q9":  string|null, "Q10": string|null, "Q11": string|null,
+ "Q12": string|null, "Q13": string|null, "Q14": string|null,
+ "Q15": string|null, "Q16": string|null, "Q17": string|null,
+ "Q18": string|null, "Q19": string|null, "Q20": string|null,
+ "Q21": string|null, "Q24": string|null}
+
+Rules:
+- Essay/URL questions (Q9, Q11, Q12, Q13, Q14, Q16, Q17, Q18, Q19, Q20,
+  Q21, Q24): emit the applicant's text with leading/trailing whitespace
+  stripped. If the cell is empty or contains only placeholder content
+  (e.g. "TODO", "n/a"), emit null.
+- Q24 is a URL. If it's not a valid http(s) URL, emit null. Do NOT try
+  to fix or guess URLs.
+- MCQ questions (Q5, Q6, Q8, Q10, Q15): if exactly one option has
+  checked=true, emit that option's exact `label` string. If none are
+  checked, fall back to free_text — match it against the option labels
+  case-insensitively, or accept the option letter (A/B/C/...). If
+  ambiguous (multiple checked, or text doesn't match a unique option)
+  or empty, emit null.
+- Q8 ("Yes"/"No"): also accept "yes"/"y"/"no"/"n" case-insensitively in
+  free_text when no checkbox is ticked.
+- Never invent content. Never paraphrase. Never reorder.
+- Do not include keys other than the 17 listed above.
+"""
+
+    _SIP_TEMPLATE_FREEFORM_SYSTEM_PROMPT = """You receive the full plain
+text of a SIP application document and a list of 17 questions: Q5, Q6,
+Q8, Q9, Q10, Q11, Q12, Q13, Q14, Q15, Q16, Q17, Q18, Q19, Q20, Q21, Q24.
+
+Document layout you should expect:
+- Questions appear as headings like "Q5 · REQUIRED" or "Q9 · OPTIONAL"
+  followed by question prompts.
+- Answers may be inline (right under each question) or grouped at the
+  end of the document.
+- Five questions are multiple-choice:
+    Q5  → ["Yes — Pvt Ltd, registered in India",
+           "Not yet — we're still pre-incorporation"]
+    Q6  → ["TRL 3 or earlier — research stage",
+           "TRL 4 — lab-validated prototype",
+           "TRL 5 — pilot-tested in a relevant environment",
+           "TRL 6+ — demonstrated in operational setting"]
+    Q8  → ["Yes", "No"]
+    Q10 → ["Referral from friend/colleague",
+           "IISc faculty or staff",
+           "Social media (LinkedIn, Twitter, etc.)",
+           "Event or conference",
+           "Search engine",
+           "Partner organization",
+           "News article or press",
+           "Other"]
+    Q15 → ["Pre-revenue — building toward our first pilot",
+           "Active pilots (paid or unpaid) with design partners",
+           "Paying pilots — customers have paid for early access",
+           "Live paying customers — repeat revenue"]
+
+Return STRICT JSON — no prose, no markdown — with these keys exactly:
+{"Q5":  string|null, "Q6":  string|null, "Q8":  string|null,
+ "Q9":  string|null, "Q10": string|null, "Q11": string|null,
+ "Q12": string|null, "Q13": string|null, "Q14": string|null,
+ "Q15": string|null, "Q16": string|null, "Q17": string|null,
+ "Q18": string|null, "Q19": string|null, "Q20": string|null,
+ "Q21": string|null, "Q24": string|null}
+
+Rules:
+- MCQ questions → the exact canonical option string the applicant chose,
+  or null if unclear.
+- Q24 → a valid http(s) URL or null.
+- Other Qs → applicant's answer as-is (whitespace-trimmed).
+- If you cannot identify an answer with reasonable confidence, return
+  null. Never guess. Never hallucinate.
+- Never paraphrase, summarise, translate, or shorten.
+"""
+
+    async def normalize_sip_template_answers(
+        self,
+        payload: dict[str, Any],
+        *,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """SIP equivalent of normalize_template_answers — Q5..Q24 minus Q7/Q22/Q23."""
+        if not self.api_key:
+            raise LLMParseError("OPENROUTER_API_KEY is not configured")
+
+        prompt_payload = {
+            "model": self.model,
+            "models": [self.model, *FALLBACK_MODELS],
+            "messages": [
+                {"role": "system", "content": self._SIP_TEMPLATE_SYSTEM_PROMPT},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.0,
+        }
+        return await self._run_template_call(
+            prompt_payload,
+            required_keys=SIP_TEMPLATE_REQUIRED_KEYS,
+            user_id=user_id,
+            log_label="sip-template",
+        )
+
+    async def extract_sip_template_answers_freeform(
+        self,
+        document_text: str,
+        *,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """SIP equivalent of extract_template_answers_freeform."""
+        if not self.api_key:
+            raise LLMParseError("OPENROUTER_API_KEY is not configured")
+
+        if len(document_text) > 30000:
+            document_text = document_text[:30000].rstrip() + "\n[TRUNCATED]"
+
+        prompt_payload = {
+            "model": self.model,
+            "models": [self.model, *FALLBACK_MODELS],
+            "messages": [
+                {"role": "system", "content": self._SIP_TEMPLATE_FREEFORM_SYSTEM_PROMPT},
+                {"role": "user", "content": document_text},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.0,
+        }
+        return await self._run_template_call(
+            prompt_payload,
+            required_keys=SIP_TEMPLATE_REQUIRED_KEYS,
+            user_id=user_id,
+            log_label="sip-template-freeform",
+        )
+
+    async def _run_template_call(
+        self,
+        prompt_payload: dict[str, Any],
+        *,
+        required_keys: set[str],
+        user_id: str | None,
+        log_label: str,
+    ) -> dict[str, Any]:
+        """Shared retry + parse loop for template-style calls.
+
+        Factored out of normalize_template_answers /
+        extract_template_answers_freeform — same retry/deadline shape,
+        parameterised by the required-keys set for output validation.
+        """
+        headers = self._headers()
+        last_err: Exception | None = None
+
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as http:
+            for attempt in range(1, MAX_ATTEMPTS + 1):
+                try:
+                    body_dict = await asyncio.wait_for(
+                        self._post_and_read(http, OPENROUTER_URL, headers, prompt_payload, user_id=user_id),
+                        timeout=CALL_DEADLINE_SECONDS,
+                    )
+                except asyncio.TimeoutError as exc:
+                    log.warning(
+                        f"openrouter ({log_label}) total deadline exceeded",
+                        extra={"attempt": attempt, "deadline_s": CALL_DEADLINE_SECONDS, "user_id": user_id},
+                    )
+                    if attempt < MAX_ATTEMPTS:
+                        continue
+                    raise LLMParseError(
+                        f"openrouter exceeded {CALL_DEADLINE_SECONDS}s total deadline"
+                    ) from exc
+                except httpx.HTTPError as exc:
+                    last_err = exc
+                    if attempt < MAX_ATTEMPTS:
+                        await asyncio.sleep(2 ** (attempt - 1))
+                        continue
+                    raise LLMParseError(f"network error after {attempt} attempts: {exc}") from exc
+                except _RetryableStatus as exc:
+                    last_err = exc
+                    if attempt < MAX_ATTEMPTS:
+                        await asyncio.sleep(2 ** (attempt - 1))
+                        continue
+                    raise LLMParseError(f"openrouter {exc.status} after retries") from exc
+
+                return self._parse_template_response_strict(
+                    body_dict, required_keys=required_keys, user_id=user_id,
+                )
+
+        raise LLMParseError(f"exhausted retries: {last_err}")
+
+    def _parse_template_response_strict(
+        self,
+        body: dict[str, Any],
+        *,
+        required_keys: set[str],
+        user_id: str | None,
+    ) -> dict[str, Any]:
+        """Parameterised version of _parse_template_response."""
+        try:
+            content = body["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LLMParseError(f"unexpected openrouter response shape: {exc}") from exc
+
+        try:
+            parsed = _loads_with_repair(content)
+        except json.JSONDecodeError as exc:
+            raise LLMParseError(f"LLM returned non-JSON content: {exc}") from exc
+
+        if not isinstance(parsed, dict):
+            raise LLMParseError("LLM returned JSON that isn't an object")
+
+        missing = required_keys - parsed.keys()
+        if missing:
+            raise LLMParseError(f"LLM output missing required keys: {sorted(missing)}")
+
+        cleaned: dict[str, Any] = {}
+        for k in required_keys:
+            v = parsed.get(k)
+            if v is None:
+                cleaned[k] = None
+            elif isinstance(v, str):
+                t = v.strip()
+                cleaned[k] = t or None
+            else:
+                cleaned[k] = str(v).strip() or None
+        return cleaned
 
     def _parse_template_response(
         self, body: dict[str, Any], *, user_id: str | None,
