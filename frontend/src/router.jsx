@@ -17,6 +17,7 @@
 //   /apply/<section>       TIR wizard sections — open to any authed user
 //   /apply-sip/<section>   SIP wizard sections — open to any authed user
 //   /apply-sip/fit-check   SIP early-exit screen for pre-incorporation answers
+//   /apply-sip/sip-template offline .docx template upload (between section 01 and 02)
 //   /apply/profile         profile settings
 //   /apply/review          pre-submission review
 //   /apply/submitted       post-submit receipt
@@ -155,6 +156,14 @@ export default function AppRoutes() {
       />
       <Route
         path="/apply-sip/fit-check"
+        element={
+          <ProtectedRoute>
+            <SipAppRoute />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/apply-sip/sip-template"
         element={
           <ProtectedRoute>
             <SipAppRoute />
