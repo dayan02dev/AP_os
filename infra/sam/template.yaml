@@ -119,7 +119,12 @@ Resources:
       Name: !Sub artpark-eir-api-${EnvName}
       DisableExecuteApiEndpoint: false
       CorsConfiguration:
-        AllowOrigins: [!Ref FrontendOrigin]
+        # FrontendOrigin is a comma-separated string (one or more Vercel
+        # preview URLs). Split into a real list so each origin is matched
+        # individually by API Gateway's CORS layer — wrapping the whole
+        # string in [!Ref ...] produced a single-element list with a
+        # literal comma in it, which never matched a browser's Origin.
+        AllowOrigins: !Split [",", !Ref FrontendOrigin]
         AllowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
         AllowHeaders: [Authorization, Content-Type, X-Request-ID, X-Admin-Key]
         AllowCredentials: true
