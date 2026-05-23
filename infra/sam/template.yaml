@@ -119,12 +119,19 @@ Resources:
       Name: !Sub artpark-eir-api-${EnvName}
       DisableExecuteApiEndpoint: false
       CorsConfiguration:
-        # FrontendOrigin is a comma-separated string (one or more Vercel
-        # preview URLs). Split into a real list so each origin is matched
-        # individually by API Gateway's CORS layer — wrapping the whole
-        # string in [!Ref ...] produced a single-element list with a
-        # literal comma in it, which never matched a browser's Origin.
-        AllowOrigins: !Split [",", !Ref FrontendOrigin]
+        # CORS origins are listed statically here because the SAM
+        # transform mishandles !Split inside CorsConfiguration.AllowOrigins
+        # (it hoists the Fn::Split to replace the entire
+        # x-amazon-apigateway-cors block, wiping AllowMethods/AllowHeaders).
+        # FrontendOrigin (the env var) is still set to the comma-joined
+        # value so FastAPI's own CORS middleware can use it for non-
+        # API-Gateway code paths.
+        AllowOrigins:
+          - "https://ap-os-git-staging-artpark.vercel.app"
+          - "https://ap-os-git-staging-rolebaseddashboard-artpark.vercel.app"
+          - "https://apply.artpark.info"
+          - "https://artpark.online"
+          - "http://localhost:5173"
         AllowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
         AllowHeaders: [Authorization, Content-Type, X-Request-ID, X-Admin-Key]
         AllowCredentials: true
