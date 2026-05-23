@@ -305,7 +305,11 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
                     backend's wrong_track signal. */}
                 <button
                   className="eir-ret-track eir-ret-track-tir"
-                  onClick={() => (track === "tir" ? onStartNew() : navigate("/apply"))}
+                  onClick={() =>
+                    track === "tir"
+                      ? onStartNew()
+                      : navigate("/apply?direct=1")
+                  }
                 >
                   <div className="eir-ret-track-head">
                     <span className="eir-mono eir-ret-track-eyebrow">begin · tir.2026</span>
@@ -326,7 +330,11 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
                     the mismatch screen depending on profiles.track. */}
                 <button
                   className="eir-ret-track eir-ret-track-sip"
-                  onClick={() => (track === "sip" ? onStartNew() : navigate("/apply-sip"))}
+                  onClick={() =>
+                    track === "sip"
+                      ? onStartNew()
+                      : navigate("/apply-sip?direct=1")
+                  }
                 >
                   <div className="eir-ret-track-head">
                     <span className="eir-mono eir-ret-track-eyebrow">begin · sip.2026</span>

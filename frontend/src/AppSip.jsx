@@ -288,6 +288,18 @@ export default function AppSip() {
       return;
     }
     const hasAny = answers && Object.keys(answers).length > 0;
+    // `?direct=1` is set by the unified TIR/SIP track chooser when a
+    // user crosses tracks (e.g. clicks the SIP card while on /apply).
+    // The chooser already captured the founder's track intent, so the
+    // per-track RETURNING screen here is redundant — drop them straight
+    // into the wizard instead.
+    const params = new URLSearchParams(location.search);
+    if (params.get("direct") === "1") {
+      setSectionIdx(0);
+      setStepIdx(0);
+      setPhase(hasAny ? PHASES.SECTION_INTRO : PHASES.UPLOAD);
+      return;
+    }
     setPhase(hasAny ? PHASES.RETURNING : PHASES.UPLOAD);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user, application, locked]);
