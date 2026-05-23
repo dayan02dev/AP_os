@@ -36,8 +36,9 @@ SIP is the second track on this monorepo (multi-track schema introduced in migra
 | D1 | **Inject anchor markers into the SIP `.docx`** rather than parse by Q-heading regex or LLM-only. | Matches TIR exactly. Deterministic parsing. Fewest LLM calls. Founder UX matches TIR template today. |
 | D2 | **Separate `sip_application_templates` table** rather than adding a `track` column to the shared `application_templates` table. | Follows existing precedent (`sip_resume_uploads` is a separate table from `resume_uploads` in mig 011). Cleanest RLS isolation. No cross-track row-leak risk. |
 | D3 | **Hybrid packaging:** share the generic `.docx` text-extract + anchor-slice in `template_parser.py`; sibling files for SIP-specific router, hook, component, model, LLM prompt. | Matches how `applications.py` and `sip_applications.py` are split today — sibling files, not subclasses. Same blast radius as existing TIR/SIP split. |
-| D4 | **Q10 = "Other"** → leave `basic_hear_about` NULL and surface in `missing_answers`. | Template literally says "please specify in the wizard." Auto-filling "Other" would just mean the wizard still asks the founder to type the custom value, with extra confusion. |
+| D4 | **Q10 = "Other"** → auto-fill `basic_hear_about = "Other"` (no special skip reason). | Matches TIR's `problem_defined` enum-check pattern — if the canonical enum includes the value, write it. The wizard separately prompts for the custom hear-about text (that field is a sibling `basic_hear_about_other` write that the wizard handles, not the template). Keeps SIP apply code path identical in shape to TIR. |
 | D5 | 17 questions in scope: Q5–Q24 minus the gaps Q7, Q22, Q23 (which the template document does not include). | Driven by what the template `.docx` actually asks. |
+| D6 | **NULL-only apply semantics for SIP** (deliberate divergence from TIR's overwrite). When a SIP column already has a non-null value on the draft, the column name lands in `skipped_fields` (no DB write). The response model `SipApplyTemplateResult.skipped_fields` is `list[str]` — same shape as TIR's model. | TIR uses overwrite (`routers/application_templates.py:349-357`); SIP intentionally preserves typed answers to reduce surprise when founders edit + then upload. Plan documents the divergence so future maintainers know it's not an oversight. |
 
 ## 5. Question-to-column mapping
 
@@ -63,7 +64,7 @@ Q21 OPTIONAL text   → execution_hwsw_integration
 Q24 OPTIONAL text   → sip_demo_video_url            (URL, http/https, ≤2000 chars)
 ```
 
-MCQ enum values mirror the existing `CHECK` constraints on `sip_applications` (see migration 011). Parser-emitted enum strings must match exactly; mismatches are surfaced as `skipped_fields` with `reason='invalid_enum'` and do not write to the DB.
+MCQ enum values mirror the existing `CHECK` constraints on `sip_applications` (see migration 011). Parser-emitted enum strings must match exactly; mismatches are demoted to `missing_answers` (no DB write) — matches TIR's `problem_defined` enum-check pattern at `routers/application_templates.py:367-376`.
 
 ## 6. Architecture
 
@@ -192,13 +193,15 @@ MCQ enum values mirror the existing `CHECK` constraints on `sip_applications` (s
    │     ├─ column = QUESTION_TO_SIP_COLUMN[Q]
    │     ├─ value  = parsed_data[Q]
    │     ├─ skip if value is null/empty                       → missing_answers
-   │     ├─ skip if draft already has non-null in column      → skipped_fields
    │     ├─ enum-validate (sip_incorporated, sip_trl,
-   │     │     basic_hear_about, sip_traction, etc.)
-   │     │     fail → skipped_fields with reason 'invalid_enum'
-   │     ├─ Q10='Other' special-case → skipped_fields, reason 'requires_wizard'
+   │     │     basic_hear_about, sip_traction, etc.) — "Other"
+   │     │     is a valid canonical enum value, no special case
+   │     │     fail → missing_answers (matches TIR's problem_defined pattern)
    │     ├─ Q24 URL validator (http/https, ≤2000 chars)
-   │     │     fail → skipped_fields, reason 'invalid_url'
+   │     │     fail → missing_answers
+   │     ├─ skip if draft already has non-null in column      → skipped_fields
+   │     │                                                      (column name only,
+   │     │                                                       no reason code)
    │     └─ else: stage in update dict                        → applied_fields
    │ 13. UPDATE sip_applications SET <staged columns> WHERE id = draft_id
    │ 14. UPDATE sip_application_templates SET applied_to_application_at = now()
@@ -238,10 +241,10 @@ A second upload from the same user creates a new row; `/me` returns the most rec
 1. **Founder uploads TIR template by mistake** — parsed_data comes back with `{Q9..Q19}` (TIR keys), not `{Q5..Q24}`. Detect at parse-time: if intersection of parsed keys with `SIP_QUESTION_IDS` is < 3, set `parse_status='failed'`, `parse_error='wrong_track_template'`, surface as `WRONG_TRACK_TEMPLATE`.
 2. **Founder edited the docx anchors** (deleted `>>> ANSWER Q5 START >>>` or renamed Q5 to Q05) — slicer finds < 3 anchors, falls through to LLM freeform. Logged with `parse_warning='anchors_missing_used_llm_fallback'`. Founder gets a result (possibly less accurate); no error shown.
 3. **Founder filled some answers, left others blank** — blank answers come through as empty strings; parser maps to `null`; apply skips them; UX summary shows "Filled 11 · 0 skipped · 6 missing" (same pattern as TIR).
-4. **Q10 = "Other"** — `parse_status='completed'`, `parsed_data["Q10"]="Other"`, apply step skips with `reason: 'requires_wizard'`. UX summary surfaces "1 answer needs your attention in the wizard."
+4. **Q10 = "Other"** — `parse_status='completed'`, `parsed_data["Q10"]="Other"`. Apply step treats it like any other canonical enum value: writes `basic_hear_about="Other"` (assuming the column is still NULL on the draft, per D6). The wizard later prompts the founder for the custom hear-about text via its own field — that's a separate concern from the template apply path.
 5. **Multiple MCQ options ticked on a single-select** (e.g., applicant ticked both A and B on Q5) — `collect_mcq_state` returns multiple `checked: true`. LLM prompt rule: "if multiple options are checked on a single-select MCQ, return null." Apply step skips with `reason: 'ambiguous_mcq'`.
 6. **PDF upload instead of docx** — `python-docx` rejects it; pipeline routes through `pypdf` extraction; anchor regex still works on the extracted text (PDFs export the markers as plain text). Founders who print-to-PDF after filling parse correctly.
-7. **Existing draft has typed answers already** — NULL-only write semantics protect them. Apply summary surfaces `skipped_fields=[{column: "problem_describe", reason: "already_filled"}]`.
+7. **Existing draft has typed answers already** — NULL-only write semantics protect them (D6, deliberate divergence from TIR's overwrite). The pre-filled column name lands in `skipped_fields` (just the column name string — reason is implicit; same shape as TIR's `ApplyTemplateResult.skipped_fields: list[str]`).
 8. **Concurrent uploads from two tabs** — most-recent-row wins on `/me`. Older rows stay in DB for audit; never applied automatically.
 9. **Founder uploads, deletes their draft sip_applications row, then applies** — apply returns `SIP_DRAFT_NOT_FOUND`. Template row stays parsed; can be applied to a fresh draft later (looked up by user_id, not by template's frozen application_id).
 10. **`sip_demo_video_url` validation** — same regex as the wizard field uses today (http/https, ≤2000 chars). On fail, skip with `reason: 'invalid_url'`.
@@ -280,19 +283,19 @@ A second upload from the same user creates a new row; `/me` returns the most rec
 | `test_get_me_returns_latest` | Two uploads → `GET /me` returns most-recent by created_at |
 | `test_get_me_returns_none_for_new_user` | No uploads yet → 200 with `template: null` |
 | `test_apply_happy_path` | All 17 fields → applied_fields has 17, skipped/missing empty, sip_applications updated |
-| `test_apply_null_only_semantics` | Pre-fill `problem_describe` → column appears in skipped_fields with `reason='already_filled'` |
-| `test_apply_enum_validation_sip_incorporated` | Parsed value not in enum → skipped, `reason='invalid_enum'` |
+| `test_apply_null_only_semantics` | Pre-fill `problem_describe` → column appears in skipped_fields (as a bare column-name string) and the draft value is preserved |
+| `test_apply_enum_validation_sip_incorporated` | Parsed value not in enum → missing_answers |
 | `test_apply_enum_validation_sip_trl` | Same, for TRL column |
 | `test_apply_enum_validation_sip_traction` | Same, for traction column |
 | `test_apply_enum_validation_basic_hear_about` | Same, for hear-about column |
-| `test_apply_q10_other_requires_wizard` | Parsed Q10='Other' → skipped, `reason='requires_wizard'` |
-| `test_apply_q24_invalid_url` | Q24='not-a-url' → skipped, `reason='invalid_url'`; valid URL → applied |
+| `test_apply_q10_other_auto_filled` | Parsed Q10='Other' → applied_fields contains `basic_hear_about`, draft column = `"Other"` |
+| `test_apply_q24_invalid_url` | Q24='not-a-url' → missing_answers; valid http(s) URL → applied |
 | `test_apply_no_draft_returns_404` | User has no draft sip_applications → 404 `SIP_DRAFT_NOT_FOUND` |
 | `test_apply_idempotent` | Call apply twice in a row → second call applied_fields empty, no DB mutations |
 | `test_apply_rate_limit` | 11th apply in same hour → 429 |
 | `test_apply_unauthenticated` | No bearer → 401 |
 | `test_apply_requires_sip_track` | Wrong track → 403 |
-| `test_apply_ambiguous_mcq_skipped` | parsed_data with two ticks on Q5 → LLM returned null, apply skips with `reason='ambiguous_mcq'` |
+| `test_apply_ambiguous_mcq_to_missing` | parsed_data with two ticks on Q5 → LLM returned null, apply records Q5 in missing_answers |
 | `test_apply_does_not_touch_tir_applications` | User has both TIR + SIP drafts → only sip_applications row mutated |
 | `test_applied_to_application_at_set_on_success` | After apply → DB column populated |
 | `test_applied_to_application_at_unset_on_failure` | Apply returns 404 → column stays NULL |
