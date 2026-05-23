@@ -210,6 +210,19 @@ export const api = {
   post: (path, body, opts = {}) => apiCall(path, { ...opts, method: "POST", body }),
   patch: (path, body, opts = {}) => apiCall(path, { ...opts, method: "PATCH", body }),
   del: (path, opts = {}) => apiCall(path, { ...opts, method: "DELETE" }),
+
+  // ── SIP application-template uploads ──────────────────────────────────────
+  uploadSipTemplate: async (file, { signal, timeoutMs = UPLOAD_TIMEOUT_MS } = {}) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return api.post("/sip-application-templates/upload", formData, { signal, timeoutMs });
+  },
+
+  getMySipTemplate: async ({ signal } = {}) =>
+    api.get("/sip-application-templates/me", { signal }),
+
+  applySipTemplate: async ({ signal } = {}) =>
+    api.post("/sip-application-templates/me/apply-to-application", null, { signal }),
 };
 
 // Register the refresh-caller with session.js. Using a plain fetch here
