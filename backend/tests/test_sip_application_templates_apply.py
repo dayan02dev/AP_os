@@ -280,8 +280,13 @@ def test_apply_happy_path_all_columns_null(monkeypatch) -> None:
     assert body["skipped_fields"] == []
 
 
-def test_apply_null_only_preserves_typed_value(monkeypatch) -> None:
-    """Pre-filled problem_describe on draft → column in skipped_fields, NOT applied_fields."""
+def test_apply_overwrites_pre_filled_columns(monkeypatch) -> None:
+    """Pre-filled column → overwritten with the parsed value (matches TIR).
+
+    NULL-only writes were the original design but caused silent skip
+    behaviour during the first founder smoke. Switched to overwrite to
+    match TIR's apply-to-application semantics.
+    """
     import app.routers.sip_application_templates as sip_tmpl
 
     draft = _all_null_draft(DRAFT_ID)
@@ -306,14 +311,18 @@ def test_apply_null_only_preserves_typed_value(monkeypatch) -> None:
     assert resp.status_code == 200, resp.text
     body = resp.json()
 
-    assert "problem_describe" in body["skipped_fields"]
-    assert "problem_describe" not in body["applied_fields"]
-    # Confirm the draft was NOT overwritten (no update payload for this col).
+    # Under overwrite semantics the column lands in applied_fields and
+    # skipped_fields stays empty. The update payload must include the
+    # parsed value for that column.
+    assert "problem_describe" in body["applied_fields"]
+    assert "problem_describe" not in body["skipped_fields"]
     updates_for_app = store.updates.get("sip_applications", [])
-    for update in updates_for_app:
-        assert "problem_describe" not in update["payload"], (
-            "problem_describe must not be in any update payload (NULL-only write violated)"
-        )
+    wrote_problem_describe = any(
+        "problem_describe" in update["payload"] for update in updates_for_app
+    )
+    assert wrote_problem_describe, (
+        "problem_describe must appear in at least one update payload"
+    )
 
 
 def test_apply_invalid_enum_to_missing(monkeypatch) -> None:
@@ -473,11 +482,19 @@ def test_apply_q10_other_auto_filled(monkeypatch) -> None:
     )
 
 
-def test_apply_idempotent_second_call_applied_empty(monkeypatch) -> None:
-    """Second apply call (with draft now populated) → applied_fields=[], columns in skipped_fields."""
+def test_apply_idempotent_overwrites_same_values(monkeypatch) -> None:
+    """Second apply call re-writes the same parsed values (overwrite semantics).
+
+    Under the previous NULL-only design the second call would have found
+    every column already filled and produced an empty applied_fields.
+    Under overwrite semantics the second call writes the same values
+    again — applied_fields is identical between calls, skipped_fields
+    stays empty, and the operation is value-idempotent (the column ends
+    up with the parsed value in both cases) even though the audit log
+    records both write attempts.
+    """
     import app.routers.sip_application_templates as sip_tmpl
 
-    # Build a draft with all columns null and a template with 12 non-null answers.
     partial_parsed = {
         "Q5":  "Yes — Pvt Ltd, registered in India",
         "Q6":  "TRL 4 — lab-validated prototype",
@@ -509,28 +526,28 @@ def test_apply_idempotent_second_call_applied_empty(monkeypatch) -> None:
             "parsed_data": partial_parsed,
         }
     ]
-    store.persist_updates = True  # writes flow back into tables["sip_applications"]
+    store.persist_updates = True
     monkeypatch.setattr(sip_tmpl, "get_admin_client", lambda: store)
 
     app = _make_app(SIP_USER_ID)
     c = TestClient(app, raise_server_exceptions=False)
 
-    # First call — should apply the non-null fields.
     first = c.post(_APPLY_URL)
     assert first.status_code == 200, first.text
     first_body = first.json()
-    assert first_body["applied_fields"], "First call should apply at least one field"
+    assert first_body["applied_fields"], "First call should apply the non-null fields"
+    assert first_body["skipped_fields"] == [], "skipped_fields must stay empty under overwrite"
 
-    # Second call — all the previously-written columns are now non-null.
     second = c.post(_APPLY_URL)
     assert second.status_code == 200, second.text
     second_body = second.json()
 
-    assert second_body["applied_fields"] == [], (
-        "Second call must find all columns already filled; applied_fields must be empty"
+    # Same set of applied_fields both times — overwrite re-writes them.
+    assert sorted(second_body["applied_fields"]) == sorted(first_body["applied_fields"]), (
+        "Overwrite must re-apply the same fields on every call"
     )
-    assert "problem_describe" in second_body["skipped_fields"], (
-        "problem_describe (written in first call) must land in skipped_fields on second call"
+    assert second_body["skipped_fields"] == [], (
+        "skipped_fields must stay empty under overwrite"
     )
 
 

@@ -377,6 +377,13 @@ async def apply_sip_template_to_application(current_user: dict = Depends(get_cur
     missing: list[str] = []
     patch: dict[str, Any] = {}
 
+    # Overwrite semantics (matches TIR's apply-to-application behaviour):
+    # uploading a filled template is an explicit signal to apply those
+    # answers, even if the founder previously typed something in those
+    # fields. NULL-only writes turned out to be confusing during the
+    # first smoke — a returning founder who'd entered placeholder text
+    # while iterating saw "0 filled · 17 kept" with no clear signal
+    # that the parsed answers had been silently discarded.
     for qid in SIP_QUESTION_IDS:
         dest_col = QUESTION_TO_SIP_COLUMN[qid]
         val = parsed.get(qid)
@@ -386,7 +393,8 @@ async def apply_sip_template_to_application(current_user: dict = Depends(get_cur
             missing.append(qid)
             continue
 
-        # 2. Enum guard (Q5/Q6/Q8/Q10/Q15).
+        # 2. Enum guard (Q5/Q6/Q8/Q10/Q15) — values not in the canonical
+        #    set get demoted to missing rather than poisoning the column.
         if dest_col in _ENUM_GUARDS:
             if val not in _ENUM_GUARDS[dest_col]:
                 missing.append(qid)
@@ -397,13 +405,7 @@ async def apply_sip_template_to_application(current_user: dict = Depends(get_cur
             missing.append(qid)
             continue
 
-        # 4. NULL-only: if the draft column already has a non-null value,
-        #    record the column as skipped and leave the value alone.
-        existing = app_row.get(dest_col)
-        if existing not in (None, ""):
-            skipped.append(dest_col)
-            continue
-
+        # 4. Write — always, overwriting any existing value.
         patch[dest_col] = val
         applied.append(dest_col)
 
