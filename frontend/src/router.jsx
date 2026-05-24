@@ -38,6 +38,7 @@ import ReviewerScoringPage from "./pages/reviewer/ReviewerScoringPage.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
 import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
+import { isApplyHiddenFor, landingPathFor } from "./lib/landing.js";
 import { hasCapability } from "./lib/rbac.js";
 
 // Capability gate for /leadership. ProtectedRoute already enforces auth;
@@ -85,15 +86,33 @@ function LeadershipReviewRoute() {
 
 // Bounces leadership and admins away from the applicant wizard. Unauthed
 // visitors and applicant/reviewer/mentor accounts fall through to the
-// wizard's existing welcome / returning-user flow. Leadership wins over
-// admin to match SignInPage's post-signin priority — admins reach /admin
-// via the Switch button inside the leadership dashboard.
+// wizard's existing welcome / returning-user flow. Priority matches
+// landingPathFor() so SignInPage/VerifyPage and the gate stay in sync.
+// While auth is still resolving we render a stub instead of <App /> so
+// a leadership account never sees the wizard flash before the redirect.
 function ApplyRoleGate({ children }) {
   const { user, isAuthed, loading } = useAuth();
-  if (loading || !isAuthed) return children;
+  if (loading) {
+    return (
+      <div className="eir-root">
+        <div className="eir-bg" />
+        <div className="eir-frame">
+          <main className="eir-main">
+            <div className="eir-screen">
+              <div className="eir-welcome-body">
+                <p className="eir-mono eir-dim">checking your session…</p>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+  if (!isAuthed) return children;
   const roles = user?.roles || [];
-  if (roles.includes("leadership")) return <Navigate to="/leadership" replace />;
-  if (roles.includes("admin")) return <Navigate to="/admin" replace />;
+  if (isApplyHiddenFor(roles)) {
+    return <Navigate to={landingPathFor(roles)} replace />;
+  }
   return children;
 }
 
