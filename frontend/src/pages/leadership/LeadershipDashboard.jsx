@@ -113,6 +113,11 @@ export default function LeadershipDashboard() {
   const navigate = useNavigate();
   const roles = user?.roles || [];
   const showSwitchToAdmin = hasCapability(roles, "manage_users");
+  // Hide the "Switch to applicant" buttons for accounts whose /apply is
+  // role-gated away (admin or leadership). Clicking the button for those
+  // users would just bounce them back here via ApplyRoleGate.
+  const showSwitchToApplicant =
+    !roles.includes("leadership") && !roles.includes("admin");
 
   const [view, setView] = useState("dashboard");
 
@@ -355,9 +360,11 @@ export default function LeadershipDashboard() {
           </button>
         )}
 
-        <a className="applicant-btn" href="/apply" aria-label="Switch to applicant view">
-          <span className="arrow" style={{ marginLeft: 0, marginRight: 2 }}>←</span> Applicant
-        </a>
+        {showSwitchToApplicant && (
+          <a className="applicant-btn" href="/apply" aria-label="Switch to applicant view">
+            <span className="arrow" style={{ marginLeft: 0, marginRight: 2 }}>←</span> Applicant
+          </a>
+        )}
 
         <button
           type="button"
@@ -777,10 +784,12 @@ export default function LeadershipDashboard() {
             {/* ── Footer ── */}
             <div className="page-foot">
               <span>ARTPARK / OS · Leadership view</span>
-              <a href="/apply" className="foot-link">
-                <span className="arrow" style={{ marginLeft: 0, marginRight: 4 }}>←</span>
-                Switch to applicant view
-              </a>
+              {showSwitchToApplicant && (
+                <a href="/apply" className="foot-link">
+                  <span className="arrow" style={{ marginLeft: 0, marginRight: 4 }}>←</span>
+                  Switch to applicant view
+                </a>
+              )}
             </div>
           </>
         )}

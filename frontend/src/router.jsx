@@ -83,16 +83,17 @@ function LeadershipReviewRoute() {
   return <ReviewApplicationPage />;
 }
 
-// Bounces admins and leadership away from the applicant wizard. Unauthed
+// Bounces leadership and admins away from the applicant wizard. Unauthed
 // visitors and applicant/reviewer/mentor accounts fall through to the
-// wizard's existing welcome / returning-user flow. Admin wins over
-// leadership to match SignInPage's post-signin priority.
+// wizard's existing welcome / returning-user flow. Leadership wins over
+// admin to match SignInPage's post-signin priority — admins reach /admin
+// via the Switch button inside the leadership dashboard.
 function ApplyRoleGate({ children }) {
   const { user, isAuthed, loading } = useAuth();
   if (loading || !isAuthed) return children;
   const roles = user?.roles || [];
-  if (roles.includes("admin")) return <Navigate to="/admin" replace />;
   if (roles.includes("leadership")) return <Navigate to="/leadership" replace />;
+  if (roles.includes("admin")) return <Navigate to="/admin" replace />;
   return children;
 }
 
