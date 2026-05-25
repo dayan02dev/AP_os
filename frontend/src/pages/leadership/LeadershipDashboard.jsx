@@ -16,6 +16,7 @@ import { hasCapability } from "../../lib/rbac.js";
 import { leadershipApi } from "../../lib/leadershipApi.js";
 import { fmtRelative } from "../../lib/timeFmt.js";
 import AppDrawer from "./components/AppDrawer.jsx";
+import { bucketFor } from "./components/statusBuckets.js";
 import "../../styles/admin.css";
 import "../../styles/leadership.css";
 
@@ -43,30 +44,32 @@ function fmtDate(iso) {
   }
 }
 
-// Status → dot color mapping. Semantic colors are legitimate here per §1 rule 16.
-const STATUS_DOT_COLOR = {
-  draft:            "amber",
-  submitted:        "amber",
-  ai_screening:     "blue",
-  screening_failed: "coral",
-  under_review:     "blue",
-  evaluated:        "blue",
-  shortlisted:      "green",
-  interview:        "green",
-  offered:          "dim",
-  onboarded:        "dim",
-  rejected:         "coral",
-  not_selected:     "coral",
-  waitlisted:       "amber",
-  withdrawn:        "dim",
-};
-
 function StatusCell({ statusId, label }) {
-  const cls = STATUS_DOT_COLOR[statusId] || "";
   return (
-    <span className="status-cell">
-      <span className={`dot ${cls}`} />
+    <span className="lp-chip">
+      <span className={`lp-status-dot lp-status-${bucketFor(statusId)}`} />
       <span style={{ textTransform: "capitalize" }}>{label || statusId}</span>
+    </span>
+  );
+}
+
+// AI score 0–10 → bar + tier-coloured fill. Tier thresholds match the
+// .lp-score-* classes in leadership.css (high ≥ 7, mid 5–7, low 3–5, weak < 3).
+function ScorePill({ score }) {
+  if (score == null || !Number.isFinite(score)) {
+    return <span style={{ color: "var(--ink-dim)" }}>—</span>;
+  }
+  const pct = Math.max(0, Math.min(100, (score / 10) * 100));
+  const tier =
+    score >= 7 ? "lp-score-high" :
+    score >= 5 ? "lp-score-mid"  :
+    score >= 3 ? "lp-score-low"  : "lp-score-weak";
+  return (
+    <span className={`lp-score ${tier}`}>
+      <span className="lp-score-bar">
+        <span className="lp-score-bar-fill" style={{ width: `${pct}%` }} />
+      </span>
+      <span className="lp-score-n">{score.toFixed(1)}</span>
     </span>
   );
 }
@@ -156,6 +159,10 @@ export default function LeadershipDashboard() {
     let cancelled = false;
     setStatsLoading(true);
     leadershipApi.getStats()
+      .then((s) => { if (!cancelled) { setStats(s); setStatsLoading(false); } })
+      .catch((err) => { if (!cancelled) { setStatsError(err?.message || "Failed to load stats."); setStatsLoading(false); } });
+    leadershipApi.listApplications({ limit: 200, offset: 0 })
+      .then((page) => {
       .then((s) => {
         if (cancelled) return;
         setStats(s);
@@ -762,21 +769,18 @@ export default function LeadershipDashboard() {
                 <div className="lp-loading">Loading status counts…</div>
               ) : (
                 <div className="lp-status-grid">
-                  {(stats?.status_counts || []).map((s) => {
-                    const dotCls = STATUS_DOT_COLOR[s.id] || "";
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        className={`lp-status-cell${statusFilter === s.id ? " is-on" : ""}`}
-                        onClick={() => filterAndShow(setStatusFilter)(statusFilter === s.id ? null : s.id)}
-                      >
-                        <span className={`dot ${dotCls}`} />
-                        <span className="lp-status-cell-label">{s.label}</span>
-                        <span className="lp-status-cell-n">{s.n}</span>
-                      </button>
-                    );
-                  })}
+                  {(stats?.status_counts || []).map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className={`lp-status-cell${statusFilter === s.id ? " is-on" : ""}`}
+                      onClick={() => filterAndShow(setStatusFilter)(statusFilter === s.id ? null : s.id)}
+                    >
+                      <span className={`lp-status-dot lp-status-${bucketFor(s.id)}`} />
+                      <span className="lp-status-cell-label">{s.label}</span>
+                      <span className="lp-status-cell-n">{s.n}</span>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
@@ -852,6 +856,10 @@ export default function LeadershipDashboard() {
                     className={`chip${statusFilter === s.id ? " active" : ""}`}
                     onClick={() => { setStatusFilter(statusFilter === s.id ? null : s.id); setOffset(0); }}
                   >
+                    <span
+                      className={`lp-status-dot lp-status-${bucketFor(s.id)}`}
+                      style={{ marginRight: 6 }}
+                    />
                     {s.label}
                   </button>
                 ))}
@@ -985,9 +993,7 @@ export default function LeadershipDashboard() {
                       <td>{a.industry?.label || "—"}</td>
                       <td title={a.stage?.raw || ""}>{a.stage?.label || "—"}</td>
                       <td className="num">
-                        {a.ai_score_overall != null
-                          ? a.ai_score_overall.toFixed(1)
-                          : <span style={{ color: "var(--ink-dim)" }}>—</span>}
+                        <ScorePill score={a.ai_score_overall} />
                       </td>
                       <td>
                         <StatusCell

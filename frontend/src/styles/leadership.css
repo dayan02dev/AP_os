@@ -666,6 +666,22 @@
   background: #fdeded;
 }
 
+/* Applications-table row breathing room — leadership-only override.
+   The admin .tbl base styles (admin.css) use 16px cell padding and the
+   light --line border, which is too tight for this view. Claude design
+   rows have clearly segregated divider lines + more vertical air.
+   Scoped under .lp-screen so /admin tables are untouched. */
+.lp-screen .tbl tbody td {
+  padding-top: var(--s-5);     /* 24px (was 16px) */
+  padding-bottom: var(--s-5);
+  border-bottom-color: var(--line-strong);  /* #c8c8d0 — visible divider */
+}
+.lp-screen .tbl thead th {
+  padding-top: var(--s-4);
+  padding-bottom: var(--s-4);
+  border-bottom-color: var(--line-strong);
+}
+
 /* Note: .eir-mono, .eir-dim, and .eir-chip-btn are defined globally in
    ../styles.css and used as-is here. */
 

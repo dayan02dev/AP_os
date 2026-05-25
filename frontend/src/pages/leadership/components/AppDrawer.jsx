@@ -12,6 +12,7 @@ import { leadershipApi } from "../../../lib/leadershipApi.js";
 import { fmtRelative } from "../../../lib/timeFmt.js";
 import AssignReviewersModal from "../modals/AssignReviewersModal.jsx";
 import StatusChangeModal from "../modals/StatusChangeModal.jsx";
+import { bucketFor } from "./statusBuckets.js";
 import AISummaryBlock from "./AISummaryBlock.jsx";
 
 const STATUS_DOT_COLOR = {
@@ -40,11 +41,31 @@ function fmtDate(iso) {
   }
 }
 
+// Backend stores ai_screening.summary as a JSON-encoded string with keys
+// like { verdict, top_strength, top_concern }. Parse + render as labelled
+// blocks; fall back to plain text if it's not JSON (older rows).
+function parseSummary(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    const obj = JSON.parse(trimmed);
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) return obj;
+  } catch { /* not JSON — fall through */ }
+  return null;
+}
+
+const SUMMARY_FIELD_LABELS = {
+  verdict:       "Verdict",
+  top_strength:  "Top strength",
+  top_concern:   "Top concern",
+  recommendation:"Recommendation",
+};
+
 function StatusInline({ statusId, label }) {
-  const cls = STATUS_DOT_COLOR[statusId] || "";
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <span className={`dot ${cls}`} />
+    <span className="lp-chip">
+      <span className={`lp-status-dot lp-status-${bucketFor(statusId)}`} />
       <span style={{ textTransform: "capitalize" }}>{label || statusId}</span>
     </span>
   );
@@ -232,6 +253,34 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
             ) : aiScreening ? (
               <>
                 <ComponentBars aiScreening={aiScreening} />
+                {aiScreening.summary && (() => {
+                  const parsed = parseSummary(aiScreening.summary);
+                  return (
+                    <div style={{ marginTop: "var(--s-3)" }}>
+                      <span className="section-eyebrow">Summary</span>
+                      {parsed ? (
+                        <dl style={{ margin: "var(--s-2) 0 0", display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
+                          {Object.entries(parsed).map(([key, value]) => (
+                            typeof value === "string" && value.trim() !== "" ? (
+                              <div key={key}>
+                                <dt style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-dim)", marginBottom: 4 }}>
+                                  {SUMMARY_FIELD_LABELS[key] || key.replace(/_/g, " ")}
+                                </dt>
+                                <dd style={{ margin: 0, color: "var(--ink-soft)", lineHeight: 1.55, fontSize: 13 }}>
+                                  {value}
+                                </dd>
+                              </div>
+                            ) : null
+                          ))}
+                        </dl>
+                      ) : (
+                        <p style={{ marginTop: "var(--s-2)", color: "var(--ink-soft)", lineHeight: 1.55 }}>
+                          {aiScreening.summary}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
                 {aiScreening.summary && (
                   <div style={{ marginTop: "var(--s-3)" }}>
                     <span className="section-eyebrow">AI summary</span>
