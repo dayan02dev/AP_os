@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.jsx";
 import { hasCapability } from "../../lib/rbac.js";
 import { leadershipApi } from "../../lib/leadershipApi.js";
+import { fmtRelative } from "../../lib/timeFmt.js";
 import AppDrawer from "./components/AppDrawer.jsx";
 import { bucketFor } from "./components/statusBuckets.js";
 import "../../styles/admin.css";
@@ -115,6 +116,11 @@ export default function LeadershipDashboard() {
   const navigate = useNavigate();
   const roles = user?.roles || [];
   const showSwitchToAdmin = hasCapability(roles, "manage_users");
+  // Hide the "Switch to applicant" buttons for accounts whose /apply is
+  // role-gated away (admin or leadership). Clicking the button for those
+  // users would just bounce them back here via ApplyRoleGate.
+  const showSwitchToApplicant =
+    !roles.includes("leadership") && !roles.includes("admin");
 
   const [view, setView] = useState("dashboard");
 
@@ -124,9 +130,19 @@ export default function LeadershipDashboard() {
 
   const [scoreSample, setScoreSample] = useState(null);
 
+  // Industry filter pills + dashboard-tab bar chart both read from this
+  // single source (the new /leadership/industry-categories endpoint).
+  const [industryCategories, setIndustryCategories] = useState([]);
+  const [industryTotal, setIndustryTotal] = useState(0);
+  const [industryCap, setIndustryCap] = useState({ cap: 12, remaining_slots: 12 });
+
   const [industry, setIndustry] = useState(null);
   const [statusFilter, setStatusFilter] = useState(null);
   const [trackFilter, setTrackFilter] = useState(null);
+  // AI score bucket filter (0–9). Matches the histogram's floor()-bucketing
+  // exactly — bucket i covers scores [i, i+1), bucket 9 also catches 10.
+  // Set by clicking a histogram bar; the click also flips view to Applications.
+  const [scoreBucket, setScoreBucket] = useState(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [offset, setOffset] = useState(0);
@@ -147,19 +163,49 @@ export default function LeadershipDashboard() {
       .catch((err) => { if (!cancelled) { setStatsError(err?.message || "Failed to load stats."); setStatsLoading(false); } });
     leadershipApi.listApplications({ limit: 200, offset: 0 })
       .then((page) => {
+      .then((s) => {
         if (cancelled) return;
-        const ss = (page?.applications || [])
-          .map((a) => a.ai_score_overall)
+        setStats(s);
+        setStatsLoading(false);
+        // Score-distribution histogram reads the full set of AI overall
+        // scores the stats endpoint bundles in (all screened apps), not a
+        // capped page of the applications list.
+        const ss = (s?.ai_score_overalls || [])
           .filter((v) => typeof v === "number" && Number.isFinite(v));
         setScoreSample(ss);
       })
-      .catch(() => { if (!cancelled) setScoreSample([]); });
+      .catch((err) => {
+        if (cancelled) return;
+        setStatsError(err?.message || "Failed to load stats.");
+        setStatsLoading(false);
+        setScoreSample([]);
+      });
+    leadershipApi.getIndustryCategories()
+      .then((data) => {
+        if (cancelled) return;
+        setIndustryCategories(data?.categories || []);
+        setIndustryTotal(data?.total ?? 0);
+        setIndustryCap({
+          cap: data?.cap ?? 12,
+          remaining_slots: data?.remaining_slots ?? 0,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setIndustryCategories([]);
+        setIndustryTotal(0);
+      });
     return () => { cancelled = true; };
   }, []);
 
-  // ── Search debounce ──
+  // ── Search debounce — strip "TIR-"/"SIP-" prefix so pasted IDs hit
+  //   the backend's display_seq.eq match.
   useEffect(() => {
-    const t = setTimeout(() => { setSearch(searchInput); setOffset(0); }, 300);
+    const t = setTimeout(() => {
+      const stripped = searchInput.replace(/^(TIR|SIP)-/i, "");
+      setSearch(stripped);
+      setOffset(0);
+    }, 300);
     return () => clearTimeout(t);
   }, [searchInput]);
 
@@ -172,6 +218,7 @@ export default function LeadershipDashboard() {
       industry: industry || undefined,
       status: statusFilter || undefined,
       track: trackFilter ? trackFilter.toLowerCase() : undefined,
+      ai_score_bucket: scoreBucket ?? undefined,
       search: search || undefined,
       limit: PAGE_SIZE,
       offset,
@@ -188,7 +235,7 @@ export default function LeadershipDashboard() {
         setAppsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [industry, statusFilter, trackFilter, search, offset]);
+  }, [industry, statusFilter, trackFilter, scoreBucket, search, offset]);
 
   const filterAndShow = useCallback(
     (setter) => (val) => {
@@ -205,7 +252,19 @@ export default function LeadershipDashboard() {
     return out;
   }, [stats]);
 
-  const industries = stats?.industry?.industries || [];
+  // Map the new /industry-categories payload to the shape the existing
+  // dashboard-tab bar chart expects ({id, label, n, pct}). Single source
+  // for the filter pills too.
+  const industries = useMemo(() => {
+    if (!industryCategories.length) return [];
+    return industryCategories.map((c) => ({
+      id: c.id,
+      label: c.label,
+      n: c.count,
+      pct: industryTotal > 0 ? Math.round((c.count / industryTotal) * 1000) / 10 : 0,
+    }));
+  }, [industryCategories, industryTotal]);
+
   const totals = stats?.totals || {};
   const submitted = totals.apps_submitted ?? 0;
   const tirCount = totals.tir_count ?? 0;
@@ -253,11 +312,14 @@ export default function LeadershipDashboard() {
     setIndustry(null);
     setStatusFilter(null);
     setTrackFilter(null);
+    setScoreBucket(null);
     setSearchInput("");
     setSearch("");
     setOffset(0);
   }
-  const filtersActive = !!(industry || statusFilter || trackFilter || search);
+  const filtersActive = !!(
+    industry || statusFilter || trackFilter || scoreBucket !== null || search
+  );
 
   // Human-readable snapshot timestamp for the hero subline.
   const snapshotAt = useMemo(() => {
@@ -305,9 +367,11 @@ export default function LeadershipDashboard() {
           </button>
         )}
 
-        <a className="applicant-btn" href="/apply" aria-label="Switch to applicant view">
-          <span className="arrow" style={{ marginLeft: 0, marginRight: 2 }}>←</span> Applicant
-        </a>
+        {showSwitchToApplicant && (
+          <a className="applicant-btn" href="/apply" aria-label="Switch to applicant view">
+            <span className="arrow" style={{ marginLeft: 0, marginRight: 2 }}>←</span> Applicant
+          </a>
+        )}
 
         <button
           type="button"
@@ -515,20 +579,48 @@ export default function LeadershipDashboard() {
                       {histogram.bins.map((b, i) => {
                         const maxCount = Math.max(1, ...histogram.bins.map((x) => x.count));
                         const heightPct = (b.count / maxCount) * 100;
+                        const isSelected = scoreBucket === i;
+                        const isEmpty = b.count === 0;
+                        const cls = [
+                          "lp-hist-bar",
+                          isSelected ? "is-selected" : "",
+                          !isSelected && i === histogram.medianIdx ? "is-peak" : "",
+                        ].filter(Boolean).join(" ");
+                        const labelRange = `${b.from.toFixed(0)}–${b.to.toFixed(0)}`;
                         return (
-                          <div key={i} className="lp-hist-col">
+                          <button
+                            key={i}
+                            type="button"
+                            className={`lp-hist-col lp-hist-col-btn${isEmpty ? " is-empty" : ""}`}
+                            onClick={() => {
+                              if (isEmpty) return;
+                              const next = isSelected ? null : i;
+                              setScoreBucket(next);
+                              setOffset(0);
+                              if (next !== null) setView("applications");
+                            }}
+                            disabled={isEmpty}
+                            aria-pressed={isSelected}
+                            aria-label={
+                              isEmpty
+                                ? `No applications in score range ${labelRange}`
+                                : `Show ${b.count} application${b.count === 1 ? "" : "s"} in score range ${labelRange}`
+                            }
+                            title={
+                              isEmpty
+                                ? `Score ${labelRange} · 0 applications`
+                                : `Score ${labelRange} · ${b.count} application${b.count === 1 ? "" : "s"} — click to filter`
+                            }
+                          >
                             <span className="lp-hist-bar-n">{b.count}</span>
                             <div className="lp-hist-bar-wrap">
                               <div
-                                className={`lp-hist-bar${i === histogram.medianIdx ? " is-peak" : ""}`}
+                                className={cls}
                                 style={{ height: `${heightPct}%` }}
-                                title={`${b.from.toFixed(1)}–${b.to.toFixed(1)} · ${b.count}`}
                               />
                             </div>
-                            <span className="lp-hist-label">
-                              {i}–{i + 1}
-                            </span>
-                          </div>
+                            <span className="lp-hist-label">{labelRange}</span>
+                          </button>
                         );
                       })}
                     </div>
@@ -628,10 +720,10 @@ export default function LeadershipDashboard() {
                           <span className="lp-ind-label">{i.label}</span>
                           <div className="lp-ind-bar-wrap">
                             <div className="lp-ind-bar" style={{ width: `${pct}%` }} />
-                            <span className="lp-ind-n">
-                              <strong>{i.n}</strong> · {i.pct}%
-                            </span>
                           </div>
+                          <span className="lp-ind-n">
+                            <strong>{i.n}</strong> · {i.pct}%
+                          </span>
                         </button>
                       );
                     })}
@@ -696,10 +788,12 @@ export default function LeadershipDashboard() {
             {/* ── Footer ── */}
             <div className="page-foot">
               <span>ARTPARK / OS · Leadership view</span>
-              <a href="/apply" className="foot-link">
-                <span className="arrow" style={{ marginLeft: 0, marginRight: 4 }}>←</span>
-                Switch to applicant view
-              </a>
+              {showSwitchToApplicant && (
+                <a href="/apply" className="foot-link">
+                  <span className="arrow" style={{ marginLeft: 0, marginRight: 4 }}>←</span>
+                  Switch to applicant view
+                </a>
+              )}
             </div>
           </>
         )}
@@ -772,6 +866,70 @@ export default function LeadershipDashboard() {
               </div>
             </div>
 
+            <div className="filter-bar" style={{ marginBottom: "var(--s-5)" }}>
+              <span className="eyebrow" style={{ marginRight: "var(--s-3)" }}>AI score</span>
+              <div className="filter-chips">
+                <button
+                  type="button"
+                  className={`chip${scoreBucket === null ? " active" : ""}`}
+                  onClick={() => { setScoreBucket(null); setOffset(0); }}
+                >
+                  All
+                </button>
+                {Array.from({ length: HISTOGRAM_BIN_COUNT }, (_, i) => {
+                  const count = histogram.bins[i]?.count ?? 0;
+                  const isActive = scoreBucket === i;
+                  const isEmpty = count === 0 && !isActive;
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      className={`chip${isActive ? " active" : ""}`}
+                      onClick={() => {
+                        setScoreBucket(isActive ? null : i);
+                        setOffset(0);
+                      }}
+                      disabled={isEmpty}
+                      title={`Score ${i}–${i + 1} · ${count} application${count === 1 ? "" : "s"}`}
+                    >
+                      {i}–{i + 1}{" "}
+                      <span className="lp-pill-count">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {industryCategories.length > 0 && (
+              <div className="filter-bar" style={{ marginBottom: "var(--s-5)" }}>
+                <span className="eyebrow" style={{ marginRight: "var(--s-3)" }}>Industry</span>
+                <div className="filter-chips">
+                  <button
+                    type="button"
+                    className={`chip${!industry ? " active" : ""}`}
+                    onClick={() => { setIndustry(null); setOffset(0); }}
+                  >
+                    All
+                  </button>
+                  {industryCategories.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className={`chip${industry === c.id ? " active" : ""}`}
+                      onClick={() => {
+                        setIndustry(industry === c.id ? null : c.id);
+                        setOffset(0);
+                      }}
+                      title={`${c.count} application${c.count === 1 ? "" : "s"}`}
+                    >
+                      {c.label}{" "}
+                      <span className="lp-pill-count">{c.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {appsError && <div className="inline-error">{appsError}</div>}
 
             {appsLoading && !appsError && (
@@ -792,15 +950,17 @@ export default function LeadershipDashboard() {
             )}
 
             {!appsLoading && !appsError && apps.length > 0 && (
-              <table className="tbl">
+              <table className="tbl lp-apps-table">
                 <thead>
                   <tr>
-                    <th>Applicant</th>
-                    <th>Track</th>
+                    <th>Project</th>
+                    <th>Founder</th>
                     <th>Industry</th>
+                    <th>Stage</th>
                     <th className="num">AI score</th>
                     <th>Status</th>
                     <th>Submitted</th>
+                    <th className="lp-id-col">ID</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -810,12 +970,28 @@ export default function LeadershipDashboard() {
                       className="clickable"
                       onClick={() => setOpenRow(a)}
                     >
-                      <td className="primary">
-                        {a.basic_full_name || <span style={{ color: "var(--ink-dim)" }}>No name</span>}
-                        <span className="sub">{a.basic_org || a.basic_email || ""}</span>
+                      <td className="lp-cell-project">
+                        <div className="lp-cell-primary">
+                          {a.project_name || (
+                            <span style={{ color: "var(--ink-dim)" }}>—</span>
+                          )}
+                        </div>
+                        <div className="lp-cell-sub">
+                          {a.display_id} · {(a.track || "").toUpperCase()}
+                        </div>
                       </td>
-                      <td>{(a.track || "").toUpperCase()}</td>
+                      <td className="lp-cell-founder">
+                        <div className="lp-cell-primary">
+                          {a.founder?.name || (
+                            <span style={{ color: "var(--ink-dim)" }}>—</span>
+                          )}
+                        </div>
+                        <div className="lp-cell-sub">
+                          {a.founder?.affiliation || "—"}
+                        </div>
+                      </td>
                       <td>{a.industry?.label || "—"}</td>
+                      <td title={a.stage?.raw || ""}>{a.stage?.label || "—"}</td>
                       <td className="num">
                         <ScorePill score={a.ai_score_overall} />
                       </td>
@@ -825,7 +1001,8 @@ export default function LeadershipDashboard() {
                           label={statusLabelById[a.status] || a.status}
                         />
                       </td>
-                      <td>{fmtDate(a.submitted_at || a.created_at)}</td>
+                      <td>{fmtRelative(a.submitted_at || a.created_at)}</td>
+                      <td className="lp-id-col">{a.display_id}</td>
                     </tr>
                   ))}
                 </tbody>

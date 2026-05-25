@@ -38,6 +38,7 @@ import ReviewerScoringPage from "./pages/reviewer/ReviewerScoringPage.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
 import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
+import { isApplyHiddenFor, landingPathFor } from "./lib/landing.js";
 import { hasCapability } from "./lib/rbac.js";
 
 // Capability gate for /leadership. ProtectedRoute already enforces auth;
@@ -83,6 +84,38 @@ function LeadershipReviewRoute() {
   return <ReviewApplicationPage />;
 }
 
+// Bounces leadership and admins away from the applicant wizard. Unauthed
+// visitors and applicant/reviewer/mentor accounts fall through to the
+// wizard's existing welcome / returning-user flow. Priority matches
+// landingPathFor() so SignInPage/VerifyPage and the gate stay in sync.
+// While auth is still resolving we render a stub instead of <App /> so
+// a leadership account never sees the wizard flash before the redirect.
+function ApplyRoleGate({ children }) {
+  const { user, isAuthed, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="eir-root">
+        <div className="eir-bg" />
+        <div className="eir-frame">
+          <main className="eir-main">
+            <div className="eir-screen">
+              <div className="eir-welcome-body">
+                <p className="eir-mono eir-dim">checking your session…</p>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+  if (!isAuthed) return children;
+  const roles = user?.roles || [];
+  if (isApplyHiddenFor(roles)) {
+    return <Navigate to={landingPathFor(roles)} replace />;
+  }
+  return children;
+}
+
 // Capability gate for /admin. ProtectedRoute already enforces auth;
 // this layer enforces the `manage_users` capability (admin role).
 function AdminRoute() {
@@ -125,8 +158,10 @@ export default function AppRoutes() {
       <Route path="/apply/verify" element={<VerifyPage />} />
       <Route path="/apply/support" element={<SupportPage />} />
 
-      {/* /apply itself is public — unauthed users see the welcome screen */}
-      <Route path="/apply" element={<App />} />
+      {/* /apply itself is public — unauthed users see the welcome screen.
+          ApplyRoleGate bounces signed-in admin/leadership accounts to their
+          own dashboards instead of the applicant wizard. */}
+      <Route path="/apply" element={<ApplyRoleGate><App /></ApplyRoleGate>} />
 
       {/* Protected wizard routes */}
       {SECTION_SLUGS.map((slug) => (
@@ -135,29 +170,29 @@ export default function AppRoutes() {
           path={`/apply/${slug}`}
           element={
             <ProtectedRoute>
-              <App />
+              <ApplyRoleGate><App /></ApplyRoleGate>
             </ProtectedRoute>
           }
         />
       ))}
       <Route
         path="/apply/profile"
-        element={<ProtectedRoute><App /></ProtectedRoute>}
+        element={<ProtectedRoute><ApplyRoleGate><App /></ApplyRoleGate></ProtectedRoute>}
       />
       <Route
         path="/apply/review"
-        element={<ProtectedRoute><App /></ProtectedRoute>}
+        element={<ProtectedRoute><ApplyRoleGate><App /></ApplyRoleGate></ProtectedRoute>}
       />
       <Route
         path="/apply/submitted"
-        element={<ProtectedRoute><App /></ProtectedRoute>}
+        element={<ProtectedRoute><ApplyRoleGate><App /></ApplyRoleGate></ProtectedRoute>}
       />
       {/* Optional offline-template upload step that sits between section
           01 (basic) and section 02 (problem). PHASES.TEMPLATE_UPLOAD
           serialises to this path via urlForState in App.jsx. */}
       <Route
         path="/apply/template"
-        element={<ProtectedRoute><App /></ProtectedRoute>}
+        element={<ProtectedRoute><ApplyRoleGate><App /></ApplyRoleGate></ProtectedRoute>}
       />
       <Route
         path="/apply/set-password"

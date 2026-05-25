@@ -9,6 +9,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
+import { landingPathFor } from "../lib/landing.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { checkPasswordRules, isPasswordValid } from "../validators.jsx";
@@ -49,7 +50,10 @@ export default function SetPasswordPage() {
         kind: "success",
         message: resetMode ? "Password reset." : "Password set.",
       });
-      navigate("/apply", { replace: true });
+      // Role-based landing — leadership/admin go to their dashboard
+      // instead of the applicant wizard. setPassword() refreshed `user`
+      // so user.roles is current here.
+      navigate(landingPathFor(user?.roles || []), { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 422) {
         setLocalError(

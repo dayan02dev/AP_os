@@ -144,66 +144,9 @@ def test_classify_industry_dict_ai_keywords():
         assert bucket == "ai", f"expected ai for {text!r}, got {bucket}"
 
 
-# ─── Stage label, project name, display id derivations ─────────────────
-
-
-def test_derive_stage_label_sip_traction():
-    from app.services.stats import derive_stage_label
-    row = {"sip_traction": "Active pilots (paid or unpaid) with design partners"}
-    assert derive_stage_label(row) == "Pilot"
-
-
-def test_derive_stage_label_sip_trl_fallback():
-    from app.services.stats import derive_stage_label
-    row = {"sip_traction": None, "sip_trl": "TRL 5 — pilot-tested in a relevant environment"}
-    assert derive_stage_label(row) == "Pilot"
-
-
-def test_derive_stage_label_tir_solution_stage_truncates():
-    from app.services.stats import derive_stage_label
-    row = {"solution_stage": "We're somewhere between prototype and pilot"}
-    out = derive_stage_label(row)
-    assert out is not None
-    assert len(out) <= 17  # 16 chars + ellipsis
-
-
-def test_derive_stage_label_none_when_no_data():
-    from app.services.stats import derive_stage_label
-    assert derive_stage_label({}) is None
-    assert derive_stage_label(None) is None
-
-
-def test_derive_project_name_first_sentence():
-    from app.services.stats import derive_project_name
-    row = {"solution_describe": "Microfluidic dengue test. Designed to detect..."}
-    assert derive_project_name(row) == "Microfluidic dengue test"
-
-
-def test_derive_project_name_falls_back_to_basic_org():
-    from app.services.stats import derive_project_name
-    assert derive_project_name({"basic_org": "IIT Bombay"}) == "IIT Bombay"
-    assert derive_project_name({"solution_describe": "", "basic_org": "NIT"}) == "NIT"
-
-
-def test_derive_project_name_none_when_no_data():
-    from app.services.stats import derive_project_name
-    assert derive_project_name({}) is None
-    assert derive_project_name(None) is None
-
-
-def test_compose_display_id_deterministic():
-    from app.services.stats import compose_display_id
-    uuid = "e6045bda-1234-5678-9abc-deadbeef1234"
-    out = compose_display_id("tir", uuid)
-    assert out.startswith("TIR-")
-    assert len(out) == 9  # TIR-NNNNN
-    assert out == compose_display_id("tir", uuid)  # idempotent
-
-
-def test_compose_display_id_handles_missing():
-    from app.services.stats import compose_display_id
-    assert compose_display_id("sip", None) == "SIP-?????"
-    assert compose_display_id("sip", "") == "SIP-?????"
+# derive_stage_label / derive_project_name / compose_display_id moved to
+# test_stats_helpers.py (they were rewritten per spec
+# 2026-05-20-leadership-applications-table-redesign).
 
 
 def test_classify_industry_empty_string_falls_back_to_other():
@@ -287,6 +230,42 @@ def test_list_columns_contains_expected_fields():
         assert expected in cols, f"LIST_COLUMNS missing {expected!r}"
 
 
+# ─── Unit tier: /stats funnel + score sample shape ──────────────────────
+
+
+def test_get_stats_funnel_and_score_sample(client, _clear_overrides, monkeypatch):
+    """The /stats funnel reports all six stages from DB counts (drafted +
+    in_review wired to real data), and bundles the AI score sample for the
+    histogram."""
+    # 2 drafts per track (status='draft'), some submitted/shortlisted.
+    def _count_by_status(track, status_id):
+        return {"draft": 2, "shortlisted": 1, "interview": 1, "offered": 1}.get(
+            status_id, 0
+        )
+
+    monkeypatch.setattr(stats, "count_apps_by_status", _count_by_status)
+    monkeypatch.setattr(stats, "count_apps_total", lambda track: 30)
+    monkeypatch.setattr(stats, "count_profiles", lambda: 288)
+    monkeypatch.setattr(stats, "count_ai_screening_rows", lambda: 47)
+    monkeypatch.setattr(stats, "fetch_ai_score_overalls", lambda: [5.0, 6.0, 7.0])
+
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/stats", headers={"Authorization": "Bearer test-token"}
+    )
+    assert res.status_code == 200
+    body = res.json()
+
+    funnel = body["funnel"]
+    assert funnel["profiles"] == 288
+    assert funnel["drafted"] == 4          # 2 per track × 2 tracks
+    assert funnel["submitted"] == 60       # 30 per track × 2 tracks
+    assert funnel["in_review"] == 47       # screened-row count drives this
+    assert funnel["advanced"] == 4         # (shortlisted+interview) × 2 tracks
+    assert funnel["decided"] == 2          # offered × 2 tracks
+    assert body["ai_score_overalls"] == [5.0, 6.0, 7.0]
+
+
 # ─── Unit tier: router auth (401 on missing Bearer) ──────────────────────
 
 
@@ -347,6 +326,220 @@ def test_get_application_detail_with_reviewer_only_returns_403(
     assert body["detail"]["required"] == "view_app_detail"
 
 
+# ─── Unit tier: /industry-categories endpoint (added 2026-05-20) ─────────
+
+
+def test_industry_categories_endpoint_shape(client, _clear_overrides, monkeypatch):
+    """GET /leadership/industry-categories returns categories + cap + slots."""
+    from app.services import industry_categories as ic_mod
+
+    monkeypatch.setattr(
+        ic_mod,
+        "categories_with_counts",
+        lambda: {
+            "categories": [
+                {"id": "robotics", "label": "Robotics & Automation", "count": 3},
+                {"id": "ai", "label": "AI", "count": 2},
+            ],
+            "total": 5,
+            "cap": 12,
+            "remaining_slots": 5,
+        },
+    )
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.get(
+        "/leadership/industry-categories",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["cap"] == 12
+    assert body["total"] == 5
+    assert body["remaining_slots"] == 5
+    assert body["categories"][0]["id"] == "robotics"
+    assert body["categories"][0]["count"] == 3
+
+
+def test_industry_categories_requires_view_stats_capability(client, _clear_overrides):
+    """Reviewer-only role must be rejected with 403."""
+    app.dependency_overrides[get_current_user] = _override_user(["reviewer"])
+    res = client.get(
+        "/leadership/industry-categories",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 403
+
+
+def test_list_applications_row_has_new_shape(client, _clear_overrides, monkeypatch):
+    """Row shape per spec §6a: display_id, display_seq, founder, industry,
+    stage, project_name."""
+    fake_rows = [
+        {
+            "id": "aaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "track": "tir",
+            "status": "submitted",
+            "basic_full_name": "Devika Shetty",
+            "basic_org": "Anna University",
+            "basic_email": "d@example.com",
+            "submitted_at": "2026-05-12T08:14:00Z",
+            "created_at": "2026-05-10T11:00:00Z",
+            "solution_describe": (
+                "ESD-safe wearable for shop-floor technicians. Long tail."
+            ),
+            "solution_stage": "Lab demos / proof of concept",
+            "display_seq": 26013,
+        }
+    ]
+
+    def _fake_fetch(track, **kw):
+        if track == "tir":
+            return [dict(r) for r in fake_rows]
+        return []
+
+    monkeypatch.setattr(applications_query, "fetch_apps_for_track", _fake_fetch)
+    monkeypatch.setattr(
+        applications_query,
+        "fetch_ai_scores_for",
+        lambda pairs: {p: 7.8 for p in pairs},
+    )
+    monkeypatch.setattr(
+        applications_query,
+        "fetch_industry_for_pairs",
+        lambda pairs: {
+            p: {"id": "industry", "label": "Advanced Manufacturing"} for p in pairs
+        },
+    )
+    # No AI-extracted name → row falls back to the solution_describe heuristic.
+    monkeypatch.setattr(
+        applications_query,
+        "fetch_project_names_for",
+        lambda pairs: {p: None for p in pairs},
+    )
+
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.get(
+        "/leadership/applications?track=tir",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    apps = body["applications"]
+    assert len(apps) == 1
+    a = apps[0]
+    assert a["display_id"] == "TIR-26013"
+    assert a["display_seq"] == 26013
+    assert a["founder"] == {"name": "Devika Shetty", "affiliation": "Anna University"}
+    assert a["industry"] == {"id": "industry", "label": "Advanced Manufacturing"}
+    assert a["stage"]["label"] == "Lab demo"
+    assert a["stage"]["raw"] == "Lab demos / proof of concept"
+    assert a["ai_score_overall"] == 7.8
+    assert a["project_name"].startswith("ESD-safe")
+
+
+def test_list_applications_prefers_ai_project_name(
+    client, _clear_overrides, monkeypatch
+):
+    """When ai_screening has a project_name, the list uses it over the
+    solution_describe heuristic."""
+    fake_rows = [
+        {
+            "id": "aaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "track": "tir",
+            "status": "submitted",
+            "basic_full_name": "Devika Shetty",
+            "basic_org": "Anna University",
+            "basic_email": "d@example.com",
+            "submitted_at": "2026-05-12T08:14:00Z",
+            "created_at": "2026-05-10T11:00:00Z",
+            "solution_describe": "ESD-safe wearable for shop-floor technicians.",
+            "solution_stage": "Lab demos / proof of concept",
+            "display_seq": 26013,
+        }
+    ]
+
+    def _fake_fetch(track, **kw):
+        return [dict(r) for r in fake_rows] if track == "tir" else []
+
+    monkeypatch.setattr(applications_query, "fetch_apps_for_track", _fake_fetch)
+    monkeypatch.setattr(
+        applications_query, "fetch_ai_scores_for", lambda pairs: {p: 7.8 for p in pairs}
+    )
+    monkeypatch.setattr(
+        applications_query, "fetch_industry_for_pairs", lambda pairs: {p: None for p in pairs}
+    )
+    monkeypatch.setattr(
+        applications_query,
+        "fetch_project_names_for",
+        lambda pairs: {p: "GuardBand wearable" for p in pairs},
+    )
+
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/applications?track=tir",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200
+    a = res.json()["applications"][0]
+    assert a["project_name"] == "GuardBand wearable"
+
+
+def test_list_applications_industry_filter_matches_category_id(
+    client, _clear_overrides, monkeypatch
+):
+    """The ?industry=<id> filter must match the new industry_category_id,
+    not the legacy keyword bucket."""
+    fake_rows = [
+        {
+            "id": "id-1",
+            "track": "tir",
+            "status": "submitted",
+            "basic_full_name": "A",
+            "submitted_at": "2026-05-12T08:00:00Z",
+            "created_at": "2026-05-10T11:00:00Z",
+            "display_seq": 26001,
+        },
+        {
+            "id": "id-2",
+            "track": "tir",
+            "status": "submitted",
+            "basic_full_name": "B",
+            "submitted_at": "2026-05-12T09:00:00Z",
+            "created_at": "2026-05-10T11:00:00Z",
+            "display_seq": 26002,
+        },
+    ]
+
+    def _fake_fetch(track, **kw):
+        if track == "tir":
+            return [dict(r) for r in fake_rows]
+        return []
+
+    monkeypatch.setattr(applications_query, "fetch_apps_for_track", _fake_fetch)
+    monkeypatch.setattr(
+        applications_query, "fetch_ai_scores_for", lambda pairs: {p: 5.0 for p in pairs}
+    )
+    monkeypatch.setattr(
+        applications_query,
+        "fetch_industry_for_pairs",
+        lambda pairs: {
+            ("tir", "id-1"): {"id": "robotics", "label": "Robotics & Automation"},
+            ("tir", "id-2"): {"id": "ai", "label": "Artificial Intelligence"},
+        },
+    )
+
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/applications?industry=robotics&track=tir",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200
+    apps = res.json()["applications"]
+    assert len(apps) == 1
+    assert apps[0]["id"] == "id-1"
+
+
 # ─── Integration tier (skipped unless RUN_STAGING_TESTS=1) ───────────────
 #
 # Fixtures here are LOCAL to this module — conftest.py does not (yet) define
@@ -402,8 +595,11 @@ class TestLeadershipStagingIntegration:
         )
         assert r.status_code == 200, r.text
         body = r.json()
-        for key in ("totals", "funnel", "status_counts", "industry"):
+        for key in ("totals", "funnel", "status_counts", "ai_score_overalls"):
             assert key in body, f"missing key {key!r} in stats response"
+        # Funnel exposes all six pipeline stages.
+        for stage in ("profiles", "drafted", "submitted", "in_review", "advanced", "decided"):
+            assert stage in body["funnel"], f"missing funnel stage {stage!r}"
 
     @_staging_skip
     def test_stats_as_reviewer_returns_403(

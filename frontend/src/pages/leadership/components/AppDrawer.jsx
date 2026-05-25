@@ -9,9 +9,26 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
+import { fmtRelative } from "../../../lib/timeFmt.js";
 import AssignReviewersModal from "../modals/AssignReviewersModal.jsx";
 import StatusChangeModal from "../modals/StatusChangeModal.jsx";
 import { bucketFor } from "./statusBuckets.js";
+import AISummaryBlock from "./AISummaryBlock.jsx";
+
+const STATUS_DOT_COLOR = {
+  submitted:        "blue",
+  ai_screening:     "amber",
+  screening_failed: "coral",
+  under_review:     "blue",
+  evaluated:        "blue",
+  shortlisted:      "green",
+  interview:        "green",
+  offered:          "green",
+  onboarded:        "green",
+  rejected:         "coral",
+  waitlisted:       "amber",
+  withdrawn:        "dim",
+};
 
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -84,7 +101,7 @@ function renderProblemSolution(application) {
 function ComponentBars({ aiScreening }) {
   const components = [
     { key: "score_problem",    label: "Problem impact" },
-    { key: "score_solution",   label: "Completeness & depth" },
+    { key: "score_completeness", label: "Completeness & depth" },
     { key: "score_tech",       label: "Technical depth" },
     { key: "score_founders",   label: "Behavioural signal" },
     { key: "score_commitment", label: "Commitment" },
@@ -154,9 +171,15 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
   const assignments = detail?.reviewer_assignments || [];
   const history = detail?.status_history || [];
   const statusLabel = statusLabelById?.[row.status] || row.status;
-  const fullName = application?.basic_full_name || row.basic_full_name || "—";
+  const fullName =
+    detail?.founder?.name || application?.basic_full_name || row.founder?.name
+    || row.basic_full_name || "—";
   const email = application?.basic_email || row.basic_email || "";
-  const org = application?.basic_org || row.basic_org || "";
+  const org =
+    detail?.founder?.affiliation || application?.basic_org
+    || row.founder?.affiliation || row.basic_org || "";
+  const displayId = detail?.display_id || row.display_id || "";
+  const projectName = detail?.project_name || row.project_name || "";
 
   return (
     <>
@@ -172,16 +195,23 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
         <header className="drawer-head">
           <div style={{ minWidth: 0, flex: 1 }}>
             <span className="eyebrow">
-              {(row.track || "").toUpperCase()} · {row.id?.slice(0, 8)}
+              {displayId
+                ? `${displayId} · ${(row.track || "").toUpperCase()}`
+                : `${(row.track || "").toUpperCase()} · ${row.id?.slice(0, 8)}`}
             </span>
-            <h2 id="drawer-title">{fullName}</h2>
+            <h2 id="drawer-title">
+              {projectName || fullName}
+            </h2>
             <div className="meta">
               <span>
                 <StatusInline statusId={row.status} label={statusLabel} />
               </span>
+              <span>{fullName}</span>
               {org && <span>{org}</span>}
               {email && <span>{email}</span>}
-              <span>Submitted {fmtDate(row.submitted_at || row.created_at)}</span>
+              <span>
+                Submitted {fmtRelative(row.submitted_at || row.created_at)}
+              </span>
             </div>
           </div>
           <button
@@ -251,6 +281,14 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
                     </div>
                   );
                 })()}
+                {aiScreening.summary && (
+                  <div style={{ marginTop: "var(--s-3)" }}>
+                    <span className="section-eyebrow">AI summary</span>
+                    <div style={{ marginTop: "var(--s-2)" }}>
+                      <AISummaryBlock aiScreening={aiScreening} />
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
               <p style={{ color: "var(--ink-dim)", fontSize: 13 }}>

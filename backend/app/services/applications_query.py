@@ -68,7 +68,8 @@ def track_table(track: str) -> str:
 _BASE_LIST_COLUMNS = (
     "id,status,basic_full_name,basic_email,basic_org,"
     "submitted_at,created_at,"
-    "solution_describe,solution_core_tech,problem_describe"
+    "solution_describe,solution_core_tech,problem_describe,"
+    "display_seq"
 )
 _TIR_EXTRA_COLUMNS = ",solution_stage"
 _SIP_EXTRA_COLUMNS = ",sip_traction,sip_trl"
@@ -119,12 +120,19 @@ def fetch_apps_for_track(
         if search:
             # Case-insensitive substring across the three free-text identity
             # fields. PostgREST `.or_()` takes a comma-joined filter string.
+            # If the search input is purely digits, we ALSO match against
+            # `display_seq` so leadership can paste "26013" (or "TIR-26013"
+            # after the frontend strips the prefix) and find the row.
             needle = f"%{search}%"
-            q = q.or_(
-                f"basic_full_name.ilike.{needle},"
-                f"basic_email.ilike.{needle},"
-                f"basic_org.ilike.{needle}"
-            )
+            or_parts = [
+                f"basic_full_name.ilike.{needle}",
+                f"basic_email.ilike.{needle}",
+                f"basic_org.ilike.{needle}",
+            ]
+            digits = search.strip().lstrip("-+")
+            if digits.isdigit():
+                or_parts.append(f"display_seq.eq.{digits}")
+            q = q.or_(",".join(or_parts))
         res = q.execute()
         rows = res.data or []
     except Exception as exc:
@@ -184,6 +192,124 @@ def fetch_ai_scores_for(
             # Leave those pairs as None — partial join is better than 500.
             continue
 
+    return out
+
+
+def fetch_project_names_for(
+    pairs: list[tuple[str, str]],
+) -> dict[tuple[str, str], str | None]:
+    """Bulk-load the AI-extracted `project_name` for `(track, id)` pairs.
+
+    The leadership list prefers this founder-stated name over the
+    solution_describe heuristic. One query per track; missing pairs (or
+    rows with a NULL project_name, e.g. stub-scored apps) map to None so
+    the caller can fall back to ``stats.derive_project_name``.
+    """
+    out: dict[tuple[str, str], str | None] = {(t, a): None for t, a in pairs}
+    if not pairs:
+        return out
+
+    by_track: dict[str, list[str]] = {t: [] for t in stats.TRACKS}
+    for t, a in pairs:
+        if t in by_track:
+            by_track[t].append(a)
+
+    for track, ids in by_track.items():
+        if not ids:
+            continue
+        try:
+            res = (
+                get_admin_client()
+                .table("ai_screening")
+                .select("application_id,project_name")
+                .eq("application_track", track)
+                .in_("application_id", ids)
+                .execute()
+            )
+            for row in res.data or []:
+                aid = row.get("application_id")
+                name = row.get("project_name")
+                if aid is None:
+                    continue
+                out[(track, aid)] = name or None
+        except Exception as exc:
+            log.warning(
+                "applications_query.fetch_project_names_for failed",
+                extra={"track": track, "err": str(exc)},
+            )
+            continue
+
+    return out
+
+
+# ─── Industry join helper ──────────────────────────────────────────────
+
+
+def fetch_industry_for_pairs(
+    pairs: list[tuple[str, str]],
+) -> dict[tuple[str, str], dict[str, str] | None]:
+    """Bulk-load `industry_category_id → label` for the given pairs.
+
+    Returns a dict keyed by `(track, application_id)` → `{"id", "label"}`
+    or None when the row is unscreened, missing, or has industry_category_id
+    NULL. Two queries per call total: one `ai_screening` projection per
+    track plus a single `industry_categories` lookup to resolve labels.
+    """
+    out: dict[tuple[str, str], dict[str, str] | None] = {(t, a): None for t, a in pairs}
+    if not pairs:
+        return out
+
+    by_track: dict[str, list[str]] = {t: [] for t in stats.TRACKS}
+    for t, a in pairs:
+        if t in by_track:
+            by_track[t].append(a)
+
+    raw: dict[tuple[str, str], str | None] = {}
+    for track, ids in by_track.items():
+        if not ids:
+            continue
+        try:
+            res = (
+                get_admin_client()
+                .table("ai_screening")
+                .select("application_id,industry_category_id")
+                .eq("application_track", track)
+                .in_("application_id", ids)
+                .execute()
+            )
+            for row in res.data or []:
+                aid = row.get("application_id")
+                cid = row.get("industry_category_id")
+                if aid:
+                    raw[(track, aid)] = cid
+        except Exception as exc:
+            log.warning(
+                "applications_query.fetch_industry_for_pairs failed",
+                extra={"track": track, "err": str(exc)},
+            )
+
+    needed_ids = {cid for cid in raw.values() if cid}
+    labels: dict[str, str] = {}
+    if needed_ids:
+        try:
+            res = (
+                get_admin_client()
+                .table("industry_categories")
+                .select("id,label")
+                .in_("id", list(needed_ids))
+                .execute()
+            )
+            for row in res.data or []:
+                labels[row["id"]] = row["label"]
+        except Exception as exc:
+            log.warning(
+                "applications_query.fetch_industry_for_pairs labels failed",
+                extra={"err": str(exc)},
+            )
+
+    for (track, aid), cid in raw.items():
+        if cid and cid in labels:
+            out[(track, aid)] = {"id": cid, "label": labels[cid]}
     return out
 
 

@@ -22,6 +22,11 @@ export const leadershipApi = {
     api.get(`/leadership/applications${buildQuery(params)}`),
   getApplication: (id) => api.get(`/leadership/applications/${id}`),
 
+  // Filter-pill + dashboard-tab data source. Replaces the legacy
+  // stats.industry block — returns categories with counts, cap (12), and
+  // remaining_slots metadata.
+  getIndustryCategories: () => api.get("/leadership/industry-categories"),
+
   // ─── Writes (Session 6 / Tasks 20-22) ───────────────────────────────
   //
   // The backend resolves `track` server-side from the application id, so the

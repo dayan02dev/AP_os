@@ -26,7 +26,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..rbac import require_capability
-from ..services import applications_query, stats
+from ..services import applications_query, industry_categories, stats
+from ..supabase_client import get_admin_client
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +70,18 @@ async def get_stats() -> dict:
     sip_count = stats.count_apps_total("sip")
     apps_submitted = tir_count + sip_count
 
+    # Draft apps (started but not submitted) — feeds the funnel's "drafted"
+    # stage. count_apps_total above counts non-draft, so we query draft
+    # separately per track.
+    drafted = sum(
+        stats.count_apps_by_status(track, "draft") for track in stats.TRACKS
+    )
+
+    # Apps that have been AI-screened (have an ai_screening row), regardless
+    # of whether their status was advanced past `submitted`. Drives the
+    # funnel's "in review" stage off real data.
+    screened = stats.count_ai_screening_rows()
+
     advanced_past_review = sum(
         per_status_total[s] for s in stats.ADVANCED_PAST_REVIEW
     )
@@ -90,49 +103,40 @@ async def get_stats() -> dict:
     }
 
     # ─── Funnel ───────────────────────────────────────────────────────
-    # Each funnel bucket is the sum of its constituent statuses. Reuses the
-    # counts we already computed above — no extra DB calls.
+    # Six-stage pipeline reach, all from real Supabase counts:
+    #   profiles  — everyone signed up
+    #   drafted   — apps still in `draft` (started, not submitted)
+    #   submitted — non-draft apps (reached submit)
+    #   in_review — apps with an ai_screening row (reached AI review). Uses
+    #               the row count rather than status so it stays correct even
+    #               when the screener wrote scores without advancing status.
+    #   advanced  — shortlisted + interview (by status)
+    #   decided   — offered + onboarded (by status)
+    status_bucket = {
+        bucket: sum(per_status_total.get(s, 0) for s in statuses)
+        for bucket, statuses in stats.FUNNEL_BUCKETS.items()
+    }
     funnel = {
-        "profiles": profiles_signed_up,
-        **{
-            bucket: sum(per_status_total.get(s, 0) for s in statuses)
-            for bucket, statuses in stats.FUNNEL_BUCKETS.items()
-        },
+        "profiles":  profiles_signed_up,
+        "drafted":   drafted,
+        "submitted": apps_submitted,
+        "in_review": max(screened, status_bucket.get("in_review", 0)),
+        "advanced":  status_bucket.get("advanced", 0),
+        "decided":   status_bucket.get("decided", 0),
     }
 
-    # ─── Industry breakdown ───────────────────────────────────────────
-    # One SELECT per track of the wizard text fields. classify_industry()
-    # joins them and matches against the keyword buckets — see stats.py.
-    industry_totals: dict[str, int] = {}
-    industry_labels: dict[str, str] = {}
-    for track in stats.TRACKS:
-        for row in stats.fetch_classification_rows(track):
-            bucket_id, label = stats.classify_industry(row)
-            industry_totals[bucket_id] = industry_totals.get(bucket_id, 0) + 1
-            industry_labels.setdefault(bucket_id, label)
-
-    industry_total_apps = sum(industry_totals.values())
-    industries = [
-        {
-            "id":    bucket_id,
-            "label": industry_labels[bucket_id],
-            "n":     n,
-            "pct":   round((n / industry_total_apps) * 100, 1) if industry_total_apps else 0.0,
-        }
-        for bucket_id, n in industry_totals.items()
-    ]
-    industries.sort(key=lambda b: b["n"], reverse=True)
-
-    industry = {
-        "industries": industries,
-        "total":      industry_total_apps,
-    }
-
+    # Industry breakdown moved to GET /leadership/industry-categories so the
+    # dashboard tab and the Applications tab share a single source (the
+    # LLM-classified ai_screening.industry_category_id) instead of running
+    # the keyword classifier here.
     return {
-        "totals":        totals,
-        "funnel":        funnel,
-        "status_counts": status_counts,
-        "industry":      industry,
+        "totals":            totals,
+        "funnel":            funnel,
+        "status_counts":     status_counts,
+        # Full list of AI overall scores (0–10) across all screened apps so
+        # the dashboard can render the score-distribution histogram from the
+        # complete set, not a capped page of the applications list.
+        "ai_score_overalls": scores,
     }
 
 
@@ -163,6 +167,7 @@ async def list_applications(
     industry: str | None = Query(default=None),
     ai_score_min: float | None = Query(default=None),
     ai_score_max: float | None = Query(default=None),
+    ai_score_bucket: int | None = Query(default=None, ge=0, le=9),
     search: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -173,6 +178,10 @@ async def list_applications(
       - status / track / search → pushed to PostgREST per-track
       - industry → keyword-classified post-fetch (no stored column yet)
       - ai_score_min/max → joined per-row from ai_screening, then filtered
+      - ai_score_bucket → integer 0..9, matches the dashboard histogram's
+        floor()-bucketing exactly (bucket i = [i, i+1), bucket 9 = [9, 10]).
+        Lets the histogram click-through filter the list with semantics
+        that line up with the bar the user clicked.
 
     Phase 1 scale (~hundreds of apps) means a Python-side filter pass on a
     capped-fetch is simpler than a two-step PostgREST join. See FETCH_CAP
@@ -191,68 +200,82 @@ async def list_applications(
             )
         )
 
-    # ─ 2. Industry post-filter (classify wizard text → bucket) ─────────
-    # Pass the full row so classify_industry can read solution_describe,
-    # solution_core_tech, problem_describe AND basic_org. Using basic_org
-    # alone misclassified almost everything as "Other" because basic_org
-    # is usually an institution name without industry signal.
-    classified: list[tuple[dict[str, Any], tuple[str, str]]] = [
-        (r, stats.classify_industry(r)) for r in rows
-    ]
+    # ─ 2. Industry source: LLM-classified ai_screening.industry_category_id ─
+    # Replaces the old keyword classifier. Apps without an ai_screening row
+    # (or whose industry_category_id is NULL) map to None → frontend "—".
+    pairs_for_industry = [(r["track"], r["id"]) for r in rows]
+    industries = applications_query.fetch_industry_for_pairs(pairs_for_industry)
+
     if industry:
-        classified = [(r, ind) for r, ind in classified if ind[0] == industry]
+        rows = [
+            r
+            for r in rows
+            if (industries.get((r["track"], r["id"])) or {}).get("id") == industry
+        ]
 
     # ─ 3. AI score join + filter ───────────────────────────────────────
-    # Pre-fetch all scores for the current candidate set in one round-trip
-    # per track. Then filter by min/max if either bound was supplied.
-    pairs = [(r["track"], r["id"]) for r, _ in classified]
+    pairs = [(r["track"], r["id"]) for r in rows]
     scores = applications_query.fetch_ai_scores_for(pairs)
+    project_names = applications_query.fetch_project_names_for(pairs)
 
-    filter_ai = ai_score_min is not None or ai_score_max is not None
+    filter_ai = (
+        ai_score_min is not None
+        or ai_score_max is not None
+        or ai_score_bucket is not None
+    )
     if filter_ai:
-        kept: list[tuple[dict[str, Any], tuple[str, str]]] = []
-        for r, ind in classified:
+        kept: list[dict[str, Any]] = []
+        for r in rows:
             s = scores.get((r["track"], r["id"]))
             if s is None:
-                # Apps with no AI screening can't match a numeric range. We
-                # exclude them rather than treating None as 0 — that would
-                # let an "ai_score_min=0" sweep up unscored apps which is
-                # almost certainly not what the dashboard wants.
+                # Apps with no AI screening can't match a numeric range.
                 continue
             if ai_score_min is not None and s < ai_score_min:
                 continue
             if ai_score_max is not None and s > ai_score_max:
                 continue
-            kept.append((r, ind))
-        classified = kept
+            if ai_score_bucket is not None:
+                # Mirror the frontend's Math.floor((s/10)*10) bucketing —
+                # clamp 10.0 into bucket 9 so the top bar's click-through
+                # finds perfect scores.
+                bucket = int(s) if s < 10 else 9
+                if bucket != ai_score_bucket:
+                    continue
+            kept.append(r)
+        rows = kept
 
     # ─ 4. Total = post-filter, pre-pagination count ─────────────────────
-    total = len(classified)
+    total = len(rows)
 
     # ─ 5. Sort → paginate → shape response ─────────────────────────────
-    classified.sort(key=lambda pair: _submitted_at_sort_key(pair[0]), reverse=True)
-    page = classified[offset : offset + limit]
+    rows.sort(key=_submitted_at_sort_key, reverse=True)
+    page = rows[offset : offset + limit]
 
-    applications = [
-        {
+    applications = []
+    for r in page:
+        track = r["track"]
+        applications.append({
             "id":               r["id"],
-            "track":            r["track"],
+            "display_seq":      r.get("display_seq"),
+            "display_id":       stats.compose_display_id(track, r.get("display_seq")),
+            "track":            track,
             "status":           r.get("status"),
+            "project_name":     project_names.get((track, r["id"]))
+                                or stats.derive_project_name(r),
+            "founder": {
+                "name":         r.get("basic_full_name"),
+                "affiliation":  r.get("basic_org"),
+            },
+            "industry":         industries.get((track, r["id"])),
+            "stage":            stats.derive_stage_label(r),
+            "ai_score_overall": scores.get((track, r["id"])),
+            "submitted_at":     r.get("submitted_at"),
+            "created_at":       r.get("created_at"),
+            # Legacy fields the AppDrawer + existing tests still reference.
             "basic_full_name":  r.get("basic_full_name"),
             "basic_email":      r.get("basic_email"),
             "basic_org":        r.get("basic_org"),
-            "submitted_at":     r.get("submitted_at"),
-            "created_at":       r.get("created_at"),
-            "industry":         {"id": ind[0], "label": ind[1]},
-            "ai_score_overall": scores.get((r["track"], r["id"])),
-            # Derived fields for the leadership Applications table — see
-            # stats.py for the rules. The frontend renders "—" for None.
-            "project_name":     stats.derive_project_name(r),
-            "stage_label":      stats.derive_stage_label(r),
-            "display_id":       stats.compose_display_id(r["track"], r["id"]),
-        }
-        for r, ind in page
-    ]
+        })
 
     return {
         "applications": applications,
@@ -296,12 +319,60 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
         application_id, track,
     )
 
+    # Compute derived fields so the AppDrawer can render the new header
+    # without re-implementing the helpers in the frontend.
+    app_row_with_track = {**app_row, "track": track}
+    industry_obj = None
+    if ai_screening and ai_screening.get("industry_category_id"):
+        ind_id = ai_screening["industry_category_id"]
+        try:
+            res = (
+                get_admin_client()
+                .table("industry_categories")
+                .select("label")
+                .eq("id", ind_id)
+                .limit(1)
+                .execute()
+            )
+            if res.data:
+                industry_obj = {"id": ind_id, "label": res.data[0]["label"]}
+        except Exception:
+            industry_obj = {"id": ind_id, "label": ind_id}
+
     return {
         "id":                   application_id,
         "track":                track,
+        "display_seq":          app_row.get("display_seq"),
+        "display_id":           stats.compose_display_id(track, app_row.get("display_seq")),
+        "project_name":         (ai_screening or {}).get("project_name")
+                                or stats.derive_project_name(app_row),
+        "founder": {
+            "name":             app_row.get("basic_full_name"),
+            "affiliation":      app_row.get("basic_org"),
+        },
+        "industry":             industry_obj,
+        "stage":                stats.derive_stage_label(app_row_with_track),
         "application":          app_row,
         "ai_screening":         ai_screening,
         "reviews":              reviews,
         "reviewer_assignments": reviewer_assignments,
         "status_history":       status_history,
     }
+
+
+# ─── Industry categories endpoint ──────────────────────────────────────
+
+
+@router.get(
+    "/industry-categories",
+    dependencies=[Depends(require_capability("view_stats"))],
+)
+async def get_industry_categories() -> dict[str, Any]:
+    """Filter-pill + dashboard-tab data source for industry classification.
+
+    Returns categories with counts (sorted desc by count, then is_seed
+    desc as tiebreak; empty categories hidden), the 12-cap, and how many
+    slots remain. The frontend reads this to render the filter pills and
+    the dashboard tab's industry bar chart.
+    """
+    return industry_categories.categories_with_counts()

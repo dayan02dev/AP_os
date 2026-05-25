@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
 import * as authApi from "../lib/auth.js";
+import { isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 
@@ -67,9 +68,10 @@ export default function VerifyPage() {
         if (resetMode) {
           target = "/apply/set-password?reset=1";
         } else {
+          let me = null;
           let hasPassword = true;
           try {
-            const me = await authApi.getMe();
+            me = await authApi.getMe();
             hasPassword = !!me?.password_set;
           } catch {
             // If /me fails we fall through to the regular target — the
@@ -78,10 +80,15 @@ export default function VerifyPage() {
           if (!hasPassword) {
             target = "/apply/set-password";
           } else {
-            target =
-              nextParam && nextParam.startsWith("/apply/")
-                ? nextParam
-                : "/apply";
+            // Role-based landing — leadership/admin go straight to their
+            // dashboard instead of bouncing through /apply.
+            const roles = me?.roles || [];
+            const roleTarget = landingPathFor(roles);
+            const honourNext =
+              nextParam &&
+              nextParam.startsWith("/apply/") &&
+              !isApplyHiddenFor(roles);
+            target = honourNext ? nextParam : roleTarget;
           }
         }
         navigate(target, { replace: true });

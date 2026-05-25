@@ -24,6 +24,7 @@ the route handler stays a thin compositor.
 from __future__ import annotations
 
 import logging
+import re
 
 from ..supabase_client import get_admin_client
 
@@ -134,6 +135,10 @@ def _row_classify_text(row: dict) -> str:
     return " ".join(str(row.get(f) or "") for f in _CLASSIFY_FIELDS)
 
 
+# DEPRECATED 2026-05-20 — the leadership list endpoint now reads industry
+# from ai_screening.industry_category_id (joined to industry_categories).
+# Kept for one release so any in-flight callers don't break; delete after
+# 100% of apps have industry_category_id populated.
 def classify_industry(source: str | dict | None) -> tuple[str, str]:
     """Map free-text wizard data to an industry bucket.
 
@@ -150,10 +155,7 @@ def classify_industry(source: str | dict | None) -> tuple[str, str]:
     """
     if source is None:
         return OTHER_BUCKET
-    if isinstance(source, dict):
-        text = _row_classify_text(source)
-    else:
-        text = str(source)
+    text = _row_classify_text(source) if isinstance(source, dict) else str(source)
     if not text.strip():
         return OTHER_BUCKET
     s = text.lower()
@@ -164,89 +166,268 @@ def classify_industry(source: str | dict | None) -> tuple[str, str]:
     return OTHER_BUCKET
 
 
-# ─── Stage label derivation ─────────────────────────────────────────────
+# ─── Stage label derivation (spec §4) ────────────────────────────────────
 #
-# Used by the leadership Applications table's "Stage" column. SIP applicants
-# pick a `sip_traction` value from a closed enum; TIR has `solution_stage`.
-# We collapse both to a short label that fits the table cell.
-_SIP_TRACTION_TO_STAGE: dict[str, str] = {
+# Used by the leadership Applications table's "Stage" column. TIR applicants
+# pick `solution_stage` from a closed enum; SIP applicants pick `sip_traction`.
+# We collapse both to a short label that fits the table cell while keeping
+# the raw value available for hover (frontend reads `raw` into a title attr).
+
+# TIR: solution_stage → short label (spec §4a)
+_TIR_STAGE_MAP: dict[str, str] = {
+    "Still exploring":                              "Exploring",
+    "Literature / research stage":                  "Research",
+    "Simulations completed":                        "Simulation",
+    "Lab demos / proof of concept":                 "Lab demo",
+    "Prototype built":                              "Prototype",
+    "Pilot-ready product":                          "Pilot-ready",
+    "Deployed in real setting with real users":     "Deployed",
+}
+
+# SIP: sip_traction → short label (spec §4b)
+_SIP_STAGE_MAP: dict[str, str] = {
     "Pre-revenue — building toward our first pilot":          "Pre-revenue",
-    "Active pilots (paid or unpaid) with design partners":    "Pilot",
-    "Paying pilots — customers have paid for early access":   "Early revenue",
+    "Active pilots (paid or unpaid) with design partners":    "Active pilots",
+    "Paying pilots — customers have paid for early access":   "Paying pilots",
     "Live paying customers — repeat revenue":                 "Live revenue",
 }
 
-_SIP_TRL_TO_STAGE: dict[str, str] = {
-    "TRL 3 or earlier — research stage":                  "Research",
-    "TRL 4 — lab-validated prototype":                    "Prototype",
-    "TRL 5 — pilot-tested in a relevant environment":     "Pilot",
-    "TRL 6+ — demonstrated in operational setting":       "Operational",
-}
 
+def derive_stage_label(row: dict | None) -> dict | None:
+    """Return ``{"raw": <original>, "label": <short>}`` or None.
 
-def derive_stage_label(row: dict | None) -> str | None:
-    """Short stage label for the leadership Applications table.
+    Per-track maps; falls back to using ``raw`` as ``label`` when the raw
+    text isn't in the map (better than dropping the cell entirely). Returns
+    None only when no source field is populated.
 
-    Resolution order:
-      1. SIP `sip_traction` (revenue-stage enum)
-      2. SIP `sip_trl` (technology readiness fallback)
-      3. TIR `solution_stage` (free text — truncated)
-      4. None — frontend renders "—"
+    For SIP, if `sip_traction` is missing, falls back to `sip_trl`.
     """
     if not row:
         return None
-    traction = row.get("sip_traction")
-    if traction and traction in _SIP_TRACTION_TO_STAGE:
-        return _SIP_TRACTION_TO_STAGE[traction]
-    trl = row.get("sip_trl")
-    if trl and trl in _SIP_TRL_TO_STAGE:
-        return _SIP_TRL_TO_STAGE[trl]
-    sol_stage = row.get("solution_stage")
-    if sol_stage:
-        s = str(sol_stage).strip()
-        return s[:16] + ("…" if len(s) > 16 else "")
-    return None
+    track = (row.get("track") or "").lower()
+
+    if track == "tir":
+        raw = row.get("solution_stage")
+        if not raw:
+            return None
+        return {"raw": raw, "label": _TIR_STAGE_MAP.get(raw, raw)}
+
+    if track == "sip":
+        raw = row.get("sip_traction")
+        if raw:
+            return {"raw": raw, "label": _SIP_STAGE_MAP.get(raw, raw)}
+        trl = row.get("sip_trl")
+        if trl:
+            return {"raw": trl, "label": str(trl)[:24]}
+        return None
+
+    # Unknown / missing track — try both fields opportunistically.
+    raw = row.get("solution_stage") or row.get("sip_traction")
+    if not raw:
+        return None
+    return {
+        "raw": raw,
+        "label": _TIR_STAGE_MAP.get(raw, _SIP_STAGE_MAP.get(raw, raw)),
+    }
 
 
-# ─── Project name derivation ────────────────────────────────────────────
+# ─── Project name derivation (spec §2) ──────────────────────────────────
+
+# Case-insensitive filler prefixes stripped from the start of the derived
+# name so the cell focuses on what the venture actually does.
+_PROJECT_FILLER_PREFIXES: tuple[str, ...] = (
+    "we are building ",
+    "we're building ",
+    "we are developing ",
+    "we're developing ",
+    "we are creating ",
+    "we're creating ",
+    "we are working on ",
+    "we're working on ",
+    "our solution is ",
+    "our product is ",
+    "my solution is ",
+    "my product is ",
+    "the solution is ",
+    "this is ",
+    "to ",
+    "a ",
+    "an ",
+    "the ",
+)
+
+# Leading non-letter junk: ">>>", "***", "1.", "1)", bullet dashes, etc.
+# Anchored so it only fires on prefix garbage — we don't want to strip
+# legit dashes in the middle of a name.
+_LEADING_NOISE_RE = re.compile(r"^[\s>#*\-•\d().:;]+")
+
+# Document-style labels people sometimes prefix to the answer field:
+# "Solution: ...", "Answer: ...", "Q11: ...", "Section 2:". Strip the
+# label so the descriptive sentence underneath becomes the candidate.
+_LABEL_PREFIX_RE = re.compile(
+    r"^(?:solution|answer|response|description|problem|q\s*\d+|section\s*\d+)\s*[:\-]\s*",
+    re.IGNORECASE,
+)
+
+# Subject-verb preamble: "<1-3 word subject> is/are/builds/aims-to/etc.
+# [purpose phrase] [article]". Strips brand-name preambles like
+# "Foucault is a", "Lino is designed to", "Olive Orange is an", so the
+# 4-word window lands on the actual product description.
+_SUBJECT_VERB_RE = re.compile(
+    r"""
+    ^
+    (?:[A-Za-z][\w\-']*)            # subject word 1
+    (?:\s+[A-Za-z][\w\-']*){0,2}    # optionally 2 more subject words
+    \s+
+    (?:                              # linking / action verb
+        is | are | was | were |
+        will\s+be | has\s+been | have\s+been |
+        provides? | offers? | delivers? | enables? |
+        builds? | creates? | develops? | designs? |
+        aims\s+to | seeks\s+to | strives\s+to |
+        focuses\s+on | works\s+on
+    )
+    \s+
+    (?:                              # optional purpose phrase / article
+        designed\s+to\s+ | built\s+to\s+ | meant\s+to\s+ |
+        going\s+to\s+ | here\s+to\s+ | able\s+to\s+ |
+        a\s+ | an\s+ | the\s+ | that\s+ | which\s+
+    )?
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# Max words shown in the table cell. Leadership wants a 3-4 word
+# scan-able label, not a full sentence (spec §2 v2).
+_PROJECT_MAX_WORDS = 4
+
+
+def _strip_filler_prefix(text: str) -> str:
+    """Drop a leading filler prefix (case-insensitive) if any matches."""
+    lower = text.lower()
+    for filler in _PROJECT_FILLER_PREFIXES:
+        if lower.startswith(filler):
+            return text[len(filler):].lstrip()
+    return text
+
+
+def _strip_all_filler(text: str) -> str:
+    """Iteratively strip stacked filler prefixes."""
+    prev = None
+    while prev != text:
+        prev = text
+        text = _strip_filler_prefix(text)
+    return text
+
+
+def _strip_subject_verb_preamble(text: str) -> str:
+    """If the sentence starts with a short '<Subject> is/aims-to/etc.'
+    preamble, drop it so the descriptive noun phrase becomes the head.
+
+    Only fires when the remainder still contains a real word — otherwise
+    we'd over-strip "Pet healthcare is needed" down to "needed".
+    """
+    m = _SUBJECT_VERB_RE.match(text)
+    if not m:
+        return text
+    rest = text[m.end():].strip()
+    if not rest or not any(c.isalpha() for c in rest):
+        return text
+    # If what's left is a single word or starts with another preamble verb,
+    # the strip probably went too deep — keep the original.
+    if len(rest.split()) < 2:
+        return text
+    return rest
 
 
 def derive_project_name(row: dict | None) -> str | None:
-    """Short project name for the leadership Applications table.
+    """Short 3-4 word project name for the leadership Applications table.
 
-    Takes the first sentence (or first 60 chars) of `solution_describe`.
-    Falls back to `basic_org` so the cell isn't blank. Returns None only
-    when nothing is available — the frontend then renders "—".
+    Goal: the cell should describe what the project *does*, not echo the
+    brand-name preamble. So "Foucault is a full-stack defense platform"
+    becomes "Full-stack defense platform", not "Foucault is a full-stack".
+
+    Algorithm:
+      1. Source ``solution_describe``; fall back to ``basic_org``.
+      2. Take the first sentence.
+      3. Strip leading noise (">>>", "*", "1.", etc.) and label prefixes
+         ("Solution:", "Q11:").
+      4. Iteratively strip filler ("We're building ", "A ", "The ", "To ").
+      5. Strip a short "<Subject> is/are/builds/aims-to [a/an/the]"
+         preamble if one is present.
+      6. Strip filler again (handles "Lino is designed to a foo" → "foo").
+      7. Take the first 4 words. Capitalize. Append ``…`` if truncated.
     """
     if not row:
         return None
     text = (row.get("solution_describe") or "").strip()
-    if text:
-        first = text.split(".")[0].split("\n")[0].strip()
-        if len(first) > 60:
-            return first[:57] + "…"
-        return first or None
-    org = (row.get("basic_org") or "").strip()
-    return org or None
+    if not text:
+        org = (row.get("basic_org") or "").strip()
+        return org or None
+
+    # Step 2: first sentence
+    first = text
+    for sep in (". ", "? ", "! ", "\n"):
+        first = first.split(sep)[0]
+    first = first.strip().rstrip(".?!,;:")
+
+    # Step 3: leading noise + label prefix
+    first = _LEADING_NOISE_RE.sub("", first).strip()
+    first = _LABEL_PREFIX_RE.sub("", first).strip()
+
+    # Step 4: strip filler — iterate so "Our solution is a robot" → "robot"
+    first = _strip_all_filler(first)
+
+    # Step 5: strip a brand-name preamble like "Foucault is a"
+    first = _strip_subject_verb_preamble(first)
+
+    # Step 6: strip filler again after preamble strip
+    first = _strip_all_filler(first)
+
+    if not first:
+        return None
+
+    # Step 7: first 4 words
+    words = first.split()
+    truncated = len(words) > _PROJECT_MAX_WORDS
+    capped = " ".join(words[:_PROJECT_MAX_WORDS])
+    # Strip trailing punctuation introduced by partial truncation.
+    capped = capped.rstrip(",.;:- ")
+    if not capped:
+        return None
+
+    # If after truncation we're left with something that doesn't look like
+    # a word (e.g. "1" because the sentence started with a list marker),
+    # fall back to basic_org so the cell isn't an opaque single character.
+    has_letter = any(c.isalpha() for c in capped)
+    if not has_letter:
+        org = (row.get("basic_org") or "").strip()
+        return org or None
+
+    if truncated:
+        capped = f"{capped}…"
+
+    return capped[0].upper() + capped[1:]
 
 
-# ─── Display ID derivation ──────────────────────────────────────────────
+# ─── Display ID derivation (spec §5) ────────────────────────────────────
 
 
-def compose_display_id(track: str, app_id: str | None) -> str:
-    """Stable short identifier for the table + emails (e.g. ``TIR-26225``).
+def compose_display_id(track: str, display_seq: int | str | None) -> str:
+    """Render the human-readable per-track ID, e.g. ``TIR-26013``.
 
-    Last 5 decimal digits of the uuid's first 8 hex chars interpreted as
-    a number. Deterministic per row.
+    ``display_seq`` is the integer from the ``{track}_display_seq`` sequence
+    (populated by migration 017). Returns ``<TRACK>-?????`` when the seq is
+    missing — rows where the migration hasn't been applied yet will show
+    this placeholder.
     """
     prefix = (track or "?").upper()
-    if not app_id:
+    if display_seq is None or display_seq == "":
         return f"{prefix}-?????"
     try:
-        n = int(str(app_id).replace("-", "")[:8], 16) % 100_000
-        return f"{prefix}-{n:05d}"
-    except (ValueError, TypeError):
-        return f"{prefix}-{str(app_id)[:5]}"
+        return f"{prefix}-{int(display_seq)}"
+    except (TypeError, ValueError):
+        return f"{prefix}-?????"
 
 
 # ─── Count helpers (SQL aggregation only) ──────────────────────────────
@@ -299,6 +480,28 @@ def count_apps_total(track: str) -> int:
             "stats.count_apps_total failed",
             extra={"track": track, "err": str(exc)},
         )
+        return 0
+
+
+def count_ai_screening_rows() -> int:
+    """count(*) of ai_screening rows — i.e. apps that have been AI-screened.
+
+    Used by the dashboard funnel's "in review" stage. Counts rows across
+    both tracks (the table is keyed by (application_id, application_track)).
+    An app that has been screened has exactly one row, so this is a clean
+    proxy for "reached AI review" even when the app's status hasn't been
+    advanced past `submitted` (e.g. scores written by the backfill script).
+    """
+    try:
+        res = (
+            get_admin_client()
+            .table("ai_screening")
+            .select("application_id", count="exact")
+            .execute()
+        )
+        return res.count or 0
+    except Exception as exc:
+        log.warning("stats.count_ai_screening_rows failed", extra={"err": str(exc)})
         return 0
 
 

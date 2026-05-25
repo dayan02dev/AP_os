@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
+import { isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 
@@ -46,34 +47,19 @@ export default function SignInPage() {
     setLoading(true);
     try {
       const me = await signInWithPassword(trimmedEmail, password);
-      // Honour ?next= when it points at a known protected surface.
-      // Otherwise branch by role, in this priority order:
-      //   admin                       → /admin            (the user-mgmt shell)
-      //   leadership (no admin)       → /leadership       (the dashboard shell)
-      //   reviewer (no above)         → /reviewer/inbox
-      //   mentor (no above)           → /mentor/founders  (Phase 2 — page TBD)
-      //   else (applicant)            → /apply
-      const allowedNext =
+      // Honour ?next= when it points at a known protected surface AND the
+      // user is allowed to land there. For leadership/admin accounts we
+      // ignore a ?next=/apply* hint — they're gated out of the wizard.
+      const roles = me?.roles || [];
+      const target = landingPathFor(roles);
+      const nextAllowedByRole =
         nextParam &&
         (nextParam.startsWith("/apply/") ||
           nextParam.startsWith("/admin/") ||
           nextParam.startsWith("/leadership") ||
-          nextParam.startsWith("/reviewer/"));
-      const roles = me?.roles || [];
-      if (allowedNext) {
-        navigate(nextParam, { replace: true });
-      } else if (roles.includes("admin")) {
-        navigate("/admin", { replace: true });
-      } else if (roles.includes("leadership")) {
-        navigate("/leadership", { replace: true });
-      } else if (roles.includes("reviewer")) {
-        navigate("/reviewer/inbox", { replace: true });
-      } else if (roles.includes("mentor")) {
-        // Mentor dashboard is Phase 2; for now treat as applicant fallback.
-        navigate("/apply", { replace: true });
-      } else {
-        navigate("/apply", { replace: true });
-      }
+          nextParam.startsWith("/reviewer/")) &&
+        !(isApplyHiddenFor(roles) && nextParam.startsWith("/apply"));
+      navigate(nextAllowedByRole ? nextParam : target, { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setLocalError(
