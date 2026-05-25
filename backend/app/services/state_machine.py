@@ -1,9 +1,11 @@
 """Application status state machine (spec §4.8).
 
-Defines the set of *leadership-initiated* transitions that the writes
-router (`leadership_actions.py`) is allowed to perform. Auto-transitions
-that fire from the AI worker (submitted → ai_screening → under_review /
-screening_failed) are NOT exposed here; the worker writes status directly.
+Defines the canonical set of legal status transitions. The leadership
+status-change endpoint that used to consume this was removed; the map now
+backs the reviewer-completion auto-transition and transition validation.
+Auto-transitions that fire from the AI worker (submitted → ai_screening →
+under_review / screening_failed) are NOT exposed here; the worker writes
+status directly.
 Applicant-initiated transitions (draft → submitted) live in the wizard's
 submit endpoint and are also not in this map.
 

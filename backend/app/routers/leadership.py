@@ -360,6 +360,111 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
     }
 
 
+# ─── Attachment signed-download URL (Phase 1.5) ─────────────────────────
+
+# Short-lived so a leaked URL is useless within a couple of minutes; long
+# enough that a click reliably resolves to a started download.
+_SIGNED_URL_TTL_SECONDS = 120
+
+
+@router.get(
+    "/applications/{application_id}/files/signed-url",
+    dependencies=[Depends(require_capability("view_app_detail"))],
+)
+async def get_application_file_signed_url(
+    application_id: str,
+    storage_path: str = Query(..., min_length=1),
+) -> dict[str, Any]:
+    """Return a short-lived signed download URL for one of an app's files.
+
+    Security model (defence in depth):
+      - Gated by the SAME capability as the application-detail read
+        (`view_app_detail`), so only leadership/admin reach the handler.
+      - We never sign an arbitrary path. We resolve the application, rebuild
+        the allow-list of paths that genuinely belong to it (walking its
+        file-bearing JSONB fields), and only sign if the requested path is in
+        that set. The bucket is taken from the field the path came from — not
+        from the path string — mirroring the upload routers' convention.
+      - A path containing ``..`` is rejected outright (traversal guard).
+      - Unknown / non-matching path → 404 (same shape as a missing app), so a
+        probe can't distinguish "no such app" from "path not on this app".
+    """
+    if ".." in storage_path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_storage_path"},
+        )
+
+    found = applications_query.find_application_with_track(application_id)
+    if found is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "application_not_found"},
+        )
+    track, app_row = found
+
+    allowed = applications_query.collect_application_file_paths(track, app_row)
+    bucket = allowed.get(storage_path)
+    if bucket is None:
+        # Path isn't referenced by this application — refuse to sign it.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "file_not_found"},
+        )
+
+    try:
+        signed = (
+            get_admin_client()
+            .storage.from_(bucket)
+            .create_signed_url(storage_path, _SIGNED_URL_TTL_SECONDS)
+        )
+    except Exception as exc:
+        # The file is referenced by the application but the object isn't in the
+        # bucket (e.g. seeded rows whose uploads never happened) — Supabase
+        # answers "Object not found". Surface that as a clean 404 so the UI can
+        # say "file not available" instead of a generic gateway error.
+        msg = str(exc).lower()
+        if "not_found" in msg or "not found" in msg:
+            log.info(
+                "leadership signed-url: object missing in storage",
+                extra={"application_id": application_id, "track": track, "bucket": bucket},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "file_not_available"},
+            ) from exc
+        log.warning(
+            "leadership signed-url generation failed",
+            extra={
+                "application_id": application_id,
+                "track": track,
+                "bucket": bucket,
+                "err": str(exc),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "signed_url_failed"},
+        ) from exc
+
+    # supabase-py returns {"signedURL": "..."} (older builds) or
+    # {"signedUrl": "..."} — accept either, plus a top-level "url".
+    url = None
+    if isinstance(signed, dict):
+        url = signed.get("signedURL") or signed.get("signedUrl") or signed.get("url")
+    if not url:
+        log.warning(
+            "leadership signed-url returned no URL",
+            extra={"application_id": application_id, "bucket": bucket},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "signed_url_failed"},
+        )
+
+    return {"url": url, "expires_in": _SIGNED_URL_TTL_SECONDS}
+
+
 # ─── Industry categories endpoint ──────────────────────────────────────
 
 
