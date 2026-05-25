@@ -10,6 +10,12 @@ Parameters:
     Type: String
     AllowedValues: [dev, staging, production]
     Default: production
+  StackSuffix:
+    Type: String
+    Default: ""
+    Description: "Optional suffix appended to all named resources so a second
+                  Lambda/HTTP-API/SQS set can co-exist with the primary stack
+                  for the same EnvName (e.g. staging + staging-rbd preview)."
   FrontendOrigin:
     Type: String
     Description: "Comma-separated list of allowed origins (e.g. https://apply.artpark.info)"
@@ -97,7 +103,7 @@ Resources:
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub artpark-eir-api-${EnvName}
+      FunctionName: !Sub artpark-eir-api-${EnvName}${StackSuffix}
       CodeUri: ../../backend/
       Handler: app.main.handler
       Events:
@@ -122,7 +128,7 @@ Resources:
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
-      Name: !Sub artpark-eir-api-${EnvName}
+      Name: !Sub artpark-eir-api-${EnvName}${StackSuffix}
       DisableExecuteApiEndpoint: false
       CorsConfiguration:
         # FrontendOrigin is comma-separated (per its Parameter description).
@@ -141,7 +147,7 @@ Resources:
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub /aws/lambda/artpark-eir-api-${EnvName}
+      LogGroupName: !Sub /aws/lambda/artpark-eir-api-${EnvName}${StackSuffix}
       RetentionInDays: 30
 
   # ── AI screening pipeline (Phase 1, Session 7) ──────────────────
@@ -159,7 +165,7 @@ Resources:
   AiScreenerDLQ:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub artpark-eir-ai-screener-dlq-${EnvName}.fifo
+      QueueName: !Sub artpark-eir-ai-screener-dlq-${EnvName}${StackSuffix}.fifo
       FifoQueue: true
       ContentBasedDeduplication: true
       MessageRetentionPeriod: 1209600  # 14 days
@@ -171,7 +177,7 @@ Resources:
   AiScreenerQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub artpark-eir-ai-screener-${EnvName}.fifo
+      QueueName: !Sub artpark-eir-ai-screener-${EnvName}${StackSuffix}.fifo
       FifoQueue: true
       ContentBasedDeduplication: true
       VisibilityTimeout: 300
@@ -185,7 +191,7 @@ Resources:
   ApiFunctionAiScreenerSendPolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: !Sub artpark-eir-api-${EnvName}-ai-screener-send
+      PolicyName: !Sub artpark-eir-api-${EnvName}${StackSuffix}-ai-screener-send
       Roles:
         - !Ref ApiFunctionRole
       PolicyDocument:
@@ -204,7 +210,7 @@ Resources:
   AiScreenerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub artpark-eir-ai-screener-${EnvName}
+      FunctionName: !Sub artpark-eir-ai-screener-${EnvName}${StackSuffix}
       CodeUri: ../../backend/
       Handler: workers.ai_screener.handler.lambda_handler
       Timeout: 60
@@ -232,7 +238,7 @@ Resources:
   AiScreenerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub /aws/lambda/artpark-eir-ai-screener-${EnvName}
+      LogGroupName: !Sub /aws/lambda/artpark-eir-ai-screener-${EnvName}${StackSuffix}
       RetentionInDays: 30
 
   # Alarm fires the moment any message lands in the DLQ. There's no
@@ -242,7 +248,7 @@ Resources:
   AiScreenerDLQAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmName: !Sub artpark-eir-ai-screener-dlq-not-empty-${EnvName}
+      AlarmName: !Sub artpark-eir-ai-screener-dlq-not-empty-${EnvName}${StackSuffix}
       AlarmDescription: AI screening DLQ has at least one message — investigate.
       Namespace: AWS/SQS
       MetricName: ApproximateNumberOfMessagesVisible
