@@ -1,11 +1,10 @@
 // Client mirror of backend/app/services/state_machine.py — Phase 1 §4.8.
 //
-// Keep in sync with the Python source. The backend remains the authority on
-// every transition (PATCH /status will 422 anything illegal), so this mirror
-// only powers the StatusChangeModal's "what can I pick?" dropdown without an
-// extra round-trip. If a Phase 1.5 change reshuffles the rules and the
-// frontend wasn't updated, the modal might offer a stale option; backend
-// validation catches it and surfaces the right "allowed" list to the UI.
+// Keep in sync with the Python source; the backend remains the authority on
+// every transition. This module's live export is labelFor() — the human
+// label for a status id, used by the review/reviewer headers. LEGAL_TRANSITIONS
+// is retained as a reference mirror (its old consumer, the leadership
+// status-change modal, was removed).
 
 export const LEGAL_TRANSITIONS = {
   submitted:        ["withdrawn"],

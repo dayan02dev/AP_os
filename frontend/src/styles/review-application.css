@@ -50,10 +50,15 @@
 
 .review-header .h-id {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 13px;
-  letter-spacing: 0.06em;
+  font-size: 12px;
+  letter-spacing: 0.04em;
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
+  /* Render as an ID badge so it reads unmistakably as the application number. */
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-soft);
 }
 
 .review-header .h-status {
@@ -149,7 +154,7 @@
 
 .review-body {
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: 1fr 440px;
   min-height: 0;
 }
 .review-body[data-aside-collapsed="true"] {
@@ -454,6 +459,13 @@
   border-color: var(--line);
   cursor: not-allowed;
 }
+.ans-file .dl[aria-busy="true"] { cursor: progress; }
+.ans-file-error {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--danger, #b3261e);
+  line-height: 1.3;
+}
 
 /* Video */
 .ans-video {
@@ -606,7 +618,9 @@
    the dashboard's KPI/card aesthetic. */
 
 .ai-panel {
-  background: var(--paper);
+  /* Soft lavender wash (brand indigo at low opacity) so the panel reads as
+     "the AI side" while staying light. TL;DR + cards sit white-on-lavender. */
+  background: color-mix(in srgb, var(--artblue) 6%, var(--paper));
   color: var(--ink);
   height: 100%;
   display: flex;
@@ -616,6 +630,11 @@
   max-height: calc(100vh - 60px);
   overflow-y: auto;
   border-left: 1px solid var(--line);
+}
+/* On the lavender panel, lift the TL;DR card to white so it pops (in the
+   white drawer the base --bg-soft tint is used instead). */
+.ai-panel .ai-tldr {
+  background: var(--paper);
 }
 .ai-panel-head {
   padding: var(--s-5) var(--s-5) 0;
@@ -767,10 +786,11 @@
 
 /* AI Summary card — soft surface, structured fields with serif labels. */
 .ai-summary {
-  padding: var(--s-4) var(--s-5);
-  background: var(--bg-soft);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sharp);
+  /* Plain container — AISummaryBlock now supplies its own TL;DR card and
+     collapsible sections, so no nested card background/border here. */
+  padding: 0;
+  background: transparent;
+  border: none;
 }
 .ai-summary .head {
   font-family: var(--font-body);
@@ -796,7 +816,6 @@
   font-size: 13px;
   line-height: 1.55;
   color: var(--ink-soft);
-  white-space: pre-wrap;
 }
 .ai-summary-fields {
   margin: 0;

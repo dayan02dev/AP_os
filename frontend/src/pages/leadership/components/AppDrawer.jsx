@@ -3,17 +3,15 @@
 // Visual contract: ARTPARK design system §5.6 + §6.6.
 // On open, fetches GET /leadership/applications/{id} for the full detail
 // payload (ai_screening, reviews, reviewer_assignments, status_history).
-// Footer: Assign reviewer (ghost) + Change status (primary). View scoring
-// remains a no-op tooltip — the reviewer scoring screen ships in Phase 1.5.
+// Footer: a single "Review application" action that opens the full review page.
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
 import { fmtRelative } from "../../../lib/timeFmt.js";
-import AssignReviewersModal from "../modals/AssignReviewersModal.jsx";
-import StatusChangeModal from "../modals/StatusChangeModal.jsx";
 import { bucketFor } from "./statusBuckets.js";
 import AISummaryBlock from "./AISummaryBlock.jsx";
+import Collapsible from "./Collapsible.jsx";
 
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -96,8 +94,7 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [reloadKey, setReloadKey] = useState(0);
-  const [openModal, setOpenModal] = useState(null);
+  const [reloadKey] = useState(0);
   const panelRef = useRef(null);
 
   useEffect(() => {
@@ -233,22 +230,21 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
             )}
           </section>
 
-          <section className="drawer-section">
-            <span className="section-eyebrow">Problem &amp; solution</span>
+          <div className="lp-drawer-accordion">
+            <Collapsible label="Problem & solution">
             {loading && !application ? (
               <div className="inline-loading">Loading…</div>
             ) : (
               renderProblemSolution(application)
             )}
-          </section>
+            </Collapsible>
 
-          <section className="drawer-section">
-            <span className="section-eyebrow">Reviewer assignments ({assignments.length})</span>
+            <Collapsible label="Reviewer assignments" hint={assignments.length}>
             {loading && !detail ? (
               <div className="inline-loading">Loading…</div>
             ) : assignments.length === 0 ? (
               <p style={{ color: "var(--ink-dim)", fontSize: 13 }}>
-                No reviewers assigned. Use the "Assign reviewer" button below.
+                No reviewers assigned yet.
               </p>
             ) : (
               <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
@@ -285,10 +281,9 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
                 })}
               </ul>
             )}
-          </section>
+            </Collapsible>
 
-          <section className="drawer-section">
-            <span className="section-eyebrow">Reviews ({reviews.length})</span>
+            <Collapsible label="Reviews" hint={reviews.length}>
             {loading && !detail ? (
               <div className="inline-loading">Loading…</div>
             ) : reviews.length === 0 ? (
@@ -341,10 +336,9 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
                 ))}
               </ul>
             )}
-          </section>
+            </Collapsible>
 
-          <section className="drawer-section">
-            <span className="section-eyebrow">Status history ({history.length})</span>
+            <Collapsible label="Status history" hint={history.length}>
             {loading && !detail ? (
               <div className="inline-loading">Loading…</div>
             ) : history.length === 0 ? (
@@ -384,60 +378,20 @@ export default function AppDrawer({ row, onClose, statusLabelById }) {
                 ))}
               </ul>
             )}
-          </section>
+            </Collapsible>
+          </div>
         </div>
 
         <footer className="drawer-footer">
           <button
             type="button"
-            className="btn btn-ghost"
+            className="btn btn-primary"
             onClick={() => navigate(`/leadership/applications/${row.track}/${row.id}/review`)}
           >
             Review application <span className="arrow">→</span>
           </button>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setOpenModal("assign")}
-          >
-            Assign reviewer
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setOpenModal("status")}
-          >
-            Change status <span className="arrow">→</span>
-          </button>
         </footer>
       </div>
-
-      {openModal === "status" && (
-        <StatusChangeModal
-          application={{
-            id: row.id,
-            track: row.track,
-            status: row.status,
-            basic_full_name: fullName,
-          }}
-          onClose={() => setOpenModal(null)}
-          onSuccess={() => { setOpenModal(null); setReloadKey((k) => k + 1); }}
-        />
-      )}
-
-      {openModal === "assign" && (
-        <AssignReviewersModal
-          application={{
-            id: row.id,
-            track: row.track,
-            basic_full_name: fullName,
-            user_id: application?.user_id || null,
-            reviewer_assignments: assignments,
-          }}
-          onClose={() => setOpenModal(null)}
-          onSuccess={() => { setOpenModal(null); setReloadKey((k) => k + 1); }}
-        />
-      )}
     </>
   );
 }

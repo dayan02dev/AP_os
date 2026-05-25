@@ -721,3 +721,131 @@
   text-align: right;
 }
 
+
+/* ── AI summary + collapsible accordion (shared: review AI panel + drawer) ─ */
+
+.ai-summary-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.ai-summary-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+/* Review flags */
+.ai-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ai-flag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.ai-flag-amber { background: #fef3c7; color: #92400e; }
+.ai-flag-red   { background: #fee2e2; color: #991b1b; }
+
+/* TL;DR — the always-visible decision pointers (verdict + recommendation) */
+.ai-tldr {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.ai-tldr-item.is-rec {
+  border-top: 1px dashed var(--line);
+  padding-top: var(--s-3);
+}
+.ai-tldr-label {
+  display: block;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.ai-tldr-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.ai-tldr-text.is-strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Collapsible accordion section (Collapsible.jsx) */
+.ai-detail-sections {
+  display: flex;
+  flex-direction: column;
+}
+.lp-collapse {
+  border-top: 1px solid var(--line);
+}
+.lp-collapse:last-child {
+  border-bottom: 1px solid var(--line);
+}
+.lp-collapse-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 11px 2px;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.lp-collapse-head:hover .lp-collapse-label {
+  color: var(--ink);
+}
+.lp-collapse-chevron {
+  color: var(--ink-dim);
+  font-size: 11px;
+  width: 12px;
+  flex-shrink: 0;
+}
+.lp-collapse-label {
+  flex: 1;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.lp-collapse.is-open .lp-collapse-label {
+  color: var(--ink);
+}
+.lp-collapse-hint {
+  font-size: 12px;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+.lp-collapse-body {
+  padding: 0 2px 12px 20px;
+}
+
+/* Drawer: the AI-summary detail accordion (Top strength / concern / fit) and
+   the section accordion below it (Problem & solution, Reviewers, …) should
+   read as one continuous list. Cancel the drawer-body gap between them and
+   drop the AI-summary block's trailing border so there's no empty band. */
+.lp-drawer-accordion {
+  margin-top: calc(-1 * var(--s-6));
+}
+.ai-detail-sections .lp-collapse:last-child {
+  border-bottom: none;
+}
+

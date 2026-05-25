@@ -12,7 +12,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.jsx";
-import { hasCapability } from "../../lib/rbac.js";
 import { leadershipApi } from "../../lib/leadershipApi.js";
 import { fmtRelative } from "../../lib/timeFmt.js";
 import AppDrawer from "./components/AppDrawer.jsx";
@@ -111,11 +110,55 @@ function medianOf(arr) {
   return xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
 }
 
+// ── CSV export ──────────────────────────────────────────────────────────
+// Quote a cell if it contains a comma, quote, or newline; double embedded
+// quotes (RFC 4180).
+function csvCell(v) {
+  if (v == null) return "";
+  const s = String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function buildApplicationsCsv(rows, statusLabelById) {
+  const header = [
+    "Application ID", "Track", "Project", "Founder", "Organisation",
+    "Industry", "Stage", "AI score", "Status", "Submitted",
+  ];
+  const lines = [header.map(csvCell).join(",")];
+  for (const a of rows) {
+    lines.push([
+      a.display_id || "",
+      (a.track || "").toUpperCase(),
+      a.project_name || "",
+      a.founder?.name || a.basic_full_name || "",
+      a.founder?.affiliation || a.basic_org || "",
+      a.industry?.label || "",
+      a.stage?.label || a.stage_label || "",
+      a.ai_score_overall != null ? a.ai_score_overall.toFixed(1) : "",
+      statusLabelById?.[a.status] || a.status || "",
+      a.submitted_at || a.created_at || "",
+    ].map(csvCell).join(","));
+  }
+  // Lead with a BOM so Excel opens it as UTF-8.
+  return "﻿" + lines.join("\r\n");
+}
+
+function triggerCsvDownload(csv, filename) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export default function LeadershipDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const roles = user?.roles || [];
-  const showSwitchToAdmin = hasCapability(roles, "manage_users");
   // Hide the "Switch to applicant" buttons for accounts whose /apply is
   // role-gated away (admin or leadership). Clicking the button for those
   // users would just bounce them back here via ApplyRoleGate.
@@ -153,6 +196,7 @@ export default function LeadershipDashboard() {
   const [appsError, setAppsError] = useState(null);
 
   const [openRow, setOpenRow] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   // ── Initial fetch ──
   useEffect(() => {
@@ -313,6 +357,51 @@ export default function LeadershipDashboard() {
     setSearch("");
     setOffset(0);
   }
+
+  // Export the applications that match the CURRENT filters (not just the
+  // loaded page) — fetch a large page, then build + download a CSV client-side.
+  const handleExportCsv = useCallback(async () => {
+    setExporting(true);
+    try {
+      // The list endpoint caps `limit` at 200, so page through until we've
+      // collected every row matching the current filters.
+      const EXPORT_PAGE = 200;
+      const baseParams = {
+        industry: industry || undefined,
+        status: statusFilter || undefined,
+        track: trackFilter ? trackFilter.toLowerCase() : undefined,
+        ai_score_bucket: scoreBucket ?? undefined,
+        search: search || undefined,
+      };
+      const all = [];
+      let pageOffset = 0;
+      let total = Infinity;
+      // Hard cap the loop (50 pages = 10k rows) as a safety net.
+      for (let i = 0; i < 50 && pageOffset < total; i += 1) {
+        const page = await leadershipApi.listApplications({
+          ...baseParams,
+          limit: EXPORT_PAGE,
+          offset: pageOffset,
+        });
+        const rows = page?.applications || [];
+        all.push(...rows);
+        total = page?.total ?? all.length;
+        if (rows.length === 0) break;
+        pageOffset += EXPORT_PAGE;
+      }
+      if (all.length === 0) {
+        window.alert("No applications match the current filters.");
+        return;
+      }
+      const csv = buildApplicationsCsv(all, statusLabelById);
+      const stamp = new Date().toISOString().slice(0, 10);
+      triggerCsvDownload(csv, `artpark-applications-${stamp}.csv`);
+    } catch (err) {
+      window.alert(err?.message || "Export failed. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }, [industry, statusFilter, trackFilter, scoreBucket, search, statusLabelById]);
   const filtersActive = !!(
     industry || statusFilter || trackFilter || scoreBucket !== null || search
   );
@@ -337,9 +426,11 @@ export default function LeadershipDashboard() {
         </button>
 
         <div className="logos">
-          <img src="/assets/iisc-logo.png" alt="IISc" className="iisc" />
-          <span className="rule" aria-hidden="true" />
-          <img src="/assets/artpark-logo.png" alt="ARTPARK" className="artpark" />
+          <img
+            src="/assets/artpark-iisc-logo.webp"
+            alt="ARTPARK · AI & Robotics Technology Park at IISc"
+            className="brand-combined"
+          />
         </div>
 
         <span className="role-pill">Leadership · Dashboard</span>
@@ -351,17 +442,6 @@ export default function LeadershipDashboard() {
           <span className="email">{user?.email || user?.full_name || "—"}</span>
           <span className="menu-dot" aria-hidden="true">⌄</span>
         </div>
-
-        {showSwitchToAdmin && (
-          <button
-            type="button"
-            className="applicant-btn"
-            onClick={() => navigate("/admin/users")}
-            aria-label="Switch to admin view"
-          >
-            <span className="arrow" style={{ marginLeft: 0, marginRight: 2 }}>←</span> Admin
-          </button>
-        )}
 
         {showSwitchToApplicant && (
           <a className="applicant-btn" href="/apply" aria-label="Switch to applicant view">
@@ -407,18 +487,15 @@ export default function LeadershipDashboard() {
             </span>
           </div>
           <div className="lp-head-r">
-            <button type="button" className="btn btn-ghost btn-sm" disabled aria-disabled="true">
-              Export CSV <span style={{ marginLeft: 4 }}>↓</span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={handleExportCsv}
+              disabled={exporting}
+              aria-busy={exporting ? "true" : undefined}
+            >
+              {exporting ? "Exporting…" : <>Export CSV <span style={{ marginLeft: 4 }}>↓</span></>}
             </button>
-            {showSwitchToAdmin && (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => navigate("/admin/users")}
-              >
-                Switch role <span style={{ marginLeft: 4 }}>⇄</span>
-              </button>
-            )}
           </div>
         </div>
 
@@ -733,7 +810,7 @@ export default function LeadershipDashboard() {
                       className={`lp-pill${!industry ? " is-on" : ""}`}
                       onClick={() => { setIndustry(null); setOffset(0); }}
                     >
-                      all
+                      All
                     </button>
                     {industries.map((i) => (
                       <button
@@ -888,8 +965,7 @@ export default function LeadershipDashboard() {
                       disabled={isEmpty}
                       title={`Score ${i}–${i + 1} · ${count} application${count === 1 ? "" : "s"}`}
                     >
-                      {i}–{i + 1}{" "}
-                      <span className="lp-pill-count">{count}</span>
+                      {i}–{i + 1}
                     </button>
                   );
                 })}

@@ -256,7 +256,11 @@ export default function ReviewApplicationPage() {
               <>
                 <ReviewTabs tab={tab} onChange={setTab} />
                 {tab === "application" && (
-                  <ApplicationTab schema={schema} application={application} />
+                  <ApplicationTab
+                    schema={schema}
+                    application={application}
+                    applicationId={id}
+                  />
                 )}
                 {tab === "reviews" && (
                   <ReviewsTab reviews={reviews} assignments={assignments} />

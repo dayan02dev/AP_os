@@ -8,10 +8,14 @@
 //   { name | original_filename | filename, size | size_bytes | file_size_bytes,
 //     storage_path | path, mime_type }
 //
-// Download is a Phase 1.5 capability — the button stays disabled and shows
-// a tooltip. We don't construct signed URLs here; that wiring ships next.
+// Download: each file's button asks the backend for a short-lived signed URL
+// (leadershipApi.fileSignedUrl) scoped to THIS application, then opens it in a
+// new tab. The backend allow-lists the path against the application's own
+// files before signing — the frontend never constructs storage URLs itself.
 
+import { useCallback, useState } from "react";
 import EmptyAnswer from "./EmptyAnswer.jsx";
+import { leadershipApi } from "../../../../lib/leadershipApi.js";
 
 function readableSize(bytes) {
   if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) {
@@ -40,8 +44,55 @@ function nameOf(file) {
 function sizeOf(file) {
   return file?.size ?? file?.size_bytes ?? file?.file_size_bytes ?? null;
 }
+function pathOf(file) {
+  return file?.storage_path || file?.path || null;
+}
 
-export default function FileGridAnswer({ value }) {
+export default function FileGridAnswer({ value, applicationId }) {
+  // Per-file UI state keyed by the file's grid index:
+  //   busy[idx]  → request in flight (button disabled, "Opening…")
+  //   error[idx] → inline error message
+  const [busy, setBusy] = useState({});
+  const [errors, setErrors] = useState({});
+
+  const handleDownload = useCallback(
+    async (file, idx) => {
+      const storagePath = pathOf(file);
+      if (!applicationId || !storagePath) {
+        setErrors((e) => ({
+          ...e,
+          [idx]: "This file can't be downloaded (missing reference).",
+        }));
+        return;
+      }
+      setErrors((e) => ({ ...e, [idx]: null }));
+      setBusy((b) => ({ ...b, [idx]: true }));
+      try {
+        const res = await leadershipApi.fileSignedUrl(applicationId, storagePath);
+        const url = res?.url;
+        if (!url) throw new Error("No download URL returned.");
+        // Open in a new tab — the signed URL points straight at storage and
+        // the browser handles the download per the object's content type.
+        window.open(url, "_blank", "noopener,noreferrer");
+      } catch (err) {
+        const code = err?.details?.code || err?.code;
+        let msg;
+        if (code === "file_not_available") {
+          msg = "File isn't in storage (never uploaded).";
+        } else if (code === "file_not_found") {
+          msg = "This file isn't linked to the application.";
+        } else {
+          msg =
+            err?.details?.message || err?.message || "Couldn't get the file. Try again.";
+        }
+        setErrors((e) => ({ ...e, [idx]: msg }));
+      } finally {
+        setBusy((b) => ({ ...b, [idx]: false }));
+      }
+    },
+    [applicationId],
+  );
+
   let files = [];
   if (Array.isArray(value)) {
     files = value.filter(Boolean);
@@ -52,21 +103,37 @@ export default function FileGridAnswer({ value }) {
 
   return (
     <ul className="ans-files" role="list">
-      {files.map((f, idx) => (
-        <li key={f?.storage_path || f?.path || idx} className="ans-file">
-          <span className="meta">
-            <span className="name">{nameOf(f)}</span>
-            <span className="size">{readableSize(sizeOf(f))}</span>
-          </span>
-          <span
-            className="dl"
-            aria-disabled="true"
-            title="Download arrives in Phase 1.5 once signed URLs are wired in."
-          >
-            Download ↓
-          </span>
-        </li>
-      ))}
+      {files.map((f, idx) => {
+        const hasPath = Boolean(pathOf(f));
+        const isBusy = Boolean(busy[idx]);
+        const err = errors[idx];
+        return (
+          <li key={pathOf(f) || idx} className="ans-file">
+            <span className="meta">
+              <span className="name">{nameOf(f)}</span>
+              <span className="size">{readableSize(sizeOf(f))}</span>
+              {err && (
+                <span className="ans-file-error" role="alert">
+                  {err}
+                </span>
+              )}
+            </span>
+            <button
+              type="button"
+              className="dl"
+              disabled={isBusy || !hasPath || !applicationId}
+              aria-disabled={isBusy || !hasPath || !applicationId ? "true" : undefined}
+              aria-busy={isBusy ? "true" : undefined}
+              title={
+                hasPath ? "Download this file" : "No downloadable file reference."
+              }
+              onClick={() => handleDownload(f, idx)}
+            >
+              {isBusy ? "Opening…" : "Download ↓"}
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }
