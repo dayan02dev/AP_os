@@ -19,13 +19,17 @@
   position: sticky;
   top: 0;
   z-index: 50;
+  /* Slightly off-white so the header reads as a frame rather than a stark
+     stripe; matches the paper-soft tone of the main content body below. */
   background: var(--paper);
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 0 0 rgba(0,0,0,0.02);
   display: flex;
   align-items: center;
   gap: var(--s-3);
-  padding: 14px var(--s-5);
-  min-height: 64px;
+  padding: 12px var(--s-5);
+  min-height: 60px;
+  backdrop-filter: saturate(180%) blur(8px);
 }
 .review-header .h-back {
   display: inline-flex;
@@ -249,7 +253,9 @@
   display: block;
   font-size: 88px;
   line-height: 0.95;
-  color: var(--ink);
+  /* Use the brand accent so the big numerals carry the indigo identity
+     instead of sitting as a stark black block above the section title. */
+  color: var(--artblue);
   margin-bottom: var(--s-4);
 }
 .sec-block-blurb {
@@ -283,23 +289,25 @@
   font-weight: 600;
 }
 .q-block-chip {
-  padding: 4px 10px;
-  border-radius: var(--r-sharp);
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  font-size: 9px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
+  border: 1px solid transparent;
 }
+/* Softer fill-style chips so they don't compete with the question label. */
 .q-block-chip.required {
-  border: 1px solid var(--artblue);
+  background: color-mix(in srgb, var(--artblue) 10%, var(--paper));
   color: var(--artblue);
-  background: transparent;
+  border-color: color-mix(in srgb, var(--artblue) 22%, transparent);
 }
 .q-block-chip.optional {
-  border: 1px solid var(--accent-green);
+  background: color-mix(in srgb, var(--accent-green) 10%, var(--paper));
   color: var(--accent-green);
-  background: transparent;
+  border-color: color-mix(in srgb, var(--accent-green) 22%, transparent);
 }
 
 .q-block-label {
@@ -591,22 +599,23 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ─── AI Screening panel (right side — brand purple per ARTPARK §1) ─ */
+/* ─── AI Screening panel (right side — LIGHT theme to cohere with the rest
+   of leadership: white surface, indigo accents, mint score chip. Was a
+   saturated indigo slab in the prototype which clashed with the cream/white
+   of the dashboard, applications table, and drawer; rebuilt below to match
+   the dashboard's KPI/card aesthetic. */
 
 .ai-panel {
-  /* Brand purple, NOT --artblack. Per ARTPARK design brief §1 rule 3:
-     "Backgrounds are solid --paper, --paper-soft, --artblue, --accent-violet,
-     or --artblack." --artblue is the primary brand surface and gives the
-     panel its identity as "the AI side" rather than reading as a dark slab. */
-  background: var(--artblue);
-  color: #fff;
+  background: var(--paper);
+  color: var(--ink);
   height: 100%;
   display: flex;
   flex-direction: column;
   position: sticky;
-  top: 64px;
-  max-height: calc(100vh - 64px);
+  top: 60px;
+  max-height: calc(100vh - 60px);
   overflow-y: auto;
+  border-left: 1px solid var(--line);
 }
 .ai-panel-head {
   padding: var(--s-5) var(--s-5) 0;
@@ -620,30 +629,30 @@
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #fff;
+  color: var(--ink-dim);
   display: inline-flex;
   align-items: center;
   gap: var(--s-2);
 }
 .ai-panel-head .title::before {
   content: "✦";
-  color: var(--artlight);
+  color: var(--accent);
 }
 .ai-panel-close {
   background: transparent;
   border: none;
-  color: rgba(255,255,255,0.75);
+  color: var(--ink-dim);
   font-size: 18px;
   cursor: pointer;
   line-height: 1;
 }
-.ai-panel-close:hover { color: #fff; }
+.ai-panel-close:hover { color: var(--ink); }
 
 .ai-panel-tabs {
   display: flex;
   padding: var(--s-3) var(--s-5) 0;
   gap: var(--s-5);
-  border-bottom: 1px solid rgba(255,255,255,0.12);
+  border-bottom: 1px solid var(--line);
 }
 .ai-panel-tab {
   font-family: var(--font-display);
@@ -655,16 +664,17 @@
   border: none;
   padding: 8px 0;
   margin-bottom: -1px;
-  color: rgba(255,255,255,0.55);
+  color: var(--ink-dim);
   border-bottom: 2px solid transparent;
   cursor: pointer;
 }
 .ai-panel-tab.active {
-  color: var(--artlight);
-  border-bottom-color: var(--artlight);
+  color: var(--ink);
+  border-bottom-color: var(--accent);
 }
 .ai-panel-tab[aria-disabled="true"] {
-  color: rgba(255,255,255,0.25);
+  color: var(--ink-dim);
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
@@ -675,35 +685,38 @@
   gap: var(--s-5);
 }
 
+/* Composite-score block — mimics the dashboard's mint "AVERAGE AI SCORE" KPI
+   card so the same number reads the same way both places. */
 .ai-score-eyebrow {
   font-family: var(--font-body);
   font-weight: 600;
   font-size: 10px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.55);
+  color: var(--accent);
 }
 .ai-score-big {
-  font-family: var(--font-display);
+  font-family: var(--font-serif, var(--font-display));
   font-weight: 700;
   font-size: 80px;
   line-height: 0.9;
-  color: #fff;
+  color: var(--accent);
   display: flex;
   align-items: baseline;
   gap: var(--s-2);
+  letter-spacing: -0.02em;
 }
 .ai-score-big .of {
   font-size: 18px;
   font-weight: 400;
-  color: rgba(255,255,255,0.65);
+  color: var(--ink-dim);
   font-family: var(--font-body);
 }
 .ai-score-strong {
   display: inline-block;
   padding: 4px 10px;
-  background: var(--artlight);
-  color: var(--artblue);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 11px;
@@ -713,31 +726,35 @@
 }
 .ai-score-blurb {
   font-size: 12px;
-  color: rgba(255,255,255,0.65);
+  color: var(--ink-soft);
   font-family: var(--font-body);
 }
 
+/* Component bars — same visual language as the dashboard "What the score is
+   made of" section (black fill on light track). */
 .ai-bar-row {
   display: flex;
   align-items: center;
   gap: var(--s-3);
   padding: var(--s-3) 0;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px dashed var(--line);
 }
 .ai-bar-row .label {
   flex: 0 0 160px;
   font-size: 13px;
-  color: #fff;
+  color: var(--ink);
 }
 .ai-bar-row .track {
   flex: 1;
   height: 6px;
-  background: rgba(255,255,255,0.1);
-  border-radius: 0;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 1px;
+  overflow: hidden;
 }
 .ai-bar-row .fill {
   height: 100%;
-  background: var(--artlight);
+  background: var(--ink);
 }
 .ai-bar-row .num {
   flex: 0 0 40px;
@@ -745,13 +762,14 @@
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  color: #fff;
+  color: var(--ink);
 }
 
+/* AI Summary card — soft surface, structured fields with serif labels. */
 .ai-summary {
   padding: var(--s-4) var(--s-5);
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
   border-radius: var(--r-sharp);
 }
 .ai-summary .head {
@@ -760,8 +778,8 @@
   font-size: 10px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.55);
-  margin-bottom: var(--s-2);
+  color: var(--ink-dim);
+  margin-bottom: var(--s-3);
   display: flex;
   align-items: center;
   gap: var(--s-2);
@@ -770,21 +788,42 @@
   font-size: 9px;
   padding: 2px 6px;
   background: var(--accent-amber);
-  color: var(--artblack);
+  color: var(--ink);
   border-radius: var(--r-sharp);
   letter-spacing: 0.1em;
 }
 .ai-summary .body {
   font-size: 13px;
   line-height: 1.55;
-  color: rgba(255,255,255,0.85);
+  color: var(--ink-soft);
   white-space: pre-wrap;
+}
+.ai-summary-fields {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.ai-summary-field dt {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.ai-summary-field dd {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
 }
 
 .ai-meta {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 11px;
-  color: rgba(255,255,255,0.5);
+  color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
 }
 
@@ -795,10 +834,10 @@
   align-items: center;
   gap: var(--s-3);
   padding: var(--s-3) 0;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid var(--line);
   font-size: 13px;
 }
-.ai-reviewer-row .name { color: #fff; }
+.ai-reviewer-row .name { color: var(--ink); }
 .ai-reviewer-row .state {
   display: inline-flex;
   align-items: center;
@@ -807,15 +846,15 @@
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.75);
+  color: var(--ink-soft);
 }
 .ai-reviewer-row .state .dot {
   width: 8px; height: 8px;
 }
 .ai-unassign {
   background: transparent;
-  border: 1px solid rgba(255,255,255,0.25);
-  color: rgba(255,255,255,0.85);
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
   font-family: var(--font-display);
   font-size: 11px;
   font-weight: 600;
@@ -824,7 +863,7 @@
   border-radius: var(--r-sharp);
   cursor: pointer;
 }
-.ai-unassign:hover { border-color: #fff; color: #fff; }
+.ai-unassign:hover { border-color: var(--ink); color: var(--ink); }
 .ai-unassign:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ─── Reviews tab ──────────────────────────────────────── */

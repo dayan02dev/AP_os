@@ -7,6 +7,27 @@
 
 import { useState } from "react";
 
+// Backend stores ai_screening.summary as a JSON-encoded string with keys
+// like { verdict, top_strength, top_concern }. Parse + render as labelled
+// blocks; fall back to plain text if it's not JSON (older rows or "Stub mode").
+function parseSummary(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    const obj = JSON.parse(trimmed);
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) return obj;
+  } catch { /* not JSON — fall through */ }
+  return null;
+}
+
+const SUMMARY_FIELD_LABELS = {
+  verdict:        "Verdict",
+  top_strength:   "Top strength",
+  top_concern:    "Top concern",
+  recommendation: "Recommendation",
+};
+
 const CATEGORY_BARS = [
   { key: "score_problem",    label: "Problem impact" },
   { key: "score_solution",   label: "Completeness & depth" },
@@ -69,15 +90,31 @@ function ScoreTab({ aiScreening }) {
         })}
       </div>
 
-      {aiScreening?.summary && (
-        <div className="ai-summary">
-          <div className="head">
-            AI Summary
-            {isStub && <span className="stub-badge">STUB</span>}
+      {aiScreening?.summary && (() => {
+        const parsed = parseSummary(aiScreening.summary);
+        return (
+          <div className="ai-summary">
+            <div className="head">
+              AI Summary
+              {isStub && <span className="stub-badge">STUB</span>}
+            </div>
+            {parsed ? (
+              <dl className="body ai-summary-fields">
+                {Object.entries(parsed).map(([key, value]) => (
+                  typeof value === "string" && value.trim() !== "" ? (
+                    <div key={key} className="ai-summary-field">
+                      <dt>{SUMMARY_FIELD_LABELS[key] || key.replace(/_/g, " ")}</dt>
+                      <dd>{value}</dd>
+                    </div>
+                  ) : null
+                ))}
+              </dl>
+            ) : (
+              <div className="body">{aiScreening.summary}</div>
+            )}
           </div>
-          <div className="body">{aiScreening.summary}</div>
-        </div>
-      )}
+        );
+      })()}
 
       {aiScreening && (
         <div className="ai-meta">

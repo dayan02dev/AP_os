@@ -9,27 +9,12 @@
 // sidebar.
 
 import { labelFor } from "../../../lib/statusMachine.js";
-
-const STATUS_DOT_COLOR = {
-  submitted:        "blue",
-  ai_screening:     "amber",
-  screening_failed: "coral",
-  under_review:     "blue",
-  evaluated:        "blue",
-  shortlisted:      "green",
-  interview:        "green",
-  offered:          "green",
-  onboarded:        "green",
-  rejected:         "coral",
-  waitlisted:       "amber",
-  withdrawn:        "dim",
-};
+import { bucketFor } from "../components/statusBuckets.js";
 
 function StatusInline({ statusId }) {
-  const dotCls = STATUS_DOT_COLOR[statusId] || "";
   return (
     <span className="h-status">
-      <span className={`dot ${dotCls}`} />
+      <span className={`lp-status-dot lp-status-${bucketFor(statusId)}`} />
       {labelFor(statusId)}
     </span>
   );

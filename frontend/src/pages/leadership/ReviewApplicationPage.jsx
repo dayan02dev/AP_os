@@ -31,6 +31,7 @@ import ReviewsTab from "./review/ReviewsTab.jsx";
 import HistoryTab from "./review/HistoryTab.jsx";
 import AIScreeningPanel from "./review/AIScreeningPanel.jsx";
 import "../../styles/admin.css";
+import "../../styles/leadership.css";
 import "../../styles/review-application.css";
 
 const ID_LIST_KEY = "review_app_id_list";
