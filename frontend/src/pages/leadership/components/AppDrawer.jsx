@@ -15,21 +15,6 @@ import StatusChangeModal from "../modals/StatusChangeModal.jsx";
 import { bucketFor } from "./statusBuckets.js";
 import AISummaryBlock from "./AISummaryBlock.jsx";
 
-const STATUS_DOT_COLOR = {
-  submitted:        "blue",
-  ai_screening:     "amber",
-  screening_failed: "coral",
-  under_review:     "blue",
-  evaluated:        "blue",
-  shortlisted:      "green",
-  interview:        "green",
-  offered:          "green",
-  onboarded:        "green",
-  rejected:         "coral",
-  waitlisted:       "amber",
-  withdrawn:        "dim",
-};
-
 function fmtDate(iso) {
   if (!iso) return "—";
   try {

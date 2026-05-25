@@ -159,10 +159,6 @@ export default function LeadershipDashboard() {
     let cancelled = false;
     setStatsLoading(true);
     leadershipApi.getStats()
-      .then((s) => { if (!cancelled) { setStats(s); setStatsLoading(false); } })
-      .catch((err) => { if (!cancelled) { setStatsError(err?.message || "Failed to load stats."); setStatsLoading(false); } });
-    leadershipApi.listApplications({ limit: 200, offset: 0 })
-      .then((page) => {
       .then((s) => {
         if (cancelled) return;
         setStats(s);
