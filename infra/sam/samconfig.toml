@@ -23,21 +23,3 @@ confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
 resolve_s3 = true
 fail_on_empty_changeset = false
-
-# ─── staging-rbd ─────────────────────────────────────────────────────
-# Dedicated stack for the staging-role_based_dashboard preview so the
-# leadership / admin / reviewer / ai_screening routers can be deployed
-# without disturbing the SIP applicant flow on the main staging Lambda.
-# Same Supabase project (shared data) — only the FrontendOrigin and
-# stack-resource names differ.
-[staging-rbd.build.parameters]
-cached = true
-parallel = true
-
-[staging-rbd.deploy.parameters]
-stack_name = "artpark-eir-api-staging-rbd"
-region = "ap-south-1"
-confirm_changeset = false
-capabilities = "CAPABILITY_IAM"
-resolve_s3 = true
-fail_on_empty_changeset = false
