@@ -59,6 +59,25 @@ const SECTIONS_SIP = [
         cvAutoFill: true,
         required: true,
       },
+      // ── Co-founders (mirrors TIR Q6/Q7; persisted to basic_has_team +
+      // basic_teammates by migration 021_sip_team_and_dpiit.sql) ──
+      {
+        id: "hasTeam",
+        kind: "single",
+        prompt: "Do you have a team?",
+        help: "Solo founders are very welcome. We'll just tailor the rest of the form.",
+        options: ["Yes — I have co-founders", "No — going solo for now"],
+        required: true,
+      },
+      {
+        id: "teammates",
+        kind: "teamInvite",
+        prompt: "Invite your co-founders to collaborate on this application.",
+        help: "We'll email each person an invite. Everyone shares access to this single application — but only one person can edit at a time. We ask the same three onboarding questions (name, phone, current org) about each teammate.",
+        maxMembers: 3,
+        required: true,
+        conditional: (a) => a.hasTeam === "Yes — I have co-founders",
+      },
       // ── SIP-specific gates ──
       {
         id: "sipIncorporated",
@@ -101,11 +120,10 @@ const SECTIONS_SIP = [
         conditional: (a) =>
           a.sipIncorporated === "Yes — Pvt Ltd, registered in India",
         required: true,
-        // Frontend-only for now: deliberately absent from fieldMap-sip.js, so
-        // its answer rides AppSip's local-only channel instead of the backend
-        // row. See LOCAL_ONLY_IDS in AppSip.jsx. Wire a column + add this id to
-        // fieldMap-sip.js to persist it.
-        localOnly: true,
+        // Persisted via fieldMap-sip.js's expandForPatch special case:
+        // sipDpiit → basic_dpiit_registered + basic_dpiit_recognition_number
+        // + basic_dpiit_recognition_date. Columns added in
+        // backend/migrations/021_sip_team_and_dpiit.sql.
       },
       {
         id: "sipFounders",

@@ -12,6 +12,8 @@ export const QUESTION_TO_COLUMN_SIP = Object.freeze({
   email: "basic_email",
   org: "basic_org",
   degree: "basic_degree",
+  hasTeam: "basic_has_team",
+  teammates: "basic_teammates",
   incubatorAssociation: "basic_incubator_association",
   incubatorDetails: "basic_incubator_details",
   hearAbout: "basic_hear_about",
@@ -63,6 +65,15 @@ const DECLARATION_KEY_TO_COLUMN = Object.freeze({
   newsletter: "declaration_newsletter",
 });
 
+// sipDpiit is a single wizard question whose value is a {registered, number,
+// date} object — backend stores those across three columns. Mirrors the
+// declarations split below.
+const DPIIT_COLUMNS = Object.freeze({
+  registered: "basic_dpiit_registered",
+  number: "basic_dpiit_recognition_number",
+  date: "basic_dpiit_recognition_date",
+});
+
 export function expandForPatchSip(updates) {
   const patch = {};
   for (const [qid, value] of Object.entries(updates)) {
@@ -71,6 +82,18 @@ export function expandForPatchSip(updates) {
       for (const key of DECLARATION_KEYS) {
         patch[DECLARATION_KEY_TO_COLUMN[key]] = !!obj[key];
       }
+      continue;
+    }
+    if (qid === "sipDpiit") {
+      const obj = value || {};
+      // Persist registered always; only persist number/date when "Yes" was
+      // chosen and they're non-empty — clearing them when the applicant
+      // flips back to "No" keeps the row consistent with the wizard's own
+      // reset behaviour (DpiitInput clears number+date on No).
+      patch[DPIIT_COLUMNS.registered] = obj.registered || null;
+      const isYes = (obj.registered || "").startsWith("Yes");
+      patch[DPIIT_COLUMNS.number] = isYes && obj.number ? obj.number.trim() || null : null;
+      patch[DPIIT_COLUMNS.date]   = isYes && obj.date   ? obj.date              : null;
       continue;
     }
     const col = QUESTION_TO_COLUMN_SIP[qid];
@@ -94,6 +117,17 @@ export function collapseFromRowSip(row) {
     if (row[col] !== undefined && row[col] !== null) d[key] = !!row[col];
   }
   if (Object.keys(d).length > 0) answers.declarations = d;
+
+  // Reassemble the sipDpiit object from its three columns. Only emit it if
+  // at least `registered` is set, so a blank row doesn't surface a phantom
+  // half-answered DPIIT question on the wizard.
+  if (row.basic_dpiit_registered) {
+    answers.sipDpiit = {
+      registered: row.basic_dpiit_registered,
+      number: row.basic_dpiit_recognition_number || "",
+      date: row.basic_dpiit_recognition_date || "",
+    };
+  }
   return answers;
 }
 

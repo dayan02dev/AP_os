@@ -88,7 +88,12 @@ const CELEBRATE_MESSAGES = [
 // localStorage so they survive a page reload during review. When the backend
 // grows the matching columns: drop the id from this set, add it to
 // fieldMap-sip.js, and the rest of the wizard treats it like any other answer.
-const LOCAL_ONLY_IDS = new Set(["sipDpiit"]);
+// `sipDpiit` was migrated off this set in 2026-05-25: migration 021 added
+// basic_dpiit_registered + basic_dpiit_recognition_number +
+// basic_dpiit_recognition_date and fieldMap-sip.js's expandForPatch now
+// splits the answer across those three columns. The set is kept empty so
+// future localOnly-then-promoted answers have an obvious home.
+const LOCAL_ONLY_IDS = new Set();
 const LOCAL_EXTRAS_KEY = "sip_local_extras";
 
 function pickSlug(pathname) {

@@ -14,7 +14,7 @@ Mirrors application.py but for the SIP track:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,12 +29,24 @@ _MAX_LONG_TEXT = 5000
 _MAX_SECTION = 50
 _MAX_FOUNDERS = 12
 _MAX_FILES = 5
+_MAX_TEAMMATES = 10        # mirrors TIR's basic_teammates cap (see application.py)
+_MAX_DPIIT_NUMBER = 100    # CHECK constraint in migration 021 caps at length(.) <= 100
 
 # ─── Enum values — mirror CHECK constraints in 011_sip_track.sql ────
 
 DegreeValue = str
 HearAboutValue = str
 IncubatorAssociationValue = Literal["Yes", "No"]
+
+HasTeamValue = Literal[
+    "Yes — I have co-founders",
+    "No — going solo for now",
+]
+
+DpiitRegisteredValue = Literal[
+    "Yes — we're DPIIT recognised",
+    "No — not yet",
+]
 
 SipIncorporatedValue = Literal[
     "Yes — Pvt Ltd, registered in India",
@@ -85,6 +97,11 @@ class SipApplicationUpdate(BaseModel):
     basic_email: str | None = Field(default=None, max_length=_MAX_EMAIL)
     basic_org: str | None = Field(default=None, max_length=_MAX_ORG)
     basic_degree: DegreeValue | None = None
+    # Co-founder collaboration (mirrors TIR; columns added in migration 021).
+    basic_has_team: HasTeamValue | None = None
+    basic_teammates: list[dict[str, Any]] | None = Field(
+        default=None, max_length=_MAX_TEAMMATES,
+    )
     basic_incubator_association: IncubatorAssociationValue | None = None
     basic_incubator_details: str | None = Field(default=None, max_length=_MAX_LONG_TEXT)
     basic_hear_about: HearAboutValue | None = None
@@ -92,6 +109,14 @@ class SipApplicationUpdate(BaseModel):
     # ── Section 02 · SIP-specific gates ──
     sip_incorporated: SipIncorporatedValue | None = None
     sip_trl: SipTrlValue | None = None
+    # DPIIT recognition (columns added in migration 021). The wizard's single
+    # sipDpiit question is split across these three by fieldMap-sip.js's
+    # expandForPatch — same shape as the declarations split.
+    basic_dpiit_registered: DpiitRegisteredValue | None = None
+    basic_dpiit_recognition_number: str | None = Field(
+        default=None, max_length=_MAX_DPIIT_NUMBER,
+    )
+    basic_dpiit_recognition_date: date | None = None
     # Cap table list of {name, role, percent}
     sip_founders: list[dict[str, Any]] | None = Field(
         default=None, max_length=_MAX_FOUNDERS,
