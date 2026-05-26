@@ -18,6 +18,7 @@ import {
   SingleInput,
   MultiInput,
   DeclarationsInput,
+  TeamInviteInput,
 } from "./inputs.jsx";
 import { ApiError, apiCall } from "./lib/api.js";
 import { validateEmail } from "./validators.jsx";
@@ -825,6 +826,8 @@ export function SipQuestionInput(props) {
       return <MultiInput {...props} />;
     case "declarations":
       return <DeclarationsInput {...props} />;
+    case "teamInvite":
+      return <TeamInviteInput {...props} />;
     case "captable":
       return <CapTableInput {...props} />;
     case "dpiit":
@@ -877,6 +880,11 @@ export function isAnsweredSip(q, value) {
       return q.items
         .filter((i) => i.key !== "newsletter")
         .every((i) => value && value[i.key]);
+    case "teamInvite":
+      if (!Array.isArray(value) || value.length === 0) return false;
+      return value.some(
+        (m) => m && m.email && m.fullName && m.phone && m.org,
+      );
     case "captable": {
       if (!Array.isArray(value) || value.length === 0) return false;
       const allFilled = value.every(
@@ -943,6 +951,16 @@ export function whyBlockedSip(q, value) {
       );
       if (missing.length === 0) return null;
       return `tick the ${missing.length} remaining box${missing.length > 1 ? "es" : ""} to submit`;
+    }
+    case "teamInvite": {
+      if (!Array.isArray(value) || value.length === 0)
+        return "add at least one co-founder";
+      const complete = value.some(
+        (m) => m && m.email && m.fullName && m.phone && m.org,
+      );
+      return complete
+        ? null
+        : "complete email, name, phone and organization for at least one co-founder";
     }
     case "captable": {
       if (!Array.isArray(value) || value.length === 0)
