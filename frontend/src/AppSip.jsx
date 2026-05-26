@@ -579,18 +579,9 @@ export default function AppSip() {
   };
 
   const handleSubmit = async () => {
-    // Pre-flight: resume_file_id is required at submit time. Block here with
-    // a clear message so applicants don't see a cryptic 422 — wizard's
-    // completion meter doesn't reflect this hard requirement on its own.
-    if (!application?.resume_file_id) {
-      pushToast({
-        kind: "error",
-        message:
-          "Please upload your CV/resume before submitting. The upload step is in section 01 — Basic Details.",
-        ttlMs: 12000,
-      });
-      return;
-    }
+    // NOTE: no resume_file_id pre-flight check — SIP applications don't carry
+    // that column (migration 019 added it to TIR only). The SIP submit
+    // validator on the backend handles SIP-specific mandatories.
     try {
       const result = await submit();
       pushToast({ kind: "info", message: "Submitted. Good luck!" });
