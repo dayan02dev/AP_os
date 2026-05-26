@@ -133,7 +133,6 @@ export default function App() {
     flushNow,
     submit,
     refetch,
-    flushNow,
     completion,
     submittedApps,
     startNew,
