@@ -51,6 +51,10 @@ Parameters:
   AwsRegionParam:
     Type: String
     Default: ap-south-1
+  AlarmsTopic:
+    Type: String
+    Description: SNS topic ARN for prod alarm notifications
+    Default: "arn:aws:sns:ap-south-1:348287123004:artpark-prod-alarms"
 
 # ─── Globals: every function inherits these ──────────────────────────
 # arm64 + python3.11 + 1GB RAM is the sweet spot for FastAPI on Lambda:
@@ -134,6 +138,69 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/artpark-eir-api-${EnvName}
       RetentionInDays: 30
+
+  # ── CloudWatch alarms ───────────────────────────────────────────
+  # Three API health alarms publishing to the prod SNS topic
+  # (created out-of-band). TreatMissingData: notBreaching so a cold
+  # function with no invocations doesn't page us.
+  ApiErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "artpark-eir-api-${EnvName}-errors"
+      AlarmDescription: "API Lambda Errors > 0 in any 5-min window"
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmsTopic
+      OKActions:
+        - !Ref AlarmsTopic
+
+  ApiThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "artpark-eir-api-${EnvName}-throttles"
+      AlarmDescription: "API Lambda Throttles > 0"
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmsTopic
+
+  ApiP99DurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "artpark-eir-api-${EnvName}-p99-duration"
+      AlarmDescription: "API Lambda Duration p99 > 25000 ms"
+      Namespace: AWS/Lambda
+      MetricName: Duration
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiFunction
+      ExtendedStatistic: p99
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 25000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmsTopic
 
 Outputs:
   ApiUrl:
