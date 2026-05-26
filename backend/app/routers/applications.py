@@ -605,6 +605,39 @@ async def submit_application(
             f"Application is already {row.get('status')}.",
         )
 
+    # Cross-track submission lock — a user can submit to only ONE track.
+    # If they already submitted a SIP application, block the TIR submit.
+    # Task 10 adds the symmetric check on the SIP side.
+    try:
+        sip_submitted = (
+            get_admin_client()
+            .table("sip_applications")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .neq("status", "draft")
+            .limit(1)
+            .execute()
+        )
+    except Exception:
+        log.exception("applications.submit cross-track check failed",
+                      extra={"request_id": req_id, "user_id": user_id})
+        return _error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "cross_track_check_failed",
+            f"Could not verify track exclusivity (ref {req_id}).",
+        )
+    if (sip_submitted.count or 0) > 0:
+        log.info(
+            "applications.submit blocked — SIP already submitted",
+            extra={"request_id": req_id, "user_id": user_id},
+        )
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "cross_track_submission_blocked",
+            "You have already submitted a SIP application. "
+            "You cannot also submit a TIR application.",
+        )
+
     # Validation pass — most fields stay soft per product policy
     # (applicants can ship with shallow answers; reviewers see "not
     # provided"), but the three Identity & Links fields added on

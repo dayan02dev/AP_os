@@ -139,13 +139,17 @@ def submit_client(monkeypatch):
     # Bypass email side-effect if the handler calls one
     monkeypatch.setattr(apps_router, "_send_submission_email", fake_email, raising=False)
 
-    # Default fake for the storage-existence check: by default, the resume
-    # row exists in tir_resume_uploads. Tests can override per-case.
+    # Default fake covers two queries the handler makes:
+    #   1. sip_applications cross-track count (count attr, neq filter)
+    #   2. tir_resume_uploads existence check (data attr, eq filter)
+    # By default: no SIP rows, resume row exists. Tests can override per-case.
     class _DefaultRes:
+        count = 0
         data = [{"id": fake_row["resume_file_id"]}]
     class _DefaultQuery:
         def select(self, *a, **k): return self
         def eq(self, *a, **k): return self
+        def neq(self, *a, **k): return self
         def limit(self, *a, **k): return self
         def execute(self): return _DefaultRes()
     class _DefaultTable:
@@ -257,11 +261,14 @@ def test_submit_blocks_when_resume_file_id_is_orphan_uuid(submit_client, monkeyp
     from app.routers import applications as apps_router
     tc, state = submit_client
     # Override the supabase client's behavior to return no rows
+    # (covers both the SIP cross-track count and the tir_resume_uploads check).
     class _FakeRes:
+        count = 0
         data = []
     class _FakeQuery:
         def select(self, *a, **k): return self
         def eq(self, *a, **k): return self
+        def neq(self, *a, **k): return self
         def limit(self, *a, **k): return self
         def execute(self): return _FakeRes()
     class _FakeTable:
@@ -278,12 +285,15 @@ def test_submit_allows_resume_file_id_that_exists_in_storage(submit_client, monk
     """Storage check confirms the UUID is real — submit must succeed."""
     from app.routers import applications as apps_router
     tc, state = submit_client
-    # Fake a row in tir_resume_uploads matching the existing default UUID
+    # Fake a row in tir_resume_uploads matching the existing default UUID,
+    # and zero SIP cross-track rows (count=0).
     class _FakeRes:
+        count = 0
         data = [{"id": state["row"]["resume_file_id"]}]
     class _FakeQuery:
         def select(self, *a, **k): return self
         def eq(self, *a, **k): return self
+        def neq(self, *a, **k): return self
         def limit(self, *a, **k): return self
         def execute(self): return _FakeRes()
     class _FakeTable:
