@@ -386,6 +386,39 @@ async def submit_application(
         return _error(status.HTTP_409_CONFLICT, "not_draft",
                       f"Application is already {row.get('status')}.")
 
+    # Cross-track submission lock — symmetric to applications.py:608-639.
+    # A user can submit to only ONE track. If they already submitted a TIR
+    # application, block the SIP submit.
+    try:
+        tir_submitted = (
+            get_admin_client()
+            .table("tir_applications")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .neq("status", "draft")
+            .limit(1)
+            .execute()
+        )
+    except Exception:
+        log.exception("sip_applications.submit cross-track check failed",
+                      extra={"request_id": req_id, "user_id": user_id})
+        return _error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "cross_track_check_failed",
+            f"Could not verify track exclusivity (ref {req_id}).",
+        )
+    if (tir_submitted.count or 0) > 0:
+        log.info(
+            "sip_applications.submit blocked — TIR already submitted",
+            extra={"request_id": req_id, "user_id": user_id},
+        )
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "cross_track_submission_blocked",
+            "You have already submitted a TIR application. "
+            "You cannot also submit a SIP application.",
+        )
+
     missing, invalid = _validate_submission(row)
     if missing or invalid:
         log.info(
