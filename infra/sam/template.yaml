@@ -127,11 +127,7 @@ Resources:
         # value so FastAPI's own CORS middleware can use it for non-
         # API-Gateway code paths.
         AllowOrigins:
-          - "https://ap-os-git-staging-artpark.vercel.app"
-          - "https://ap-os-git-staging-rolebaseddashboard-artpark.vercel.app"
           - "https://apply.artpark.info"
-          - "https://artpark.online"
-          - "http://localhost:5173"
         AllowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
         AllowHeaders: [Authorization, Content-Type, X-Request-ID, X-Admin-Key]
         AllowCredentials: true
