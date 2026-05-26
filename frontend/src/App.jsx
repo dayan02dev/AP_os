@@ -615,6 +615,19 @@ export default function App() {
   };
 
   const handleSubmit = async () => {
+    // Pre-flight: resume_file_id is required at submit time (migration 019).
+    // Block here with a clear message so applicants don't see a cryptic 422
+    // from the backend; the wizard's completion meter alone doesn't reflect
+    // this requirement.
+    if (!application?.resume_file_id) {
+      pushToast({
+        kind: "error",
+        message:
+          "Please upload your CV/resume before submitting. The upload step is in section 01 — Basic Details.",
+        ttlMs: 12000,
+      });
+      return;
+    }
     try {
       const result = await submit();
       pushToast({ kind: "info", message: "Submitted. Good luck!" });
