@@ -43,7 +43,9 @@ Not in this push (deferred to the next push):
 ## 3. Hard constraints
 
 - **No automatic role grants.** Every user signing up via the public OTP/password flow is treated as an applicant. The `user_roles` table doesn't exist on prod yet; absence of a row continues to mean "applicant". Carries through unchanged from current prod behavior.
-- **No proactive email comms.** The maintenance-mode Vercel page promoted during the window is the only notification. No 24h-prior email to draft holders.
+- **No proactive email comms about the maintenance window.** The maintenance-mode Vercel page promoted during the window is the only notification. No 24h-prior email to draft holders.
+- **Auth flow unchanged end-to-end for both tracks.** Sign-up (`/apply/signup` → email → OTP at `/apply/verify` → set password at `/apply/set-password`) and sign-in (`/apply/signin` with password OR "email me a code" → OTP at `/apply/verify`) are the same single flow for TIR and SIP applicants. The chooser appears AFTER successful sign-in, on `/apply`. There is no track-specific signup URL, no track-specific OTP flow, no track-specific password reset. Token storage, idle logout, single-flight 401 refresh, and `/auth/me` rehydration all stay as-is.
+- **Submission confirmation email for both tracks.** When an applicant submits a TIR application or a SIP application, the backend sends a submission confirmation email via Resend (using the `submission_confirmation` Jinja template, which is track-agnostic — both `applications.py` and `sip_applications.py` on the staging branch call `get_email_service().send_submission_confirmation(...)` via a shared `_send_submission_email` helper). Confirmed present on staging. Verified end-to-end in Stage A.8 dry-run and Stage C smoke test.
 - **Existing applicant data is preserved end-to-end.** Migration 010 uses `ALTER TABLE ... RENAME TO`, which preserves every row and every constraint. After cutover:
   - All rows in `applications` → live in `tir_applications` (zero data loss).
   - All rows in `resume_uploads` → live in `tir_resume_uploads`.
@@ -96,6 +98,16 @@ STAGE A — Prep work (days, no prod changes)
             - submit
             - run SELECT * FROM sip_applications WHERE user_id='<test>' — every column should have a value where the wizard provided one (NULL only for genuinely optional unfilled fields)
             - confirm each uploaded file's storage_path actually points at an existing object in the right bucket
+        - **Auth flow check (must work for both tracks):**
+            - `/apply/signup` → OTP → `/apply/verify` → `/apply/set-password` → `/apply` → chooser visible
+            - sign out, sign back in via `/apply/signin` (password) → reach `/apply`
+            - sign out, sign back in via `/apply/signin` ("email me a code") → reach `/apply`
+            - verify `/auth/me` returns the user; `useAuth` rehydration works
+        - **Submission email check (CRITICAL — both tracks):**
+            - submit a test TIR application → confirmation email arrives at the test inbox
+            - submit a test SIP application → confirmation email arrives at the test inbox
+            - both emails should reference the right application (template is shared but body includes applicant name + app id)
+            - verify Resend dashboard shows two successful deliveries (no bounces)
         - **Cross-track submit-lock check (the key new rule):**
             - as a known TIR user with submitted history (backfilled `track='tir'`), navigate to `/apply` — chooser SHOULD appear
             - pick SIP — SIP wizard should be accessible, draft creation should work
@@ -367,6 +379,12 @@ curl -s https://api.artpark.info/health/ready | jq
 | 16 | SIP buckets accessible | Upload a file via SIP wizard | object lands in `sip-evidence-files` / `sip-milestone-files` etc. |
 | 17 | SIP template upload + parse | Upload .docx through SIP wizard template step | `parse_status='completed'`, fields populate `sip_applications` |
 | 18 | TIR buckets renamed | `SELECT id FROM storage.buckets WHERE id IN ('tir-resumes','tir-milestone-files','tir-evidence-files');` | 3 rows |
+| 19 | **Auth — sign-up flow** | Fresh email → OTP code → set password → land on `/apply` | full flow completes, chooser visible |
+| 20 | **Auth — sign-in via password** | Sign out, sign back in with password | succeeds, lands on `/apply` |
+| 21 | **Auth — sign-in via OTP fallback** | Sign out, "email me a code" → enter OTP | succeeds, lands on `/apply` |
+| 22 | **TIR submission email** | Submit a test TIR application | confirmation email arrives at applicant inbox within 30 s |
+| 23 | **SIP submission email** | Submit a test SIP application | confirmation email arrives at applicant inbox within 30 s; references applicant + app id |
+| 24 | Resend dashboard health | Open Resend dashboard | recent deliveries 200/202, no bounces, no spam-folder issues |
 
 If smoke test passes → T+22m.
 If smoke test fails → rollback (Section 8).
@@ -412,7 +430,9 @@ D.4 **SIP template upload + parse end-to-end.** Different fresh test email → p
 
 D.5 **Production applicant sample check.** Pull 5 random rows from `tir_applications` that have non-NULL `submitted_at`. Spot-check each one's `evidence_files` JSONB resolves to actual storage objects (signed-URL the path, confirm 200). This catches storage bucket rename issues.
 
-D.6 No AI / scoring work in this push. Skip Stage D from the leadership-cutover spec.
+D.6 **Email deliverability check.** In the Resend dashboard, confirm post-cutover submissions (both tracks) hit `200/202` status. Check the artpark.info domain auth state (DKIM/SPF/DMARC) is still green. If any bounces or deferrals appear, investigate before declaring the cutover stable.
+
+D.7 No AI / scoring work in this push. Skip Stage D from the leadership-cutover spec.
 
 ### Stage F — 48h monitoring + handover
 
@@ -546,6 +566,8 @@ Fix-forward is the default in Zone D; PITR is reserved for genuine corruption.
 | Source branch | `staging` |
 | Existing applicants' `profiles.track` | Backfill to `'tir'` explicitly |
 | Multi-track per user | View + draft BOTH tracks allowed; submit locked to FIRST-submitted track only (cross-track submit returns 409). Multiple submissions allowed within the locked track. |
+| Auth flow | Same OTP + password flow for both tracks. No track-specific signin/signup. Chooser appears post-signin on `/apply`. |
+| Submission confirmation email | Sent for both TIR and SIP submissions (shared `submission_confirmation` template via shared `_send_submission_email` helper, present on staging). |
 | SIP visibility at cutover | Live immediately (no feature flag) |
 | AI scoring | Not in this push |
 | Leadership user creation | Not in this push |
