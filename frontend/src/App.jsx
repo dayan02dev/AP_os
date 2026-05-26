@@ -622,7 +622,15 @@ export default function App() {
         navigate("/apply/submitted");
       }
     } catch (err) {
-      if (err?.status === 422) {
+      if (err?.status === 409 && err?.code === "cross_track_submission_blocked") {
+        pushToast({
+          kind: "error",
+          message:
+            err?.message ||
+            "You've already submitted a SIP application. Each applicant can submit to only one track.",
+          ttlMs: 12000,
+        });
+      } else if (err?.status === 422) {
         // Backend shape: { error: {...}, missing_fields: [...], invalid_fields: [{field, reason}] }
         // api.js already merges these into err.details. Surface the actual
         // field names so the user knows *what* to fix — a vague "some fields

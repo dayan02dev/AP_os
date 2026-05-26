@@ -584,7 +584,15 @@ export default function AppSip() {
       pushToast({ kind: "info", message: "Submitted. Good luck!" });
       if (result?.application_id) navigate("/apply-sip/submitted");
     } catch (err) {
-      if (err?.status === 422) {
+      if (err?.status === 409 && err?.code === "cross_track_submission_blocked") {
+        pushToast({
+          kind: "error",
+          message:
+            err?.message ||
+            "You've already submitted a TIR application. Each applicant can submit to only one track.",
+          ttlMs: 12000,
+        });
+      } else if (err?.status === 422) {
         const missing = err?.details?.missing_fields || [];
         const invalid = err?.details?.invalid_fields || [];
         const problems = [
