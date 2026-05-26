@@ -4,6 +4,7 @@ import { Fragment, useState as useAS, useEffect as useAE, useRef as useAR } from
 import { useNavigate } from "react-router-dom";
 import { validateEmail, isPasswordValid, EmailInput, PasswordInput } from "./validators.jsx";
 import { useTemplate } from "./hooks/useTemplate.js";
+import { setMyTrack } from "./lib/auth.js";
 
 // Static template URL with a cache-bust query string. Bump the `v=` value
 // whenever the .docx in /public/templates/ changes so old browser cache
@@ -225,6 +226,27 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
   const navigate = useNavigate();
   const cycleLabel = track === "sip" ? "SIP.2026" : "TIR.2026";
 
+  // Flip profiles.track on the server BEFORE navigating into the wizard.
+  // SIP RLS (migration 011) gates every read/write on sip_applications
+  // and SIP storage behind profiles.track='sip'; without this flip a
+  // user with track='tir' who picks SIP can't draft, and vice versa.
+  //
+  // We deliberately don't await-then-block: if the PATCH fails (network
+  // blip, transient 5xx) we proceed anyway. The downstream wizard will
+  // fail-loud on the next save with a 403/empty result, which is more
+  // surfaceable than a silent click that goes nowhere. The error is
+  // logged for debugging.
+  const pickTrackThen = async (chosen, navTarget) => {
+    try {
+      await setMyTrack(chosen);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[chooser] setMyTrack failed; proceeding anyway", err);
+    }
+    if (typeof navTarget === "function") navTarget();
+    else navigate(navTarget);
+  };
+
   // Display name only comes from the current draft's basic_full_name —
   // either CV-parsed or hand-typed in the wizard. We intentionally do
   // NOT fall back to profiles.full_name: that field can hold a stale
@@ -309,9 +331,10 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
                 <button
                   className="eir-ret-track eir-ret-track-tir"
                   onClick={() =>
-                    track === "tir"
-                      ? onStartNew()
-                      : navigate("/apply?direct=1")
+                    pickTrackThen(
+                      "tir",
+                      track === "tir" ? onStartNew : "/apply?direct=1",
+                    )
                   }
                 >
                   <div className="eir-ret-track-head">
@@ -334,9 +357,10 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
                 <button
                   className="eir-ret-track eir-ret-track-sip"
                   onClick={() =>
-                    track === "sip"
-                      ? onStartNew()
-                      : navigate("/apply-sip?direct=1")
+                    pickTrackThen(
+                      "sip",
+                      track === "sip" ? onStartNew : "/apply-sip?direct=1",
+                    )
                   }
                 >
                   <div className="eir-ret-track-head">

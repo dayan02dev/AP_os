@@ -67,6 +67,26 @@ export async function getMe() {
 }
 
 /**
+ * Flip the user's profiles.track to "tir" or "sip".
+ *
+ * The chooser at /apply lets one applicant explore both tracks. SIP's RLS
+ * policies (migration 011) gate every read/write on sip_applications +
+ * SIP storage behind profiles.track='sip', so we must flip server-side
+ * BEFORE navigating into the other wizard or RLS blocks drafting.
+ *
+ * Returns the new track on success. Throws on network / 4xx / 5xx so the
+ * caller can decide whether to toast-and-still-navigate (preferred) or
+ * abort — see auth_upload.jsx for the chooser wiring.
+ */
+export async function setMyTrack(track) {
+  if (track !== "tir" && track !== "sip") {
+    throw new Error(`setMyTrack: invalid track "${track}"`);
+  }
+  const result = await api.patch("/auth/me/track", { track });
+  return result?.track ?? track;
+}
+
+/**
  * Best-effort logout — server-side call is a courtesy; the real effect
  * is dropping the local session tokens.
  */
