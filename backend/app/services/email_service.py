@@ -190,14 +190,22 @@ class EmailService:
         to: str,
         applicant_name: str,
         application_id: str,
+        track: str = "tir",
     ) -> dict[str, str]:
+        track_norm = (track or "tir").lower()
+        program_name = "ARTPARK SIP" if track_norm == "sip" else "ARTPARK TIR"
         html, text = self._render_pair(
             "submission_confirmation",
-            {"applicant_name": applicant_name, "application_id": application_id},
+            {
+                "applicant_name": applicant_name,
+                "application_id": application_id,
+                "track": track_norm,
+                "program_name": program_name,
+            },
         )
         return self.send_raw(
             to=[to],
-            subject="ARTPARK TIR — Your application has been received",
+            subject=f"{program_name} — Your application has been received",
             html=html,
             text=text,
         )

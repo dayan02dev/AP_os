@@ -1,17 +1,21 @@
 {% extends "base.txt" %}
 {% block content %}Thank you, {{ applicant_name }}.
 
-We've received your application. Our team reads every single one — you'll hear back from us by the agreed deadline, whatever the outcome.
+We've received your {{ program_name }} application. Our team reads every single one — you'll hear back from us by the agreed deadline, whatever the outcome.
 
 Application ID: {{ application_id }}
 
 What happens next?
-  1. We read and discuss as a cohort committee.
+{% if track == "sip" %}  1. We read and discuss as a cohort committee.
+  2. Shortlisted applicants are notified by email.
+  3. Interviews are scheduled with shortlisted teams.
+  4. Selected startups join the SIP cohort.
+{% else %}  1. We read and discuss as a cohort committee.
   2. Shortlisted applicants are notified around 22 June.
   3. Interviews take place in the first week of July.
   4. Residency begins 15 July 2026.
-
+{% endif %}
 If you need to reach us, reply to this email or open a support ticket through the portal.
 
-— The ARTPARK TIR team
+— The {{ program_name }} team
 {% endblock %}

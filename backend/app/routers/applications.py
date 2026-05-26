@@ -416,6 +416,7 @@ def _send_submission_email(user_id: str, email: str, full_name: str, application
             to=email,
             applicant_name=full_name or email,
             application_id=application_id,
+            track="tir",
         )
     except NotImplementedError:
         log.warning("submission email skipped: email service not implemented", extra={"user_id": user_id})
