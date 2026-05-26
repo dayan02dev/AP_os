@@ -84,6 +84,10 @@ ALWAYS_REQUIRED: list[str] = [
     # `infrastructure` as a required column. `failure` was required in the
     # pre-spec wizard but is optional in the new spec, so it leaves this list.
     "execution_milestone", "execution_infrastructure",
+    # Resume — migration 019 made resume_file_id mandatory at submit time.
+    # Listing it here also makes the completion meter reflect missing resume
+    # (was 100% with resume missing → confusing 422 at submit).
+    "resume_file_id",
     # declarations (newsletter is optional)
     "declaration_truthful", "declaration_ref_checks", "declaration_terms",
 ]

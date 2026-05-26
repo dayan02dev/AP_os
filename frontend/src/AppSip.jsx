@@ -42,6 +42,7 @@ import { useSipApplication } from "./hooks/useSipApplication.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
 import { useSipResume } from "./hooks/useSipResume.js";
 import { useToast } from "./hooks/useToast.jsx";
+import { api } from "./lib/api.js";
 import {
   SECTION_ORDER_SIP,
   collapseFromRowSip,
@@ -181,6 +182,31 @@ export default function AppSip() {
   const [celebMsg, setCelebMsg] = useState("");
   const [prevPhase, setPrevPhase] = useState(null);
   const [viewingApp, setViewingApp] = useState(null);
+
+  // Cross-track: applicants can submit BOTH tracks (post 2026-05-26). Fetch
+  // TIR submissions so the Past tab here lists every submission across both
+  // tracks. Failure is non-fatal — fall back to SIP-only.
+  const [crossTrackSubmitted, setCrossTrackSubmitted] = useState([]);
+  useEffect(() => {
+    if (!user) {
+      setCrossTrackSubmitted([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const tirPast = await api.get("/applications/me/submitted");
+        if (!cancelled) {
+          setCrossTrackSubmitted(Array.isArray(tirPast) ? tirPast : []);
+        }
+      } catch {
+        if (!cancelled) setCrossTrackSubmitted([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   // Frontend-only answers (questions in LOCAL_ONLY_IDS). Kept out of the
   // backend `answers` row; persisted to localStorage so a reload mid-review
@@ -722,6 +748,23 @@ export default function AppSip() {
                   feedback: r.reviewer_feedback || null,
                   answers: collapseFromRowSip(r),
                 }));
+                // Append cross-track TIR submissions (both-track allowed
+                // post 2026-05-26). Sort newest-first across both.
+                (crossTrackSubmitted || []).forEach((r) => {
+                  past.push({
+                    id: r.id,
+                    ts: r.submitted_at
+                      ? new Date(r.submitted_at).getTime()
+                      : Date.now(),
+                    cycle: r.cycle || "TIR.2026",
+                    projectTitle: r.solution_describe?.slice(0, 80) || "",
+                    currentMilestone: r.current_milestone || "submitted",
+                    feedback: r.reviewer_feedback || null,
+                    // TIR rows can't be opened from SIP DoneScreen.
+                    answers: {},
+                  });
+                });
+                past.sort((a, b) => b.ts - a.ts);
                 if (
                   locked &&
                   application?.submitted_at &&

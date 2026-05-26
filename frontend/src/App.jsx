@@ -38,6 +38,7 @@ import { useApplication } from "./hooks/useApplication.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
 import { useResume } from "./hooks/useResume.js";
 import { useToast } from "./hooks/useToast.jsx";
+import { api } from "./lib/api.js";
 import { SECTION_ORDER, collapseFromRow } from "./lib/fieldMap.js";
 
 const PHASES = {
@@ -168,6 +169,33 @@ export default function App() {
   // Null means "show the current/just-submitted application" (default
   // post-submit). Set by clicking a card on the Past tab.
   const [viewingApp, setViewingApp] = useState(null);
+
+  // Cross-track: now that applicants can submit BOTH tracks, the Past
+  // applications tab shows submissions from BOTH TIR and SIP. The TIR
+  // hook only returns its own track; we fetch SIP submissions here and
+  // merge in the pastSubmissions builder below.
+  const [crossTrackSubmitted, setCrossTrackSubmitted] = useState([]);
+  useEffect(() => {
+    if (!user) {
+      setCrossTrackSubmitted([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const sipPast = await api.get("/sip-applications/me/submitted");
+        if (!cancelled) {
+          setCrossTrackSubmitted(Array.isArray(sipPast) ? sipPast : []);
+        }
+      } catch {
+        // SIP fetch failure is non-fatal — just show TIR-only past list.
+        if (!cancelled) setCrossTrackSubmitted([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   // ─── Theme application ───────────────────────────────────────
   useEffect(() => {
@@ -789,6 +817,25 @@ export default function App() {
                     feedback: r.reviewer_feedback || null,
                     answers: collapseFromRow(r),
                   }));
+                  // Append cross-track SIP submissions (both-track allowed
+                  // post 2026-05-26). Sort newest-first across both.
+                  (crossTrackSubmitted || []).forEach((r) => {
+                    past.push({
+                      id: r.id,
+                      ts: r.submitted_at
+                        ? new Date(r.submitted_at).getTime()
+                        : Date.now(),
+                      cycle: r.cycle || "SIP.2026",
+                      projectTitle: r.solution_describe?.slice(0, 80) || "",
+                      currentMilestone: r.current_milestone || "submitted",
+                      feedback: r.reviewer_feedback || null,
+                      // SIP rows can't be opened from the TIR DoneScreen
+                      // (different field shape); leave answers empty so the
+                      // card renders as info-only with a clear cycle badge.
+                      answers: {},
+                    });
+                  });
+                  past.sort((a, b) => b.ts - a.ts);
                   if (
                     locked &&
                     application?.submitted_at &&
