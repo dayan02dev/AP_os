@@ -88,3 +88,18 @@ class UserMe(BaseModel):
 class SimpleOK(BaseModel):
     ok: bool
     message: str | None = None
+
+
+# ─── Track flip (chooser screen) ────────────────────────────────
+#
+# PATCH /auth/me/track lets the frontend chooser flip the user's
+# profiles.track between 'tir' and 'sip' so the SIP RLS policies
+# (migration 011) permit drafting in the chosen track. See
+# routers/auth.py::patch_my_track for the full rationale.
+class TrackUpdate(BaseModel):
+    track: TrackValue
+
+
+class TrackUpdateResponse(BaseModel):
+    ok: bool
+    track: TrackValue

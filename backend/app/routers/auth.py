@@ -41,6 +41,8 @@ from ..models.auth import (
     SetPassword,
     SimpleOK,
     TokenResponse,
+    TrackUpdate,
+    TrackUpdateResponse,
     UserInfo,
     UserMe,
 )
@@ -497,3 +499,69 @@ async def set_password(
                     extra={"ref": req_id, "user_id": user_id})
 
     return SimpleOK(ok=True, message="Password updated.")
+
+
+# ─── Track flip (chooser screen) ────────────────────────────────
+#
+# The unified TIR/SIP chooser on `/apply` lets a single applicant explore
+# (and draft) both tracks. The SIP track's RLS policies in migration
+# 011_sip_track.sql gate every SELECT/INSERT/UPDATE on `sip_applications`
+# and SIP storage buckets behind:
+#
+#     EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND track='sip')
+#
+# The TIR tables have no such gate. So when the user picks SIP at the
+# chooser the frontend MUST flip `profiles.track` to 'sip' (and back to
+# 'tir' when they pick TIR), otherwise RLS blocks drafting + viewing.
+#
+# Migration 010's column comment says "Locked once set; only an admin
+# (service role) can change it." — that's still accurate, because this
+# endpoint runs through the service-role admin client server-side. The
+# user can't UPDATE the column directly via RLS; they can only ask this
+# endpoint to do it, and the endpoint enforces:
+#   - Bearer auth (get_current_user)
+#   - The new track must be one of {'tir','sip'} (Pydantic Literal)
+#   - The UPDATE is scoped to the caller's own profiles row
+#
+# Submit-time cross-track lock (so a single user can't SUBMIT in both
+# tracks) lives elsewhere — that's not this endpoint's job.
+_TRACK_FLIP_MAX = 30      # 30 flips/min/user — chooser doesn't need more
+_TRACK_FLIP_WINDOW_S = 60
+
+
+@router.patch(
+    "/me/track",
+    response_model=TrackUpdateResponse,
+    dependencies=[Depends(per_user_rate_limit("auth-me-track",
+                                              _TRACK_FLIP_MAX,
+                                              _TRACK_FLIP_WINDOW_S))],
+)
+async def patch_my_track(
+    payload: TrackUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["user_id"]
+    req_id = _new_request_id()
+    new_track = payload.track
+
+    try:
+        admin = get_admin_client()
+        (
+            admin.table("profiles")
+            .update({"track": new_track})
+            .eq("id", user_id)
+            .execute()
+        )
+    except Exception:
+        log.exception(
+            "auth.patch-me-track failed",
+            extra={"auth_event": "track_update_failed", "ref": req_id,
+                   "user_id": user_id, "new_track": new_track},
+        )
+        return _error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "track_update_failed",
+            f"Could not update track (ref {req_id}).",
+        )
+
+    return TrackUpdateResponse(ok=True, track=new_track)
