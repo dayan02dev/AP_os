@@ -44,9 +44,22 @@ Not in this push (deferred to the next push):
 
 - **No automatic role grants.** Every user signing up via the public OTP/password flow is treated as an applicant. The `user_roles` table doesn't exist on prod yet; absence of a row continues to mean "applicant". Carries through unchanged from current prod behavior.
 - **No proactive email comms.** The maintenance-mode Vercel page promoted during the window is the only notification. No 24h-prior email to draft holders.
-- **Existing applicant data is preserved.** Migration 010 is a RENAME, not a drop. Every row in prod's current `applications` table is carried over to `tir_applications`. Same for `resume_uploads → tir_resume_uploads`. Same for storage objects (buckets renamed, paths unchanged).
-- **Multi-track per user is allowed.** A single user can hold one draft per track plus any number of submitted apps per track. RLS in 010/011 enforces ownership; the unique-draft constraint is partial and per-table.
-- **SIP visible at cutover.** No feature flag. The new frontend shows the TIR/SIP chooser immediately on promotion.
+- **Existing applicant data is preserved end-to-end.** Migration 010 uses `ALTER TABLE ... RENAME TO`, which preserves every row and every constraint. After cutover:
+  - All rows in `applications` → live in `tir_applications` (zero data loss).
+  - All rows in `resume_uploads` → live in `tir_resume_uploads`.
+  - All storage objects in buckets `resumes` / `milestone-files` / `evidence-files` → live in `tir-resumes` / `tir-milestone-files` / `tir-evidence-files` (objects preserved, only bucket name changes; paths within buckets are unchanged).
+  - All JSONB columns (`evidence_files`, `evidence_deck`, `execution_milestone_files`) keep their contents byte-for-byte.
+  - All `submitted_at`, `created_at`, `updated_at`, `status` values preserved.
+  - Existing applicants' `/apply/submitted` page must continue to show their submitted history exactly as before. This is verified in Stage C smoke test and again in Stage D.
+- **Both tracks viewable and draftable; submission locked to the first-submitted track.** Every signed-in applicant can see the TIR/SIP chooser at `/apply` and can hold one draft in TIR plus one draft in SIP simultaneously. The act of submitting an application LOCKS the user to that track for all future submissions:
+  - Before any submission: applicant can draft, save, and edit in both tracks freely.
+  - On first submission (say TIR): submit succeeds, and the user is now "TIR-locked" — they can continue submitting more TIR applications (unlimited), but the SIP submit endpoint will return `409 cross_track_submission_blocked` if they try to submit their SIP draft.
+  - The lock is derived from existing rows, not stored as a new column: `EXISTS(SELECT 1 FROM <other_track>_applications WHERE user_id=:uid AND status != 'draft')`. No schema change required.
+  - The SIP draft is NOT auto-deleted after the lock — it stays viewable so the applicant understands why submit is blocked.
+  - Recovery (e.g., applicant chose wrong track) is admin-only: delete the wrong-track submitted rows via SQL, the lock auto-clears.
+- **`profiles.track` is a UX convenience, not a lock.** It tracks the wizard the user is currently in (set when they click TIR or SIP at the chooser, updated as they switch). It does NOT enforce track exclusivity — the submit-time check does. SIP RLS in migration 011 needs to be confirmed in the implementation plan: it currently gates SIP table access on `profiles.track='sip'`, which conflicts with "draft both" — we may need to either keep `profiles.track` in sync as the user switches wizards, or drop the RLS gate in favor of ownership-only checks. See open items.
+- **SIP visible at cutover for everyone.** Both existing applicants and new signups see the chooser. Existing TIR applicants who never visited the chooser keep their TIR drafts intact; if they later visit the chooser and pick SIP, they can draft SIP too (but cannot submit SIP because their existing TIR submissions lock them).
+- **Complete field + file coverage for SIP.** Every question in the SIP wizard maps to a column on `sip_applications` (or to a SIP storage bucket). Migrations 011, 012, 020, 021 collectively cover all fields. End-to-end coverage is verified in Stage A.8 dry-run by submitting a fully-filled SIP application on a restored snapshot and confirming every column / file lands.
 
 ## 4. Sequencing overview
 
@@ -69,8 +82,30 @@ STAGE A — Prep work (days, no prod changes)
   A.8 Full dry-run on PITR-restored prod snapshot
         - apply migrations 010, 011, 012, 013, 019 (if needed), 020, 021
         - run UPDATE profiles SET track='tir' backfill
-        - point local backend at restored project, verify wizard works
-        - verify SIP chooser appears, both wizards function
+        - point local backend at restored project
+        - **TIR preservation check (REAL prod data):**
+            - confirm every row from snapshot `applications` shows up in `tir_applications`
+            - sign in as a known prod TIR applicant (or impersonate via service-role)
+            - verify their /apply/submitted history is intact
+            - verify evidence_files JSONB still resolves to real storage objects
+            - verify resume_uploads → tir_resume_uploads, file downloadable
+        - **SIP field-coverage check (END-TO-END):**
+            - sign up as a new test user, pick SIP at chooser
+            - fill EVERY question in the SIP wizard (basic, problem, solution, execution, evidence, declaration, plus all SIP-specific: founders/cap-table, traction files, pitch deck, demo video, patents, DPIIT details, team, etc.)
+            - upload at least one file in every SIP file-upload slot (sip-resumes, sip-milestone-files, sip-evidence-files, cap-table file, pitch deck, traction files, patents files, demo video URL)
+            - submit
+            - run SELECT * FROM sip_applications WHERE user_id='<test>' — every column should have a value where the wizard provided one (NULL only for genuinely optional unfilled fields)
+            - confirm each uploaded file's storage_path actually points at an existing object in the right bucket
+        - **Cross-track submit-lock check (the key new rule):**
+            - as a known TIR user with submitted history (backfilled `track='tir'`), navigate to `/apply` — chooser SHOULD appear
+            - pick SIP — SIP wizard should be accessible, draft creation should work
+            - fill the SIP draft, try to SUBMIT — submit MUST return 409 `cross_track_submission_blocked` because they have submitted TIR rows
+            - confirm the SIP draft itself stays editable / viewable (lock is on submit only, not on draft)
+            - then: as a new test user with NO prior submissions, draft BOTH tracks, submit TIR first, verify SIP submit is now blocked
+            - reverse case: another new test user drafts both, submits SIP first, verify TIR submit is now blocked
+        - **`profiles.track` consistency check:**
+            - verify whatever staging does with `profiles.track` (set at signup, updated on chooser pick) doesn't break access to the user's drafts in either track
+            - if SIP RLS currently gates on `profiles.track='sip'` AND the user is currently `'tir'`, SIP draft writes will fail — this is the open question; resolve before cutover
         - only then proceed to Stage B
 
 STAGE B — Pre-cutover infrastructure (live, additive only)
@@ -312,17 +347,26 @@ curl -s https://api.artpark.info/health/ready | jq
 
 ### T+19m — Smoke test
 
-| Check | Method | Expected |
-|---|---|---|
-| Public landing loads | Browse `https://apply.artpark.info` | renders |
-| Sign-in page loads | Click "Sign in" | OTP/password form |
-| New applicant signup → chooser | Use a test email; complete OTP → reach `/apply` | chooser appears: TIR and SIP buttons |
-| Pick TIR → start TIR wizard | Click TIR | basic-details question renders |
-| Pick SIP → start SIP wizard | Sign in as another test user, pick SIP | SIP question 1 renders |
-| Existing applicant resumes draft | Sign in as a known prod applicant test account (if one exists), or sign-in via OTP and observe their `tir_applications` row data is reachable | resume screen + saved answers visible |
-| App version | `curl /health` | `0.9.0-sip` |
-| `applications` table accessible | `curl` any endpoint that would query it | endpoint serves `tir_applications` rows |
-| SIP template upload (manual test) | Upload a .docx through the SIP wizard's template upload step | parse_status reaches `completed`, fields land in `sip_applications` |
+| # | Check | Method | Expected |
+|---|---|---|---|
+| 1 | Public landing loads | Browse `https://apply.artpark.info` | renders |
+| 2 | Sign-in page loads | Click "Sign in" | OTP/password form |
+| 3 | App version + health | `curl /health` | `0.9.0-sip`, status ok |
+| 4 | **Existing TIR applicant: history intact** | Sign in as a known prod TIR applicant (use a real test account, NOT a new one) | `/apply/submitted` shows all their prior submissions; data identical to pre-cutover |
+| 5 | **Existing TIR applicant: draft resumable** | Same user, if they have a draft | resume screen renders, all saved answers visible, can edit + save |
+| 6 | **Existing TIR applicant: chooser visible** | Same user navigates to `/apply` | chooser shows BOTH TIR and SIP buttons |
+| 7 | **Existing TIR applicant: SIP draft creation works** | Pick SIP from chooser | SIP wizard opens, can fill answers, save draft |
+| 8 | **Existing TIR applicant: SIP submit blocked** | Try to submit the SIP draft | `409 cross_track_submission_blocked` (or equivalent error message in UI) |
+| 9 | **Existing TIR applicant: SIP draft still viewable** | Navigate back to SIP wizard after submit attempt | draft still saved, editable, visible |
+| 10 | New signup → chooser appears | Brand-new test email, complete OTP, reach `/apply` | chooser shows TIR and SIP buttons |
+| 11 | New signup → drafts both simultaneously | Pick TIR, fill, save draft → back to chooser → pick SIP, fill, save draft | both drafts coexist; `tir_applications` AND `sip_applications` each have one row for this user |
+| 12 | New signup → submits TIR → SIP lock activates | Submit TIR draft → return to SIP draft → try submit | TIR submit succeeds; SIP submit returns 409 |
+| 13 | New signup (reverse) → submits SIP first | Different test user, submit SIP first, then try TIR submit | SIP succeeds; TIR submit returns 409 |
+| 14 | `applications` table is gone | `SELECT 1 FROM applications LIMIT 1;` in Supabase SQL editor | error: relation does not exist |
+| 15 | `tir_applications` row count | `SELECT count(*) FROM tir_applications;` | matches pre-cutover `applications` count minus purged test rows |
+| 16 | SIP buckets accessible | Upload a file via SIP wizard | object lands in `sip-evidence-files` / `sip-milestone-files` etc. |
+| 17 | SIP template upload + parse | Upload .docx through SIP wizard template step | `parse_status='completed'`, fields populate `sip_applications` |
+| 18 | TIR buckets renamed | `SELECT id FROM storage.buckets WHERE id IN ('tir-resumes','tir-milestone-files','tir-evidence-files');` | 3 rows |
 
 If smoke test passes → T+22m.
 If smoke test fails → rollback (Section 8).
@@ -347,13 +391,28 @@ Announce in cutover channel: "Maintenance window complete. `apply.artpark.info` 
 
 ### Stage D — Verification spot-checks (within 24h)
 
-D.1 Sign in as an existing prod applicant test account (or a known applicant who consented). Confirm their draft is intact, they can edit it, save it, submit it.
+D.1 **Existing TIR applicant — full continuity + cross-track behavior.** Sign in as a known prod applicant test account. Verify:
+- `/apply/submitted` shows their submitted TIR history exactly as before cutover.
+- Click any submitted app → all answers + uploaded files still visible.
+- If they have an active TIR draft → resume, edit, save → verify changes persist.
+- `/apply` chooser now shows BOTH TIR and SIP options.
+- Pick SIP from chooser → SIP wizard renders, user can fill and save a SIP draft.
+- Try to submit the SIP draft → `409 cross_track_submission_blocked` (because they have submitted TIR apps).
+- SIP draft stays saved and viewable after the blocked submit.
 
-D.2 New signup as a fresh user. Pick TIR → fill at least basic-details → save → log out → log back in → resume draft. Then go to chooser → pick SIP → start SIP wizard → fill q1 → save → log out → log back in → confirm both drafts coexist.
+D.2 **New signup — draft both, submit one.** Fresh test email → signup → OTP → `/apply` shows chooser → pick TIR → fill some answers → save → return to chooser → pick SIP → fill some answers → save → log out → log back in → BOTH drafts persist and are accessible. Then submit TIR → verify SIP submit is blocked.
 
-D.3 SIP template upload + parse end-to-end: upload a filled .docx via the SIP wizard's template step. Verify `sip_application_templates.parse_status` reaches `completed` and parsed answers populate `sip_applications`.
+D.3 **New signup → SIP-first path with full field coverage.** Another fresh test email → pick SIP → fill EVERY field across all 6 sections of SIP wizard → upload files in every file slot → submit. Verify:
+- `sip_applications` row has all wizard fields populated (NULL only for genuinely optional, unfilled fields).
+- Files exist in correct buckets (`sip-resumes`, `sip-milestone-files`, `sip-evidence-files`).
+- `/apply/submitted` shows the submission.
+- The user can still see the TIR wizard from chooser and draft in TIR, but TIR submit is blocked.
 
-D.4 No AI / scoring work in this push. Skip Stage D from the leadership-cutover spec.
+D.4 **SIP template upload + parse end-to-end.** Different fresh test email → pick SIP → use the offline template upload feature → upload a filled .docx → verify `sip_application_templates.parse_status='completed'` and parsed answers populate `sip_applications`.
+
+D.5 **Production applicant sample check.** Pull 5 random rows from `tir_applications` that have non-NULL `submitted_at`. Spot-check each one's `evidence_files` JSONB resolves to actual storage objects (signed-URL the path, confirm 200). This catches storage bucket rename issues.
+
+D.6 No AI / scoring work in this push. Skip Stage D from the leadership-cutover spec.
 
 ### Stage F — 48h monitoring + handover
 
@@ -439,6 +498,20 @@ Fix-forward is the default in Zone D; PITR is reserved for genuine corruption.
 ## 9. Open items
 
 - **Cutover timing.** TBD, picked just before launch. Driven by traffic patterns + team availability. Spec is unblocked without this.
+- **Cross-track submit-lock implementation in code.** The submit handlers (`POST /applications/me/submit` and the SIP equivalent) must do a cross-track existence check before allowing submission:
+  ```sql
+  SELECT EXISTS(SELECT 1 FROM <other_track>_applications WHERE user_id=:uid AND status != 'draft')
+  ```
+  If true → return HTTP 409 with code `cross_track_submission_blocked`. Verify in Stage A.8: this check may or may not exist on the `staging` branch already — read the submit handlers (`applications.py`, `sip_applications.py`) and confirm. If missing, add it to `release/sip-launch-v1` as a small targeted change.
+- **SIP RLS vs. multi-track draft tension.** Migration 011 documents that SIP RLS policies gate access on `profiles.track='sip'`. This conflicts with "draft both tracks" — a user with `profiles.track='tir'` who tries to write to `sip_applications` would be blocked by RLS. Resolution options (decide in implementation plan):
+  - (a) Frontend updates `profiles.track` whenever the user switches wizards (chooser pick → PATCH /me track=...). Simple but fragile if a request fires before the PATCH lands.
+  - (b) Drop the `profiles.track='sip'` gate in SIP RLS, leave only the ownership check. Simpler runtime, removes a defense-in-depth layer.
+  - (c) Inspect what staging actually does — if staging's SIP wizard works for users whose track was set to TIR, then (a) is already implemented somewhere. Confirm before deciding.
+- **Verify migration 010's `handle_new_user()` trigger updates `profiles.track`.** Migration 010 says it updates the trigger to populate `track` from auth signup metadata. Confirm this doesn't accidentally LOCK a new user to a track (it shouldn't — `track` is UX state, not a submit lock).
+- **Real-time cutover risk.** Site is currently in production with applicants submitting. Risk mitigation:
+  - Pre-cutover: identify any drafts being edited in the last 10 min; expect some lost work in that window.
+  - During cutover: maintenance frontend serves a clear "Back at HH:MM" page; no API calls reach the backend from applicants.
+  - Post-cutover: applicants with sessions that survived the window may see a transient 401 on their next API call (token still valid, but the backend is new); the frontend's existing single-flight refresh-on-401 logic handles this. No user-visible failure expected.
 - **Migration 019 drift verification.** Stage A.3 requires confirming whether `019_mandatory_profile_links_prod.sql` has actually been applied to prod (commit `1d3a642` claims it has). The SQL check:
   ```sql
   SELECT column_name, is_nullable FROM information_schema.columns
@@ -472,7 +545,7 @@ Fix-forward is the default in Zone D; PITR is reserved for genuine corruption.
 | Cutover style | Maintenance window (~20-40 min) |
 | Source branch | `staging` |
 | Existing applicants' `profiles.track` | Backfill to `'tir'` explicitly |
-| Multi-track per user | Yes, one draft per track allowed |
+| Multi-track per user | View + draft BOTH tracks allowed; submit locked to FIRST-submitted track only (cross-track submit returns 409). Multiple submissions allowed within the locked track. |
 | SIP visibility at cutover | Live immediately (no feature flag) |
 | AI scoring | Not in this push |
 | Leadership user creation | Not in this push |
