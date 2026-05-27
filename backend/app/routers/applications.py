@@ -84,10 +84,8 @@ ALWAYS_REQUIRED: list[str] = [
     # `infrastructure` as a required column. `failure` was required in the
     # pre-spec wizard but is optional in the new spec, so it leaves this list.
     "execution_milestone", "execution_infrastructure",
-    # Resume — migration 019 made resume_file_id mandatory at submit time.
-    # Listing it here also makes the completion meter reflect missing resume
-    # (was 100% with resume missing → confusing 422 at submit).
-    "resume_file_id",
+    # NOTE: resume_file_id is intentionally NOT required (2026-05-27). Resume,
+    # LinkedIn, and GitHub are all optional now — see _MANDATORY_FIELDS.
     # declarations (newsletter is optional)
     "declaration_truthful", "declaration_ref_checks", "declaration_terms",
 ]
@@ -104,10 +102,13 @@ LONG_TEXT_MIN_WORDS: dict[str, int] = {}
 _PHONE_RE = re.compile(r"^\+?[\d][\d\s\-\(\)]{5,19}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-# Fields added 2026-05-22 — hard-required at submit time. Used by both the
-# validator (presence check) and the submit handler (hard-block branch) so
-# the field list is defined in exactly one place.
-_MANDATORY_FIELDS: tuple[str, ...] = ("resume_file_id", "linkedin_url", "github_url")
+# Identity & Links fields. As of 2026-05-27 these are OPTIONAL — submission
+# is never blocked on them (business decision: requiring resume + LinkedIn +
+# GitHub for every TIR applicant was blocking non-software / hardware founders
+# who don't have a GitHub). Kept as an empty tuple so the submit handler's
+# blocking branch and the validator presence-check below become no-ops while
+# the field list stays defined in one place if we ever re-enable.
+_MANDATORY_FIELDS: tuple[str, ...] = ()
 
 
 # ─── Per-user rate-limit dependencies ────────────────────────────────
