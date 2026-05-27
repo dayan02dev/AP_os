@@ -85,7 +85,7 @@ export default function SetPasswordPage() {
         <main className="eir-main">
           <div className="eir-screen eir-auth">
             <div className="eir-coord eir-mono">
-              <span>ARTPARK / {isSipFlow ? "SIP" : "TIR"}.2026</span>
+              <span>ARTPARK / {isSipFlow ? "VIP" : "TIR"}.2026</span>
               <span>{resetMode ? "reset password" : "set password"}</span>
             </div>
             <form className="eir-auth-body" onSubmit={onSubmit}>

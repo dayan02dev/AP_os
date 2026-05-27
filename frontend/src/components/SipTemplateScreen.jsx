@@ -57,7 +57,7 @@ export function SipTemplateScreen({ onContinue, onBack, onTemplateApplied }) {
         </div>
         <h2 className="eir-q-prompt">Want to type the long answers offline?</h2>
         <p className="eir-q-help">
-          Download the SIP Word template, fill the long answers at your
+          Download the VIP Word template, fill the long answers at your
           own pace (Word, Pages, Google Docs — anything that opens
           .docx), then drop it back here and we'll auto-fill those
           fields in the wizard. You'll still review and edit each answer
@@ -73,7 +73,7 @@ export function SipTemplateScreen({ onContinue, onBack, onTemplateApplied }) {
             <div className="eir-template-text">
               <div className="eir-template-title eir-mono">step 1 · download</div>
               <div className="eir-template-blurb">
-                Grab the SIP .docx. The questions inside have answer
+                Grab the VIP .docx. The questions inside have answer
                 markers we use to read your responses — please don't
                 delete or rename them.
               </div>

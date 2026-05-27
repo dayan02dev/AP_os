@@ -112,7 +112,7 @@ function humanizeField(col) {
       problem: "Problem",
       solution: "Solution",
       execution: "Execution",
-      sip: "SIP",
+      sip: "VIP",
       evidence: "Evidence",
       declaration: "Declaration",
     }[section] || section;
@@ -742,7 +742,7 @@ export default function AppSip() {
                   ts: r.submitted_at
                     ? new Date(r.submitted_at).getTime()
                     : Date.now(),
-                  cycle: r.cycle || "SIP.2026",
+                  cycle: r.cycle || "VIP.2026",
                   projectTitle: r.solution_describe?.slice(0, 80) || "",
                   currentMilestone: r.current_milestone || "submitted",
                   feedback: r.reviewer_feedback || null,
@@ -773,7 +773,7 @@ export default function AppSip() {
                   past.unshift({
                     id: application.id,
                     ts: new Date(application.submitted_at).getTime(),
-                    cycle: application.cycle || "SIP.2026",
+                    cycle: application.cycle || "VIP.2026",
                     projectTitle:
                       application.solution_describe?.slice(0, 80) || "",
                     currentMilestone:
@@ -1145,18 +1145,18 @@ function SipEarlyExitScreen({ answers, onChangeAnswer, onProceedSip }) {
   return (
     <div className="eir-screen">
       <div className="eir-coord eir-mono">
-        <span>sip.2026 / fit check</span>
+        <span>vip.2026 / fit check</span>
       </div>
       <div className="eir-welcome-body">
         <h1 className="eir-welcome-title" style={{ maxWidth: "20ch" }}>
           {isPreIncorp
             ? "TIR might be the better fit for you right now."
-            : "SIP is calibrated for ventures past the prototype mark."}
+            : "VIP is calibrated for ventures past the prototype mark."}
         </h1>
         <p className="eir-welcome-lede">
           {isPreIncorp ? (
             <>
-              The Startup Incubation Programme is for incorporated Pvt Ltd
+              The Venture Incubation Programme is for incorporated Pvt Ltd
               companies translating lab-proven research into a product.{" "}
               <em>Translational Innovation Residency (TIR)</em> is designed
               for founders at your stage — pre-incorporation, working from
@@ -1164,7 +1164,7 @@ function SipEarlyExitScreen({ answers, onChangeAnswer, onProceedSip }) {
             </>
           ) : (
             <>
-              SIP is built around ventures with a working prototype (TRL 4 and
+              VIP is built around ventures with a working prototype (TRL 4 and
               beyond) and at least early customer signal. If you're earlier
               than that, the <em>Translational Innovation Residency (TIR)</em>{" "}
               programme is where to look.
@@ -1192,7 +1192,7 @@ function SipEarlyExitScreen({ answers, onChangeAnswer, onProceedSip }) {
             onClick={onProceedSip}
           >
             <span className="eir-fit-proceed-main">
-              proceed with SIP application
+              proceed with VIP application
             </span>
             <span className="eir-fit-proceed-sub eir-mono">
               · register within 30 days
@@ -1255,7 +1255,7 @@ function Header({ user, onLogout, onProfile, phase, onHome }) {
         </a>
       </div>
       <div className="eir-header-right">
-        <div className="eir-mono eir-dim eir-theme-tag">SIP.2026</div>
+        <div className="eir-mono eir-dim eir-theme-tag">VIP.2026</div>
         {user && !onProfilePage && (
           <button
             className="eir-header-user eir-mono"
@@ -1482,7 +1482,7 @@ function ReviewSubmitPanel({
   return (
     <div className="eir-screen eir-done">
       <div className="eir-coord eir-mono">
-        <span>ARTPARK / SIP.2026</span>
+        <span>ARTPARK / VIP.2026</span>
         <span>review · submit when ready</span>
       </div>
       <div className="eir-done-body">
@@ -1617,7 +1617,7 @@ function buildSipResponsesText(answers, application) {
   const submittedDate = application?.submitted_at
     ? new Date(application.submitted_at).toISOString().slice(0, 10)
     : new Date().toISOString().slice(0, 10);
-  lines.push("ARTPARK · Startup Incubation Programme 2026");
+  lines.push("ARTPARK · Venture Incubation Programme 2026");
   lines.push("Application Responses");
   lines.push("");
   lines.push(`Application ID : ${application?.id || "(draft)"}`);

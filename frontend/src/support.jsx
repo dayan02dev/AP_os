@@ -18,6 +18,9 @@ function SupportButton({ userEmail, track = "TIR" }) {
 }
 
 function SupportModal({ onClose, userEmail, track = "TIR" }) {
+  // Display label only — the SIP track is shown to users as "VIP". The raw
+  // `track` value is kept for the localStorage namespace key (data, not UI).
+  const trackLabel = track === "SIP" ? "VIP" : track;
   const [stage, setStage] = useSupS("form"); // form | sending | sent
   const [category, setCategory] = useSupS("technical");
   const [subject, setSubject] = useSupS("");
@@ -47,8 +50,8 @@ function SupportModal({ onClose, userEmail, track = "TIR" }) {
     // Also fire a mailto as a "real" fallback so a ticket actually leaves the browser
     // (runs in a hidden iframe to avoid navigating away from the app)
     try {
-      const body = `Category: ${category}\nContact: ${contactEmail}\n\n${message}\n\n---\nSent from ARTPARK ${track} application portal`;
-      const mailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`[${track} Support] ${subject}`)}&body=${encodeURIComponent(body)}`;
+      const body = `Category: ${category}\nContact: ${contactEmail}\n\n${message}\n\n---\nSent from ARTPARK ${trackLabel} application portal`;
+      const mailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`[${trackLabel} Support] ${subject}`)}&body=${encodeURIComponent(body)}`;
       const frame = document.createElement("iframe");
       frame.style.display = "none";
       frame.src = mailto;
@@ -56,8 +59,8 @@ function SupportModal({ onClose, userEmail, track = "TIR" }) {
       setTimeout(() => frame.remove(), 2000);
     } catch (e) {}
 
-    // Simulate backend processing + return ticket id
-    const id = `${track}-` + Math.floor(Math.random() * 90000 + 10000);
+    // Simulate backend processing + return ticket id (display uses VIP label)
+    const id = `${trackLabel}-` + Math.floor(Math.random() * 90000 + 10000);
     setTimeout(() => {
       setTicketId(id);
       setStage("sent");
@@ -76,7 +79,7 @@ function SupportModal({ onClose, userEmail, track = "TIR" }) {
       <div className="eir-sup-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="eir-sup-head">
           <div className="eir-sup-head-left">
-            <span className="eir-mono eir-dim eir-sup-eyebrow">support · {track}.2026</span>
+            <span className="eir-mono eir-dim eir-sup-eyebrow">support · {trackLabel}.2026</span>
             <h3 className="eir-sup-title">
               {stage === "sent" ? "Ticket received" : "Report a problem"}
             </h3>
@@ -160,7 +163,7 @@ function SupportModal({ onClose, userEmail, track = "TIR" }) {
             </div>
 
             <div className="eir-sup-foot eir-mono eir-dim">
-              ↳ your message goes directly to the ARTPARK {track} support team · response within 24 hours
+              ↳ your message goes directly to the ARTPARK {trackLabel} support team · response within 24 hours
             </div>
           </form>
         )}

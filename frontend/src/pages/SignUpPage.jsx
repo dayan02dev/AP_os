@@ -79,7 +79,7 @@ export default function SignUpPage() {
     ? `/apply/signin?next=${encodeURIComponent(nextParam)}`
     : "/apply/signin";
 
-  const trackLabel = trackParam === "sip" ? "SIP" : "TIR";
+  const trackLabel = trackParam === "sip" ? "VIP" : "TIR";
   const rootCls = trackParam === "sip" ? "eir-root track-sip" : "eir-root";
 
   return (

@@ -74,15 +74,15 @@ function ProgressBar({ variant, progress, currentStep, totalSteps, sectionLabel,
 
 function WelcomeScreen({ onStart, warmCopy, track }) {
   const isSip = track === "sip";
-  const cycle = isSip ? "SIP.2026" : "TIR.2026";
+  const cycle = isSip ? "VIP.2026" : "TIR.2026";
   const programLabel = isSip
-    ? "startup incubation programme · applications open"
+    ? "venture incubation programme · applications open"
     : "technology innovator in residence · applications open";
   const formalTitle = isSip
-    ? "Startup Incubation Programme — Application"
+    ? "Venture Incubation Programme — Application"
     : "Technology Innovator in Residence — Application";
   const formalLede = isSip
-    ? "Intake questionnaire for the 2026 SIP cohort. 6 sections, auto-filled where possible. Plan for 90–120 minutes."
+    ? "Intake questionnaire for the 2026 VIP cohort. 6 sections, auto-filled where possible. Plan for 90–120 minutes."
     : "Intake questionnaire for the 2026 TIR cohort. 6 sections, auto-filled where possible. Plan for 3–4 hours.";
   const warmLede = isSip
     ? "A short, honest conversation — not a form. We'll parse your CV to save you time, then walk through 6 sections covering your venture, the technology, and your traction. Plan for 90–120 minutes."
@@ -168,8 +168,8 @@ function DoneScreen({ answers, onRestart, submission, onBack, onDownload, questi
   // Track-aware cycle label so the SIP wizard doesn't read "TIR.2026" on its
   // own receipt / past-submission screens. Falls back to the per-submission
   // cycle when one was passed in (e.g. from the past-submissions list).
-  const cycleLabel = track === "sip" ? "SIP.2026" : "TIR.2026";
-  const idPrefix = track === "sip" ? "SIP-" : "TIR-";
+  const cycleLabel = track === "sip" ? "VIP.2026" : "TIR.2026";
+  const idPrefix = track === "sip" ? "VIP-" : "TIR-";
   const stampId = submission?.id || (idPrefix + Math.floor(Math.random() * 9000 + 1000));
   const stampDate = submission?.ts
     ? new Date(submission.ts).toISOString().slice(0, 10)

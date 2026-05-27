@@ -24,7 +24,7 @@ export default function SignInPage() {
   const nextParam = params.get("next") || "";
   const trackParam = params.get("track") || "";
   const isSip = trackParam === "sip" || nextParam.startsWith("/apply-sip");
-  const trackLabel = isSip ? "SIP" : "TIR";
+  const trackLabel = isSip ? "VIP" : "TIR";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);

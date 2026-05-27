@@ -150,7 +150,7 @@ export default function VerifyPage() {
         <main className="eir-main">
           <div className="eir-screen eir-auth">
             <div className="eir-coord eir-mono">
-              <span>ARTPARK / {trackParam === "sip" ? "SIP" : "TIR"}.2026</span>
+              <span>ARTPARK / {trackParam === "sip" ? "VIP" : "TIR"}.2026</span>
               <span>
                 {signupMode
                   ? "sign up · verify email"

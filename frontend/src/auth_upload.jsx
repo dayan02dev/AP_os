@@ -224,7 +224,7 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
   // signed in expecting to start fresh.
   const [tab, setTab] = useAS("start");
   const navigate = useNavigate();
-  const cycleLabel = track === "sip" ? "SIP.2026" : "TIR.2026";
+  const cycleLabel = track === "sip" ? "VIP.2026" : "TIR.2026";
 
   // Flip profiles.track on the server BEFORE navigating into the wizard.
   // SIP RLS (migration 011) gates every read/write on sip_applications
@@ -316,7 +316,7 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
           {tab === "start" && (
             <div className="eir-tabs-panel" role="tabpanel">
               <div className="eir-tabs-panel-head">
-                <h2 className="eir-tabs-panel-title">Begin a 2026 TIR or SIP application</h2>
+                <h2 className="eir-tabs-panel-title">Begin a 2026 TIR or VIP application</h2>
                 <p className="eir-tabs-panel-sub">
                   Pick the track that fits where you are. Your CV auto-fills the basics either way — est. 60–90 minutes.
                   {hasDraft && " Starting new will clear your current in-progress draft."}
@@ -364,10 +364,10 @@ function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, p
                   }
                 >
                   <div className="eir-ret-track-head">
-                    <span className="eir-mono eir-ret-track-eyebrow">begin · sip.2026</span>
+                    <span className="eir-mono eir-ret-track-eyebrow">begin · vip.2026</span>
                     <span className="eir-ret-track-arrow eir-mono">→</span>
                   </div>
-                  <div className="eir-ret-track-title">Startup Incubation Programme</div>
+                  <div className="eir-ret-track-title">Venture Incubation Programme</div>
                   <p className="eir-ret-track-body">
                     For incorporated Pvt Ltd ventures with a working prototype (TRL 4+) and early customer signal.
                   </p>

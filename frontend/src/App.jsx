@@ -668,7 +668,7 @@ export default function App() {
           kind: "error",
           message:
             err?.message ||
-            "You've already submitted a SIP application. Each applicant can submit to only one track.",
+            "You've already submitted a VIP application. Each applicant can submit to only one track.",
           ttlMs: 12000,
         });
       } else if (err?.status === 422) {
@@ -825,7 +825,7 @@ export default function App() {
                       ts: r.submitted_at
                         ? new Date(r.submitted_at).getTime()
                         : Date.now(),
-                      cycle: r.cycle || "SIP.2026",
+                      cycle: r.cycle || "VIP.2026",
                       projectTitle: r.solution_describe?.slice(0, 80) || "",
                       currentMilestone: r.current_milestone || "submitted",
                       feedback: r.reviewer_feedback || null,

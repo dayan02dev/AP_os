@@ -9,12 +9,12 @@ import { usePageTheme } from "../hooks/usePageTheme.jsx";
 
 export default function TrackMismatchPage({ enrolledTrack, attemptedTrack }) {
   usePageTheme(enrolledTrack === "sip");
-  const enrolledLabel = enrolledTrack === "sip" ? "SIP" : "TIR";
-  const attemptedLabel = attemptedTrack === "sip" ? "SIP" : "TIR";
+  const enrolledLabel = enrolledTrack === "sip" ? "VIP" : "TIR";
+  const attemptedLabel = attemptedTrack === "sip" ? "VIP" : "TIR";
   const otherHref = enrolledTrack === "sip" ? "/apply-sip" : "/apply";
   const otherCta =
     enrolledTrack === "sip"
-      ? "Back to your SIP application"
+      ? "Back to your VIP application"
       : "Back to your TIR application";
   const accentClass = enrolledTrack === "sip" ? "track-sip" : "";
 

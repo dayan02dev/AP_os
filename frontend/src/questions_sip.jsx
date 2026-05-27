@@ -85,7 +85,7 @@ const SECTIONS_SIP = [
         prompt:
           "Is your venture incorporated as a Private Limited company in India?",
         help:
-          "SIP is for incorporated companies translating lab-proven research into a product. If you're not yet incorporated, you may be a stronger fit for the TIR (Technology Innovator in Residence) track.",
+          "VIP is for incorporated companies translating lab-proven research into a product. If you're not yet incorporated, you may be a stronger fit for the TIR (Technology Innovator in Residence) track.",
         options: [
           "Yes — Pvt Ltd, registered in India",
           "Not yet — we're still pre-incorporation",
@@ -97,7 +97,7 @@ const SECTIONS_SIP = [
         kind: "single",
         prompt: "Where is your core IP / technology today (TRL)?",
         help:
-          "SIP is calibrated for ventures with a working prototype or beyond. Anything earlier is usually a better fit for TIR.",
+          "VIP is calibrated for ventures with a working prototype or beyond. Anything earlier is usually a better fit for TIR.",
         options: [
           "TRL 3 or earlier — research stage",
           "TRL 4 — lab-validated prototype",
@@ -265,7 +265,7 @@ const SECTIONS_SIP = [
         kind: "single",
         prompt: "Where are you on the path to revenue?",
         help:
-          "Pick the most accurate bucket. We don't expect SIP applicants to have audited revenue — pilots and design partners count.",
+          "Pick the most accurate bucket. We don't expect VIP applicants to have audited revenue — pilots and design partners count.",
         options: [
           "Pre-revenue — building toward our first pilot",
           "Active pilots (paid or unpaid) with design partners",
