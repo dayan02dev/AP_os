@@ -20,3 +20,5 @@ build/
 # ...except example/template files, which are safe and should be tracked
 !.env.example
 !.env.*.example
+# Exception: commit the .env template files (no real keys)
+!scripts/import-prod-to-staging/.env.import.example

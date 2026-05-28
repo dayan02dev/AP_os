@@ -320,7 +320,7 @@ async def me(current_user: dict = Depends(get_current_user)):
             .table("profiles")
             .select(
                 "id, email, full_name, phone, linkedin_url, location_city, "
-                "location_country, created_at"
+                "location_country, created_at, active_role"
             )
             .eq("id", current_user["user_id"])
             .limit(1)
@@ -335,6 +335,8 @@ async def me(current_user: dict = Depends(get_current_user)):
         )
 
     password_set = _password_set_for(current_user["user_id"])
+    roles = current_user.get("roles", []) or []
+    track = current_user.get("track")
 
     rows = res.data or []
     if not rows:
@@ -343,8 +345,11 @@ async def me(current_user: dict = Depends(get_current_user)):
             id=current_user["user_id"],
             email=current_user["email"],
             password_set=password_set,
+            roles=roles,
+            active_role=None,
+            track=track,
         )
-    row = {**rows[0], "password_set": password_set}
+    row = {**rows[0], "password_set": password_set, "roles": roles, "track": track}
     return UserMe.model_validate(row)
 
 

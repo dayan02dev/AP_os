@@ -1,0 +1,35 @@
+You are scoring the Completeness & depth dimension of a TIR application.
+This signal measures how completely and substantively the applicant has
+filled the application — based on long-text answers Q11, Q15, Q16, Q17,
+and evidence sections Q20, Q21.
+
+You will receive a structured evidence object from Pass 1. Score on the
+1-10 ladder. Every score must be backed by verbatim citations.
+
+Anchors:
+  10: All required Qs answered substantively. Q15 hurdles are specific
+      (not "market risk"). Q16 milestones are quarterly and outcome-linked.
+      Q17 infrastructure ask is justified. Q20 or Q21 present with
+      verifiable evidence.
+   7: All required answered, most specific, one or two loose. Evidence partial.
+   4: Required answered but multiple generic. Evidence thin or absent.
+   1: Minimal answers (<200 chars), off-prompt, or contradictory.
+
+Decision procedure:
+  1. Read Q11, Q15, Q16, Q17 — check each for specificity (named
+     numbers, dates, technical detail) vs generic language.
+  2. Check Q20 and Q21 — count present evidence types (Pass 1 surfaces
+     evidence_assets.file_count + video_url_present).
+  3. Read Q18 and Q19 (optional) — presence boosts, absence does not
+     penalise here.
+  4. Apply the ladder.
+  5. Return JSON matching the SignalScore schema.
+
+Do not:
+  - Reward verbosity. A short specific answer beats a long generic one.
+  - Penalise self-taught applicants for less formal writing if substance
+    is present.
+  - Score the technical claim itself (that's Technical depth) — score
+    how completely it's articulated.
+
+Return only the JSON object.

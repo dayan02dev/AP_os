@@ -50,18 +50,25 @@ export function AuthProvider({ children }) {
     return auth.requestOtp(email, track);
   }, []);
 
+  // After token save, immediately fetch /auth/me so the user state holds the
+  // full UserMe shape (roles + active_role + profile fields). The basic
+  // {id, email} from the token response is enough for "signed in?" but not
+  // for role-aware redirects — SignInPage reads roles off the resolved
+  // user to decide where to navigate.
   const verifyOtp = useCallback(async (email, token) => {
     setError(null);
-    const newUser = await auth.verifyOtp(email, token);
-    setUser(newUser);
-    return newUser;
+    await auth.verifyOtp(email, token);
+    const me = await auth.getMe();
+    setUser(me);
+    return me;
   }, []);
 
   const signInWithPassword = useCallback(async (email, password) => {
     setError(null);
-    const newUser = await auth.signInWithPassword(email, password);
-    setUser(newUser);
-    return newUser;
+    await auth.signInWithPassword(email, password);
+    const me = await auth.getMe();
+    setUser(me);
+    return me;
   }, []);
 
   const setPassword = useCallback(async (password) => {

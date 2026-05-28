@@ -27,6 +27,13 @@ Parameters:
   OpenRouterModel:
     Type: String
     Default: google/gemini-2.5-flash
+  AiStub:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      "true" = deterministic stub scores (no OpenRouter spend).
+      "false" = real Gemini Flash scoring via the worker Lambda.
   SentryDsn:
     Type: String
     NoEcho: true
@@ -89,6 +96,12 @@ Globals:
         # Our Settings class reads AWS_REGION_APP first so we can override it
         # via the SAM template; AWS_REGION remains the fallback locally.
         AWS_REGION_APP: !Ref AwsRegionParam
+        # AI screening pipeline (Phase 1, Session 7). The API Lambda publishes
+        # to this queue on submit; the worker Lambda consumes from it. Both
+        # functions inherit the URL via Globals because the same env var is
+        # safe in either role (the worker reads SQS via event source mapping,
+        # not via the URL directly, but having it set helps debugging).
+        AI_SCREENING_QUEUE_URL: !Ref AiScreenerQueue
 
 Resources:
   # ── Lambda function ─────────────────────────────────────────────
@@ -210,6 +223,118 @@ Resources:
       AlarmActions:
         - !Ref AlarmsTopic
 
+  # ── AI screening pipeline (Phase 1, Session 7) ──────────────────
+  # The submit endpoint enqueues {application_id, application_track}
+  # onto AiScreenerQueue. AiScreenerFunction consumes from it, scores
+  # the application (stub-mode by default; real Gemini when AI_STUB=
+  # false), and writes to ai_screening. Failures retry up to 3× via
+  # the FIFO queue's redrive policy; persistent failures land in the
+  # DLQ and fire the alarm below.
+
+  # Dead-letter queue — receives messages after 3 failed receives on
+  # the main queue. FIFO so messageId/group-id semantics are preserved
+  # for forensics. 14-day retention gives operators time to inspect
+  # before deletion.
+  AiScreenerDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub artpark-eir-ai-screener-dlq-${EnvName}.fifo
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      MessageRetentionPeriod: 1209600  # 14 days
+
+  # Main queue — FIFO so retries for one application stay ordered
+  # relative to each other. Content-based dedup means duplicate
+  # publishes (e.g. retry of submit due to network flap) are absorbed
+  # within the dedup window. Visibility timeout = worker timeout + slack.
+  AiScreenerQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub artpark-eir-ai-screener-${EnvName}.fifo
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      VisibilityTimeout: 300
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt AiScreenerDLQ.Arn
+        maxReceiveCount: 3
+
+  # Grant the API Lambda permission to publish onto the queue. Done
+  # as a standalone IAM::Policy (not by editing ApiFunction.Policies)
+  # so this addition is a pure append against the existing function.
+  ApiFunctionAiScreenerSendPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub artpark-eir-api-${EnvName}-ai-screener-send
+      Roles:
+        - !Ref ApiFunctionRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt AiScreenerQueue.Arn
+
+  # Worker Lambda — same backend codebase as the API, different
+  # handler entrypoint. Reserved concurrency caps fan-out so the
+  # downstream OpenRouter rate limit isn't exceeded on deadline-day
+  # spikes (a 500-burst still gets fully scored, just in ~minutes
+  # rather than seconds). Partial-batch-response means a single bad
+  # message doesn't replay the whole batch.
+  AiScreenerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub artpark-eir-ai-screener-${EnvName}
+      CodeUri: ../../backend/
+      Handler: workers.ai_screener.handler.lambda_handler
+      Timeout: 60
+      ReservedConcurrentExecutions: 10
+      Environment:
+        Variables:
+          # Phase 1 default: deterministic stub scores so the
+          # dashboard works without burning OpenRouter spend. Flip to
+          # "false" + redeploy (or override in the Lambda console) to
+          # call the real Gemini Flash model.
+          AI_STUB: !Ref AiStub
+      Events:
+        AiScreeningJobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt AiScreenerQueue.Arn
+            BatchSize: 5
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+      Policies:
+        - CloudWatchLogsFullAccess
+        - SQSPollerPolicy:
+            QueueName: !GetAtt AiScreenerQueue.QueueName
+
+  AiScreenerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/artpark-eir-ai-screener-${EnvName}
+      RetentionInDays: 30
+
+  # Alarm fires the moment any message lands in the DLQ. There's no
+  # automatic notification target wired in Phase 1 — operators see it
+  # via the CloudWatch console and the leadership dashboard's "AI
+  # scoring failed" chip (which reads from ai_screening.error).
+  AiScreenerDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub artpark-eir-ai-screener-dlq-not-empty-${EnvName}
+      AlarmDescription: AI screening DLQ has at least one message — investigate.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt AiScreenerDLQ.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
 Outputs:
   ApiUrl:
     Description: Execute-API URL (before custom domain)
@@ -220,3 +345,11 @@ Outputs:
       Name: !Sub ${AWS::StackName}-HttpApiId
   ApiFunctionArn:
     Value: !GetAtt ApiFunction.Arn
+  AiScreenerQueueUrl:
+    Description: FIFO queue the API Lambda publishes to and the worker consumes from
+    Value: !Ref AiScreenerQueue
+  AiScreenerDLQUrl:
+    Description: Dead-letter queue for AI-screening jobs that failed 3× in a row
+    Value: !Ref AiScreenerDLQ
+  AiScreenerFunctionArn:
+    Value: !GetAtt AiScreenerFunction.Arn
