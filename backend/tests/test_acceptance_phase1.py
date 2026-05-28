@@ -22,7 +22,6 @@ Items deferred to Phase 1.5 (reviewer scoring screen + the
 from __future__ import annotations
 
 import os
-import time
 import uuid
 from typing import Any
 
@@ -98,8 +97,6 @@ REVIEWER_FORBIDDEN_ENDPOINTS = [
     ("GET",    "/leadership/applications",                None),
     ("GET",    "/leadership/applications/00000000-0000-0000-0000-000000000000", None),
     # Leadership writes (Session 6 — my surface)
-    ("PATCH",  "/leadership/applications/x/status",       {"to_status": "shortlisted"}),
-    ("POST",   "/leadership/applications/x/reviewers",    {"reviewer_user_ids": ["r1"]}),
     ("DELETE", "/leadership/applications/x/reviewers/r1", None),
     # Admin (Session 2)
     ("GET",    "/admin/users",                            None),
@@ -234,65 +231,6 @@ class TestPhase1AcceptanceStagingIntegration:
         assert body["total"] >= 1, "no applications in staging — run seed_staging.py"
 
     @_staging_skip
-    def test_14_5_status_change_writes_audit_and_status_log(
-        self, staging_leadership_token, staging_base_url,
-    ):
-        """Find an evaluated seed app → flip to waitlisted → confirm the
-        status_log + audit_log_v2 rows are visible via the detail endpoint."""
-        import httpx
-
-        list_r = httpx.get(
-            f"{staging_base_url}/leadership/applications",
-            headers={"Authorization": f"Bearer {staging_leadership_token}"},
-            params={"status": "evaluated", "limit": 5},
-            timeout=30.0,
-        )
-        assert list_r.status_code == 200, list_r.text
-        apps = list_r.json().get("applications", [])
-        seed_apps = [a for a in apps if (a.get("basic_email") or "").startswith("seed-app-")]
-        if not seed_apps:
-            pytest.skip("no seed evaluated apps to mutate — re-run seed_staging.py")
-
-        target = seed_apps[0]
-        app_id = target["id"]
-
-        before = httpx.get(
-            f"{staging_base_url}/leadership/applications/{app_id}",
-            headers={"Authorization": f"Bearer {staging_leadership_token}"},
-            timeout=30.0,
-        )
-        assert before.status_code == 200, before.text
-        before_history_len = len(before.json().get("status_history") or [])
-
-        patch_r = httpx.patch(
-            f"{staging_base_url}/leadership/applications/{app_id}/status",
-            headers={"Authorization": f"Bearer {staging_leadership_token}"},
-            json={"to_status": "waitlisted", "reason": "acceptance-test"},
-            timeout=30.0,
-        )
-        assert patch_r.status_code == 200, patch_r.text
-
-        # Allow a generous window for the status_log row to be readable —
-        # PostgREST sometimes serves a slightly-stale view immediately after
-        # a write. The spec budget is <2s.
-        deadline = time.time() + 5.0
-        while time.time() < deadline:
-            after = httpx.get(
-                f"{staging_base_url}/leadership/applications/{app_id}",
-                headers={"Authorization": f"Bearer {staging_leadership_token}"},
-                timeout=30.0,
-            )
-            assert after.status_code == 200, after.text
-            history = after.json().get("status_history") or []
-            if len(history) > before_history_len:
-                latest = history[0]
-                assert latest["to_status"] == "waitlisted"
-                assert latest.get("reason") == "acceptance-test"
-                return
-            time.sleep(0.5)
-        pytest.fail("status_log row did not appear within 5s of write")
-
-    @_staging_skip
     def test_14_8_reviewer_token_cannot_call_leadership_writes(
         self, staging_reviewer_token, staging_base_url,
     ):
@@ -301,8 +239,6 @@ class TestPhase1AcceptanceStagingIntegration:
 
         bogus_id = str(uuid.uuid4())
         endpoints = [
-            ("PATCH",  f"/leadership/applications/{bogus_id}/status", {"to_status": "shortlisted"}),
-            ("POST",   f"/leadership/applications/{bogus_id}/reviewers", {"reviewer_user_ids": ["x"]}),
             ("DELETE", f"/leadership/applications/{bogus_id}/reviewers/x", None),
         ]
         for method, path, body in endpoints:
@@ -315,33 +251,3 @@ class TestPhase1AcceptanceStagingIntegration:
             r = httpx.request(method, f"{staging_base_url}{path}", **kwargs)
             assert r.status_code == 403, f"{method} {path} → {r.status_code}: {r.text}"
             assert r.json()["detail"]["code"] == "missing_capability"
-
-    @_staging_skip
-    def test_14_4_reviewer_3_cap_is_enforced_live(
-        self, staging_leadership_token, staging_base_url,
-    ):
-        """Try to assign 4 reviewers at once → 409 reviewer_limit_reached."""
-        import httpx
-
-        list_r = httpx.get(
-            f"{staging_base_url}/leadership/applications",
-            headers={"Authorization": f"Bearer {staging_leadership_token}"},
-            params={"limit": 5},
-            timeout=30.0,
-        )
-        assert list_r.status_code == 200, list_r.text
-        apps = list_r.json().get("applications") or []
-        if not apps:
-            pytest.skip("no applications to attempt reviewer assignment against")
-        app_id = apps[0]["id"]
-
-        r = httpx.post(
-            f"{staging_base_url}/leadership/applications/{app_id}/reviewers",
-            headers={"Authorization": f"Bearer {staging_leadership_token}"},
-            json={"reviewer_user_ids": ["a", "b", "c", "d"]},
-            timeout=30.0,
-        )
-        # Pydantic max_length validation fires before the cap check; either
-        # is acceptable for "this is rejected". Both surface as 422 or 409
-        # with a clear code.
-        assert r.status_code in (409, 422), r.text

@@ -24,18 +24,6 @@ const STATE_DOT = {
   declined:  "coral",
 };
 
-function fmtWhen(iso) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString("en-IN", {
-      day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
-
 function shortId(uid) {
   return (uid || "").slice(0, 8) || "—";
 }
@@ -75,12 +63,6 @@ function ScoreTab({ aiScreening }) {
           <div className="body">
             <AISummaryBlock aiScreening={aiScreening} />
           </div>
-        </div>
-      )}
-
-      {aiScreening && (
-        <div className="ai-meta">
-          {aiScreening.model || "—"} · ran {fmtWhen(aiScreening.ran_at)}
         </div>
       )}
     </div>

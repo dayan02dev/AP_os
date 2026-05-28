@@ -68,6 +68,13 @@
   background: var(--line-strong);
 }
 .app-header .logos img.artpark { height: 28px; }
+/* Single combined ARTPARK + IISc lockup (official brand asset, 5:1). One
+   image — no divider rule. Taller than the old split marks for clear legibility. */
+.app-header .logos img.brand-combined {
+  height: 46px;
+  width: auto;
+  display: block;
+}
 
 .app-header .role-tag {
   font-family: var(--font-body);
@@ -945,8 +952,13 @@
    ========================================================= */
 
 .app-header.app-header-leadership {
-  padding: var(--s-3) var(--s-5);
-  gap: var(--s-4);
+  /* Taller bar + generous gaps so the combined logo lockup has room to
+     breathe between the Home button and the role pill (was cramped). */
+  padding: var(--s-4) var(--s-6);
+  gap: var(--s-5);
+}
+.app-header.app-header-leadership .logos {
+  margin: 0 var(--s-3);
 }
 .app-header .home-btn,
 .app-header .signout-btn,

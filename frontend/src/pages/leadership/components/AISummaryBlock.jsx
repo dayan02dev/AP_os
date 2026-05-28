@@ -5,16 +5,20 @@
 // recommendation). Legacy Phase-1 rows stored a plain "Stub mode…"
 // string instead — parseSummary falls back to plain text for those.
 //
-// Also surfaces flags.needs_human_review (set when the synthesizer
-// failed all 3 quality-gate retries) and the count of cap rules that
-// fired, so leadership knows when an auto-summary isn't trustworthy.
+// Layout (progressive disclosure): flags → a TL;DR header that always shows
+// the two decision-driving pointers (Verdict + Recommendation) → the longer
+// supporting sections (Top strength / Top concern / Programme fit) collapsed
+// behind accordions so the panel/drawer isn't a wall of text. Also surfaces
+// flags.needs_human_review and the cap-rule count so leadership knows when an
+// auto-summary isn't trustworthy.
 
-const SECTIONS = [
-  { key: "verdict",        label: "Verdict" },
-  { key: "top_strength",   label: "Top strength" },
-  { key: "top_concern",    label: "Top concern" },
-  { key: "program_fit",    label: "Programme fit" },
-  { key: "recommendation", label: "Recommendation" },
+import Collapsible from "./Collapsible.jsx";
+
+// Sections shown collapsed by default (the supporting detail).
+const DETAIL_SECTIONS = [
+  { key: "top_strength", label: "Top strength" },
+  { key: "top_concern", label: "Top concern" },
+  { key: "program_fit", label: "Programme fit" },
 ];
 
 function parseSummary(raw) {
@@ -35,6 +39,31 @@ function parseSummary(raw) {
   return { kind: "plain", text: trimmed };
 }
 
+function Flags({ isStub, needsReview, capCount }) {
+  if (!isStub && !needsReview && capCount === 0) return null;
+  return (
+    <div className="ai-flags">
+      {isStub && <span className="ai-flag ai-flag-amber">STUB</span>}
+      {needsReview && (
+        <span
+          className="ai-flag ai-flag-red"
+          title="Synthesizer failed all 3 quality-gate retries — summary may not meet rubric. Review manually."
+        >
+          NEEDS HUMAN REVIEW
+        </span>
+      )}
+      {capCount > 0 && (
+        <span
+          className="ai-flag ai-flag-amber"
+          title="Deterministic cap rule(s) fired — scores have been clamped."
+        >
+          {capCount} CAP{capCount === 1 ? "" : "S"} APPLIED
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function AISummaryBlock({ aiScreening }) {
   if (!aiScreening) return null;
   const parsed = parseSummary(aiScreening.summary);
@@ -43,94 +72,51 @@ export default function AISummaryBlock({ aiScreening }) {
   const capCount = Array.isArray(flags.cap_events) ? flags.cap_events.length : 0;
   const isStub = parsed?.kind === "plain" && /\bstub mode\b/i.test(parsed.text);
 
+  if (parsed?.kind !== "structured") {
+    return (
+      <div className="ai-summary-block">
+        <Flags isStub={isStub} needsReview={needsReview} capCount={capCount} />
+        {parsed?.kind === "plain" ? (
+          <p className="ai-tldr-text">{parsed.text}</p>
+        ) : (
+          <p className="ai-summary-empty">No summary written yet.</p>
+        )}
+      </div>
+    );
+  }
+
+  const data = parsed.data;
   return (
-    <div className="ai-summary-block" style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
-      {(needsReview || capCount > 0 || isStub) && (
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 6,
-            fontSize: 12,
-            fontWeight: 600,
-          }}
-        >
-          {isStub && (
-            <span
-              style={{
-                background: "var(--hl-amber, #fef3c7)",
-                color: "#92400e",
-                padding: "2px 8px",
-                borderRadius: 999,
-              }}
-            >
-              STUB
-            </span>
-          )}
-          {needsReview && (
-            <span
-              style={{
-                background: "#fee2e2",
-                color: "#991b1b",
-                padding: "2px 8px",
-                borderRadius: 999,
-              }}
-              title="Synthesizer failed all 3 quality-gate retries — summary may not meet rubric. Review manually."
-            >
-              NEEDS HUMAN REVIEW
-            </span>
-          )}
-          {capCount > 0 && (
-            <span
-              style={{
-                background: "#fef3c7",
-                color: "#92400e",
-                padding: "2px 8px",
-                borderRadius: 999,
-              }}
-              title="Deterministic cap rule(s) fired — scores have been clamped."
-            >
-              {capCount} CAP{capCount === 1 ? "" : "S"} APPLIED
-            </span>
+    <div className="ai-summary-block">
+      <Flags isStub={isStub} needsReview={needsReview} capCount={capCount} />
+
+      {/* TL;DR — the two pointers a reviewer acts on, always visible. */}
+      <div className="ai-tldr">
+        {data.verdict && (
+          <div className="ai-tldr-item">
+            <span className="ai-tldr-label">Verdict</span>
+            <p className="ai-tldr-text">{data.verdict}</p>
+          </div>
+        )}
+        {data.recommendation && (
+          <div className="ai-tldr-item is-rec">
+            <span className="ai-tldr-label">Recommendation</span>
+            <p className="ai-tldr-text is-strong">{data.recommendation}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Supporting detail — collapsed by default. */}
+      {DETAIL_SECTIONS.some((s) => data[s.key]) && (
+        <div className="ai-detail-sections">
+          {DETAIL_SECTIONS.map((s) =>
+            data[s.key] ? (
+              <Collapsible key={s.key} label={s.label}>
+                <p className="ai-tldr-text">{data[s.key]}</p>
+              </Collapsible>
+            ) : null,
           )}
         </div>
-      )}
-
-      {parsed?.kind === "structured" ? (
-        SECTIONS.map((s) => {
-          const v = parsed.data[s.key];
-          if (!v) return null;
-          return (
-            <div key={s.key}>
-              <span
-                className="section-eyebrow"
-                style={{ fontSize: 11, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--ink-dim)" }}
-              >
-                {s.label}
-              </span>
-              <p
-                style={{
-                  marginTop: 4,
-                  marginBottom: 0,
-                  fontSize: 14,
-                  lineHeight: 1.55,
-                  color: s.key === "recommendation" ? "var(--ink)" : "var(--ink-soft)",
-                  fontWeight: s.key === "recommendation" ? 600 : 400,
-                }}
-              >
-                {v}
-              </p>
-            </div>
-          );
-        })
-      ) : parsed?.kind === "plain" ? (
-        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: "var(--ink-soft)" }}>
-          {parsed.text}
-        </p>
-      ) : (
-        <p style={{ margin: 0, fontSize: 13, color: "var(--ink-dim)" }}>
-          No summary written yet.
-        </p>
       )}
     </div>
   );

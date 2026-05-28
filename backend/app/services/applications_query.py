@@ -351,6 +351,83 @@ def find_application_with_track(
     return None
 
 
+# ─── Attachment path → bucket resolution ────────────────────────────────
+#
+# A leadership reviewer downloading an attachment must NOT be able to sign an
+# arbitrary storage path. We rebuild the set of paths that genuinely belong to
+# an application by walking its file-bearing JSONB fields, and we pick the
+# bucket from the *field the path came from* (never by parsing the path string)
+# — mirroring the column→bucket convention the upload routers and migrations
+# established. The bucket also depends on the track because TIR and SIP write
+# the same logical field to differently-named buckets (e.g. milestone files).
+#
+# Each entry: (field_name, kind) where kind is "array" (list of file objects)
+# or "single" (one file object). Buckets are resolved per-track below.
+_TIR_FILE_FIELDS: list[tuple[str, str]] = [
+    ("evidence_files", "array"),
+    ("evidence_deck", "single"),            # legacy single-deck upload
+    ("execution_milestone_files", "array"),
+]
+_SIP_FILE_FIELDS: list[tuple[str, str]] = [
+    ("execution_milestone_files", "array"),
+    ("sip_traction_files", "array"),
+    ("sip_patents_files", "array"),
+    ("sip_pitch_deck", "single"),
+    ("sip_cap_table_file", "single"),
+]
+
+# (track, field) → bucket. Source of truth: migrations 002/004/006 (TIR) and
+# 011 (SIP). TIR evidence/deck → "evidence-files"; TIR milestone →
+# "milestone-files". SIP milestone → "sip-milestone-files"; all other SIP
+# evidence (pitch deck, cap table, traction LOIs, patents) → "sip-evidence-files".
+_FIELD_BUCKET: dict[tuple[str, str], str] = {
+    ("tir", "evidence_files"): "evidence-files",
+    ("tir", "evidence_deck"): "evidence-files",
+    ("tir", "execution_milestone_files"): "milestone-files",
+    ("sip", "execution_milestone_files"): "sip-milestone-files",
+    ("sip", "sip_traction_files"): "sip-evidence-files",
+    ("sip", "sip_patents_files"): "sip-evidence-files",
+    ("sip", "sip_pitch_deck"): "sip-evidence-files",
+    ("sip", "sip_cap_table_file"): "sip-evidence-files",
+}
+
+
+def _path_of(entry: Any) -> str | None:
+    """Pull the storage path out of one file object, tolerating both keys.
+
+    Uploads write `path`; some legacy/imported rows carry `storage_path`.
+    """
+    if not isinstance(entry, dict):
+        return None
+    return entry.get("storage_path") or entry.get("path") or None
+
+
+def collect_application_file_paths(
+    track: str, app_row: dict[str, Any],
+) -> dict[str, str]:
+    """Return ``{storage_path: bucket}`` for every attachment on ``app_row``.
+
+    Walks only the known file-bearing fields for ``track`` and resolves the
+    bucket from the field the path came from. The download endpoint uses this
+    as an allow-list: a requested path is signable iff it's a key in this map.
+    """
+    fields = _TIR_FILE_FIELDS if track == "tir" else _SIP_FILE_FIELDS
+    out: dict[str, str] = {}
+    for field, kind in fields:
+        bucket = _FIELD_BUCKET.get((track, field))
+        if bucket is None:
+            continue
+        value = app_row.get(field)
+        if value is None:
+            continue
+        entries = [value] if kind == "single" else (value if isinstance(value, list) else [])
+        for entry in entries:
+            path = _path_of(entry)
+            if path:
+                out[path] = bucket
+    return out
+
+
 def fetch_ai_screening_for(
     application_id: str, track: str,
 ) -> dict[str, Any] | None:
