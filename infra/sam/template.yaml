@@ -27,6 +27,13 @@ Parameters:
   OpenRouterModel:
     Type: String
     Default: google/gemini-2.5-flash
+  AiStub:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      "true" = deterministic stub scores (no OpenRouter spend).
+      "false" = real Gemini Flash scoring via the worker Lambda.
   SentryDsn:
     Type: String
     NoEcho: true
@@ -287,7 +294,7 @@ Resources:
           # dashboard works without burning OpenRouter spend. Flip to
           # "false" + redeploy (or override in the Lambda console) to
           # call the real Gemini Flash model.
-          AI_STUB: "true"
+          AI_STUB: !Ref AiStub
       Events:
         AiScreeningJobs:
           Type: SQS
