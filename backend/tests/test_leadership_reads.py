@@ -326,6 +326,156 @@ def test_get_application_detail_with_reviewer_only_returns_403(
     assert body["detail"]["required"] == "view_app_detail"
 
 
+# ─── Unit tier: attachment signed-url helper + endpoint (Phase 1.5) ──────
+
+
+def test_collect_application_file_paths_tir():
+    row = {
+        "evidence_files": [
+            {"path": "u1/evidence/a.pdf", "name": "a.pdf"},
+            {"storage_path": "u1/evidence/b.png"},
+            "not-a-dict",
+            {"name": "no-path"},
+        ],
+        "execution_milestone_files": [{"path": "u1/milestone/c.xlsx"}],
+        "evidence_deck": {"storage_path": "u1/evidence/deck.pdf"},
+        "sip_pitch_deck": {"path": "should/be/ignored/on/tir.pdf"},
+    }
+    out = applications_query.collect_application_file_paths("tir", row)
+    assert out == {
+        "u1/evidence/a.pdf": "evidence-files",
+        "u1/evidence/b.png": "evidence-files",
+        "u1/evidence/deck.pdf": "evidence-files",
+        "u1/milestone/c.xlsx": "milestone-files",
+    }
+
+
+def test_collect_application_file_paths_sip_buckets():
+    row = {
+        "execution_milestone_files": [{"path": "u2/milestone/m.pdf"}],
+        "sip_traction_files": [{"path": "u2/traction/loi.pdf"}],
+        "sip_patents_files": [{"storage_path": "u2/patents/p.pdf"}],
+        "sip_pitch_deck": {"path": "u2/pitch-deck/d.pdf"},
+        "sip_cap_table_file": {"path": "u2/cap-table/ct.xlsx"},
+        "evidence_files": [{"path": "ignored/on/sip.pdf"}],
+    }
+    out = applications_query.collect_application_file_paths("sip", row)
+    assert out == {
+        "u2/milestone/m.pdf": "sip-milestone-files",
+        "u2/traction/loi.pdf": "sip-evidence-files",
+        "u2/patents/p.pdf": "sip-evidence-files",
+        "u2/pitch-deck/d.pdf": "sip-evidence-files",
+        "u2/cap-table/ct.xlsx": "sip-evidence-files",
+    }
+
+
+def test_signed_url_without_auth_returns_401(client):
+    res = client.get(
+        "/leadership/applications/00000000-0000-0000-0000-000000000000/files/signed-url"
+        "?storage_path=u1/evidence/a.pdf"
+    )
+    assert res.status_code == 401
+
+
+def test_signed_url_with_reviewer_only_returns_403(client, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user(["reviewer"])
+    res = client.get(
+        "/leadership/applications/00000000-0000-0000-0000-000000000000/files/signed-url"
+        "?storage_path=u1/evidence/a.pdf",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 403
+    assert res.json()["detail"]["required"] == "view_app_detail"
+
+
+def test_signed_url_rejects_path_traversal(client, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/applications/00000000-0000-0000-0000-000000000000/files/signed-url"
+        "?storage_path=../../etc/passwd",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 400
+    assert res.json()["detail"]["code"] == "invalid_storage_path"
+
+
+def test_signed_url_404_when_application_missing(client, _clear_overrides, monkeypatch):
+    monkeypatch.setattr(
+        applications_query, "find_application_with_track", lambda _id: None
+    )
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/applications/00000000-0000-0000-0000-000000000000/files/signed-url"
+        "?storage_path=u1/evidence/a.pdf",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 404
+    assert res.json()["detail"]["code"] == "application_not_found"
+
+
+def test_signed_url_404_when_path_not_on_application(client, _clear_overrides, monkeypatch):
+    """A path not referenced by the resolved app must be refused (no signing)."""
+    monkeypatch.setattr(
+        applications_query,
+        "find_application_with_track",
+        lambda _id: ("tir", {"evidence_files": [{"path": "u1/evidence/known.pdf"}]}),
+    )
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/applications/00000000-0000-0000-0000-000000000000/files/signed-url"
+        "?storage_path=u1/evidence/SOMEONE_ELSES.pdf",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 404
+    assert res.json()["detail"]["code"] == "file_not_found"
+
+
+def test_signed_url_success_signs_only_allowed_path(client, _clear_overrides, monkeypatch):
+    """Happy path: a path that belongs to the app is signed via the correct
+    bucket and the URL + TTL are returned."""
+    import app.routers.leadership as lead_mod
+
+    monkeypatch.setattr(
+        applications_query,
+        "find_application_with_track",
+        lambda _id: ("tir", {"evidence_files": [{"path": "u1/evidence/known.pdf"}]}),
+    )
+
+    calls = {}
+
+    class _FakeStorageBucket:
+        def __init__(self, bucket):
+            calls["bucket"] = bucket
+
+        def create_signed_url(self, path, ttl):
+            calls["path"] = path
+            calls["ttl"] = ttl
+            return {"signedURL": "https://signed.example/u1/evidence/known.pdf?token=x"}
+
+    class _FakeStorage:
+        def from_(self, bucket):
+            return _FakeStorageBucket(bucket)
+
+    class _FakeAdmin:
+        storage = _FakeStorage()
+
+    monkeypatch.setattr(lead_mod, "get_admin_client", lambda: _FakeAdmin())
+
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/applications/00000000-0000-0000-0000-000000000000/files/signed-url"
+        "?storage_path=u1/evidence/known.pdf",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["url"].startswith("https://signed.example/")
+    assert body["expires_in"] == 120
+    assert calls["bucket"] == "evidence-files"
+    assert calls["path"] == "u1/evidence/known.pdf"
+    assert calls["ttl"] == 120
+
+
 # ─── Unit tier: /industry-categories endpoint (added 2026-05-20) ─────────
 
 

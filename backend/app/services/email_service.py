@@ -252,15 +252,12 @@ class EmailService:
 
     # ── Phase 1 admin platform senders (Session 8 / Task 26) ──────────
     #
-    # Three new triggers wired from leadership + admin write endpoints:
-    #
     #   send_role_granted        admin_users.grant_role
-    #   send_reviewer_assigned   leadership_actions.assign_reviewers
-    #   send_status_change       leadership_actions.change_status
-    #                            (only for shortlisted/rejected/waitlisted)
     #
-    # All callers wrap these in try/except so an email-infra failure can't
-    # roll back the primary mutation (per spec §8 "best-effort" rule).
+    # The reviewer-assigned and status-change senders were removed alongside
+    # the leadership assign/status-change endpoints. The caller wraps this in
+    # try/except so an email-infra failure can't roll back the primary
+    # mutation (per spec §8 "best-effort" rule).
 
     def send_role_granted(
         self,
@@ -291,77 +288,6 @@ class EmailService:
         return self.send_raw(
             to=[to],
             subject=f"You've been granted {role_label} access on ARTPARK OS",
-            html=html,
-            text=text,
-        )
-
-    def send_reviewer_assigned(
-        self,
-        *,
-        to: str,
-        reviewer_name: str,
-        applicant_name: str,
-        application_id: str,
-        track: str,
-        inbox_url: str,
-    ) -> dict[str, str]:
-        """Notify a reviewer that an application has been assigned to them."""
-        track_label = _track_label(track)
-        application_id_short = str(application_id)[:8]
-        html, text = self._render_pair(
-            "reviewer_assigned",
-            {
-                "reviewer_name": reviewer_name or to,
-                "applicant_name": applicant_name or "an applicant",
-                "application_id": application_id,
-                "application_id_short": application_id_short,
-                "track": track,
-                "track_label": track_label,
-                "inbox_url": inbox_url,
-            },
-        )
-        return self.send_raw(
-            to=[to],
-            subject=f"New {track_label} application to review — {applicant_name or application_id_short}",
-            html=html,
-            text=text,
-        )
-
-    def send_status_change(
-        self,
-        *,
-        to: str,
-        applicant_name: str,
-        application_id: str,
-        track: str,
-        to_status: str,
-        reason: str | None = None,
-    ) -> dict[str, str]:
-        """Notify an applicant that their status has moved to a terminal-ish
-        Gate 1 outcome (shortlisted / waitlisted / rejected). The template
-        also has a generic branch for any other status the caller chooses to
-        send, but Phase 1 only fires this for the three outcomes per spec §8."""
-        status_label, headline, subject_line = _status_copy(to_status, applicant_name)
-        track_label = _track_label(track)
-        application_id_short = str(application_id)[:8]
-        html, text = self._render_pair(
-            "status_change",
-            {
-                "applicant_name": applicant_name or "there",
-                "application_id": application_id,
-                "application_id_short": application_id_short,
-                "track": track,
-                "track_label": track_label,
-                "to_status": to_status,
-                "status_label": status_label,
-                "headline": headline,
-                "subject_line": subject_line,
-                "reason": reason,
-            },
-        )
-        return self.send_raw(
-            to=[to],
-            subject=subject_line,
             html=html,
             text=text,
         )

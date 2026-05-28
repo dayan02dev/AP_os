@@ -9,7 +9,7 @@
 
 import QuestionBlock from "./QuestionBlock.jsx";
 
-export default function SectionBlock({ section, totalSections, application }) {
+export default function SectionBlock({ section, totalSections, application, applicationId }) {
   return (
     <section className="sec-block">
       <div className="sec-block-head">
@@ -31,6 +31,7 @@ export default function SectionBlock({ section, totalSections, application }) {
             key={q.key}
             question={q}
             application={application}
+            applicationId={applicationId}
           />
         ))}
       </div>
