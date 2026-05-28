@@ -60,10 +60,29 @@ def main() -> int:
     from supabase import create_client
     client = create_client(url, key)
 
-    q = client.table("tir_applications").select("id, status").neq("status", "draft")
-    if args.limit:
-        q = q.limit(args.limit)
-    rows = q.execute().data or []
+    # PostgREST caps each request at 1000 rows by default, and supabase-py
+    # does not auto-paginate. Walk the table in chunks so the backfill never
+    # silently misses the tail on a corpus larger than the cap.
+    CHUNK = 1000
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        remaining = (args.limit - len(rows)) if args.limit else None
+        if remaining is not None and remaining <= 0:
+            break
+        end = offset + (min(CHUNK, remaining) if remaining else CHUNK) - 1
+        page = (
+            client.table("tir_applications")
+            .select("id, status")
+            .neq("status", "draft")
+            .range(offset, end)
+            .execute()
+            .data
+        ) or []
+        rows.extend(page)
+        if len(page) < CHUNK:
+            break
+        offset += CHUNK
     app_ids = select_app_ids(rows)
     print(f"→ {len(app_ids)} TIR applications to enqueue")
 

@@ -21,3 +21,9 @@ def test_select_preserves_order():
         {"id": "z", "status": "under_review"},
     ]
     assert select_app_ids(rows) == ["x", "y", "z"]
+
+
+def test_select_includes_rows_missing_status_defensively():
+    # Defensive: if status is absent, enqueue and let the worker decide.
+    rows = [{"id": "e", "status": "submitted"}, {"id": "f"}]
+    assert select_app_ids(rows) == ["e", "f"]
