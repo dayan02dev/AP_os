@@ -258,8 +258,11 @@ def test_handler_writes_ai_screening_and_advances_status(mock_get_client):
     # The upsert row must contain all 5 scores + overall.
     assert upsert_rows, "upsert was never called on ai_screening"
     upserted_row = upsert_rows[0]
+    # DB column is score_completeness (renamed from score_solution by 016a);
+    # the worker maps ScoreResult.score_solution → score_completeness at the
+    # upsert boundary.
     for key in (
-        "score_problem", "score_solution", "score_tech",
+        "score_problem", "score_completeness", "score_tech",
         "score_founders", "score_commitment", "score_overall",
     ):
         assert key in upserted_row, f"Missing key in upserted row: {key}"

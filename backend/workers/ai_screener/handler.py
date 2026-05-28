@@ -92,7 +92,11 @@ def _upsert_ai_screening(
         "application_id": application_id,
         "application_track": application_track,
         "score_problem": result.score_problem,
-        "score_solution": result.score_solution,
+        # DB column was renamed score_solution → score_completeness by
+        # migration 016a. The internal ScoreResult field name kept the old
+        # spelling to avoid churn across the worker path + tests; the rename
+        # is mapped here at the DB boundary only.
+        "score_completeness": result.score_solution,
         "score_tech": result.score_tech,
         "score_founders": result.score_founders,
         "score_commitment": result.score_commitment,
