@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
+import { isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { usePageTheme } from "../hooks/usePageTheme.jsx";
@@ -51,15 +52,31 @@ export default function SignInPage() {
     }
     setLoading(true);
     try {
-      await signInWithPassword(trimmedEmail, password);
-      const safeNext =
+      const me = await signInWithPassword(trimmedEmail, password);
+      // Role-first redirect: leadership/admin/reviewer go to their dashboards;
+      // applicants (no special role) get the track-aware /apply or /apply-sip.
+      // Honour ?next= only when it points at a known protected surface AND the
+      // user is allowed to land there (leadership/admin accounts are gated
+      // out of the wizard).
+      const roles = me?.roles || [];
+      const roleTarget = landingPathFor(roles);
+      // For pure applicants, prefer the track-aware destination so a VIP
+      // signin lands on /apply-sip instead of generic /apply.
+      const target =
+        roleTarget === "/apply"
+          ? (isSip ? "/apply-sip" : "/apply")
+          : roleTarget;
+      const nextAllowedByRole =
         nextParam &&
         (nextParam.startsWith("/apply/") ||
           nextParam.startsWith("/apply-sip/") ||
           nextParam === "/apply" ||
-          nextParam === "/apply-sip");
-      const target = safeNext ? nextParam : (isSip ? "/apply-sip" : "/apply");
-      navigate(target, { replace: true });
+          nextParam === "/apply-sip" ||
+          nextParam.startsWith("/admin/") ||
+          nextParam.startsWith("/leadership") ||
+          nextParam.startsWith("/reviewer/")) &&
+        !(isApplyHiddenFor(roles) && nextParam.startsWith("/apply"));
+      navigate(nextAllowedByRole ? nextParam : target, { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setLocalError(

@@ -1,0 +1,453 @@
+/* =========================================================
+   ARTPARK Design System — colors, type, and bedrock primitives
+   Single source of truth. See docs/superpowers/specs/2026-05-14-design-system-admin-leadership.md
+   ========================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap");
+
+:root {
+  /* ---------- Brand color ---------- */
+  --artblue:        #3213b7;
+  --artblue-deep:   #1f0a8a;
+  --artlight:       #aafcf0;
+  --artblack:       #242424;
+  --artwhite:       #efefef;
+
+  /* ---------- Semantic accents ---------- */
+  --accent-coral:   #FF5A5F;
+  --accent-amber:   #FFB703;
+  --accent-green:   #2F6F62;
+  --accent-violet:  #6B5CFF;
+
+  /* ---------- Ink (text) ---------- */
+  --ink:            #242424;
+  --ink-soft:       #4a4a52;
+  --ink-dim:        #8a8a92;
+
+  /* ---------- Lines ---------- */
+  --line:           #e3e3e8;
+  --line-strong:    #c8c8d0;
+
+  /* ---------- Surfaces ---------- */
+  --paper:          #ffffff;
+  --paper-soft:     #f6f6f8;
+
+  /* ---------- Type families ---------- */
+  --font-display: "Trebuchet MS", "Lucida Grande", Tahoma, sans-serif;
+  --font-body:    "Open Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono:    "Open Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  /* ---------- Type scale ---------- */
+  --t-eyebrow:    11px;
+  --t-body-sm:    14px;
+  --t-body:       16px;
+  --t-body-lg:    18px;
+  --t-h4:         22px;
+  --t-h3:         28px;
+  --t-h2:         44px;
+  --t-h1:         72px;
+  --t-display:    96px;
+
+  --lh-tight:     1.08;
+  --lh-snug:      1.25;
+  --lh-body:      1.55;
+
+  /* ---------- Radii ---------- */
+  --r-sharp:      2px;
+  --r-pill:       999px;
+
+  /* ---------- Spacing scale ---------- */
+  --s-1:  4px;
+  --s-2:  8px;
+  --s-3:  12px;
+  --s-4:  16px;
+  --s-5:  24px;
+  --s-6:  32px;
+  --s-7:  48px;
+  --s-8:  64px;
+  --s-9:  96px;
+  --s-10: 128px;
+
+  /* ---------- Layout ---------- */
+  --container-w:  1180px;
+  --gutter:       24px;
+}
+
+/* =========================================================
+   Reset + base
+   ========================================================= */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+html { font-size: 16px; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+/* =========================================================
+   Headings — base sizes are admin/leadership-tuned.
+   Marketing-scale (72px+) is opt-in via .h-display / .h-hero.
+   ========================================================= */
+
+h1, .h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 36px;
+  line-height: 1.18;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--ink);
+}
+
+h2, .h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--t-h3);
+  line-height: var(--lh-snug);
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--ink);
+}
+
+h3, .h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--t-h4);
+  line-height: var(--lh-snug);
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--ink);
+}
+
+h4, .h4 {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--t-body);
+  line-height: var(--lh-snug);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin: 0;
+  color: var(--ink);
+}
+
+p { margin: 0; }
+a { color: var(--artblue); text-underline-offset: 3px; }
+a:hover { color: var(--artblue-deep); }
+
+strong { font-weight: 700; }
+small { font-size: var(--t-body-sm); }
+
+::selection { background: var(--artlight); color: var(--artblue); }
+
+/* =========================================================
+   Eyebrow — small, uppercased label above section/page titles
+   ========================================================= */
+
+.eyebrow {
+  display: inline-block;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--t-eyebrow);
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-dim);
+}
+
+.eyebrow-rule::before {
+  content: "";
+  display: inline-block;
+  width: 56px;
+  height: 2px;
+  background: var(--artblue);
+  vertical-align: middle;
+  margin-right: var(--s-3);
+}
+
+/* =========================================================
+   Emphasis vehicles — at most one of each per headline.
+   .hl  — mint-cyan highlight, used for promises in headlines
+   .em  — purple underlined emphasis, used for proper nouns
+   ========================================================= */
+
+.hl {
+  background: var(--artlight);
+  color: var(--artblue);
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.em {
+  color: var(--artblue);
+  text-decoration: underline;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 6px;
+  text-decoration-color: var(--artblue);
+}
+
+/* =========================================================
+   Glyph helpers — →, ←, ✓
+   ========================================================= */
+
+.arrow {
+  display: inline-block;
+  margin-left: var(--s-2);
+  font-family: var(--font-body);
+  font-weight: 600;
+  transition: transform 150ms ease;
+}
+/* No transform on hover. The arrow stays put — color carries the affordance. */
+
+.saved {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-green);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+/* =========================================================
+   Status dots — 8×8 filled circles. The only round element
+   other than the support FAB and avatar circles.
+   ========================================================= */
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--accent-violet);
+  flex: 0 0 8px;
+  vertical-align: middle;
+}
+.dot.green { background: var(--accent-green); }
+.dot.amber { background: var(--accent-amber); }
+.dot.coral { background: var(--accent-coral); }
+.dot.blue  { background: var(--artblue); }
+.dot.dim   { background: var(--ink-dim); }
+
+/* =========================================================
+   Buttons — see §4.1 of the design brief
+   Padding: 12px 22px · Trebuchet 14/600 · letter-spacing 0.01em · 2px radius
+   ========================================================= */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  padding: 12px 22px;
+  border-radius: var(--r-sharp);
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+  user-select: none;
+  white-space: nowrap;
+}
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(50, 19, 183, 0.15);
+}
+
+.btn-primary {
+  background: var(--artblue);
+  color: #fff;
+  border-color: var(--artblue);
+}
+.btn-primary:hover { background: var(--artblue-deep); border-color: var(--artblue-deep); color: #fff; }
+
+.btn-dark {
+  background: var(--artblack);
+  color: #fff;
+  border-color: var(--artblack);
+}
+.btn-dark:hover { background: #000; border-color: #000; color: #fff; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.btn-ghost:hover { border-color: var(--ink); color: var(--ink); }
+
+.btn-destructive {
+  background: var(--accent-coral);
+  color: #fff;
+  border-color: var(--accent-coral);
+}
+.btn-destructive:hover { background: #e94a4e; border-color: #e94a4e; color: #fff; }
+
+/* Small variant for inline use (table row actions, drawer footers) */
+.btn.btn-sm {
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
+/* =========================================================
+   Cards
+   ========================================================= */
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sharp);
+  padding: var(--s-6);
+}
+.card.card-soft {
+  background: var(--paper-soft);
+  border-color: transparent;
+}
+.card.card-purple {
+  background: var(--artblue);
+  color: #fff;
+  border-color: transparent;
+}
+.card.card-purple h1, .card.card-purple h2, .card.card-purple h3 { color: #fff; }
+.card.card-violet {
+  background: var(--accent-violet);
+  color: #fff;
+  border-color: transparent;
+}
+.card.card-violet h1, .card.card-violet h2, .card.card-violet h3 { color: #fff; }
+.card.card-black {
+  background: var(--artblack);
+  color: #fff;
+  border-color: transparent;
+}
+.card.card-black h1, .card.card-black h2, .card.card-black h3 { color: #fff; }
+
+/* =========================================================
+   Form fields — boxy, dense, used in admin / modals / drawers.
+   For the applicant wizard's underlined large input, see .apply-input
+   in styles.css (preserved for back-compat with the wizard JSX).
+   ========================================================= */
+
+.field-label {
+  display: block;
+  font-family: var(--font-body);
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: var(--s-2);
+}
+
+.field {
+  display: block;
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--paper);
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sharp);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.field::placeholder { color: var(--ink-dim); }
+.field:hover { border-color: var(--ink-soft); }
+.field:focus {
+  outline: none;
+  border-color: var(--artblue);
+  box-shadow: 0 0 0 3px rgba(50, 19, 183, 0.15);
+}
+.field[aria-invalid="true"] { border-color: var(--accent-coral); }
+.field[disabled],
+.field[readonly] {
+  background: var(--paper-soft);
+  color: var(--ink-soft);
+  cursor: not-allowed;
+}
+
+textarea.field { resize: vertical; min-height: 96px; line-height: var(--lh-body); }
+/* Native select chevron — kept on purpose. The ARTPARK brief forbids decorative
+   gradients (§1 rule 3); the alternative (icon library + appearance:none) trips
+   the "no lucide by default" rule. Native browser styling is honest and compliant. */
+select.field {
+  padding-right: 32px;
+}
+
+.field-help {
+  font-size: var(--t-body-sm);
+  color: var(--ink-soft);
+  margin-top: var(--s-2);
+  line-height: var(--lh-body);
+}
+.field-error {
+  font-size: var(--t-body-sm);
+  color: var(--accent-coral);
+  margin-top: var(--s-2);
+}
+
+/* =========================================================
+   Segmented .choice control — borrowed from applicant flow
+   Used for role pickers, category pickers, etc.
+   ========================================================= */
+
+.choice-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 10px 16px;
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sharp);
+  font-family: var(--font-body);
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+.choice input { position: absolute; opacity: 0; pointer-events: none; }
+.choice:hover { border-color: var(--ink); }
+.choice.selected,
+.choice[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+.choice .key {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  padding: 2px 6px;
+  background: var(--paper-soft);
+  color: var(--ink-soft);
+  border-radius: var(--r-sharp);
+  letter-spacing: 0.04em;
+}
+.choice.selected .key {
+  background: rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.78);
+}
+.choice .lbl { white-space: nowrap; }

@@ -1,0 +1,17 @@
+{% extends "base.txt" %}
+{% block content %}Welcome to ARTPARK OS, {{ user_name }}.
+
+An admin has granted you the {{ role_label }} role. You can sign in at the link below to start using your new access.
+
+  {{ signin_url }}
+
+If you don't yet have an account on the platform, the link above will walk you through setting one up first.
+
+What the {{ role_label }} role lets you do:
+  {{ role_blurb }}
+
+Granted by: {{ granted_by }}
+If this looks wrong, reply to this email and we'll roll it back.
+
+— The ARTPARK team
+{% endblock %}

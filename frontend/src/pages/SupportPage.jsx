@@ -1,5 +1,10 @@
-// SupportPage — full-page support form. Works authed or anon.
-// When authed, the email field prefills from useAuth and is read-only.
+// SupportPage — /apply/support
+//
+// Visual contract: ARTPARK design system §6.9. Centered max-width 560px form.
+// Eyebrow SUPPORT · h1 "How can we help?" · sub. Subject uses the wizard's
+// underlined .apply-input (applicant voice). Category as segmented .choice.
+// Description is a boxy .field textarea (denser). Submit: primary CTA.
+// Works authed (email prefilled, read-only) or anon.
 
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -8,12 +13,13 @@ import { useAuth } from "../hooks/useAuth.jsx";
 import { useSupport } from "../hooks/useSupport.js";
 import { useToast } from "../hooks/useToast.jsx";
 import { usePageTheme } from "../hooks/usePageTheme.jsx";
+import "../styles/admin.css";
 
 const CATEGORIES = [
-  { k: "technical", label: "Technical issue" },
-  { k: "application", label: "Application question" },
-  { k: "general", label: "Account / login" },
-  { k: "other", label: "Something else" },
+  { id: "technical",   label: "Technical issue",      key: "T" },
+  { id: "application", label: "Application question", key: "A" },
+  { id: "general",     label: "Account or sign-in",   key: "G" },
+  { id: "other",       label: "Something else",       key: "O" },
 ];
 
 export default function SupportPage() {
@@ -40,11 +46,13 @@ export default function SupportPage() {
     body.trim().length >= 20 &&
     !submitting;
 
-  const onSubmit = async (e) => {
+  async function onSubmit(e) {
     e.preventDefault();
     setFormError(null);
     if (!canSubmit) {
-      setFormError("Please complete all fields — subject at least 5 chars, message at least 20.");
+      setFormError(
+        "Subject needs at least 5 characters, description at least 20, and a valid email.",
+      );
       return;
     }
     try {
@@ -57,145 +65,153 @@ export default function SupportPage() {
         setFormError(err?.message || "Couldn't file ticket. Try again.");
       }
     }
-  };
+  }
 
   if (lastTicket?.ticket_id) {
     return (
-      <div className="eir-root">
-        <div className="eir-bg" />
-        <div className="eir-frame">
-          <main className="eir-main">
-            <div className="eir-screen eir-sup-page">
-              <div className="eir-coord eir-mono">
-                <span>ARTPARK / TIR.2026</span>
-                <span>support · filed</span>
-              </div>
-              <div className="eir-done-body">
-                <div className="eir-sup-check">
-                  <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-                    <circle cx="28" cy="28" r="26" stroke="var(--accent)" strokeWidth="1.5" />
-                    <path
-                      d="M16 28 L24 36 L40 20"
-                      stroke="var(--accent)"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      fill="none"
-                    />
-                  </svg>
-                </div>
-                <h2 className="eir-done-title">Ticket filed.</h2>
-                <p className="eir-done-lede">
-                  Your ticket <strong>#{String(lastTicket.ticket_id).slice(0, 8)}</strong> is
-                  with our team. We'll respond to <strong>{email}</strong> within 2 business days.
-                </p>
-                <div className="eir-q-actions">
-                  <Link to="/apply" className="eir-btn eir-btn-primary">
-                    <span>Back to application</span>
-                  </Link>
-                </div>
-              </div>
+      <div className="app-shell">
+        <header className="app-header">
+          <div className="logos">
+            <img src="/assets/iisc-logo.png" alt="IISc" className="iisc" />
+            <span className="rule" aria-hidden="true" />
+            <img src="/assets/artpark-logo.png" alt="ARTPARK" className="artpark" />
+          </div>
+          <div className="spacer" />
+          <Link to="/apply" className="switch-role">
+            Back to application <span className="arrow">→</span>
+          </Link>
+        </header>
+        <main className="app-main" style={{ margin: "0 auto" }}>
+          <div className="form-page-narrow">
+            <span className="eyebrow eyebrow-rule">Support</span>
+            <h1 style={{ marginTop: "var(--s-3)" }}>Ticket filed.</h1>
+            <p className="page-sub">
+              Your ticket <strong>#{String(lastTicket.ticket_id).slice(0, 8)}</strong> is with our team.
+              We'll respond to <strong>{email}</strong> within two business days.
+            </p>
+            <div className="form-actions" style={{ justifyContent: "flex-start" }}>
+              <Link to="/apply" className="btn btn-primary">
+                Back to application <span className="arrow">→</span>
+              </Link>
             </div>
-          </main>
-        </div>
+          </div>
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="eir-root">
-      <div className="eir-bg" />
-      <div className="eir-frame">
-        <main className="eir-main">
-          <div className="eir-screen eir-sup-page">
-            <div className="eir-coord eir-mono">
-              <span>ARTPARK / TIR.2026</span>
-              <span>support · report a problem</span>
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="logos">
+          <img src="/assets/iisc-logo.png" alt="IISc" className="iisc" />
+          <span className="rule" aria-hidden="true" />
+          <img src="/assets/artpark-logo.png" alt="ARTPARK" className="artpark" />
+        </div>
+        <div className="spacer" />
+        <Link to="/apply" className="switch-role">
+          Back to application <span className="arrow">→</span>
+        </Link>
+      </header>
+
+      <main className="app-main" style={{ margin: "0 auto" }}>
+        <div className="form-page-narrow">
+          <header style={{ marginBottom: "var(--s-6)" }}>
+            <span className="eyebrow eyebrow-rule">Support</span>
+            <h1 style={{ marginTop: "var(--s-3)" }}>How can we help?</h1>
+            <p className="page-sub">
+              A short, honest message — we reply within two business days. Include any error
+              messages you've seen.
+            </p>
+          </header>
+
+          <form onSubmit={onSubmit} className="form-stack" noValidate>
+            <div className="form-row">
+              <span className="field-label">Category</span>
+              <div className="choice-group" role="radiogroup" aria-label="Category">
+                {CATEGORIES.map((c) => (
+                  <label
+                    key={c.id}
+                    className={`choice${category === c.id ? " selected" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="category"
+                      value={c.id}
+                      checked={category === c.id}
+                      onChange={() => setCategory(c.id)}
+                    />
+                    <span className="key">{c.key}</span>
+                    <span className="lbl">{c.label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
-            <form className="eir-sup-body" onSubmit={onSubmit}>
-              <h1 className="eir-welcome-title">Report a problem.</h1>
-              <p className="eir-welcome-lede">
-                Stuck on something, seeing a bug, or need a deadline extension?
-                Send us a note — we reply within 2 business days.
-              </p>
 
-              <div className="eir-sup-field">
-                <label className="eir-mono eir-link-label">category</label>
-                <div className="eir-sup-catlist">
-                  {CATEGORIES.map((c) => (
-                    <button
-                      type="button"
-                      key={c.k}
-                      className={`eir-sup-cat ${category === c.k ? "is-on" : ""}`}
-                      onClick={() => setCategory(c.k)}
-                    >
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <div className="form-row">
+              <label className="field-label" htmlFor="sup-subject">Subject</label>
+              <input
+                id="sup-subject"
+                className="field"
+                type="text"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                maxLength={200}
+                placeholder="e.g. CV upload keeps failing at 90%"
+                required
+              />
+            </div>
 
-              <div className="eir-sup-field">
-                <label className="eir-mono eir-link-label">subject</label>
-                <input
-                  type="text"
-                  className="eir-input"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  maxLength={200}
-                  placeholder="e.g. CV upload keeps failing"
-                  required
-                />
-              </div>
+            <div className="form-row">
+              <label className="field-label" htmlFor="sup-body">Describe the issue</label>
+              <textarea
+                id="sup-body"
+                className="field"
+                rows={6}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                maxLength={5000}
+                placeholder="What were you trying to do? What happened instead? Include any error messages."
+              />
+              <span className="field-help">{body.length} / 5000 characters</span>
+            </div>
 
-              <div className="eir-sup-field">
-                <label className="eir-mono eir-link-label">describe the issue</label>
-                <textarea
-                  className="eir-textarea"
-                  rows={6}
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  maxLength={5000}
-                  placeholder="What were you trying to do? What happened instead? Include any error messages."
-                />
-                <div className="eir-sup-hint eir-mono eir-dim">
-                  {body.length} / 5000 chars
-                </div>
-              </div>
-
-              <div className="eir-sup-field">
-                <label className="eir-mono eir-link-label">your email for our reply</label>
-                <input
-                  type="email"
-                  className="eir-input"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@domain.com"
-                  readOnly={isAuthed}
-                  required
-                />
-              </div>
-
-              {formError && (
-                <div className="eir-mono eir-block-reason">↳ {formError}</div>
+            <div className="form-row">
+              <label className="field-label" htmlFor="sup-email">Your email for our reply</label>
+              <input
+                id="sup-email"
+                className="field"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@domain.com"
+                readOnly={isAuthed}
+                required
+              />
+              {isAuthed && (
+                <span className="field-help">
+                  We'll reply to the address on your account.
+                </span>
               )}
+            </div>
 
-              <div className="eir-sup-actions">
-                <button
-                  type="submit"
-                  className={`eir-btn ${canSubmit ? "eir-btn-primary" : "eir-btn-disabled"}`}
-                  disabled={!canSubmit}
-                >
-                  <span>{submitting ? "Sending..." : "Send ticket"}</span>
-                </button>
-                <Link to="/apply" className="eir-link-btn eir-mono">
-                  cancel
-                </Link>
-              </div>
-            </form>
-          </div>
-        </main>
-      </div>
+            {formError && <div className="inline-error" role="alert">{formError}</div>}
+
+            <div className="form-actions">
+              <Link to="/apply" className="btn btn-ghost">Cancel</Link>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={!canSubmit}
+              >
+                {submitting ? "Sending…" : (
+                  <>Send message <span className="arrow">→</span></>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </main>
     </div>
   );
 }

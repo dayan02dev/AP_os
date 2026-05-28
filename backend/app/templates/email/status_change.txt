@@ -1,0 +1,26 @@
+{% extends "base.txt" %}
+{% block content %}{{ headline }}
+
+{% if to_status == "shortlisted" -%}
+Hi {{ applicant_name }} — your application has been shortlisted. Our team is now scheduling interviews; we'll reach out with timing details over the next few days.
+
+In the meantime, you don't need to do anything. We'll share interview prep notes once a slot is confirmed.
+{%- elif to_status == "waitlisted" -%}
+Hi {{ applicant_name }} — your application has been placed on the waitlist. This means it cleared review but the current cohort is at capacity; if a place opens up, we'll be in touch.
+
+No action is required from you right now. If your circumstances change, you can reply to this email to update us.
+{%- elif to_status == "rejected" -%}
+Hi {{ applicant_name }} — thank you for applying to ARTPARK. After full review, we won't be advancing this application to the next stage.
+
+We know this is the hard email to receive. Selection is highly competitive and our decisions reflect this cohort's fit rather than the merit of your work. You're welcome to apply again in a future cohort.
+{%- else -%}
+Hi {{ applicant_name }} — there's an update on your application. The current status is {{ status_label }}.
+{%- endif %}
+
+  Track:          {{ track_label }}
+  Application ID: {{ application_id_short }}
+
+If you have questions, reply to this email and we'll get back to you.
+
+— The ARTPARK team
+{% endblock %}

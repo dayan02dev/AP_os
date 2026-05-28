@@ -1,25 +1,33 @@
 /* =========================================================
    ARTPARK — EIR Application Form
    Single stylesheet, themed via CSS variables on :root.
+
+   Migrated 2026-05-14 to ARTPARK design system tokens. The
+   --bg / --accent / --font-* vars below now alias the ARTPARK
+   tokens defined in styles/colors_and_type.css, so this file's
+   class definitions render under the new (white + purple + Open
+   Sans) system without per-class rewrites.
+
+   New code should import colors_and_type.css and consume
+   --paper / --artblue / --font-body etc. directly — these
+   aliases exist for back-compat with the wizard JSX only.
    ========================================================= */
 
+@import "./styles/colors_and_type.css";
+
 :root {
-  --bg: #f4f1ea;
-  --bg-soft: #ece7dc;
-  --ink: #1a1a1a;
-  --ink-soft: #4a4a45;
-  --ink-dim: #8a867c;
-  --line: #d7d1c2;
-  --line-strong: #bab4a3;
-  --accent: #c84a1a;
-  --accent-soft: #f0d9cc;
-  --chip: #e5e0d2;
-  --gridcell: 36px;
+  /* Back-compat aliases mapping the legacy wizard vars to ARTPARK tokens. */
+  --bg:           #ffffff;        /* var(--paper) */
+  --bg-soft:      #f6f6f8;        /* var(--paper-soft) */
+  --accent:       #3213b7;        /* var(--artblue) */
+  --accent-soft:  #aafcf0;        /* var(--artlight) */
+  --chip:         #f6f6f8;        /* var(--paper-soft) */
+  --gridcell:     36px;
   --grid-opacity: 0.55;
 
-  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, Menlo, monospace;
-  --font-serif: "Instrument Serif", "Newsreader", Georgia, serif;
-  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+  --font-mono:    "Open Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-serif:   "Trebuchet MS", "Lucida Grande", Tahoma, sans-serif;
+  --font-sans:    "Open Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 
   --radius: 2px;
 }

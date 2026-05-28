@@ -43,6 +43,7 @@ from ..models.application import (
     CompletionStatus,
     SubmissionResult,
 )
+from ..services import sqs_publisher
 from ..supabase_client import get_admin_client
 from ..utils.rate_limit import (
     check_rate,
@@ -712,6 +713,8 @@ async def submit_application(
         metadata={"application_id": submitted["id"]},
         request=request,
     )
+
+    sqs_publisher.publish(submitted["id"], "tir")
 
     _send_submission_email(
         user_id=user_id,

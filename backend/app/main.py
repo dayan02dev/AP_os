@@ -30,13 +30,18 @@ from slowapi.middleware import SlowAPIMiddleware
 from .config import settings
 from .routers import (
     admin,
+    admin_users,
+    ai_screening,
     application_templates,
     applications,
     auth,
     evidence_files,
     health,
+    leadership,
+    leadership_actions,
     milestone_files,
     resume,
+    reviewer,
     sip_application_templates,
     sip_applications,
     sip_evidence_files,
@@ -156,6 +161,11 @@ app.include_router(sip_application_templates.router)
 app.include_router(support.router)
 app.include_router(waitlist.router)
 app.include_router(admin.router)
+app.include_router(admin_users.router)
+app.include_router(ai_screening.router)
+app.include_router(leadership.router)
+app.include_router(leadership_actions.router)
+app.include_router(reviewer.router)
 
 log.info(
     "app ready",

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
 import * as authApi from "../lib/auth.js";
+import { isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { usePageTheme } from "../hooks/usePageTheme.jsx";
@@ -72,9 +73,10 @@ export default function VerifyPage() {
         if (resetMode) {
           target = "/apply/set-password?reset=1";
         } else {
+          let me = null;
           let hasPassword = true;
           try {
-            const me = await authApi.getMe();
+            me = await authApi.getMe();
             hasPassword = !!me?.password_set;
           } catch {
             // If /me fails we fall through to the regular target — the
@@ -90,13 +92,27 @@ export default function VerifyPage() {
                 ? "/apply/set-password?next=%2Fapply-sip"
                 : "/apply/set-password";
           } else {
-            const safeNext =
+            // Role-based landing — leadership/admin/reviewer go straight to
+            // their dashboard. Pure applicants fall back to the track-aware
+            // /apply or /apply-sip.
+            const roles = me?.roles || [];
+            const roleTarget = landingPathFor(roles);
+            const applicantTarget =
+              roleTarget === "/apply" ? defaultHome : roleTarget;
+            const safeApplyNext =
               nextParam &&
               (nextParam.startsWith("/apply/") ||
                 nextParam.startsWith("/apply-sip/") ||
                 nextParam === "/apply" ||
                 nextParam === "/apply-sip");
-            target = safeNext ? nextParam : defaultHome;
+            const honourNext =
+              nextParam &&
+              (safeApplyNext ||
+                nextParam.startsWith("/admin/") ||
+                nextParam.startsWith("/leadership") ||
+                nextParam.startsWith("/reviewer/")) &&
+              !(isApplyHiddenFor(roles) && nextParam.startsWith("/apply"));
+            target = honourNext ? nextParam : applicantTarget;
           }
         }
         navigate(target, { replace: true });
