@@ -45,6 +45,15 @@ const SECTIONS_SIP = [
         required: true,
       },
       {
+        id: "org",
+        kind: "short",
+        prompt: "Your company / startup name?",
+        help: "Legal entity name if incorporated, or working name if you're pre-incorporation. Shown on the leadership dashboard and decision memos.",
+        placeholder: "e.g. ColpAI Health Pvt Ltd",
+        cvAutoFill: true,
+        required: true,
+      },
+      {
         id: "degree",
         kind: "single",
         prompt: "Highest technology degree achieved (lead applicant)?",
