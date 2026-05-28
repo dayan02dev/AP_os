@@ -71,8 +71,20 @@ def main() -> int:
     client = create_client(url, key)
 
     password = args.password or _gen_password()
-    users = client.auth.admin.list_users()
-    user = next((u for u in users if (u.email or "").lower() == args.email.lower()), None)
+    # Supabase admin list_users() paginates at 50 per page by default and does
+    # not auto-iterate. Walk every page until we either find the email or run
+    # out of users — otherwise large prod environments silently miss matches.
+    target = args.email.lower()
+    user = None
+    page = 1
+    while user is None:
+        batch = client.auth.admin.list_users(page=page, per_page=200)
+        if not batch:
+            break
+        user = next((u for u in batch if (u.email or "").lower() == target), None)
+        if user or len(batch) < 200:
+            break
+        page += 1
 
     if args.dry_run:
         existing_roles: list[str] = []
