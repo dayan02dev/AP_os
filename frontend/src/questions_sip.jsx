@@ -408,9 +408,9 @@ const SECTIONS_SIP = [
         id: "sipPitchDeck",
         kind: "sipPitchDeck",
         prompt: "Upload your latest pitch deck.",
-        help: "PDF, max 25MB. The version you'd send a serious investor today.",
+        help: "PDF, max 5 MB. The version you'd send a serious investor today. If your deck is bigger, run it through any PDF compressor (e.g. ilovepdf.com) — image-heavy decks usually shrink 5–10×.",
         accept: ".pdf",
-        maxMB: 25,
+        maxMB: 5,
         required: true,
       },
       {

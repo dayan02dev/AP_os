@@ -44,7 +44,14 @@ _KIND_CONFIG: dict[str, dict[str, Any]] = {
     "pitch-deck": {
         "column": "sip_pitch_deck",
         "is_list": False,
-        "max_bytes": 26214400,  # 25 MiB
+        # 5 MiB — AWS Lambda's sync-invoke payload cap is 6 MB and multipart
+        # + base64 overhead eats ~33% more. The earlier 25 MiB cap matched the
+        # help text but was unreachable in practice: anything over ~4.5 MB was
+        # rejected at API Gateway *before* Lambda ran, so applicants saw
+        # "Request Failed" with no log entry (incident 2026-05-28, applicant
+        # Rohit Ranjan / Bodhik DeepTech). Signed-URL direct-to-Storage uploads
+        # would lift this; until then 5 MiB matches cap-table/traction/patents.
+        "max_bytes": 5242880,  # 5 MiB
         "allowed_mime": {"application/pdf"},
         "subfolder": "pitch-deck",
     },
