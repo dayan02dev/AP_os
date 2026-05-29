@@ -587,7 +587,7 @@ export const SIP_SCHEMA = [
         number: "25",
         key: "sip_pitch_deck",
         label: "Latest pitch deck.",
-        help: "PDF, max 25 MB. The version you'd send a serious investor today.",
+        help: "PDF, max 5 MB. The version you'd send a serious investor today.",
         type: "file",
         required: true,
       },
