@@ -41,6 +41,31 @@ import { useToast } from "./hooks/useToast.jsx";
 import { api } from "./lib/api.js";
 import { SECTION_ORDER, collapseFromRow } from "./lib/fieldMap.js";
 
+// Backend stores progression in the `status` column (see
+// backend/app/services/state_machine.py). The dashboard's pipeline UI
+// uses a 6-stage applicant-facing model. Map one to the other so a
+// leadership/admin status flip in Supabase drives the dashboard
+// automatically — no extra column needed.
+const STATUS_TO_MILESTONE = {
+  submitted:        "submitted",     // Stage 01 Application
+  ai_screening:     "submitted",
+  screening_failed: "submitted",
+  under_review:     "under_review",  // Stage 02 Under review
+  evaluated:        "under_review",
+  shortlisted:      "profile",       // Stage 03 Profile building — psychometry block lights up
+  interview:        "interview",     // Stage 05 Interviews
+  offered:          "onboarding",    // Stage 06 Onboarding
+  onboarded:        "onboarding",
+  // Terminal-ish: keep the dashboard meaningful by surfacing the closest
+  // active stage. Real "outcome" handling happens via getSubmissionProgress
+  // when sub.outcome is set, not via this map.
+  rejected:         "under_review",
+  waitlisted:       "under_review",
+  withdrawn:        "submitted",
+};
+const milestoneFromRow = (r) =>
+  r.current_milestone || STATUS_TO_MILESTONE[r.status] || "submitted";
+
 const PHASES = {
   WELCOME: "welcome",
   // Authed user re-entering /apply with a draft or past submissions — shows
@@ -331,7 +356,12 @@ export default function App() {
       setPhase(hasAny ? PHASES.SECTION_INTRO : PHASES.UPLOAD);
       return;
     }
-    setPhase(hasAny ? PHASES.RETURNING : PHASES.UPLOAD);
+    // Authed users always land on the dashboard (RETURNING). The
+    // dashboard's "Not started" view shows the TIR + SIP track picker,
+    // which is the right next step for an account with no draft —
+    // previously the empty-draft case dropped users straight onto the
+    // CV upload screen, skipping the choose-your-track moment.
+    setPhase(PHASES.RETURNING);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user, application, locked]);
 
@@ -802,7 +832,7 @@ export default function App() {
                       : Date.now(),
                     cycle: r.cycle || "TIR.2026",
                     projectTitle: r.solution_describe?.slice(0, 80) || "",
-                    currentMilestone: r.current_milestone || "submitted",
+                    currentMilestone: milestoneFromRow(r),
                     feedback: r.reviewer_feedback || null,
                     answers: collapseFromRow(r),
                   }));
@@ -816,7 +846,7 @@ export default function App() {
                         : Date.now(),
                       cycle: r.cycle || "VIP.2026",
                       projectTitle: r.solution_describe?.slice(0, 80) || "",
-                      currentMilestone: r.current_milestone || "submitted",
+                      currentMilestone: milestoneFromRow(r),
                       feedback: r.reviewer_feedback || null,
                       // SIP rows can't be opened from the TIR DoneScreen
                       // (different field shape); leave answers empty so the
@@ -836,8 +866,7 @@ export default function App() {
                       cycle: application.cycle || "TIR.2026",
                       projectTitle:
                         application.solution_describe?.slice(0, 80) || "",
-                      currentMilestone:
-                        application.current_milestone || "submitted",
+                      currentMilestone: milestoneFromRow(application),
                       feedback: application.reviewer_feedback || null,
                       answers,
                     });
@@ -1192,7 +1221,7 @@ function Header({ config, user, onLogout, onProfile, phase, onHome }) {
   // mark mirrors that — clicking it shouldn't dump a logged-in applicant
   // out to the public site.
   const homeHref = user ? "/apply" : "/";
-  const homeLabel = user ? "my application" : "home";
+  const homeLabel = "home";
   const onHomeClick = (e) => {
     if (!user) return; // anon: let the browser follow the / → programs.html rewrite
     e.preventDefault();
