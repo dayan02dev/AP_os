@@ -1,0 +1,8 @@
+# Design-iteration artifacts — not used by the running app
+screenshots/
+uploads/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log
