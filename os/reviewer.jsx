@@ -1192,10 +1192,10 @@ function ReviewerHistory({ openEval }) {
                 <td className="num os-text-soft">{h.aiScore.toFixed(1)}</td>
                 <td><Variance value={h.variance}/></td>
                 <td><Chip tone={recoTone(h.reco)}>{h.reco.toUpperCase()}</Chip></td>
-                <td><Chip tone={h.adminDec==='approved'?'green':'red'}>{h.adminDec.toUpperCase()}</Chip></td>
+                <td><Chip tone={h.adminDec==='approved'?'green':h.adminDec==='rejected'?'red':'slate'}>{h.adminDec.toUpperCase()}</Chip></td>
                 <td>{match ? <span style={{ color:'var(--ok)' }}>✓</span> : <span style={{ color:'var(--ink-dim)' }}>—</span>}</td>
                 <td>
-                  <button className="os-btn sm ghost" onClick={() => openEval(idxOfApp(h.appId), 'history')}>✎ Edit</button>
+                  <button className="os-btn sm ghost" onClick={() => openEval(idxOfApp(h.appId), h.source || 'history')}>✎ Edit</button>
                 </td>
               </tr>
             );

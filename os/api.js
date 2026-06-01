@@ -64,6 +64,14 @@
 
   const scoresAt = (v) => ({ problem: v, solution: v, tech: v, founders: v, commit: v });
   const avgScores = (s) => { const a = Object.values(s); return a.reduce((x, y) => x + y, 0) / a.length; };
+  const round1 = (n) => Math.round(n * 10) / 10;
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmtDate = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '—';
+    return String(d.getDate()).padStart(2, '0') + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
+  };
 
   function emptyEvaluation(appId) {
     return {
@@ -191,20 +199,37 @@
 
     async getHistory() {
       await wait();
-      // Rows reflect the reviewer's CURRENT submitted past-cohort evaluation (reco + score),
-      // so re-submitting from My History updates the table live — without touching the queue.
-      const rows = HISTORY_ROWS.map(r => {
+      // My History = every evaluation the reviewer has SUBMITTED:
+      //   (1) current-cohort submissions from the queue store (admin decision still pending)
+      //   (2) past-cohort reviews from the history store (with their admin decision)
+      // Editing a past review (history store) never affects the queue; submitting a
+      // current queue item surfaces it here automatically.
+      const histIds = new Set(HISTORY_ROWS.map(r => r.appId));
+
+      const currentRows = D().STARTUPS
+        .filter(s => STORE[s.id] && STORE[s.id].status === 'submitted' && !histIds.has(s.id))
+        .map(s => {
+          const ev = STORE[s.id];
+          const myScore = avgScores(ev.scores);
+          const aiScore = s.ai ? s.ai.overall : 0;
+          return { appId: s.id, name: s.name, date: fmtDate(ev.submittedAt),
+            aiScore, myScore, variance: round1(Math.abs(myScore - aiScore)),
+            reco: ev.recommendation || '—', adminDec: 'pending', source: 'queue' };
+        });
+
+      const pastRows = HISTORY_ROWS.map(r => {
         const ev = HISTORY_STORE[r.appId];
         if (ev && ev.status === 'submitted') {
           const myScore = avgScores(ev.scores);
-          return { ...r, reco: ev.recommendation || r.reco, myScore,
-            variance: Math.round(Math.abs(myScore - r.aiScore) * 10) / 10 };
+          return { ...r, source: 'history', reco: ev.recommendation || r.reco, myScore,
+            variance: round1(Math.abs(myScore - r.aiScore)) };
         }
-        return { ...r, variance: Math.round(Math.abs(r.myScore - r.aiScore) * 10) / 10 };
+        return { ...r, source: 'history', variance: round1(Math.abs(r.myScore - r.aiScore)) };
       });
+
       return {
         stats: { total: 34, consistencyPct: 92, avgVariance: 0.4, avgMinutes: 18 },
-        rows,
+        rows: [...currentRows, ...pastRows],   // newest (current) first
       };
     },
 
