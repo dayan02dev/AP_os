@@ -742,16 +742,16 @@ const CRIT_LABELS = {
   commit:    'Commitment to be fully available',
 };
 // Loader — fetches the application + the reviewer's draft, then renders the form.
-function ReviewerEval({ idx = 2, onBack, onPrev, onNext }) {
-  const { data, loading, error, reload } = useAsync(() => API.getEvalScreen(idx), [idx]);
+function ReviewerEval({ idx = 2, source = 'queue', onBack, onPrev, onNext }) {
+  const { data, loading, error, reload } = useAsync(() => API.getEvalScreen(idx, source), [idx, source]);
   if (loading) return <div style={{ padding: '48px 0' }}><LoadingState label="Loading application…" /></div>;
   if (error)   return <div style={{ padding: '48px 0' }}><ErrorState error={error} onRetry={reload} /></div>;
   // key remounts the form per application → clean, isolated state per app.
-  return <ReviewerEvalForm key={data.application.id} application={data.application}
-    evaluation={data.evaluation} onBack={onBack} onPrev={onPrev} onNext={onNext} />;
+  return <ReviewerEvalForm key={data.application.id + ':' + source} application={data.application}
+    evaluation={data.evaluation} source={source} onBack={onBack} onPrev={onPrev} onNext={onNext} />;
 }
 
-function ReviewerEvalForm({ application, evaluation, onBack, onPrev, onNext }) {
+function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, onPrev, onNext }) {
   const s = application;
   const appId = application.id;
   const MAX_FLAGS = 8;
@@ -763,6 +763,7 @@ function ReviewerEvalForm({ application, evaluation, onBack, onPrev, onNext }) {
   const [disagree, setDisagree]   = useRS(evaluation.disagreements || {}); // { key: reasonString }
   const [flags, setFlags]         = useRS(evaluation.flags || []);
   const [submitted, setSubmitted] = useRS(evaluation.status === 'submitted');
+  const [reopened, setReopened]   = useRS(false); // amend a submitted evaluation
 
   // Local UI-only state (not persisted).
   const [showRubric, setShowRubric] = useRS(false);
@@ -802,25 +803,34 @@ function ReviewerEvalForm({ application, evaluation, onBack, onPrev, onNext }) {
     return () => clearInterval(timer);
   }, []);
 
-  // Autosave (debounced) — skips the initial load; pauses once submitted.
+  // A submitted evaluation is locked until the reviewer explicitly re-opens it.
+  const lockedSubmitted = submitted && !reopened;
+  const editable = !lockedSubmitted && timeLeft !== 0;
+
+  // Autosave (debounced) — skips the initial load; only runs while editable.
   const firstRun = React.useRef(true);
   React.useEffect(() => {
     if (firstRun.current) { firstRun.current = false; return; }
-    if (submitted) return;
+    if (!editable) return;
     setSaveState('saving');
     const t = setTimeout(() => {
-      API.saveEvaluation(appId, payload()).then(() => setSaveState('saved'));
+      API.saveEvaluation(appId, payload(), source).then(() => setSaveState('saved'));
     }, 800);
     return () => clearTimeout(t);
   }, [scores, reco, notes, disagree, flags]);
 
   const saveDraftNow = () => {
     setSaveState('saving');
-    API.saveEvaluation(appId, payload()).then(() => { setSaveState('saved'); window.toast('Draft saved'); });
+    API.saveEvaluation(appId, payload(), source).then(() => { setSaveState('saved'); window.toast('Draft saved'); });
   };
   const submitEval = () => {
-    API.submitEvaluation(appId, payload()).then(() => { setSubmitted(true); window.toast('Evaluation submitted ✓'); });
+    const wasAmend = submitted && reopened;
+    API.submitEvaluation(appId, payload(), source).then(() => {
+      setSubmitted(true); setReopened(false);
+      window.toast(wasAmend ? 'Evaluation updated ✓' : 'Evaluation submitted ✓');
+    });
   };
+  const reopenForEdit = () => { setReopened(true); window.toast('Evaluation re-opened — make changes and re-submit'); };
 
   if (viewApp) {
     return <FullApplicationView s={s} onBack={() => setViewApp(false)} />;
@@ -831,7 +841,7 @@ function ReviewerEvalForm({ application, evaluation, onBack, onPrev, onNext }) {
       <div className="lp-section-head">
         <div>
           <div className="lp-breadcrumb">
-            <a href="#" onClick={(e) => { e.preventDefault(); onBack(); }} style={{ color: '#4a4a52', textDecoration: 'none' }}>My queue</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); onBack(); }} style={{ color: '#4a4a52', textDecoration: 'none' }}>{source === 'history' ? 'My history' : 'My queue'}</a>
             <span style={{ margin: '0 8px', color: '#c8c8d0' }}>/</span>
             <span style={{ color: '#8a8a92' }}>{s.name}</span>
           </div>
@@ -848,7 +858,7 @@ function ReviewerEvalForm({ application, evaluation, onBack, onPrev, onNext }) {
           {/* Bottom line — actions for the current application */}
           <div className="os-row gap-sm" style={{ alignItems: 'center' }}>
             <button className="os-btn secondary" onClick={onBack}>↩ My queue</button>
-            {saveState !== 'idle' && (
+            {editable && saveState !== 'idle' && (
               <span className="saved" style={{ opacity: saveState === 'saving' ? 0.5 : 1 }}>
                 {saveState === 'saving' ? 'Saving…' : '✓ Saved'}
               </span>
@@ -857,12 +867,21 @@ function ReviewerEvalForm({ application, evaluation, onBack, onPrev, onNext }) {
               <span className="lp-edit-dot"/>
               Edit window: {Math.floor(timeLeft/60)} min remaining
             </div>
-            <button className="os-btn ghost" disabled={submitted || timeLeft === 0} onClick={saveDraftNow}>Save draft</button>
-            <button
-              className="os-btn"
-              disabled={timeLeft === 0 || submitted}
-              onClick={submitEval}
-            >{submitted ? 'Submitted ✓' : 'Submit evaluation →'}</button>
+            {lockedSubmitted ? (
+              <>
+                <Chip tone="green">Submitted ✓</Chip>
+                <button className="os-btn" disabled={timeLeft === 0} onClick={reopenForEdit}>Re-open to edit</button>
+              </>
+            ) : (
+              <>
+                <button className="os-btn ghost" disabled={timeLeft === 0} onClick={saveDraftNow}>Save draft</button>
+                <button
+                  className="os-btn"
+                  disabled={timeLeft === 0}
+                  onClick={submitEval}
+                >{submitted ? 'Re-submit evaluation →' : 'Submit evaluation →'}</button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -1176,7 +1195,7 @@ function ReviewerHistory({ openEval }) {
                 <td><Chip tone={h.adminDec==='approved'?'green':'red'}>{h.adminDec.toUpperCase()}</Chip></td>
                 <td>{match ? <span style={{ color:'var(--ok)' }}>✓</span> : <span style={{ color:'var(--ink-dim)' }}>—</span>}</td>
                 <td>
-                  <button className="os-btn sm ghost" onClick={() => openEval(idxOfApp(h.appId))}>✎ Edit</button>
+                  <button className="os-btn sm ghost" onClick={() => openEval(idxOfApp(h.appId), 'history')}>✎ Edit</button>
                 </td>
               </tr>
             );
@@ -1252,10 +1271,15 @@ function RubricInline() {
 function ReviewerApp() {
   const [tab, setTab] = useRS('queue');
   const [selIdx, setSelIdx] = useRS(2);
+  const [evalSource, setEvalSource] = useRS('queue'); // 'queue' | 'history' — which store to edit
   const [queueDomain, setQueueDomain] = useRS('all'); // pre-filter when jumping from dashboard
   const QUEUE_N = 8;
 
-  const openEval = (i) => { setSelIdx(typeof i === 'number' ? i : 2); setTab('eval'); };
+  const openEval = (i, source = 'queue') => {
+    setSelIdx(typeof i === 'number' ? i : 2);
+    setEvalSource(source || 'queue');
+    setTab('eval');
+  };
   // Dashboard → My Queue, pre-filtered by the chosen industry.
   const goQueueFiltered = (industry) => { setQueueDomain(industry); setTab('queue'); };
   // Tab-bar navigation resets the industry pre-filter (fresh queue).
@@ -1273,7 +1297,8 @@ function ReviewerApp() {
           <div className="lp-tab-content lp-tab-content--full">
             <ReviewerEval
               idx={selIdx}
-              onBack={() => setTab('queue')}
+              source={evalSource}
+              onBack={() => setTab(evalSource === 'history' ? 'history' : 'queue')}
               onPrev={() => setSelIdx(i => (i - 1 + QUEUE_N) % QUEUE_N)}
               onNext={() => setSelIdx(i => (i + 1) % QUEUE_N)}
             />

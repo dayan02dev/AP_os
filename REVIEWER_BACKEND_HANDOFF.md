@@ -130,6 +130,23 @@ The reviewer's working evaluation. Drives prefill on open, autosave of "Save dra
 - `PUT` = save draft (also the target for **autosave**, see §3).
 - `POST` = submit; server enforces validation (§4.6), locks the record after the edit window, writes audit log.
 
+> **⚠ Data-model caveat — key evaluations by `reviewId`, not `appId`.**
+> The same startup can be **assigned in the current cohort's queue** *and* have a
+> **past-cohort review in My History** — these are two distinct evaluation records.
+> The mock keys evaluations by `appId` and therefore keeps **two separate stores**
+> (`STORE` = current queue, `HISTORY_STORE` = past reviews) so that editing a history
+> item never mutates the queue, and vice-versa (see `os/api.js` → `storeFor(source)`,
+> and the `source: 'queue' | 'history'` param on `getEvalScreen`/`saveEvaluation`/
+> `submitEvaluation`). In production this is cleaner as a single table keyed by a
+> **`reviewId`** (e.g. `cohortId + appId + reviewerId`); the UI's `source` param maps
+> directly to "which review record". My History is then just a **view** of submitted
+> review records, and My Queue a view of the current cohort's assignments.
+
+> **Re-open / amend:** a submitted evaluation can be re-opened in the UI ("Re-open to
+> edit" → edit → "Re-submit"). The server should gate this on authorization + the edit
+> window and append an **audit entry** (who re-opened, when, what changed) rather than
+> silently overwriting the prior submission.
+
 ### 2.5 `GET /api/reviewer/history`
 Past evaluations + the cohort-wide consistency stats currently hardcoded (`34`, `92%`, `0.4`, `18m`).
 ```json

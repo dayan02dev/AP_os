@@ -46,8 +46,24 @@
   const appIdOf = s => 'TIR-' + s.id.replace('s', '').padStart(5, '0');
 
   // ---- Evaluation store (in-memory + localStorage so drafts survive refresh) ----
-  const LS_KEY = 'artpark.reviewer.evaluations.v1';
+  const LS_KEY      = 'artpark.reviewer.evaluations.v3'; // current-cohort queue evaluations
+  const HIST_LS_KEY = 'artpark.reviewer.history.v3';     // past-cohort submitted evaluations
   const nowISO = () => new Date().toISOString();
+
+  // Past reviews shown in My History. Metadata (date / aiScore / adminDec) lives here;
+  // the reviewer's reco + score come from the evaluation store so edits stay in sync.
+  const HISTORY_ROWS = [
+    { appId:'s01', name:'Karkhana Robotics', date:'18 Apr 2026', aiScore:8.4, myScore:7.9, reco:'yes',   adminDec:'approved' },
+    { appId:'s15', name:'Mihira Diagnostics', date:'10 Apr 2026', aiScore:8.7, myScore:8.8, reco:'yes',   adminDec:'approved' },
+    { appId:'s08', name:'Yantra Mobility',    date:'08 Apr 2026', aiScore:7.5, myScore:8.5, reco:'yes',   adminDec:'approved' },
+    { appId:'s03', name:'GridPulse',          date:'05 Apr 2026', aiScore:7.2, myScore:5.8, reco:'maybe', adminDec:'rejected' },
+    { appId:'s13', name:'Saavera Mobility',   date:'30 Mar 2026', aiScore:7.6, myScore:7.4, reco:'yes',   adminDec:'approved' },
+    { appId:'s09', name:'Pravaha Water',      date:'25 Mar 2026', aiScore:7.0, myScore:7.0, reco:'yes',   adminDec:'approved' },
+    { appId:'s12', name:'Lithos Materials',   date:'20 Mar 2026', aiScore:6.0, myScore:5.5, reco:'no',    adminDec:'rejected' },
+  ];
+
+  const scoresAt = (v) => ({ problem: v, solution: v, tech: v, founders: v, commit: v });
+  const avgScores = (s) => { const a = Object.values(s); return a.reduce((x, y) => x + y, 0) / a.length; };
 
   function emptyEvaluation(appId) {
     return {
@@ -58,8 +74,14 @@
     };
   }
 
-  // Seeded so the initial screen matches the existing demo exactly:
-  // s01 submitted · s02 in-progress · s03 draft (the default-open application).
+  // ── Two separate evaluation stores ──────────────────────────────────────
+  // STORE         = current-cohort queue evaluations (drives My Queue + dashboard)
+  // HISTORY_STORE = past-cohort submitted evaluations (drives My History)
+  // They are deliberately distinct: the same startup can be assigned in the
+  // current queue AND have a past review, and editing one must not touch the
+  // other. (Backend should key these by review-id; see handoff §2.4.)
+
+  // Current cohort: s01 submitted · s02 in-progress · s03 draft (default-open) · rest not-started.
   function seedStore() {
     return {
       s01: { ...emptyEvaluation('s01'), status: 'submitted' },
@@ -73,14 +95,32 @@
     };
   }
 
-  function loadStore() {
-    try { const raw = localStorage.getItem(LS_KEY); if (raw) return JSON.parse(raw); } catch (e) {}
+  // Past cohorts: every history row is a real submitted evaluation (scores ≈ myScore).
+  function seedHistory() {
+    const h = {};
+    HISTORY_ROWS.forEach(r => {
+      h[r.appId] = { ...emptyEvaluation(r.appId), status: 'submitted',
+        scores: scoresAt(r.myScore), recommendation: r.reco, submittedAt: r.date };
+    });
+    return h;
+  }
+
+  function loadJSON(key) {
+    try { const raw = localStorage.getItem(key); if (raw) return JSON.parse(raw); } catch (e) {}
     return null;
   }
-  function persist() { try { localStorage.setItem(LS_KEY, JSON.stringify(STORE)); } catch (e) {} }
-
-  let STORE = loadStore() || seedStore();
+  let STORE         = loadJSON(LS_KEY)      || seedStore();
+  let HISTORY_STORE = loadJSON(HIST_LS_KEY) || seedHistory();
+  function persist() {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(STORE));
+      localStorage.setItem(HIST_LS_KEY, JSON.stringify(HISTORY_STORE));
+    } catch (e) {}
+  }
   persist();
+
+  // Pick the store for an eval context: 'history' edits go to HISTORY_STORE, else the queue STORE.
+  const storeFor = (source) => (source === 'history' ? HISTORY_STORE : STORE);
 
   // Simulated network latency so loading states are real. Set to 0 to disable.
   const wait = () => new Promise(r => setTimeout(r, window.ReviewerAPI.latencyMs));
@@ -114,50 +154,57 @@
     },
 
     // Bundle for the evaluation screen — application content + the reviewer's draft.
-    async getEvalScreen(idx) {
+    // source: 'queue' (current cohort) | 'history' (past cohort) — picks the store.
+    async getEvalScreen(idx, source = 'queue') {
       await wait();
       const raw = D().STARTUPS[idx] || D().STARTUPS[2];
       const appId = raw.id;
+      const st = storeFor(source);
       const application = { ...raw, applicationId: appIdOf(raw), detail: window.APP_DETAIL };
-      const evaluation = STORE[appId] ? { ...STORE[appId] } : emptyEvaluation(appId);
+      const evaluation = st[appId] ? { ...st[appId] } : emptyEvaluation(appId);
       return { application, evaluation };
     },
 
-    async getEvaluation(appId) {
+    async getEvaluation(appId, source = 'queue') {
       await wait();
-      return STORE[appId] ? { ...STORE[appId] } : emptyEvaluation(appId);
+      const st = storeFor(source);
+      return st[appId] ? { ...st[appId] } : emptyEvaluation(appId);
     },
 
-    async saveEvaluation(appId, draft) {
+    async saveEvaluation(appId, draft, source = 'queue') {
       await wait();
-      const prev = STORE[appId] || emptyEvaluation(appId);
-      STORE[appId] = { ...prev, ...draft, appId,
+      const st = storeFor(source);
+      const prev = st[appId] || emptyEvaluation(appId);
+      st[appId] = { ...prev, ...draft, appId,
         status: draft.status === 'submitted' ? 'submitted' : 'draft',
         updatedAt: nowISO() };
       persist();
-      return { ...STORE[appId] };
+      return { ...st[appId] };
     },
 
-    async submitEvaluation(appId, body) {
-      const saved = await this.saveEvaluation(appId, { ...body, status: 'submitted' });
+    async submitEvaluation(appId, body, source = 'queue') {
+      const saved = await this.saveEvaluation(appId, { ...body, status: 'submitted' }, source);
       saved.submittedAt = nowISO();
-      STORE[appId] = saved; persist();
+      storeFor(source)[appId] = saved; persist();
       return { ...saved };
     },
 
     async getHistory() {
       await wait();
+      // Rows reflect the reviewer's CURRENT submitted past-cohort evaluation (reco + score),
+      // so re-submitting from My History updates the table live — without touching the queue.
+      const rows = HISTORY_ROWS.map(r => {
+        const ev = HISTORY_STORE[r.appId];
+        if (ev && ev.status === 'submitted') {
+          const myScore = avgScores(ev.scores);
+          return { ...r, reco: ev.recommendation || r.reco, myScore,
+            variance: Math.round(Math.abs(myScore - r.aiScore) * 10) / 10 };
+        }
+        return { ...r, variance: Math.round(Math.abs(r.myScore - r.aiScore) * 10) / 10 };
+      });
       return {
         stats: { total: 34, consistencyPct: 92, avgVariance: 0.4, avgMinutes: 18 },
-        rows: [
-          { appId:'s01', name:'Karkhana Robotics', date:'18 Apr 2026', myScore:7.9, aiScore:8.4, variance:0.5, reco:'yes',   adminDec:'approved' },
-          { appId:'s15', name:'Mihira Diagnostics', date:'10 Apr 2026', myScore:8.8, aiScore:8.7, variance:0.1, reco:'yes',   adminDec:'approved' },
-          { appId:'s08', name:'Yantra Mobility',    date:'08 Apr 2026', myScore:8.5, aiScore:7.5, variance:1.0, reco:'yes',   adminDec:'approved' },
-          { appId:'s03', name:'GridPulse',          date:'05 Apr 2026', myScore:5.8, aiScore:7.2, variance:1.4, reco:'maybe', adminDec:'rejected' },
-          { appId:'s13', name:'Saavera Mobility',   date:'30 Mar 2026', myScore:7.4, aiScore:7.6, variance:0.2, reco:'yes',   adminDec:'approved' },
-          { appId:'s09', name:'Pravaha Water',      date:'25 Mar 2026', myScore:7.0, aiScore:7.0, variance:0.0, reco:'yes',   adminDec:'approved' },
-          { appId:'s12', name:'Lithos Materials',   date:'20 Mar 2026', myScore:5.5, aiScore:6.0, variance:0.5, reco:'no',    adminDec:'rejected' },
-        ],
+        rows,
       };
     },
 
@@ -168,7 +215,7 @@
     },
 
     // Test/Reset helper for the demo.
-    _resetEvaluations() { STORE = seedStore(); persist(); },
+    _resetEvaluations() { STORE = seedStore(); HISTORY_STORE = seedHistory(); persist(); },
   };
 
   // ---- Tiny generic async hook used by every data-driven component ----
