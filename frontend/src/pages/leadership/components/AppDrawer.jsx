@@ -62,11 +62,11 @@ function renderProblemSolution(application) {
 
 function ComponentBars({ aiScreening }) {
   const components = [
-    { key: "score_problem",    label: "Problem impact" },
-    { key: "score_completeness", label: "Completeness & depth" },
-    { key: "score_tech",       label: "Technical depth" },
-    { key: "score_founders",   label: "Behavioural signal" },
-    { key: "score_commitment", label: "Commitment" },
+    { key: "score_problem",    label: "Problem Statement Impact and Importance" },
+    { key: "score_completeness", label: "Completeness, Depth of Solution" },
+    { key: "score_tech",       label: "Technical Depth" },
+    { key: "score_founders",   label: "Professional Profile of Founder" },
+    { key: "score_commitment", label: "Commitment to be fully available" },
   ];
   return (
     <div>

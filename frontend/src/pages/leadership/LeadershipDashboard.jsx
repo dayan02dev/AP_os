@@ -336,11 +336,11 @@ export default function LeadershipDashboard() {
     // mean if available, otherwise renders an empty bar with "—".
     const cohortMean = totals.avg_ai_score ?? null;
     return [
-      { id: "problem",    label: "Problem Impact & Importance",  weight: 22, value: cohortMean },
-      { id: "solution",   label: "Completeness & Depth of Solution", weight: 30, value: cohortMean ? cohortMean + 0.1 : null },
-      { id: "tech",       label: "Technical Depth",              weight: 22, value: cohortMean },
-      { id: "founders",   label: "Behavioral Parameters",        weight: 14, value: cohortMean ? cohortMean + 0.1 : null },
-      { id: "commitment", label: "Commitment",                   weight: 12, value: cohortMean ? cohortMean + 0.1 : null },
+      { id: "problem",    label: "Problem Statement Impact and Importance", weight: 22, value: cohortMean },
+      { id: "solution",   label: "Completeness, Depth of Solution",        weight: 30, value: cohortMean ? cohortMean + 0.1 : null },
+      { id: "tech",       label: "Technical Depth",                        weight: 22, value: cohortMean },
+      { id: "founders",   label: "Professional Profile of Founder",        weight: 14, value: cohortMean ? cohortMean + 0.1 : null },
+      { id: "commitment", label: "Commitment to be fully available",       weight: 12, value: cohortMean ? cohortMean + 0.1 : null },
     ];
   }, [totals.avg_ai_score]);
 

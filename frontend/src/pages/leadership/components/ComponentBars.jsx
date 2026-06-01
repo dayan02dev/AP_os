@@ -9,11 +9,11 @@
 // prototype's design.
 
 const KEYS = [
-  { id: "score_problem",    label: "Problem Impact & Importance",      weight: 22 },
-  { id: "score_completeness", label: "Completeness & Depth of Solution", weight: 30 },
-  { id: "score_tech",       label: "Technical Depth",                  weight: 22 },
-  { id: "score_founders",   label: "Behavioral Parameters",            weight: 14 },
-  { id: "score_commitment", label: "Commitment",                       weight: 12 },
+  { id: "score_problem",    label: "Problem Statement Impact and Importance", weight: 22 },
+  { id: "score_completeness", label: "Completeness, Depth of Solution",      weight: 30 },
+  { id: "score_tech",       label: "Technical Depth",                        weight: 22 },
+  { id: "score_founders",   label: "Professional Profile of Founder",        weight: 14 },
+  { id: "score_commitment", label: "Commitment to be fully available",       weight: 12 },
 ];
 
 export default function ComponentBars({ scores, placeholder }) {

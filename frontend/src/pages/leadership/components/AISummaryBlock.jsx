@@ -14,6 +14,42 @@
 
 import Collapsible from "./Collapsible.jsx";
 
+// Plain-text summaries (legacy rows or stub-mode) are a wall of text. Give
+// them the same shape as structured summaries: lift the first sentence as a
+// TL;DR "Summary" card (always visible), put the remainder behind a single
+// "Full summary" accordion (collapsed by default) so the panel isn't dense.
+function splitFirstSentence(text) {
+  // Match up to the first sentence terminator followed by whitespace + a
+  // capital (or end of string). Falls back to the whole string if no clean
+  // boundary is found.
+  const m = text.match(/^[\s\S]*?[.!?](?=\s+[A-Z]|\s*$)/);
+  if (!m) return { first: text.trim(), rest: "" };
+  return { first: m[0].trim(), rest: text.slice(m[0].length).trim() };
+}
+
+function PlainSummary({ text }) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return null;
+  const { first, rest } = splitFirstSentence(trimmed);
+  return (
+    <>
+      <div className="ai-tldr">
+        <div className="ai-tldr-item">
+          <span className="ai-tldr-label">Summary</span>
+          <p className="ai-tldr-text">{first}</p>
+        </div>
+      </div>
+      {rest && (
+        <div className="ai-detail-sections">
+          <Collapsible label="Full summary">
+            <p className="ai-tldr-text">{rest}</p>
+          </Collapsible>
+        </div>
+      )}
+    </>
+  );
+}
+
 // Sections shown collapsed by default (the supporting detail).
 const DETAIL_SECTIONS = [
   { key: "top_strength", label: "Top strength" },
@@ -77,7 +113,7 @@ export default function AISummaryBlock({ aiScreening }) {
       <div className="ai-summary-block">
         <Flags isStub={isStub} needsReview={needsReview} capCount={capCount} />
         {parsed?.kind === "plain" ? (
-          <p className="ai-tldr-text">{parsed.text}</p>
+          <PlainSummary text={parsed.text} />
         ) : (
           <p className="ai-summary-empty">No summary written yet.</p>
         )}
