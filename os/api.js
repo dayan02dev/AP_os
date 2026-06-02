@@ -168,7 +168,8 @@
       const raw = D().STARTUPS[idx] || D().STARTUPS[2];
       const appId = raw.id;
       const st = storeFor(source);
-      const application = { ...raw, applicationId: appIdOf(raw), detail: window.APP_DETAIL };
+      // track mirrors the queue rule (first 5 = TIR, rest = VIP) so labels read correctly.
+      const application = { ...raw, applicationId: appIdOf(raw), track: idx < 5 ? 'tir' : 'sip', detail: window.APP_DETAIL };
       const evaluation = st[appId] ? { ...st[appId] } : emptyEvaluation(appId);
       return { application, evaluation };
     },
@@ -221,7 +222,10 @@
         const ev = HISTORY_STORE[r.appId];
         if (ev && ev.status === 'submitted') {
           const myScore = avgScores(ev.scores);
-          return { ...r, source: 'history', reco: ev.recommendation || r.reco, myScore,
+          // If the reviewer re-submitted (ev.updatedAt set), show the new submit date;
+          // otherwise keep the original seeded date.
+          const date = ev.updatedAt ? fmtDate(ev.submittedAt || ev.updatedAt) : r.date;
+          return { ...r, source: 'history', date, reco: ev.recommendation || r.reco, myScore,
             variance: round1(Math.abs(myScore - r.aiScore)) };
         }
         return { ...r, source: 'history', variance: round1(Math.abs(r.myScore - r.aiScore)) };

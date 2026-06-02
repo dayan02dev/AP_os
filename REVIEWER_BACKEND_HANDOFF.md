@@ -107,10 +107,29 @@ The assigned applications (drives the **My Queue** table **and** the **Dashboard
     { "num":"01", "title":"Basic details",
       "questions":[ {"prompt":"…","help":"…","required":true,"answer":"…","type":"text|choice|file"} ] }
   ],
-  "fields": [ {"label":"Problem describe","value":"…","short":false} ],
+  "fields": [
+    { "label":"Problem defined", "value":"Yes", "short":true },
+    { "label":"Problem description", "bullets":["one sentence…","one sentence…"] }
+  ],
   "attachments": [ {"kind":"deck","name":"pitch.pdf","url":"…","pages":14,"sizeMB":6.2} ]
 }
 ```
+
+> **⚑ AI-content format is UI-enforced (reviewer feedback).** The reviewer's
+> evaluation panel renders every long AI field as **short, one-sentence bullet
+> points** — never a paragraph dump (see `fieldBullets()` / `isFactField()` in
+> `os/reviewer.jsx`). Whatever the backend sends, the UI keeps the same look:
+> - **Preferred:** send `"bullets": string[]` — each ≤ 1 sentence. Used as-is.
+> - Send a `"value"` paragraph → the UI **auto-splits it into sentence bullets**
+>   (handles decimals, ₹ amounts, `•` markers). Resilient, but the AI emitting real
+>   bullets is cleaner, so **make the AI prompt produce one-sentence bullets.**
+> - Short facts (e.g. "Problem defined: Yes", "Solution stage") → mark `"short":true`
+>   (or keep them brief) to render as compact tiles instead of bullets.
+>
+> Net effect: **any application added later automatically follows the same
+> formatted, bulleted UI/UX** — no per-application styling needed. The `aiSummary`
+> stays a short overview paragraph in the branded card. Labels use proper English
+> ("Problem description", "Solution description").
 
 ### 2.4 `GET /api/reviewer/evaluations/:appId`  ·  `PUT` (autosave draft)  ·  `POST` (submit)
 The reviewer's working evaluation. Drives prefill on open, autosave of "Save draft", and "Submit evaluation".

@@ -706,12 +706,39 @@ textarea.os-input { height: auto; min-height: 88px; padding: 8px 10px; resize: v
 }
 /* Spacer — push the user chip + sign-out to the far right */
 .lp-topbar-right { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; margin-left: auto; }
+.lp-topbar-user-wrap { position: relative; }
 .lp-topbar-user {
   display: flex; align-items: center; gap: 9px;
-  font-size: 14px; color: #242424; cursor: pointer;
+  font-family: var(--font-sans); font-size: 14px; color: #242424; cursor: pointer;
   white-space: nowrap; -webkit-font-smoothing: antialiased;
+  background: transparent; border: none; padding: 4px 6px; border-radius: 8px;
 }
+.lp-topbar-user:hover { background: var(--paper-soft); }
 .lp-topbar-user .caret { font-size: 10px; color: #8a8a92; }
+
+/* Role switcher dropdown (same ID, multi-role) */
+.lp-menu-backdrop { position: fixed; inset: 0; z-index: 90; }
+.lp-role-menu {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 100;
+  min-width: 210px; padding: 6px;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 14px 36px rgba(36,36,36,0.14);
+}
+.lp-role-menu-head {
+  font-family: var(--font-body); font-size: 10px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--ink-dim); padding: 8px 10px 6px;
+}
+.lp-role-item {
+  width: 100%; display: flex; align-items: center; gap: 9px;
+  padding: 9px 10px; background: transparent; border: none; cursor: pointer;
+  font-family: var(--font-sans); font-size: 14px; color: var(--ink);
+  border-radius: 7px; text-align: left;
+}
+.lp-role-item:hover { background: var(--paper-soft); }
+.lp-role-item.is-active { color: var(--artblue); font-weight: 600; }
+.lp-role-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-dim); flex-shrink: 0; }
+.lp-role-item.is-active .lp-role-dot { background: var(--artblue); }
+.lp-role-check { margin-left: auto; color: var(--artblue); font-size: 13px; }
 .lp-signout {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 9px 17px; background: #fff;
@@ -1116,3 +1143,118 @@ textarea.os-input { height: auto; min-height: 88px; padding: 8px 10px; resize: v
   border-top-color: var(--artblue); border-radius: 50%; animation: rv-spin 0.7s linear infinite; }
 @keyframes rv-spin { to { transform: rotate(360deg); } }
 .rv-async-empty { font-size: 13px; }
+
+/* === Application content panel (eval screen) — beautified per review === */
+/* AI summary as a pinned TL;DR card (ARTBlue-led, restrained per brand). */
+.ps-ai-summary {
+  background: #f2effb;                 /* light indigo wash */
+  border: 1px solid #e2dbf6; border-left: 3px solid var(--artblue);
+  border-radius: 10px; padding: 16px 20px;
+}
+.ps-ai-label {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-body); font-weight: 700; font-size: 10px;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--artblue);
+  margin-bottom: 9px;
+}
+.ps-ai-label::before { content: ""; width: 20px; height: 2px; background: var(--artblue); display: inline-block; }
+.ps-ai-text { margin: 0; font-size: 14.5px; line-height: 1.72; color: var(--ink-soft); }
+
+.ps-head {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  background: transparent; border: none; cursor: pointer; padding: 6px 0;
+  font-family: var(--font-display); text-align: left;
+}
+.ps-head-title { font-weight: 700; font-size: 16px; color: var(--ink); letter-spacing: -0.01em; }
+.ps-head-chev { color: var(--ink-dim); font-size: 12px; }
+
+/* Group heading above the collapsible sections */
+.ps-group-label {
+  font-family: var(--font-display); font-weight: 700; font-size: 15px;
+  color: var(--ink); letter-spacing: -0.01em; margin: 2px 0 14px;
+}
+
+/* Quick facts as compact tiles (subtle ARTBlue top accent) */
+.ps-facts { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.ps-fact {
+  display: inline-flex; flex-direction: column; gap: 5px;
+  padding: 11px 16px 12px; background: var(--paper);
+  border: 1px solid var(--line); border-top: 2px solid var(--artblue);
+  border-radius: 10px; min-width: 136px;
+}
+.ps-fact-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-dim); }
+.ps-fact-value { font-size: 15px; font-weight: 700; color: var(--ink); }
+
+/* Collapsible AI sections — a clean card accordion (inviting to read) */
+.ps-sections { margin-top: 8px; display: flex; flex-direction: column; gap: 10px; }
+.ps-sec {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--paper);
+  overflow: hidden; transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.ps-sec:hover { border-color: var(--line-strong); }
+.ps-sec.is-open { border-color: #d9d0f5; box-shadow: 0 6px 20px rgba(50,19,183,0.06); }
+.ps-sec-head {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  background: transparent; border: none; cursor: pointer;
+  padding: 15px 18px; text-align: left; font-family: var(--font-body);
+}
+.ps-sec.is-open .ps-sec-head { background: #f7f5fd; }
+.ps-sec-chev { color: var(--artblue); font-size: 11px; width: 12px; flex-shrink: 0; }
+.ps-sec-label {
+  flex: 1; font-weight: 700; font-size: 11px;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft);
+}
+.ps-sec.is-open .ps-sec-label { color: var(--artblue); }
+.ps-sec-head:hover .ps-sec-label { color: var(--ink); }
+.ps-sec.is-open .ps-sec-head:hover .ps-sec-label { color: var(--artblue); }
+.ps-sec-hint { font-size: 11px; letter-spacing: 0.02em; color: var(--ink-dim); flex-shrink: 0; }
+
+/* AI output as scannable 1-sentence bullets */
+.ps-bullets { margin: 0; padding: 4px 20px 18px 22px; list-style: none; display: flex; flex-direction: column; gap: 11px; max-width: 70ch; }
+.ps-bullets li {
+  position: relative; padding-left: 18px;
+  font-size: 14px; line-height: 1.62; color: var(--ink-soft);
+}
+.ps-bullets li::before {
+  content: ""; position: absolute; left: 2px; top: 8px;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--artblue);
+}
+
+/* === Reviewer rubric (modal) — clean, brand-aligned (replaces dark code block) === */
+.rubric { font-family: var(--font-sans); }
+.rubric-intro { font-size: 14px; color: var(--ink-soft); margin: 0 0 22px; }
+.rubric-cat { margin-bottom: 22px; }
+.rubric-cat:last-child { margin-bottom: 0; }
+.rubric-cat-name {
+  font-family: var(--font-body); font-weight: 700; font-size: 11px;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--artblue);
+  margin: 0 0 12px; padding-bottom: 9px; border-bottom: 1px solid var(--line);
+}
+.rubric-anchors { display: flex; flex-direction: column; gap: 9px; }
+.rubric-anchor { display: flex; align-items: flex-start; gap: 13px; }
+.rubric-score {
+  flex-shrink: 0; min-width: 30px; height: 24px; padding: 0 6px;
+  display: inline-grid; place-items: center; border-radius: 6px;
+  font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.rubric-hi   { background: #e7f1ee; color: #2f6f62; }
+.rubric-mid  { background: #ece9fb; color: var(--artblue); }
+.rubric-lo   { background: #fbf3e0; color: #92400e; }
+.rubric-weak { background: #f3e0d8; color: #b85a3a; }
+.rubric-desc { font-size: 14px; line-height: 1.5; color: var(--ink); padding-top: 2px; }
+.rubric-notes { margin: 4px 0 0; padding-left: 18px; }
+.rubric-notes li { font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); margin-bottom: 5px; }
+
+/* === Notes textarea — comfortable, auto-growing, seamless === */
+.notes-area {
+  width: 100%; min-height: 132px; resize: vertical;
+  field-sizing: content;                 /* auto-grows with content (modern browsers) */
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.6; color: var(--ink);
+  background: var(--paper); border: 1px solid var(--line-strong); border-radius: 10px;
+  padding: 13px 15px;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.notes-area::placeholder { color: var(--ink-dim); }
+.notes-area:hover { border-color: var(--ink-soft); }
+.notes-area:focus { outline: none; border-color: var(--artblue); box-shadow: 0 0 0 3px rgba(50,19,183,0.12); }
+.notes-area:disabled { background: var(--paper-soft); color: var(--ink-soft); cursor: not-allowed; }

@@ -51,6 +51,21 @@ function ReviewerTopbar({ tab }) {
   const initials = (me && me.initials) || 'VS';
   const email    = (me && me.email) || 'vikram@artpark.in';
 
+  // Roles this account can switch into (same ID). Backend supplies these from auth.
+  const ROLES = [
+    { key: 'reviewer',   label: 'Reviewer' },
+    { key: 'leadership', label: 'Leadership' },
+  ];
+  const ACTIVE_ROLE = 'reviewer';
+  const [roleMenu, setRoleMenu] = useRS(false);
+
+  const switchRole = (r) => {
+    setRoleMenu(false);
+    if (r.key === ACTIVE_ROLE) return;
+    // Stub — backend wires the real role switch (route to that module, same session/ID).
+    window.toast('Switching to ' + r.label + ' module… (stub — wire to auth role switch)');
+  };
+
   // Stubbed nav actions — backend wires real routing / auth here.
   const goHome   = () => window.toast('Home — wire to app shell / router (stub)');
   const signOut  = () => API.signOut();
@@ -71,10 +86,29 @@ function ReviewerTopbar({ tab }) {
       </div>
 
       <div className="lp-topbar-right">
-        <div className="lp-topbar-user">
-          <div className="os-avatar" style={{width:28,height:28,fontSize:11,flexShrink:0,background:'#3213b7',color:'#fff'}}>{initials}</div>
-          <span>{email}</span>
-          <span className="caret">▾</span>
+        <div className="lp-topbar-user-wrap">
+          <button className="lp-topbar-user" onClick={() => setRoleMenu(m => !m)} aria-haspopup="menu" aria-expanded={roleMenu}>
+            <div className="os-avatar" style={{width:28,height:28,fontSize:11,flexShrink:0,background:'#3213b7',color:'#fff'}}>{initials}</div>
+            <span>{email}</span>
+            <span className="caret">▾</span>
+          </button>
+          {roleMenu && (
+            <>
+              <div className="lp-menu-backdrop" onClick={() => setRoleMenu(false)} />
+              <div className="lp-role-menu" role="menu">
+                <div className="lp-role-menu-head">Switch role</div>
+                {ROLES.map(r => (
+                  <button key={r.key} role="menuitem"
+                    className={'lp-role-item' + (r.key === ACTIVE_ROLE ? ' is-active' : '')}
+                    onClick={() => switchRole(r)}>
+                    <span className="lp-role-dot"/>
+                    <span>{r.label}</span>
+                    {r.key === ACTIVE_ROLE && <span className="lp-role-check">✓</span>}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <button className="lp-signout" onClick={signOut}>SIGN OUT ↗</button>
       </div>
@@ -587,15 +621,72 @@ const APP_DETAIL = {
   aiSummary: "Evaldam AI addresses the critical pain point of startup valuation and financial decision-making in India, which is currently slow, expensive, inaccurate, and often non-compliant with local regulations. The platform leverages a fine-tuned LLM, proprietary blended valuation methodology, and a curated dataset of Indian comparables to deliver rapid, cost-effective, and regulation-aware valuations. This solution promises a 10x improvement in speed, cost, and compliance, offering a significant advantage over existing global tools and traditional consultants by deeply integrating Indian regulatory knowledge and market realities into its core AI reasoning.",
   fields: [
     { label: 'Problem defined', value: 'Yes', short: true },
-    { label: 'Problem describe', value: "Indian startups face a critical, systemic friction during fundraising: inaccurate, slow, expensive, and frequently non-compliant valuation and financial decision-making. Founders either pay ₹50,000–₹2,00,000+ to consultants for reports that are often generic and poorly understood, or they use global tools (like Equidam) that ignore Indian regulatory realities (FEMA pricing floors, Rule 11UA, IBBI certification requirements, CCPS/CCD structures). This leads to excessive founder dilution, failed or delayed rounds, poor capital allocation, and loss of equity. The problem affects thousands of early-stage startups annually, with significant economic and psychological cost to founders and the broader Indian startup ecosystem. Now is the right time because large language models have reached sufficient maturity in structured financial reasoning, and India is experiencing a surge in early-stage activity that desperately needs localized, AI-augmented financial intelligence. Solving this directly contributes to more efficient capital allocation, stronger founder outcomes, and increased global competitiveness of Indian startups." },
+    { label: 'Problem description', value: "Indian startups face a critical, systemic friction during fundraising: inaccurate, slow, expensive, and frequently non-compliant valuation and financial decision-making. Founders either pay ₹50,000–₹2,00,000+ to consultants for reports that are often generic and poorly understood, or they use global tools (like Equidam) that ignore Indian regulatory realities (FEMA pricing floors, Rule 11UA, IBBI certification requirements, CCPS/CCD structures). This leads to excessive founder dilution, failed or delayed rounds, poor capital allocation, and loss of equity. The problem affects thousands of early-stage startups annually, with significant economic and psychological cost to founders and the broader Indian startup ecosystem. Now is the right time because large language models have reached sufficient maturity in structured financial reasoning, and India is experiencing a surge in early-stage activity that desperately needs localized, AI-augmented financial intelligence. Solving this directly contributes to more efficient capital allocation, stronger founder outcomes, and increased global competitiveness of Indian startups.",
+      bullets: [
+        "Indian startups face inaccurate, slow, expensive, and often non-compliant valuation during fundraising.",
+        "Founders either pay ₹50,000–₹2,00,000+ for generic consultant reports, or use global tools (e.g. Equidam) that ignore Indian rules (FEMA, Rule 11UA, IBBI, CCPS/CCD).",
+        "This drives excessive founder dilution, failed or delayed rounds, poor capital allocation, and loss of equity.",
+        "It affects thousands of early-stage startups a year, with real economic and psychological cost to the ecosystem.",
+        "Timing is right: LLMs are now mature for structured financial reasoning, and India's early-stage surge needs localized AI financial intelligence.",
+        "Solving it improves capital allocation, founder outcomes, and the global competitiveness of Indian startups.",
+      ] },
     { label: 'Solution stage', value: 'Pilot-ready product', short: true },
-    { label: 'Solution describe', value: "Evaldam AI is an AI-powered platform that delivers fast, regulation-aware, transparent, and defensible startup valuations and financial intelligence specifically tuned for the Indian ecosystem. It represents a 10× improvement over existing solutions in three dimensions: • Speed: Reduces valuation report generation from days/weeks to seconds/minutes. • Cost: Dramatically lowers the cost compared to traditional consultants while maintaining or improving quality. • Accuracy & Compliance: Produces outputs that respect Indian regulatory requirements (FEMA, Rule 11UA, IBBI standards) and provides full transparency with assumptions, methodology, and comparables — something generic global tools and many consultants fail to deliver. The platform combines a fine-tuned domain-specific LLM with a proprietary blended valuation methodology (Scorecard + Berkus + VC Method + DCF with India-adjusted inputs) and a growing structured dataset of Indian startup comparables and regulatory rules." },
-    { label: 'Solution core tech', value: "The core technology is a fine-tuned Large Language Model specialized on Indian startup finance and regulatory reasoning, combined with a proprietary blended valuation engine and a structured, growing dataset of Indian comparables and regulatory logic. Our \"unfair advantage\" comes from three elements that are difficult to replicate quickly: 1. Deep integration of Indian regulatory knowledge (FEMA pricing guidelines, Rule 11UA/57, IBBI standards, CCPS/CCD mechanics) directly into the AI reasoning layer — global models fundamentally lack this. 2. A proprietary blended methodology that automatically adjusts weighting based on stage, data quality, and Indian market realities. 3. A curated and expanding dataset of Indian startup comparables, outcomes, and regulatory interpretations that improves with usage. This combination creates both a data moat and a regulatory moat that generic AI models or traditional tools cannot easily match." },
-    { label: 'Solution contrarian insight', value: "Most people in the startup valuation space treat valuation as either a pure financial modeling exercise or a regulatory compliance checkbox. The rare insight is that in the Indian context, valuation is actually a strategic negotiation and capital allocation tool that sits at the intersection of regulation, psychology, and asymmetric information. Because of FEMA pricing floors and the requirement for professional certification, the valuation number itself becomes a legal anchor that heavily influences founder dilution and investor economics — often more than the underlying business fundamentals in early stages. Founders who understand this dynamic and can generate defensible, regulation-aware valuations quickly gain a significant edge in term sheet negotiations. Most tools and advisors miss this strategic layer entirely." },
+    { label: 'Solution description', value: "Evaldam AI is an AI-powered platform that delivers fast, regulation-aware, transparent, and defensible startup valuations and financial intelligence specifically tuned for the Indian ecosystem. It represents a 10× improvement over existing solutions in three dimensions: • Speed: Reduces valuation report generation from days/weeks to seconds/minutes. • Cost: Dramatically lowers the cost compared to traditional consultants while maintaining or improving quality. • Accuracy & Compliance: Produces outputs that respect Indian regulatory requirements (FEMA, Rule 11UA, IBBI standards) and provides full transparency with assumptions, methodology, and comparables — something generic global tools and many consultants fail to deliver. The platform combines a fine-tuned domain-specific LLM with a proprietary blended valuation methodology (Scorecard + Berkus + VC Method + DCF with India-adjusted inputs) and a growing structured dataset of Indian startup comparables and regulatory rules.",
+      bullets: [
+        "AI platform delivering fast, regulation-aware, transparent, and defensible startup valuations tuned for India.",
+        "Speed: cuts valuation report generation from days/weeks to seconds/minutes.",
+        "Cost: dramatically lower than traditional consultants, at equal or better quality.",
+        "Accuracy & compliance: outputs respect FEMA, Rule 11UA, and IBBI standards, with full transparency on assumptions and comparables.",
+        "Built on a fine-tuned domain LLM, a blended methodology (Scorecard + Berkus + VC Method + DCF, India-adjusted), and a growing dataset of Indian comparables.",
+      ] },
+    { label: 'Solution core tech', value: "The core technology is a fine-tuned Large Language Model specialized on Indian startup finance and regulatory reasoning, combined with a proprietary blended valuation engine and a structured, growing dataset of Indian comparables and regulatory logic. Our \"unfair advantage\" comes from three elements that are difficult to replicate quickly: 1. Deep integration of Indian regulatory knowledge (FEMA pricing guidelines, Rule 11UA/57, IBBI standards, CCPS/CCD mechanics) directly into the AI reasoning layer — global models fundamentally lack this. 2. A proprietary blended methodology that automatically adjusts weighting based on stage, data quality, and Indian market realities. 3. A curated and expanding dataset of Indian startup comparables, outcomes, and regulatory interpretations that improves with usage. This combination creates both a data moat and a regulatory moat that generic AI models or traditional tools cannot easily match.",
+      bullets: [
+        "A fine-tuned LLM specialized in Indian startup finance, plus a proprietary blended valuation engine and a growing comparables dataset.",
+        "Indian regulatory knowledge (FEMA, Rule 11UA/57, IBBI, CCPS/CCD) is built directly into the AI reasoning layer — which global models lack.",
+        "A blended methodology that auto-adjusts weighting by stage, data quality, and Indian market realities.",
+        "A curated, expanding dataset of Indian comparables and regulatory interpretations that improves with usage.",
+        "Together this forms a data moat and a regulatory moat that generic tools can't easily match.",
+      ] },
+    { label: 'Solution contrarian insight', value: "Most people in the startup valuation space treat valuation as either a pure financial modeling exercise or a regulatory compliance checkbox. The rare insight is that in the Indian context, valuation is actually a strategic negotiation and capital allocation tool that sits at the intersection of regulation, psychology, and asymmetric information. Because of FEMA pricing floors and the requirement for professional certification, the valuation number itself becomes a legal anchor that heavily influences founder dilution and investor economics — often more than the underlying business fundamentals in early stages. Founders who understand this dynamic and can generate defensible, regulation-aware valuations quickly gain a significant edge in term sheet negotiations. Most tools and advisors miss this strategic layer entirely.",
+      bullets: [
+        "Most treat valuation as either pure financial modeling or a compliance checkbox.",
+        "In India, valuation is really a strategic negotiation and capital-allocation tool — sitting between regulation, psychology, and asymmetric information.",
+        "Because of FEMA floors and mandatory certification, the valuation number becomes a legal anchor that drives dilution and investor economics, often more than fundamentals early on.",
+        "Founders who produce defensible, regulation-aware valuations quickly gain a real edge in term-sheet negotiations.",
+        "Most tools and advisors miss this strategic layer entirely.",
+      ] },
   ],
 };
 // Expose to the API seam (so getEvalScreen can serve per-application content).
 window.APP_DETAIL = APP_DETAIL;
+
+// ── Application-content normalisation ────────────────────────────────────────
+// Guarantees a consistent UI/UX for ANY application the backend adds, regardless
+// of how the field is sent:
+//   • field.bullets (array)        -> used as-is               (preferred shape)
+//   • field.value with "•" markers -> split on the markers
+//   • field.value as a paragraph   -> auto-split into 1-sentence bullets
+// A field renders as a compact "fact" tile when flagged short or it's a brief clause.
+function fieldBullets(f) {
+  if (Array.isArray(f.bullets)) return f.bullets.map(String);
+  const text = String(f.value || "").trim();
+  if (!text) return [];
+  if (/[•·]s/.test(text)) return text.split(/s*[•·]s+/).map(x => x.trim()).filter(Boolean);
+  // Protect decimals + common abbreviations, then split on sentence-end + capital/quote.
+  const protectedText = text
+    .replace(/(d).(d)/g, "$1~D~$2")
+    .replace(/(e.g|i.e|etc|vs|Dr|Mr|Mrs|Ms|Inc|Ltd|No|Fig|Rs|approx)./gi, "$1~D~");
+  return protectedText
+    .split(/(?<=[.!?])s+(?=[A-Z₹"'(])/)
+    .map(x => x.split("~D~").join(".").trim())
+    .filter(Boolean);
+}
+function isFactField(f) {
+  if (f.short === true) return true;
+  if (Array.isArray(f.bullets)) return false;
+  const v = String(f.value || '');
+  return v.length <= 48 && !/[.!?]/.test(v);
+}
 
 // ============ Full application view (founder form style) ============
 function FullApplicationView({ s, onBack }) {
@@ -760,7 +851,6 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
   const [scores, setScores]       = useRS(evaluation.scores);
   const [reco, setReco]           = useRS(evaluation.recommendation || null);
   const [notes, setNotes]         = useRS(evaluation.notes || '');
-  const [disagree, setDisagree]   = useRS(evaluation.disagreements || {}); // { key: reasonString }
   const [flags, setFlags]         = useRS(evaluation.flags || []);
   const [submitted, setSubmitted] = useRS(evaluation.status === 'submitted');
   const [reopened, setReopened]   = useRS(false); // amend a submitted evaluation
@@ -770,7 +860,7 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
   const [showAi, setShowAi]       = useRS(false);
   const [timeLeft, setTimeLeft]   = useRS(3240); // 54 min — see backend handoff §4.5
   const [activeCat, setActiveCat] = useRS('founders');
-  const [psOpen, setPsOpen]       = useRS(true);
+  const [secOpen, setSecOpen]     = useRS({}); // per-section collapse state (by label)
   const [viewApp, setViewApp]     = useRS(false);
   const [flagInput, setFlagInput] = useRS('');
   const [saveState, setSaveState] = useRS('idle'); // idle | saving | saved
@@ -783,19 +873,11 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
   };
   const removeFlag = (i) => setFlags(prev => prev.filter((_, j) => j !== i));
 
-  const toggleDisagree = (k, on) => setDisagree(prev => {
-    const next = { ...prev };
-    if (on) next[k] = next[k] || '';
-    else delete next[k];
-    return next;
-  });
-  const setDisagreeReason = (k, v) => setDisagree(prev => ({ ...prev, [k]: v }));
-
   const setScore = (k) => (v) => setScores(prev => ({ ...prev, [k]: v }));
   const overall = (Object.values(scores).reduce((a,b) => a+b, 0) / Object.values(scores).length);
 
   // Evaluation payload sent to the API seam.
-  const payload = () => ({ scores, recommendation: reco, notes, disagreements: disagree, flags });
+  const payload = () => ({ scores, recommendation: reco, notes, flags });
 
   // Edit-window countdown.
   React.useEffect(() => {
@@ -817,7 +899,7 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
       API.saveEvaluation(appId, payload(), source).then(() => setSaveState('saved'));
     }, 800);
     return () => clearTimeout(t);
-  }, [scores, reco, notes, disagree, flags]);
+  }, [scores, reco, notes, flags]);
 
   const saveDraftNow = () => {
     setSaveState('saving');
@@ -847,7 +929,7 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
           </div>
           <span className="lp-section-eyebrow" style={{ marginTop: 12 }}>R-2 · ACTIVE EVALUATION</span>
           <h2 className="lp-section-title">{s.name} <span className="lp-muted">· scoring</span></h2>
-          <div className="lp-section-sub">Read the application, then score each dimension 0–10. Notes are optional but recommended for variance &gt;1.0.</div>
+          <div className="lp-section-sub">Read the application, then score each dimension 0–10. Notes are optional but encouraged.</div>
         </div>
         <div className="lp-section-actions">
           {/* Top line — navigate between applications in the queue */}
@@ -897,39 +979,50 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
               </div>
             </div>
             <div className="os-stack">
-              {/* AI summary */}
-              <div>
-                <div className="os-text-xs os-text-dim os-uppercase os-mb-sm">AI summary</div>
-                <p style={{ fontFamily:'var(--font-sans)', fontSize: 15, lineHeight: 1.7, margin: 0, color:'var(--ink-soft)' }}>
-                  {s.detail.aiSummary}
-                </p>
+              {/* AI summary — soft branded card */}
+              <div className="ps-ai-summary">
+                <div className="ps-ai-label">AI summary</div>
+                <p className="ps-ai-text">{s.detail.aiSummary}</p>
               </div>
 
-              <hr className="os-divider"/>
-
-              {/* Problem & solution (collapsible) */}
+              {/* Problem & solution */}
               <div>
-                <div
-                  className="os-row gap-sm"
-                  style={{ cursor:'pointer', alignItems:'center', userSelect:'none' }}
-                  onClick={() => setPsOpen(o => !o)}
-                >
-                  <span style={{ fontSize: 13, transition:'transform .15s', display:'inline-block', transform: psOpen ? 'none' : 'rotate(-90deg)' }}>▾</span>
-                  <span style={{ fontWeight: 600, fontSize: 14 }}>Problem &amp; solution</span>
-                </div>
+                <div className="ps-group-label">Problem &amp; solution</div>
 
-                {psOpen && (
-                  <div className="os-stack" style={{ marginTop: 14 }}>
-                    {s.detail.fields.map((f, i) => (
-                      <div key={i}>
-                        <div className="os-text-xs os-text-dim os-uppercase os-mb-sm">{f.label}</div>
-                        {f.short
-                          ? <div style={{ fontSize: 14, fontWeight: 600, color:'var(--ink)' }}>{f.value}</div>
-                          : <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, color:'var(--ink-soft)' }}>{f.value}</p>}
+                {/* quick facts */}
+                {s.detail.fields.some(isFactField) && (
+                  <div className="ps-facts">
+                    {s.detail.fields.filter(isFactField).map((f, i) => (
+                      <div className="ps-fact" key={i}>
+                        <span className="ps-fact-label">{f.label}</span>
+                        <span className="ps-fact-value">{f.value}</span>
                       </div>
                     ))}
                   </div>
                 )}
+
+                {/* AI sections — each individually collapsible (first open by default) */}
+                <div className="ps-sections">
+                  {s.detail.fields.filter(f => !isFactField(f)).map((f, i) => {
+                    const open = (f.label in secOpen) ? secOpen[f.label] : (i === 0);
+                    const pts = fieldBullets(f);
+                    return (
+                      <div className={"ps-sec" + (open ? " is-open" : "")} key={i}>
+                        <button className="ps-sec-head" aria-expanded={open}
+                          onClick={() => setSecOpen(prev => ({ ...prev, [f.label]: !open }))}>
+                          <span className="ps-sec-chev">{open ? '▾' : '▸'}</span>
+                          <span className="ps-sec-label">{f.label}</span>
+                          <span className="ps-sec-hint">{open ? '' : pts.length + ' points'}</span>
+                        </button>
+                        {open && (
+                          <ul className="ps-bullets">
+                            {pts.map((b, j) => <li key={j}>{b}</li>)}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <hr className="os-divider"/>
@@ -974,34 +1067,14 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
             {['problem','solution','tech','founders','commit'].map(k => (
               <div key={k} style={{ marginBottom: 16 }}>
                 <Slider label={CRIT_LABELS[k]} kind={k} value={scores[k]} onChange={setScore(k)} />
-                {showAi && (
-                  <div className="os-row gap-sm os-mt-sm" style={{ paddingLeft: 120 }}>
-                    <label className="os-row gap-sm" style={{ fontSize: 13, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={k in disagree} onChange={(e) => toggleDisagree(k, e.target.checked)} />
-                      Disagree with AI on {CRIT_LABELS[k]}
-                    </label>
-                  </div>
-                )}
-                {showAi && (k in disagree) && (
-                  <div style={{ paddingLeft: 120, marginTop: 8 }}>
-                    <input className="os-input os-w-100" style={{ fontSize: 13 }}
-                      placeholder={"Reason for disagreement on " + k + "..."}
-                      value={disagree[k]}
-                      onChange={(e) => setDisagreeReason(k, e.target.value)} />
-                  </div>
-                )}
               </div>
             ))}
 
             <hr className="os-divider"/>
 
-            <div className="os-row between os-mb-sm">
+            <div className="os-row between">
               <span className="os-text-xs os-text-dim os-uppercase">Your overall</span>
               <span className="os-num-big" style={{ fontSize: 34, fontFamily:'var(--font-sans)', fontWeight: 800, letterSpacing:'-0.02em', color:'#3213b7' }}>{overall.toFixed(2)}</span>
-            </div>
-            <div className="os-row between">
-              <span className="os-text-xs os-text-dim os-uppercase">vs AI</span>
-              <Variance value={Math.abs(overall - s.ai.overall)} />
             </div>
           </div>
 
@@ -1015,8 +1088,16 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
           </div>
 
           <div className="os-card">
-            <div className="os-card-title os-mb-sm">Notes (variance &gt; 1.0 — required)</div>
-            <textarea className="os-input os-w-100" rows="5" placeholder="Why does your evaluation differ from AI? What did you see that the model missed?" value={notes} onChange={(e) => setNotes(e.target.value)}/>
+            <div className="os-row between os-mb-sm" style={{ alignItems: 'center' }}>
+              <div className="os-card-title">Notes <span className="os-text-dim" style={{ textTransform:'none', letterSpacing:0, fontWeight:400 }}>(recommended)</span></div>
+              {!lockedSubmitted && saveState !== 'idle' && (
+                <span className="saved" style={{ fontSize: 11, opacity: saveState === 'saving' ? 0.5 : 1 }}>
+                  {saveState === 'saving' ? 'Saving…' : '✓ Saved'}
+                </span>
+              )}
+            </div>
+            <textarea className="notes-area" placeholder="What stood out in your assessment? Key strengths, concerns, or context behind your scores." value={notes} onChange={(e) => setNotes(e.target.value)} disabled={lockedSubmitted}/>
+            <div className="os-text-xs os-text-dim os-mt-sm">Saved automatically as you type.</div>
           </div>
 
           <div className="os-card soft">
@@ -1061,12 +1142,13 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
         </div>
       </div>
 
-      {showRubric && <RubricModal onClose={() => setShowRubric(false)} active={activeCat}/>}
+      {showRubric && <RubricModal onClose={() => setShowRubric(false)} track={s.track}/>}
     </div>
   );
 }
 
-function RubricModal({ onClose, active='problem' }) {
+function RubricModal({ onClose, track }) {
+  const cohort = track === 'sip' ? 'VIP' : 'TIR';
   const RUBRIC = {
     problem:   { name:'Problem Quality', anchors:[
       ['10','Existential pain for a clearly-defined market segment with quantified $ impact'],
@@ -1109,25 +1191,38 @@ function RubricModal({ onClose, active='problem' }) {
       <div className="os-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 880 }}>
         <div className="os-modal-head">
           <div>
-            <div className="os-text-xs os-text-dim os-uppercase">scoring.md · v3.1</div>
+            <div className="os-text-xs os-text-dim os-uppercase">{cohort} 2026 rubric</div>
             <div className="os-h1" style={{ fontSize: 22 }}>Reviewer rubric</div>
           </div>
           <button className="os-btn ghost" onClick={onClose}>Close ✕</button>
         </div>
         <div className="os-modal-body">
-          <div className="os-rubric">
-            <div className="head">
-              <span># scoring.md — TIR 2026 reviewer rubric</span>
-              <span className="ver">last updated 2026-04-01 · admin@artpark.in</span>
-            </div>
+          <div className="rubric">
+            <p className="rubric-intro">Score each dimension 0–10 using the anchors below.</p>
             {Object.entries(RUBRIC).map(([k, v]) => (
-              <div key={k}>
-                <h4>## {v.name}</h4>
-                <pre>{v.anchors.map(([n,d]) => '  ' + n + '  →  ' + d).join('\n')}</pre>
+              <div className="rubric-cat" key={k}>
+                <div className="rubric-cat-name">{v.name}</div>
+                <div className="rubric-anchors">
+                  {v.anchors.map(([n, d]) => {
+                    const tier = +n >= 8 ? 'hi' : +n >= 6 ? 'mid' : +n >= 4 ? 'lo' : 'weak';
+                    return (
+                      <div className="rubric-anchor" key={n}>
+                        <span className={"rubric-score rubric-" + tier}>{n}</span>
+                        <span className="rubric-desc">{d}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ))}
-            <h4 style={{ marginTop: 18 }}># notes</h4>
-            <pre>{'- Score independently of AI baseline.\n- For variance > 1.0 from AI, written rationale is required.\n- Flag any inconsistency you spot — admin will reconcile.'}</pre>
+            <div className="rubric-cat">
+              <div className="rubric-cat-name">Notes</div>
+              <ul className="rubric-notes">
+                <li>Score independently of the AI baseline.</li>
+                <li>Notes are recommended — capture what stood out in your assessment.</li>
+                <li>Flag any inconsistency you spot — admin will reconcile.</li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
@@ -1142,7 +1237,6 @@ function ReviewerHistory({ openEval }) {
   if (loading) return <div style={{ padding: '48px 0' }}><LoadingState label="Loading your history…" /></div>;
   if (error)   return <div style={{ padding: '48px 0' }}><ErrorState error={error} onRetry={reload} /></div>;
 
-  const stats = data.stats;
   const history = data.rows;
   const recoTone = r => r==='yes' ? 'green' : r==='no' ? 'red' : 'amber';
   // appId 'sNN' -> 0-based index into the applications list (for the eval screen).
@@ -1154,52 +1248,24 @@ function ReviewerHistory({ openEval }) {
         <div>
           <span className="lp-section-eyebrow">R-3 · MY HISTORY</span>
           <h2 className="lp-section-title">Review history</h2>
-          <div className="lp-section-sub">All evaluations you've submitted, your variance vs AI, and how admin decisions tracked your recommendations.</div>
-        </div>
-      </div>
-      <div className="lp-stat-grid">
-        <div className="dash-stat-tile">
-          <div className="dash-stat-label">TOTAL REVIEWS</div>
-          <div className="dash-stat-num">{stats.total}</div>
-          <div className="dash-stat-sub">3 cohorts</div>
-        </div>
-        <div className="dash-stat-tile">
-          <div className="dash-stat-label">CONSISTENCY</div>
-          <div className="dash-stat-num">{stats.consistencyPct}%</div>
-          <div className="dash-stat-sub">with admin decisions</div>
-        </div>
-        <div className="dash-stat-tile">
-          <div className="dash-stat-label">AVG VARIANCE</div>
-          <div className="dash-stat-num">{stats.avgVariance.toFixed(1)}</div>
-          <div className="dash-stat-sub">vs AI baseline</div>
-        </div>
-        <div className="dash-stat-tile">
-          <div className="dash-stat-label">AVG TIME</div>
-          <div className="dash-stat-num">{stats.avgMinutes}m</div>
-          <div className="dash-stat-sub">per review</div>
+          <div className="lp-section-sub">Every evaluation you've submitted, the recommendation you made, and the admin's final decision.</div>
         </div>
       </div>
       <table className="os-table">
-        <thead><tr><th>Startup</th><th>Date</th><th>My score</th><th>AI</th><th>Δ</th><th>My reco</th><th>Admin decision</th><th>Match?</th><th>Decision</th></tr></thead>
+        <thead><tr><th>Startup</th><th>Date</th><th>My score</th><th>My reco</th><th>Admin decision</th><th>Decision</th></tr></thead>
         <tbody>
-          {history.map((h,i) => {
-            const match = (h.reco==='yes' && h.adminDec==='approved') || (h.reco==='no' && h.adminDec==='rejected');
-            return (
-              <tr key={i}>
-                <td><b>{h.name}</b></td>
-                <td className="os-text-sm" style={{ color: 'var(--ink-soft)' }}>{h.date}</td>
-                <td className="num"><b>{h.myScore.toFixed(1)}</b></td>
-                <td className="num os-text-soft">{h.aiScore.toFixed(1)}</td>
-                <td><Variance value={h.variance}/></td>
-                <td><Chip tone={recoTone(h.reco)}>{h.reco.toUpperCase()}</Chip></td>
-                <td><Chip tone={h.adminDec==='approved'?'green':h.adminDec==='rejected'?'red':'slate'}>{h.adminDec.toUpperCase()}</Chip></td>
-                <td>{match ? <span style={{ color:'var(--ok)' }}>✓</span> : <span style={{ color:'var(--ink-dim)' }}>—</span>}</td>
-                <td>
-                  <button className="os-btn sm ghost" onClick={() => openEval(idxOfApp(h.appId), h.source || 'history')}>✎ Edit</button>
-                </td>
-              </tr>
-            );
-          })}
+          {history.map((h,i) => (
+            <tr key={i}>
+              <td><b>{h.name}</b></td>
+              <td className="os-text-sm" style={{ color: 'var(--ink-soft)' }}>{h.date}</td>
+              <td className="num"><b>{h.myScore.toFixed(1)}</b></td>
+              <td><Chip tone={recoTone(h.reco)}>{h.reco.toUpperCase()}</Chip></td>
+              <td><Chip tone={h.adminDec==='approved'?'green':h.adminDec==='rejected'?'red':'slate'}>{h.adminDec.toUpperCase()}</Chip></td>
+              <td>
+                <button className="os-btn sm ghost" onClick={() => openEval(idxOfApp(h.appId), h.source || 'history')}>✎ Edit</button>
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
