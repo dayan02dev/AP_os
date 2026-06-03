@@ -64,7 +64,12 @@ export default function ReviewerV2HistoryPage() {
               { label: "AVG VARIANCE",    num: stats.avgVariance },
               { label: "AVG TIME (MIN)",  num: stats.avgMinutes },
             ].map((t) => (
-              <div key={t.label} className="dash-stat-tile" style={{ padding: "22px 24px" }}>
+              <div
+                key={t.label}
+                className="dash-stat-tile"
+                style={{ padding: "22px 24px" }}
+                title={t.num === "—" ? "Aggregate stats not yet returned by the backend — see docs/REVIEWER_V2_MANUAL_STEPS.md 'Known visible placeholders'" : undefined}
+              >
                 <div className="dash-stat-label">{t.label}</div>
                 <div className="dash-stat-num">{t.num}</div>
               </div>
@@ -106,14 +111,14 @@ export default function ReviewerV2HistoryPage() {
                       ? <Chip tone={recoTone(h.reco)}>{h.reco.toUpperCase()}</Chip>
                       : <span className="os-text-dim">—</span>}
                   </td>
-                  <td className="os-text-dim">{h.aiScore}</td>
-                  <td className="os-text-dim">{h.variance}</td>
+                  <td className="os-text-dim" title="Backend does not yet expose AI score on this row — see docs/REVIEWER_V2_MANUAL_STEPS.md 'Known visible placeholders'">{h.aiScore}</td>
+                  <td className="os-text-dim" title="Variance requires AI score — not yet available from backend">{h.variance}</td>
                   <td>
                     {h.adminDec && h.adminDec !== "—"
                       ? <Chip tone={h.adminDec === "approved" ? "green" : h.adminDec === "rejected" ? "red" : "slate"}>
                           {h.adminDec.toUpperCase()}
                         </Chip>
-                      : <span className="os-text-dim">—</span>}
+                      : <span className="os-text-dim" title="Backend does not yet expose admin decision on this row — see docs/REVIEWER_V2_MANUAL_STEPS.md 'Known visible placeholders'">—</span>}
                   </td>
                   <td style={{ textAlign: "right" }}>
                     {isEditable(h) ? (

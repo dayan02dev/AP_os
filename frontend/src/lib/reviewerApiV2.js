@@ -138,6 +138,12 @@ export const reviewerApiV2 = {
     const assignmentId = queueItem?._assignmentId ?? draft._assignmentId;
     const track        = queueItem?._track        ?? draft._track ?? "tir";
 
+    // TODO(post-demo): Cache "review exists" flag in module-level state after
+    // the first successful GET or POST. Subsequent saves should skip this
+    // probe and go straight to PATCH. Currently adds one round-trip per
+    // autosave (debounced 800ms in the page = ~once per edit burst).
+    // Acceptable for the pilot demo; refactor before scaling to many reviewers.
+
     // Check whether a review already exists for this application
     const probeRes = await api.get(`/reviewer/reviews/mine?application_id=${encodeURIComponent(appId)}`).catch((err) => {
       if (err && err.status === 404) return { review: null };
@@ -175,6 +181,8 @@ export const reviewerApiV2 = {
     const queueItem  = _findQueueItemByAppId(appId);
     const assignmentId = queueItem?._assignmentId ?? body._assignmentId;
     const track        = queueItem?._track        ?? body._track ?? "tir";
+
+    // TODO(post-demo): same probe-caching refactor as saveEvaluation applies here.
 
     // Check for existing review to decide POST vs PATCH
     const probeRes = await api.get(`/reviewer/reviews/mine?application_id=${encodeURIComponent(appId)}`).catch((err) => {

@@ -224,7 +224,7 @@ export default function QueueTable({ allQueue, loading, error, onRetry, onSelect
                       </span>
                     </div>
                   ) : (
-                    <span style={{ color: "var(--ink-dim)" }}>—</span>
+                    <span style={{ color: "var(--ink-dim)" }} title="Backend does not yet expose AI score on this row — see docs/REVIEWER_V2_MANUAL_STEPS.md 'Known visible placeholders'">—</span>
                   )}
                 </td>
                 <td>

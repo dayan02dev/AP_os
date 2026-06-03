@@ -82,14 +82,20 @@ Set these in the Vercel project settings for the preview deployment
 | `VITE_SUPABASE_URL` | `https://<your-project>.supabase.co` | From Supabase Dashboard → Settings → API |
 | `VITE_SUPABASE_ANON_KEY` | `eyJ...` | From Supabase Dashboard → Settings → API |
 | `VITE_REVIEWER_V2_MOCK` | `false` | Must be false to use the real backend |
-| `VITE_REVIEWER_V2_READONLY` | `true` | **Start here.** Blocks save/submit and shows "Demo mode" toast. Flip to `false` after the manager confirms writes can land in production. |
+| `VITE_REVIEWER_V2_READONLY` | `true` | **Start here.** Blocks save/submit and shows "Demo mode" toast. When the manager confirms writes can land in production, change to `false` in Vercel dashboard and trigger a redeploy (see note below). |
 
 > **Why start with `VITE_REVIEWER_V2_READONLY=true`?**
 > The reviewer V2 scoring form writes to `public.reviews` via
 > `POST /reviewer/reviews` and `PATCH /reviewer/reviews/{id}`. Starting
 > read-only means the demo cannot accidentally create real review records
-> in production. Once the manager signs off, flip this to `false` and
-> redeploy.
+> in production.
+>
+> **Important — build-time variable, not a runtime toggle:**
+> `VITE_REVIEWER_V2_READONLY` is a Vite build-time variable: it is inlined
+> into the JS bundle when the frontend is built. Changing the value in the
+> Vercel dashboard triggers a redeploy of the affected environment
+> (typically 30–60 seconds for a preview deployment). There is no in-app
+> runtime toggle. Schedule flips during a quiet window.
 
 ---
 
@@ -147,3 +153,24 @@ delete from public.user_roles
  where user_id = (select id from auth.users where email = 'email@artpark.in')
    and role = 'reviewer';
 ```
+
+---
+
+## Known visible placeholders
+
+The new UI surfaces several "—" cells where the backend does not yet
+return the underlying data. These are intentional gaps (Phase 1 §3 of
+the design doc), not bugs:
+
+- History page, "AI score" column — backend doesn't expose AI score
+  per review row.
+- History page, "Admin decision" column — backend doesn't expose this
+  yet.
+- History page, variance column — requires AI score, so also unavailable.
+- Dashboard tab, stats aggregate tiles (total, consistency, avg variance,
+  avg time) — no aggregate endpoint exists yet.
+- Queue table, "AI Score" column for assignments from the real inbox —
+  `fetch_inbox` in `reviewer_query.py` does not yet join `ai_screening`.
+
+Each "—" cell has a hover title pointing to this section. The full gap
+list and the planned fixes live in `docs/REVIEWER_REWIRE_PLAN.md §3`.
