@@ -41,6 +41,10 @@ import ReviewerAppShell from "./pages/reviewer/ReviewerAppShell.jsx";
 import ReviewerInboxPage from "./pages/reviewer/ReviewerInboxPage.jsx";
 import ReviewerCompletedPage from "./pages/reviewer/ReviewerCompletedPage.jsx";
 import ReviewerScoringPage from "./pages/reviewer/ReviewerScoringPage.jsx";
+import ReviewerV2AppShell from "./pages/reviewer-v2/ReviewerV2AppShell.jsx";
+import ReviewerV2InboxPage from "./pages/reviewer-v2/ReviewerV2InboxPage.jsx";
+import ReviewerV2EvaluationPage from "./pages/reviewer-v2/ReviewerV2EvaluationPage.jsx";
+import ReviewerV2HistoryPage from "./pages/reviewer-v2/ReviewerV2HistoryPage.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
 import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
@@ -318,6 +322,22 @@ export default function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
+      {/* Reviewer v2 — new prototype-based UI under /reviewer-v2/*.
+          Existing /reviewer/* routes above are UNTOUCHED.
+          landing.js still points reviewer role to /reviewer/inbox (Phase 4 will flip it). */}
+      <Route
+        element={
+          <ProtectedRoute>
+            <ReviewerV2AppShell />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/reviewer-v2" element={<Navigate to="/reviewer-v2/inbox" replace />} />
+        <Route path="/reviewer-v2/inbox" element={<ReviewerV2InboxPage />} />
+        <Route path="/reviewer-v2/eval/:appId" element={<ReviewerV2EvaluationPage />} />
+        <Route path="/reviewer-v2/history" element={<ReviewerV2HistoryPage />} />
+      </Route>
 
       {/* Leadership dashboard (Session 5). Capability-gated to `view_stats`. */}
       <Route
