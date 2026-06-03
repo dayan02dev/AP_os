@@ -1,314 +1,245 @@
 // reviewerApiV2.js — API client for the new reviewer UI.
-// PHASE 2: mock implementation matching the prototype's window.ReviewerAPI.
-// PHASE 3: swap method bodies for real fetch() calls against
-//   backend/app/routers/reviewer.py (see API mapping in
-//   docs/REVIEWER_REWIRE_PLAN.md section 3).
+// PHASE 2: mock implementation (active when VITE_REVIEWER_V2_MOCK=true).
+// PHASE 3: real fetch() calls against backend/app/routers/reviewer.py.
+//   See docs/REVIEWER_REWIRE_PLAN.md §3 for the full API map.
+//   See reviewerApiV2.adapters.js for backend → prototype shape adapters.
+//   See reviewerApiV2.mock.js for the Phase 2 mock implementation.
 
+import { api } from "./api.js";
+import * as mock from "./reviewerApiV2.mock.js";
 import {
-  STARTUPS,
-  QUEUE_ITEM_INDUSTRY,
-  QUEUE_ITEM_STAGE,
-  QUEUE_ITEM_DUE,
-  HISTORY_ROWS,
-} from "../pages/reviewer-v2/data/mockData.js";
+  adaptMe,
+  adaptAssignmentToQueueRow,
+  adaptApplicationForEvalScreen,
+  realToProto,
+  protoToReal,
+  protoToPatch,
+  adaptHistoryRow,
+  emptyEvaluation,
+} from "./reviewerApiV2.adapters.js";
 
-// ── Constants ──────────────────────────────────────────────────────────────
-const QUEUE_N = 8;
-const LS_KEY      = "artpark.reviewer.evaluations.v3";
-const HIST_LS_KEY = "artpark.reviewer.history.v3";
+// ── Feature flags ─────────────────────────────────────────────────────────
+// VITE_REVIEWER_V2_MOCK=true   → use mock data (no backend needed)
+// VITE_REVIEWER_V2_READONLY=true → block writes, show demo-mode toast
+const USE_MOCK = import.meta.env.VITE_REVIEWER_V2_MOCK === "true";
+const READONLY = import.meta.env.VITE_REVIEWER_V2_READONLY === "true";
 
-const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+// ── Toast helper ──────────────────────────────────────────────────────────
+// window.toast is wired by the app shell. Guard in case the page is rendered
+// outside the shell context (e.g. tests).
+function toast(msg) {
+  if (typeof window !== "undefined" && typeof window.toast === "function") {
+    window.toast(msg);
+  } else {
+    console.info("[reviewerApiV2]", msg);
+  }
+}
 
-// ── Helpers ────────────────────────────────────────────────────────────────
 function nowISO() { return new Date().toISOString(); }
 
-function fmtDate(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
-  return String(d.getDate()).padStart(2, "0") + " " + MONTHS[d.getMonth()] + " " + d.getFullYear();
-}
+// ── Module-level queue cache ──────────────────────────────────────────────
+// getEvalScreen resolves an idx → applicationId by reading the cached queue.
+// Reset when getQueue is called so stale state doesn't cause wrong navigation.
+let _queueCache = null;
 
-function appIdOf(s) {
-  return "TIR-" + s.id.replace("s", "").padStart(5, "0");
-}
-
-function scoresAt(v) {
-  return { problem: v, solution: v, tech: v, founders: v, commit: v };
-}
-
-function avgScores(s) {
-  const a = Object.values(s);
-  return a.reduce((x, y) => x + y, 0) / a.length;
-}
-
-function round1(n) { return Math.round(n * 10) / 10; }
-
-// ── Evaluation store (module-level state + localStorage persistence) ────────
-// Two separate stores (current cohort vs past cohort) so editing a history
-// item never clobbers the queue evaluation and vice versa.
-
-function emptyEvaluation(appId) {
-  return {
-    appId,
-    status: "not-started",
-    scores: { problem: 5.0, solution: 5.0, tech: 5.0, founders: 5.0, commit: 5.0 },
-    recommendation: null,
-    notes: "",
-    disagreements: {},
-    flags: [],
-    updatedAt: null,
-    submittedAt: null,
-  };
-}
-
-function seedStore() {
-  return {
-    s01: { ...emptyEvaluation("s01"), status: "submitted" },
-    s02: { ...emptyEvaluation("s02"), status: "in-progress" },
-    s03: {
-      ...emptyEvaluation("s03"),
-      status: "draft",
-      scores: { problem: 6.5, solution: 5.5, tech: 6.0, founders: 5.0, commit: 6.0 },
-      recommendation: "maybe",
-      notes: "I disagree on Founders score — sole founder, no team yet. Idea is real, execution risk high.",
-      flags: ["Single founder — execution risk", "Pilot data referenced but not shared"],
-    },
-  };
-}
-
-function seedHistory() {
-  const h = {};
-  HISTORY_ROWS.forEach((r) => {
-    h[r.appId] = {
-      ...emptyEvaluation(r.appId),
-      status: "submitted",
-      scores: scoresAt(r.myScore),
-      recommendation: r.reco,
-      submittedAt: r.date,
-    };
-  });
-  return h;
-}
-
-function loadJSON(key) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
+function queueItemAt(idx) {
+  if (_queueCache && _queueCache[idx]) return _queueCache[idx];
   return null;
 }
 
-let STORE         = loadJSON(LS_KEY)      || seedStore();
-let HISTORY_STORE = loadJSON(HIST_LS_KEY) || seedHistory();
-
-function persist() {
-  try {
-    localStorage.setItem(LS_KEY,      JSON.stringify(STORE));
-    localStorage.setItem(HIST_LS_KEY, JSON.stringify(HISTORY_STORE));
-  } catch { /* ignore */ }
-}
-persist();
-
-function storeFor(source) {
-  return source === "history" ? HISTORY_STORE : STORE;
-}
-
-// ── Canonical queue builder ────────────────────────────────────────────────
-function canonicalQueue() {
-  return STARTUPS.slice(0, QUEUE_N).map((s, i) => ({
-    ...s,
-    applicationId: appIdOf(s),
-    domain:        QUEUE_ITEM_INDUSTRY[i],
-    industry:      QUEUE_ITEM_INDUSTRY[i],
-    stage:         QUEUE_ITEM_STAGE[i],
-    track:         i < 5 ? "tir" : "sip",
-    due:           QUEUE_ITEM_DUE[i],
-    reviewStatus:  (STORE[s.id] && STORE[s.id].status) || "not-started",
-  }));
-}
-
-// Simulated latency so loading states are exercised in dev.
-const wait = () =>
-  new Promise((r) => setTimeout(r, reviewerApiV2.latencyMs));
-
-// ── The APP_DETAIL mock (Evaldam AI — shown for all apps in Phase 2) ──────
-// Phase 3 replaces getEvalScreen with a real fetch to
-//   GET /reviewer/applications/{track}/{id}
-// which returns per-application content.
-const APP_DETAIL = {
-  aiSummary:
-    "Evaldam AI addresses the critical pain point of startup valuation and financial decision-making in India, which is currently slow, expensive, inaccurate, and often non-compliant with local regulations. The platform leverages a fine-tuned LLM, proprietary blended valuation methodology, and a curated dataset of Indian comparables to deliver rapid, cost-effective, and regulation-aware valuations.",
-  fields: [
-    { label: "Problem defined",           value: "Yes",                                      short: true },
-    { label: "Problem Description",
-      bullets: [
-        "Indian startups face inaccurate, slow, expensive, and often non-compliant valuation during fundraising.",
-        "Founders either pay ₹50,000–₹2,00,000+ for generic consultant reports, or use global tools (e.g. Equidam) that ignore Indian rules (FEMA, Rule 11UA, IBBI, CCPS/CCD).",
-        "This drives excessive founder dilution, failed or delayed rounds, poor capital allocation, and loss of equity.",
-        "It affects thousands of early-stage startups a year, with real economic and psychological cost to the ecosystem.",
-        "LLMs are now mature for structured financial reasoning, and India's early-stage surge needs localized AI financial intelligence.",
-      ],
-    },
-    { label: "Solution stage",            value: "Pilot-ready product",                      short: true },
-    { label: "Solution Description",
-      bullets: [
-        "AI platform delivering fast, regulation-aware, transparent, and defensible startup valuations tuned for India.",
-        "Speed: cuts valuation report generation from days/weeks to seconds/minutes.",
-        "Cost: dramatically lower than traditional consultants, at equal or better quality.",
-        "Accuracy & compliance: outputs respect FEMA, Rule 11UA, and IBBI standards, with full transparency on assumptions and comparables.",
-        "Built on a fine-tuned domain LLM, a blended methodology (Scorecard + Berkus + VC Method + DCF, India-adjusted), and a growing dataset of Indian comparables.",
-      ],
-    },
-    { label: "Solution Core Tech",
-      bullets: [
-        "A fine-tuned LLM specialized in Indian startup finance, plus a proprietary blended valuation engine and a growing comparables dataset.",
-        "Indian regulatory knowledge (FEMA, Rule 11UA/57, IBBI, CCPS/CCD) is built directly into the AI reasoning layer — which global models lack.",
-        "A blended methodology that auto-adjusts weighting by stage, data quality, and Indian market realities.",
-        "A curated, expanding dataset of Indian comparables and regulatory interpretations that improves with usage.",
-      ],
-    },
-  ],
-};
-
 // ── Public API ─────────────────────────────────────────────────────────────
 export const reviewerApiV2 = {
+  // Simulated latency knob (used by mock only; real network dominates in prod)
   latencyMs: 200,
 
+  // ── getMe ───────────────────────────────────────────────────────────────
   async getMe() {
-    await wait();
-    return {
-      id: "r1",
-      name: "Vikram Sundar",
-      email: "vikram@artpark.in",
-      initials: "VS",
-      cohort: "TIR + VIP cohort 2026",
-      domains: ["Robotics", "Mobility"],
-    };
+    if (USE_MOCK) return mock.getMe(this.latencyMs);
+
+    const me = await api.get("/auth/me");
+    return adaptMe(me);
   },
 
+  // ── getQueue ────────────────────────────────────────────────────────────
   async getQueue() {
-    await wait();
-    return canonicalQueue();
+    if (USE_MOCK) {
+      const q = await mock.getQueue(this.latencyMs);
+      _queueCache = q;
+      return q;
+    }
+
+    const res = await api.get("/reviewer/assignments");
+    const rows = (res.assignments || []).map(adaptAssignmentToQueueRow);
+    _queueCache = rows;
+    return rows;
   },
 
-  // Returns { application, evaluation } for the evaluation screen.
-  // source: 'queue' | 'history' — picks the correct evaluation store.
+  // ── getEvalScreen ────────────────────────────────────────────────────────
+  // idx is a 0-based queue index. Resolves to an (applicationId, track) pair
+  // from the cached queue, then fetches the full application + my_review.
   async getEvalScreen(idx, source = "queue") {
-    await wait();
-    const raw = STARTUPS[idx] || STARTUPS[2];
-    const appId = raw.id;
-    const st = storeFor(source);
-    const application = {
-      ...raw,
-      applicationId: appIdOf(raw),
-      track: idx < 5 ? "tir" : "sip",
-      detail: APP_DETAIL,
-    };
-    const evaluation = st[appId] ? { ...st[appId] } : emptyEvaluation(appId);
-    return { application, evaluation };
+    if (USE_MOCK) return mock.getEvalScreen(idx, source, this.latencyMs);
+
+    // Resolve application_id and track from the cached queue
+    const queueItem = queueItemAt(idx);
+    if (!queueItem) {
+      // Queue not yet loaded — fetch it first, then retry
+      await this.getQueue();
+      const item = queueItemAt(idx);
+      if (!item) throw new Error(`No queue item at index ${idx}. Queue has ${(_queueCache || []).length} items.`);
+    }
+    const item  = queueItemAt(idx);
+    const appId = item._applicationId || item.applicationId;
+    const track = item._track || item.track || "tir";
+
+    // Parallel fetch: application detail + my_review
+    const [appPayload, reviewRes] = await Promise.all([
+      api.get(`/reviewer/applications/${track}/${appId}`),
+      api.get(`/reviewer/reviews/mine?application_id=${encodeURIComponent(appId)}`).catch((err) => {
+        // 404 means no review yet — return null so we show empty evaluation
+        if (err && err.status === 404) return { review: null };
+        throw err;
+      }),
+    ]);
+
+    // Merge my_review from the probe endpoint (more reliable than the one
+    // bundled in the application payload, which may be stale after a draft)
+    const myReview = reviewRes?.review ?? appPayload?.my_review ?? null;
+    const merged   = { ...appPayload, my_review: myReview };
+
+    return adaptApplicationForEvalScreen(merged, idx);
   },
 
+  // ── getEvaluation ────────────────────────────────────────────────────────
   async getEvaluation(appId, source = "queue") {
-    await wait();
-    const st = storeFor(source);
-    return st[appId] ? { ...st[appId] } : emptyEvaluation(appId);
-  },
+    if (USE_MOCK) return mock.getEvaluation(appId, source, this.latencyMs);
 
-  async saveEvaluation(appId, draft, source = "queue") {
-    await wait();
-    const st = storeFor(source);
-    const prev = st[appId] || emptyEvaluation(appId);
-    st[appId] = {
-      ...prev,
-      ...draft,
-      appId,
-      status: draft.status === "submitted" ? "submitted" : "draft",
-      updatedAt: nowISO(),
-    };
-    persist();
-    return { ...st[appId] };
-  },
-
-  async submitEvaluation(appId, body, source = "queue") {
-    const saved = await this.saveEvaluation(
-      appId,
-      { ...body, status: "submitted" },
-      source,
-    );
-    saved.submittedAt = nowISO();
-    storeFor(source)[appId] = saved;
-    persist();
-    return { ...saved };
-  },
-
-  async getHistory() {
-    await wait();
-    const histIds = new Set(HISTORY_ROWS.map((r) => r.appId));
-
-    // Current-cohort submissions not yet in the historical list
-    const currentRows = STARTUPS
-      .filter((s) => STORE[s.id] && STORE[s.id].status === "submitted" && !histIds.has(s.id))
-      .map((s) => {
-        const ev = STORE[s.id];
-        const myScore = avgScores(ev.scores);
-        return {
-          appId: s.id,
-          name: s.name,
-          date: fmtDate(ev.submittedAt),
-          aiScore: "—",           // Phase 1 §3 gap: not returned by real API yet
-          myScore,
-          variance: "—",          // requires aiScore to compute
-          reco: ev.recommendation || "—",
-          adminDec: "pending",
-          source: "queue",
-        };
-      });
-
-    // Past-cohort rows — merge stored evaluation state with static metadata
-    const pastRows = HISTORY_ROWS.map((r) => {
-      const ev = HISTORY_STORE[r.appId];
-      if (ev && ev.status === "submitted") {
-        const myScore = avgScores(ev.scores);
-        const date = ev.updatedAt
-          ? fmtDate(ev.submittedAt || ev.updatedAt)
-          : r.date;
-        return {
-          ...r,
-          source: "history",
-          date,
-          reco: ev.recommendation || r.reco,
-          myScore,
-          aiScore: "—",          // Phase 1 §3 gap: not returned by real API yet
-          adminDec: "—",         // Phase 1 §3 gap: not returned by real API yet
-          variance: "—",         // requires aiScore to compute
-          editWindowExpiresAt: null, // past reviews: no live edit window
-        };
-      }
-      return {
-        ...r,
-        source: "history",
-        aiScore: "—",
-        adminDec: "—",
-        variance: "—",
-        editWindowExpiresAt: null,
-      };
+    const res = await api.get(`/reviewer/reviews/mine?application_id=${encodeURIComponent(appId)}`).catch((err) => {
+      if (err && err.status === 404) return { review: null };
+      throw err;
     });
+    const row = res?.review ?? null;
+    return row ? realToProto(row) : emptyEvaluation(appId);
+  },
+
+  // ── saveEvaluation ────────────────────────────────────────────────────────
+  // Debounce lives in the calling page (ReviewerV2EvaluationPage), not here.
+  // This method is the raw write — called after the debounce fires.
+  async saveEvaluation(appId, draft, source = "queue") {
+    if (USE_MOCK) return mock.saveEvaluation(appId, draft, source, this.latencyMs);
+
+    if (READONLY) {
+      toast("Demo mode — evaluation not saved.");
+      return { ...draft, appId, updatedAt: nowISO() };
+    }
+
+    // Resolve the review_id and context from the queue cache
+    const queueItem  = _findQueueItemByAppId(appId);
+    const assignmentId = queueItem?._assignmentId ?? draft._assignmentId;
+    const track        = queueItem?._track        ?? draft._track ?? "tir";
+
+    // Check whether a review already exists for this application
+    const probeRes = await api.get(`/reviewer/reviews/mine?application_id=${encodeURIComponent(appId)}`).catch((err) => {
+      if (err && err.status === 404) return { review: null };
+      throw err;
+    });
+    const existing = probeRes?.review ?? null;
+
+    if (existing && existing.id) {
+      // PATCH the existing review (draft save)
+      const patch = protoToPatch(draft, { draft: true });
+      await api.patch(`/reviewer/reviews/${existing.id}`, patch);
+    } else {
+      // POST a new draft review
+      const body = protoToReal(draft, {
+        applicationId:    appId,
+        applicationTrack: track,
+        assignmentId:     assignmentId,
+        draft:            true,
+      });
+      await api.post("/reviewer/reviews", body);
+    }
+
+    return { ...draft, appId, updatedAt: nowISO() };
+  },
+
+  // ── submitEvaluation ─────────────────────────────────────────────────────
+  async submitEvaluation(appId, body, source = "queue") {
+    if (USE_MOCK) return mock.submitEvaluation(appId, body, source, this.latencyMs);
+
+    if (READONLY) {
+      toast("Demo mode — submission blocked.");
+      return { ...body, appId, submittedAt: nowISO(), status: "submitted" };
+    }
+
+    const queueItem  = _findQueueItemByAppId(appId);
+    const assignmentId = queueItem?._assignmentId ?? body._assignmentId;
+    const track        = queueItem?._track        ?? body._track ?? "tir";
+
+    // Check for existing review to decide POST vs PATCH
+    const probeRes = await api.get(`/reviewer/reviews/mine?application_id=${encodeURIComponent(appId)}`).catch((err) => {
+      if (err && err.status === 404) return { review: null };
+      throw err;
+    });
+    const existing = probeRes?.review ?? null;
+
+    if (existing && existing.id) {
+      // PATCH with draft:false to stamp submitted_at + locked_at
+      const patch = protoToPatch(body, { draft: false });
+      await api.patch(`/reviewer/reviews/${existing.id}`, patch);
+    } else {
+      // POST a full submission in one shot
+      const postBody = protoToReal(body, {
+        applicationId:    appId,
+        applicationTrack: track,
+        assignmentId:     assignmentId,
+        draft:            false,
+      });
+      await api.post("/reviewer/reviews", postBody);
+    }
+
+    const submittedAt = nowISO();
+    return { ...body, appId, submittedAt, status: "submitted" };
+  },
+
+  // ── getHistory ────────────────────────────────────────────────────────────
+  async getHistory() {
+    if (USE_MOCK) return mock.getHistory(this.latencyMs);
+
+    // GET /reviewer/reviews?mine=true&locked=true
+    const res = await api.get("/reviewer/reviews?mine=true&locked=true");
+    const rows = (res.reviews || []).map(adaptHistoryRow);
 
     return {
-      // Phase 1 §3 gap: stats aggregate not returned by real API yet.
+      // Phase 1 §3 gap: stats aggregate not returned by this endpoint.
       stats: { total: "—", consistencyPct: "—", avgVariance: "—", avgMinutes: "—" },
-      rows: [...currentRows, ...pastRows],
+      rows,
     };
   },
 
+  // ── signOut ───────────────────────────────────────────────────────────────
   signOut() {
-    console.info("[reviewerApiV2] signOut() stub — wire to useAuth().logout");
+    // The real sign-out is handled by useAuth().logout in the shell.
+    // This stub is here so any call site that calls reviewerApiV2.signOut()
+    // doesn't throw. The shell wires the button directly to useAuth().logout.
+    console.info("[reviewerApiV2] signOut() called — handled by useAuth().logout in the shell.");
   },
 
+  // ── _resetEvaluations ─────────────────────────────────────────────────────
   _resetEvaluations() {
-    STORE         = seedStore();
-    HISTORY_STORE = seedHistory();
-    persist();
+    if (USE_MOCK) {
+      mock.resetEvaluations();
+      return;
+    }
+    console.warn("[reviewerApiV2] _resetEvaluations() is a no-op in real-API mode — cannot reset the production DB from the client.");
   },
 };
+
+// ── Internal helper ────────────────────────────────────────────────────────
+// Find a queue item by applicationId across the module-level cache.
+function _findQueueItemByAppId(appId) {
+  if (!_queueCache) return null;
+  return _queueCache.find(
+    (item) => item._applicationId === appId || item.applicationId === appId,
+  ) ?? null;
+}
