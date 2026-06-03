@@ -6,14 +6,32 @@
 // Priority (highest first):
 //   leadership → /leadership      (the day-to-day dashboard)
 //   admin      → /admin           (reached via the Switch button on /leadership)
-//   reviewer   → /reviewer/inbox
+//   reviewer   → /reviewer-v2/inbox  (allowlisted) | /reviewer/inbox  (everyone else)
 //   mentor / applicant / none → /apply
 
-export function landingPathFor(roles) {
+// Reviewer V2 allowlist — these three accounts land on the new UI
+// (work/reviewer-integration). All other reviewers land on the
+// existing /reviewer/* surface. Remove this allowlist after manager
+// signs off on cutting everyone over to V2.
+const REVIEWER_V2_ALLOWLIST = new Set([
+  "udayan.pawar@artpark.in",
+  "sanjay.haritwal@artpark.in",
+  "dev@artpark.in",
+]);
+
+function isReviewerV2(email) {
+  return Boolean(email) && REVIEWER_V2_ALLOWLIST.has(email.toLowerCase());
+}
+
+// roles  — string[] from user.roles
+// email  — user.email (optional; omit for contexts where email isn't available)
+export function landingPathFor(roles, email) {
   const r = Array.isArray(roles) ? roles : [];
   if (r.includes("leadership")) return "/leadership";
   if (r.includes("admin")) return "/admin";
-  if (r.includes("reviewer")) return "/reviewer/inbox";
+  if (r.includes("reviewer")) {
+    return isReviewerV2(email) ? "/reviewer-v2/inbox" : "/reviewer/inbox";
+  }
   return "/apply";
 }
 

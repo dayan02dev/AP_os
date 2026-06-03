@@ -96,7 +96,7 @@ export default function VerifyPage() {
             // their dashboard. Pure applicants fall back to the track-aware
             // /apply or /apply-sip.
             const roles = me?.roles || [];
-            const roleTarget = landingPathFor(roles);
+            const roleTarget = landingPathFor(roles, me?.email);
             const applicantTarget =
               roleTarget === "/apply" ? defaultHome : roleTarget;
             const safeApplyNext =
@@ -110,7 +110,8 @@ export default function VerifyPage() {
               (safeApplyNext ||
                 nextParam.startsWith("/admin/") ||
                 nextParam.startsWith("/leadership") ||
-                nextParam.startsWith("/reviewer/")) &&
+                nextParam.startsWith("/reviewer/") ||
+                nextParam.startsWith("/reviewer-v2/")) &&
               !(isApplyHiddenFor(roles) && nextParam.startsWith("/apply"));
             target = honourNext ? nextParam : applicantTarget;
           }

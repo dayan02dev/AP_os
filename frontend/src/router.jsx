@@ -121,7 +121,7 @@ function ApplyRoleGate({ children }) {
   if (!isAuthed) return children;
   const roles = user?.roles || [];
   if (isApplyHiddenFor(roles)) {
-    return <Navigate to={landingPathFor(roles)} replace />;
+    return <Navigate to={landingPathFor(roles, user?.email)} replace />;
   }
   return children;
 }
