@@ -118,7 +118,7 @@ function scorePasswordStrength(pw) {
   score = Math.max(0, Math.min(100, score));
 
   let level, label, color;
-  if (score < 25) { level = "weak"; label = "Weak"; color = "#c84a1a"; }
+  if (score < 25) { level = "weak"; label = "Weak"; color = "#c0392b"; }
   else if (score < 50) { level = "fair"; label = "Fair"; color = "#d97706"; }
   else if (score < 75) { level = "good"; label = "Good"; color = "#3213b7"; }
   else { level = "strong"; label = "Strong"; color = "#2a7a3a"; }

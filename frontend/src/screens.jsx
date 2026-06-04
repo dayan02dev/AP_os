@@ -1,6 +1,46 @@
 // Welcome, section intro, celebration, done screens + progress bar
 
+import { useRef, useState } from "react";
+
 import { MILESTONES, getSubmissionProgress, getStatusLabel } from "./auth_upload.jsx";
+import { SECTIONS } from "./questions.jsx";
+import { SECTIONS_SIP } from "./questions_sip.jsx";
+import { ArrowLeft, Download } from "./components/icons.jsx";
+import { formatRefId } from "./lib/refId.js";
+
+// Render a stored answer value (string / array / file objects / declarations
+// dict) into a human-readable string for the read-only submission view.
+// Returns null when there's nothing to show so callers can render a placeholder.
+function formatAnswerValue(v) {
+  if (v === undefined || v === null || v === "") return null;
+  if (typeof v === "string") return v.trim() ? v : null;
+  if (Array.isArray(v)) {
+    if (v.length === 0) return null;
+    return v
+      .map((e) =>
+        e && typeof e === "object"
+          ? e.name
+            ? `${e.name}${e.share !== undefined ? ` (${e.share}%)` : ""}`
+            : e.original_name || e.filename || String(e)
+          : String(e),
+      )
+      .join(", ");
+  }
+  if (v && typeof v === "object" && v.name) return v.name;
+  if (v && typeof v === "object") {
+    const labels = {
+      truthful: "Confirmed information is true",
+      refChecks: "Consented to reference checks",
+      terms: "Agreed to program terms & data policy",
+      newsletter: "Opted in to newsletter",
+    };
+    const picked = Object.entries(v)
+      .filter(([, val]) => val)
+      .map(([k]) => labels[k] || k);
+    return picked.length ? picked.join(" · ") : null;
+  }
+  return String(v);
+}
 
 function ProgressBar({ variant, progress, currentStep, totalSteps, sectionLabel, sectionIndex, totalSections, estMin }) {
   const pct = Math.round(progress * 100);
@@ -166,168 +206,57 @@ function DoneScreen({ answers, onRestart, submission, onBack, onDownload, questi
   const name = (answers?.fullName || "").split(" ")[0] || "there";
   const isPast = !!submission;
   // Track-aware cycle label so the SIP wizard doesn't read "TIR.2026" on its
-  // own receipt / past-submission screens. Falls back to the per-submission
-  // cycle when one was passed in (e.g. from the past-submissions list).
+  // own receipt / past-submission screens.
   const cycleLabel = track === "sip" ? "VIP.2026" : "TIR.2026";
+
+  if (isPast) {
+    return (
+      <SubmissionView
+        answers={answers || {}}
+        submission={submission}
+        onBack={onBack || onRestart}
+        onDownload={onDownload}
+        questionPrompts={questionPrompts}
+        track={track}
+        cycleLabel={cycleLabel}
+      />
+    );
+  }
+
+  // Just-submitted receipt ("Thank you, …") — unchanged.
+  const stampDate = new Date().toISOString().slice(0, 10);
   const idPrefix = track === "sip" ? "VIP-" : "TIR-";
-  const stampId = submission?.id || (idPrefix + Math.floor(Math.random() * 9000 + 1000));
-  const stampDate = submission?.ts
-    ? new Date(submission.ts).toISOString().slice(0, 10)
-    : new Date().toISOString().slice(0, 10);
-  const feedback = submission?.feedback;
-  const cycle = submission?.cycle;
-  const projectTitle = submission?.projectTitle;
-
-  // Milestone pipeline (past submissions only)
-  const progress = isPast ? getSubmissionProgress(submission) : null;
-  const statusLabel = isPast ? getStatusLabel(submission) : "submitted";
-
-  // Human-readable timing hints for milestones (for demo realism)
-  const milestoneTimingHints = {
-    submitted: "application received",
-    under_review: "committee reading now",
-    shortlisted: "expected by 29 Jun",
-    interview: "first week of July",
-    decision: "by mid-July",
-  };
-
+  const stampId = idPrefix + Math.floor(Math.random() * 9000 + 1000);
   return (
     <div className="eir-screen eir-done">
       <div className="eir-coord eir-mono">
         <span>ARTPARK / {cycleLabel}</span>
-        <span>{isPast ? `past submission · ${cycle || "archive"}` : "submission received ✓"}</span>
+        <span>submission received ✓</span>
       </div>
       <div className="eir-done-body">
         <div className="eir-done-stamp">
-          <div className="eir-mono eir-done-stamp-top">{isPast ? statusLabel.toLowerCase() : "submitted"}</div>
+          <div className="eir-mono eir-done-stamp-top">submitted</div>
           <div className="eir-mono eir-done-stamp-id">#{stampId}</div>
           <div className="eir-mono eir-done-stamp-bot">{stampDate}</div>
         </div>
-        <h2 className="eir-done-title">
-          {isPast
-            ? <>{projectTitle || <>Your {cycle || "past"} submission</>}</>
-            : <>Thank you, {name}.</>}
-        </h2>
+        <h2 className="eir-done-title">Thank you, {name}.</h2>
         <p className="eir-done-lede">
-          {isPast
-            ? (progress?.isTerminal
-                ? (feedback ? "This application reached a final outcome. Here's the reviewer feedback and everything you submitted." : "This application reached a final outcome. Here's everything you submitted.")
-                : "This application is live. Track its progress through the review pipeline below.")
-            : "We've received your application. Our team reads every single one — you'll hear back from us by the agreed deadline, whatever the outcome."}
+          We&apos;ve received your application. Our team reads every single one — you&apos;ll
+          hear back from us by the agreed deadline, whatever the outcome.
         </p>
-
-        {/* Milestone pipeline — past submissions only */}
-        {isPast && progress && MILESTONES.length > 0 && (
-          <div className="eir-done-timeline">
-            <div className="eir-mono eir-dim eir-done-timeline-label">↳ review pipeline</div>
-            <ol className="eir-done-timeline-list">
-              {MILESTONES.map((m, mi) => {
-                const reached = mi <= progress.currentIdx;
-                const isCurrent = !progress.isTerminal && mi === progress.currentIdx;
-                const isTerminalHere = progress.isTerminal && mi === progress.currentIdx;
-                return (
-                  <li key={m.key} className={`eir-done-tl-item ${reached ? "is-reached" : ""} ${isCurrent ? "is-current" : ""} ${isTerminalHere ? "is-terminal" : ""}`}>
-                    <div className="eir-done-tl-marker">
-                      <span className="eir-done-tl-dot" />
-                      {mi < MILESTONES.length - 1 && <span className="eir-done-tl-line" />}
-                    </div>
-                    <div className="eir-done-tl-body">
-                      <div className="eir-done-tl-head">
-                        <span className="eir-done-tl-title">{m.label}</span>
-                        {isCurrent && <span className="eir-mono eir-done-tl-now">● now</span>}
-                        {isTerminalHere && progress.outcome && (
-                          <span className="eir-mono eir-done-tl-outcome">{progress.outcome.label}</span>
-                        )}
-                      </div>
-                      <div className="eir-mono eir-dim eir-done-tl-meta">
-                        {reached ? milestoneTimingHints[m.key] : "—"}
-                      </div>
-                      <div className="eir-done-tl-desc">{m.desc}</div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-        )}
-
-        {isPast && feedback && (
-          <div className="eir-done-feedback">
-            <div className="eir-mono eir-dim eir-done-feedback-label">
-              ↳ reviewer feedback · {cycle || "previous cycle"}
-            </div>
-            <p className="eir-done-feedback-body">{feedback}</p>
-          </div>
-        )}
-
-        {isPast && answers && Object.keys(answers).length > 0 && (
-          <div className="eir-done-answers">
-            <div className="eir-mono eir-dim eir-done-answers-label">↳ what you submitted</div>
-            <dl className="eir-done-answers-list">
-              {Object.entries(answers)
-                .filter(([, v]) => {
-                  if (v === undefined || v === null || v === "") return false;
-                  if (Array.isArray(v) && v.length === 0) return false;
-                  return true;
-                })
-                .slice(0, 30)
-                .map(([k, v]) => {
-                  const label = (questionPrompts && questionPrompts[k]) || k;
-                  let display;
-                  if (typeof v === "string") {
-                    display = v;
-                  } else if (Array.isArray(v)) {
-                    display = v
-                      .map((e) =>
-                        e && typeof e === "object" && e.name
-                          ? `${e.name}${e.share !== undefined ? ` (${e.share}%)` : ""}`
-                          : e?.name || e?.original_name || String(e)
-                      )
-                      .join(", ");
-                  } else if (v && typeof v === "object" && v.name) {
-                    display = v.name;
-                  } else if (v && typeof v === "object") {
-                    const labels = { truthful: "Truthful", refChecks: "Reference checks", terms: "Terms accepted", newsletter: "Newsletter" };
-                    display = Object.entries(v)
-                      .filter(([, val]) => val)
-                      .map(([key]) => labels[key] || key)
-                      .join(", ") || "None selected";
-                  } else {
-                    display = String(v);
-                  }
-                  return (
-                    <div key={k} className="eir-done-answer-row">
-                      <dt className="eir-review-label">{label}</dt>
-                      <dd>{display}</dd>
-                    </div>
-                  );
-                })}
-            </dl>
-          </div>
-        )}
-
-        {!isPast && (
-          <div className="eir-done-next">
-            <div className="eir-mono eir-dim">what happens next?</div>
-            <ol>
-              <li>We read and discuss as a cohort committee.</li>
-              <li>Shortlisted applicants are notified around 22 June.</li>
-              <li>Interviews take place in the first week of July.</li>
-              <li>Residency begins 15 July 2026.</li>
-            </ol>
-          </div>
-        )}
-
+        <div className="eir-done-next">
+          <div className="eir-mono eir-dim">what happens next?</div>
+          <ol>
+            <li>We read and discuss as a cohort committee.</li>
+            <li>Shortlisted applicants are notified around 22 June.</li>
+            <li>Interviews take place in the first week of July.</li>
+            <li>Residency begins 15 July 2026.</li>
+          </ol>
+        </div>
         <div className="eir-q-actions">
-          {isPast ? (
-            <button className="eir-btn eir-btn-primary" onClick={onBack || onRestart}>
-              <span>← back to applications</span>
-            </button>
-          ) : (
-            <button className="eir-btn eir-btn-ghost" onClick={onRestart}>
-              <span>Back to my applications</span>
-            </button>
-          )}
+          <button className="eir-btn eir-btn-ghost" onClick={onRestart}>
+            <span>Back to my applications</span>
+          </button>
           {onDownload && (
             <button
               type="button"
@@ -341,6 +270,209 @@ function DoneScreen({ answers, onRestart, submission, onBack, onDownload, questi
       </div>
     </div>
   );
+}
+
+// Short tab labels keyed by section id — the wizard's own section.label is the
+// long question prompt, too verbose for a tab strip. Falls back to section.label.
+const SECTION_TAB_LABELS = {
+  basic: "Basic Details",
+  problem: "Problem",
+  solution: "Solution",
+  execution: "Execution",
+  evidence: "Evidence",
+  declaration: "Declaration",
+};
+
+// Read-only "Your submission." view — summary card + tabbed sections.
+// Mirrors the founder-dashboard reference layout while keeping the wizard
+// theme tokens (colors / fonts) intact.
+function SubmissionView({ answers, submission, onBack, onDownload, questionPrompts, track, cycleLabel }) {
+  const sections = track === "sip" ? SECTIONS_SIP : SECTIONS;
+  const [activeTab, setActiveTab] = useState(0);
+  const tabRefs = useRef([]);
+
+  // WAI-ARIA tabs keyboard nav: arrows move between tabs (roving tabindex),
+  // Home/End jump to first/last. Attached to the tablist container.
+  const onTabKeyDown = (e, count) => {
+    let next = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (activeTab + 1) % count;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (activeTab - 1 + count) % count;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = count - 1;
+    if (next === null) return;
+    e.preventDefault();
+    setActiveTab(next);
+    tabRefs.current[next]?.focus();
+  };
+
+  const progress = getSubmissionProgress(submission);
+  const statusLabel = getStatusLabel(submission);
+  const badgeLabel = progress.isTerminal ? progress.outcome.label : "Submitted";
+
+  const refId = formatRefId(submission?.id, track);
+
+  const submissionName =
+    submission?.projectTitle ||
+    (track === "sip" ? answers.org : null) ||
+    (answers.solutionDescribe || "").slice(0, 60) ||
+    answers.org ||
+    answers.fullName ||
+    "Your application";
+
+  // Resolve each section's visible questions (respecting conditionals).
+  const resolvedSections = sections.map((s) => ({
+    section: s,
+    visible: s.questions.filter((q) => !q.conditional || q.conditional(answers)),
+  }));
+  const totalSections = resolvedSections.length;
+  // This view only renders for an already-submitted application, so it is, by
+  // definition, 100% complete — every section was filled before submit.
+  const sectionsDone = totalSections;
+  const pct = 100;
+
+  const lede = progress.isTerminal
+    ? "This application reached a final outcome. Here's everything you submitted."
+    : "Your answers are locked while under review.";
+  const lockNote = progress.isTerminal ? statusLabel : "Locked for review";
+
+  const active = resolvedSections[activeTab] || resolvedSections[0];
+  const feedback = submission?.feedback;
+
+  return (
+    <div className="eir-screen eir-done eir-sub">
+      <div className="eir-coord eir-mono">
+        <span>ARTPARK / {cycleLabel}</span>
+        <span>my application</span>
+      </div>
+      <div className="eir-done-body">
+        <div className="eir-mono eir-sub-eyebrow">MY APPLICATION</div>
+        <h2 className="eir-done-title">Your submission.</h2>
+        <p className="eir-done-lede">{lede}</p>
+
+        {/* Summary card */}
+        <div className="eir-sub-card">
+          <div className="eir-sub-card-head">
+            <div className="eir-sub-card-id">
+              <div className="eir-mono eir-sub-card-eyebrow">submission</div>
+              <div className="eir-sub-card-name">
+                {submissionName}
+                <span className="eir-mono eir-sub-badge">{badgeLabel}</span>
+              </div>
+            </div>
+            <div className="eir-sub-card-ref">
+              <div className="eir-mono eir-sub-card-eyebrow">reference</div>
+              <div className="eir-mono eir-sub-ref-id">{refId}</div>
+            </div>
+          </div>
+          <div className="eir-sub-progress-track">
+            <div className="eir-sub-progress-fill" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="eir-sub-card-foot">
+            <span className="eir-mono eir-dim">
+              {pct}% complete · {sectionsDone} of {totalSections} sections done
+            </span>
+            <span className="eir-mono eir-dim">{lockNote}</span>
+          </div>
+        </div>
+
+        {/* Sections — tabbed read-only answers */}
+        <div className="eir-sub-sections">
+          <div className="eir-mono eir-dim eir-sub-sections-label">sections</div>
+          <div
+            className="eir-sub-tabs"
+            role="tablist"
+            aria-label="Application sections"
+            onKeyDown={(e) => onTabKeyDown(e, resolvedSections.length)}
+          >
+            {resolvedSections.map((r, i) => (
+              <button
+                key={r.section.id}
+                type="button"
+                role="tab"
+                id={`eir-sub-tab-${r.section.id}`}
+                aria-selected={i === activeTab}
+                aria-controls={`eir-sub-panel-${r.section.id}`}
+                tabIndex={i === activeTab ? 0 : -1}
+                ref={(el) => (tabRefs.current[i] = el)}
+                className={`eir-sub-tab ${i === activeTab ? "is-active" : ""}`}
+                onClick={() => setActiveTab(i)}
+              >
+                <span className="eir-mono eir-sub-tab-num">{r.section.index}</span>
+                <span className="eir-sub-tab-label">
+                  {SECTION_TAB_LABELS[r.section.id] || r.section.label}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div
+            className="eir-sub-tabpanel"
+            role="tabpanel"
+            id={`eir-sub-panel-${active.section.id}`}
+            aria-labelledby={`eir-sub-tab-${active.section.id}`}
+            tabIndex={0}>
+            {active.visible.length === 0 && (
+              <div className="eir-sub-field-value is-empty">Nothing recorded for this section.</div>
+            )}
+            {active.visible.map((q, qi) => {
+              const label =
+                (typeof q.prompt === "function"
+                  ? safePrompt(q.prompt, answers)
+                  : q.prompt) ||
+                (questionPrompts && questionPrompts[q.id]) ||
+                q.id;
+              const value = formatAnswerValue(answers[q.id]);
+              const num = `${parseInt(active.section.index, 10)}.${qi + 1}`;
+              return (
+                <div className="eir-sub-field" key={q.id}>
+                  <div className="eir-sub-field-label">
+                    <span className="eir-mono eir-sub-field-num">{num}</span>
+                    {label}
+                  </div>
+                  <div className={`eir-sub-field-value ${value === null ? "is-empty" : ""}`}>
+                    {value === null ? "Not provided" : value}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {feedback && (
+          <div className="eir-done-feedback">
+            <div className="eir-mono eir-dim eir-done-feedback-label">↳ reviewer feedback</div>
+            <p className="eir-done-feedback-body">{feedback}</p>
+          </div>
+        )}
+
+        <div className="eir-q-actions">
+          <button className="eir-btn eir-btn-ghost" onClick={onBack}>
+            <ArrowLeft size={16} />
+            <span>Back to dashboard</span>
+          </button>
+          {onDownload && (
+            <button
+              type="button"
+              className="eir-btn eir-btn-ghost eir-btn-download"
+              onClick={onDownload}
+            >
+              <Download size={16} />
+              <span>Download my responses</span>
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Resolve a dynamic (function) prompt without throwing on missing answers.
+function safePrompt(fn, answers) {
+  try {
+    return fn(answers || {});
+  } catch {
+    return null;
+  }
 }
 
 export { ProgressBar, WelcomeScreen, SectionIntroScreen, CelebrationScreen, DoneScreen };
