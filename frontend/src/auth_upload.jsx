@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { validateEmail, isPasswordValid, EmailInput, PasswordInput } from "./validators.jsx";
 import { useTemplate } from "./hooks/useTemplate.js";
 import { setMyTrack } from "./lib/auth.js";
+import { formatRefId } from "./lib/refId.js";
 
 // Static template URL with a cache-bust query string. Bump the `v=` value
 // whenever the .docx in /public/templates/ changes so old browser cache
@@ -269,7 +270,7 @@ const STAGE_TASKS = {
   onboarding: [],
 };
 
-function SubmittedDashboard({ sub, displayName, onViewFull, justSubmitted }) {
+function SubmittedDashboard({ sub, displayName, onViewFull, justSubmitted, track = "tir" }) {
   const [open, setOpen] = useAS(null);
   const toggle = (id) => setOpen(open === id ? null : id);
 
@@ -295,7 +296,7 @@ function SubmittedDashboard({ sub, displayName, onViewFull, justSubmitted }) {
     : `eir-ret-status-${currentKey}`;
 
   const A = sub.answers || {};
-  const idTag = `#${sub.id?.slice?.(0, 8) || sub.id || "APP"}`;
+  const idTag = formatRefId(sub.id, track);
   const projectTitle =
     sub.projectTitle ||
     (A.solutionDescribe || A.problemDescribe || "").slice(0, 80) ||
@@ -335,7 +336,7 @@ function SubmittedDashboard({ sub, displayName, onViewFull, justSubmitted }) {
   return (
     <div className="eir-os-view">
       <header className="eir-os-view-head">
-        <div className="eir-mono eir-dim eir-os-crumb">F-1 · Dashboard</div>
+        <div className="eir-mono eir-dim eir-os-crumb">Dashboard</div>
         <h1 className="eir-os-view-title">
           {justSubmitted
             ? <>Application submitted, <em>{displayName}</em></>
@@ -363,12 +364,12 @@ function SubmittedDashboard({ sub, displayName, onViewFull, justSubmitted }) {
       <section className="eir-dash-app2026">
         <header className="eir-dash-app2026-head">
           <div>
-            <div className="eir-mono eir-dim eir-dash-app2026-eyebrow">F-1 · 2026 Innovation Application</div>
+            <div className="eir-mono eir-dim eir-dash-app2026-eyebrow">Current application</div>
             <h2 className="eir-dash-app2026-title">2026 Innovation Application</h2>
           </div>
           <div className="eir-dash-app2026-pct">
             <span className="eir-dash-app2026-pct-val">{completionPct}%</span>
-            <span className="eir-mono eir-dim eir-dash-app2026-pct-label">complete</span>
+            <span className="eir-mono eir-dim eir-dash-app2026-pct-label">through review</span>
           </div>
         </header>
         <div className="eir-dash-app2026-bar">
@@ -555,7 +556,6 @@ function OsSidebar({ view, onView, hasDraft, draftPct, pastCount }) {
           className={`eir-os-nav ${view === "current" ? "is-on" : ""}`}
           onClick={() => onView("current")}
         >
-          <span className="eir-mono eir-os-nav-num">F-1</span>
           <span className="eir-os-nav-label">Current</span>
           {hasDraft && (
             <span className="eir-mono eir-os-nav-pct">{draftPct}%</span>
@@ -566,7 +566,6 @@ function OsSidebar({ view, onView, hasDraft, draftPct, pastCount }) {
           className={`eir-os-nav ${view === "past" ? "is-on" : ""}`}
           onClick={() => onView("past")}
         >
-          <span className="eir-mono eir-os-nav-num">F-2</span>
           <span className="eir-os-nav-label">Past applications</span>
           {pastCount > 0 && (
             <span className="eir-mono eir-os-nav-badge">{pastCount}</span>
@@ -635,6 +634,7 @@ function CurrentPane({
         displayName={displayName}
         onViewFull={onViewFull}
         justSubmitted={justSubmitted}
+        track={track}
       />
     );
   }
@@ -644,7 +644,7 @@ function CurrentPane({
     return (
       <div className="eir-os-view">
         <header className="eir-os-view-head">
-          <div className="eir-mono eir-dim eir-os-crumb">F-1 · Current · Draft</div>
+          <div className="eir-mono eir-dim eir-os-crumb">Current · Draft</div>
           <h1 className="eir-os-view-title">Welcome back, <em>{displayName}</em></h1>
           <p className="eir-os-view-sub">
             Your 2026 application is <strong>{draftPct}% complete</strong>. Pick up exactly where you stopped — every answer is saved.
@@ -710,7 +710,7 @@ function CurrentPane({
   return (
     <div className="eir-os-view">
       <header className="eir-os-view-head">
-        <div className="eir-mono eir-dim eir-os-crumb">F-1 · Current · Not started</div>
+        <div className="eir-mono eir-dim eir-os-crumb">Current · Not started</div>
         <h1 className="eir-os-view-title">Welcome back, <em>{displayName}</em></h1>
         <p className="eir-os-view-sub">
           You have not started a 2026 application yet. Pick the track that fits where you are — your CV auto-fills the basics either way. Estimated time ~60–90 min.
@@ -767,7 +767,7 @@ function PastPane({ displayName, pastSubmissions, onViewPast, onGoCurrent }) {
     return (
       <div className="eir-os-view">
         <header className="eir-os-view-head">
-          <div className="eir-mono eir-dim eir-os-crumb">F-2 · Past applications</div>
+          <div className="eir-mono eir-dim eir-os-crumb">Past applications</div>
           <h1 className="eir-os-view-title">Nothing in your history yet, <em>{displayName}</em></h1>
           <p className="eir-os-view-sub">
             Once you submit an application, every cycle stays here with live status, reviewer notes, and final outcomes.
@@ -791,7 +791,7 @@ function PastPane({ displayName, pastSubmissions, onViewPast, onGoCurrent }) {
   return (
     <div className="eir-os-view">
       <header className="eir-os-view-head">
-        <div className="eir-mono eir-dim eir-os-crumb">F-2 · Past applications</div>
+        <div className="eir-mono eir-dim eir-os-crumb">Past applications</div>
         <h1 className="eir-os-view-title">Your application history, <em>{displayName}</em></h1>
         <p className="eir-os-view-sub">
           {pastSubmissions.length} previous {pastSubmissions.length === 1 ? "submission" : "submissions"} — status, outcomes, and reviewer notes below.
