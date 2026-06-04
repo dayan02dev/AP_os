@@ -5,6 +5,10 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { usePageTheme } from "../hooks/usePageTheme.jsx";
 
+// Bypass auth in mock-mode demos (Vercel preview without backend).
+// Auto re-engages when VITE_REVIEWER_V2_MOCK=false.
+const USE_MOCK = import.meta.env.VITE_REVIEWER_V2_MOCK === "true";
+
 export default function ProtectedRoute({ children }) {
   const { isAuthed, loading } = useAuth();
   const location = useLocation();
@@ -28,7 +32,7 @@ export default function ProtectedRoute({ children }) {
     );
   }
 
-  if (!isAuthed) {
+  if (!isAuthed && !USE_MOCK) {
     const next = location.pathname + (location.search || "");
     return <Navigate to={`/apply/signin?next=${encodeURIComponent(next)}`} replace />;
   }
