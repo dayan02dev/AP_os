@@ -805,11 +805,15 @@ function PastPane({ displayName, pastSubmissions, onViewPast, onGoCurrent }) {
           const toneClass = progress.isTerminal
             ? `eir-ret-status-${progress.outcomeKey}`
             : `eir-ret-status-${(s.currentMilestone || "submitted")}`;
+          const ref = formatRefId(
+            s.id,
+            (s.cycle || "").toUpperCase().includes("VIP") ? "sip" : "tir",
+          );
           return (
             <button key={i} className="eir-os-past-card" onClick={() => onViewPast(s)}>
               <div className="eir-os-past-head">
                 <div className="eir-os-past-head-left">
-                  <span className="eir-mono eir-os-past-id">#{s.id}</span>
+                  <span className="eir-mono eir-os-past-id">{ref}</span>
                   <span className="eir-mono eir-dim">·</span>
                   <span className="eir-mono eir-dim eir-os-past-cycle">{s.cycle || "TIR cohort"}</span>
                 </div>
