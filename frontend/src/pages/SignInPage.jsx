@@ -59,7 +59,7 @@ export default function SignInPage() {
       // user is allowed to land there (leadership/admin accounts are gated
       // out of the wizard).
       const roles = me?.roles || [];
-      const roleTarget = landingPathFor(roles);
+      const roleTarget = landingPathFor(roles, me?.email);
       // For pure applicants, prefer the track-aware destination so a VIP
       // signin lands on /apply-sip instead of generic /apply.
       const target =
@@ -74,7 +74,8 @@ export default function SignInPage() {
           nextParam === "/apply-sip" ||
           nextParam.startsWith("/admin/") ||
           nextParam.startsWith("/leadership") ||
-          nextParam.startsWith("/reviewer/")) &&
+          nextParam.startsWith("/reviewer/") ||
+          nextParam.startsWith("/reviewer-v2/")) &&
         !(isApplyHiddenFor(roles) && nextParam.startsWith("/apply"));
       navigate(nextAllowedByRole ? nextParam : target, { replace: true });
     } catch (err) {
