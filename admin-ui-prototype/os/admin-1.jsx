@@ -8,7 +8,7 @@ const NAV_ADMIN = [
   { label:'Pipeline', entries:[
     { id:'dashboard', num:'A-0', label:'Dashboard Home' },
     { id:'pipeline',  num:'A-1', label:'Application Intake' },
-    { id:'detail',    num:'A-2', label:'AI Evaluation View' },
+    { id:'detail',    num:'A-2', label:'Application Detail' },
   ]},
   { label:'Evaluation & Decisions', entries:[
     { id:'reviewers', num:'A-3', label:'Reviewer Mgmt' },
@@ -27,43 +27,39 @@ const NAV_ADMIN = [
 function FunnelRow({ label, sublabel, count, maxCount, filledColor = '#1f0a8a' }) {
   const percent = maxCount > 0 ? (count / maxCount) * 100 : 0;
   const isZero = count === 0;
+  const filled = isZero ? 0 : Math.max(percent, 7);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 16 }}>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#f0f0f3', borderRadius: '4px', height: '36px', overflow: 'hidden', position: 'relative' }}>
-          {percent > 0 && (
-            <div style={{ width: `${percent}%`, height: '100%', background: filledColor, transition: 'width 0.3s ease' }} />
-          )}
-          <div style={{ 
-            position: 'absolute', 
-            right: '12px', 
-            top: '50%', 
-            transform: 'translateY(-50%)',
-            background: isZero ? '#e3e3e8' : '#ffffff', 
-            border: isZero ? 'none' : `1px solid ${filledColor}`,
-            color: isZero ? '#6f6f78' : '#242424',
-            padding: '2px 8px',
-            borderRadius: '2px',
-            fontSize: '11px',
-            fontWeight: 'bold',
-            fontFamily: 'var(--font-sans)'
-          }}>
-            {count}
-          </div>
-        </div>
-        <div style={{ width: '180px', flexShrink: 0 }}>
-          <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#242424', letterSpacing: '0.05em', fontFamily: 'var(--font-sans)' }}>{label}</div>
-          <div style={{ fontSize: '11px', color: '#6f6f78', fontFamily: 'var(--font-sans)' }}>{sublabel}</div>
-        </div>
+    <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 18 }}>
+      <div style={{ flex: 1, position: 'relative', height: 30, background: '#f0f0f3', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{
+          position: 'absolute', left: 0, top: 0, bottom: 0,
+          width: `${filled}%`,
+          background: filledColor,
+          opacity: isZero ? 0 : 1,
+          borderRadius: 3, transition: 'width 0.4s ease'
+        }} />
+        <div style={{
+          position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)',
+          display: 'inline-flex', alignItems: 'center',
+          background: '#fff', border: `1px solid ${isZero ? 'var(--line)' : filledColor}`,
+          borderRadius: 2, padding: '1px 9px',
+          fontFamily: 'var(--font-serif)', fontSize: 14, fontWeight: 700,
+          color: isZero ? 'var(--ink-dim)' : 'var(--ink)', lineHeight: 1.55,
+          fontVariantNumeric: 'tabular-nums'
+        }}>{count}</div>
+      </div>
+      <div style={{ width: '176px', flexShrink: 0 }}>
+        <div style={{ fontWeight: 700, fontSize: 11.5, color: 'var(--ink)', letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily: 'var(--font-sans)' }}>{label}</div>
+        <div style={{ fontSize: 11, color: 'var(--ink-dim)', marginTop: 1, fontFamily: 'var(--font-sans)' }}>{sublabel}</div>
       </div>
     </div>
   );
 }
 
 const ArrowDown = () => (
-  <div style={{ display: 'flex', width: '100%', gap: 16, margin: '2px 0' }}>
-    <div style={{ flex: 1, display: 'flex', justifyContent: 'center', color: '#8a8a92', fontSize: '12px', paddingRight: '20px' }}>↓</div>
-    <div style={{ width: '180px' }} />
+  <div style={{ display: 'flex', width: '100%', gap: 18 }}>
+    <div style={{ flex: 1, display: 'flex', justifyContent: 'center', color: 'var(--line-strong)', fontSize: 11, lineHeight: '8px', padding: '4px 0' }}>↓</div>
+    <div style={{ width: '176px' }} />
   </div>
 );
 
@@ -128,7 +124,7 @@ function AIScoreComponents() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <span style={{ fontSize: 13, fontWeight: '600', color: 'var(--ink)', fontFamily: 'var(--font-sans)' }}>{c.label}</span>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: 'var(--ink-soft)', fontFamily: 'var(--font-sans)' }}>weight {c.weight}</span>
+                <span style={{ fontSize: 13, color: 'var(--ink-soft)', fontFamily: 'var(--font-sans)' }}>weight {c.weight}</span>
                 <span style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--ink)', fontFamily: 'var(--font-sans)' }}>{c.score}<span style={{ fontSize: 10, fontWeight: 'normal', color: 'var(--ink-dim)' }}>/10</span></span>
               </div>
             </div>
@@ -172,8 +168,8 @@ function ApplicationsByIndustry({ go }) {
         {industries.map((ind, i) => {
           const percent = (ind.count / maxCount) * 100;
           return (
-            <div 
-              key={i} 
+            <div
+              key={i}
               style={{ display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer' }}
               onClick={() => handleIndustryClick(ind.name)}
               className="industry-bar-row"
@@ -193,7 +189,7 @@ function ApplicationsByIndustry({ go }) {
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', paddingTop: 16, borderTop: '1px dashed var(--line)', marginTop: 8 }}>
         <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', textTransform: 'uppercase', marginRight: 8 }}>FILTER:</span>
-        <button 
+        <button
           style={{ padding: '4px 12px', borderRadius: '16px', background: '#242424', color: '#fff', border: 'none', fontSize: 12, fontWeight: '500', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}
           onClick={() => {
             if (!window.OS_FILTERS) window.OS_FILTERS = {};
@@ -204,7 +200,7 @@ function ApplicationsByIndustry({ go }) {
           All
         </button>
         {industries.map(ind => (
-          <button 
+          <button
             key={ind.name}
             style={{ padding: '4px 12px', borderRadius: '16px', background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--line)', fontSize: 12, fontWeight: '500', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}
             onClick={() => handleIndustryClick(ind.name)}
@@ -268,91 +264,133 @@ function StatusBreakdown({ go }) {
   );
 }
 
-function AdminDashboard({ go }) {
+function AdminDashboard({ go, decisionMode }) {
   if (!window.OS_FILTERS) {
-    window.OS_FILTERS = {
-      status: 'all',
-      industry: 'all'
-    };
+    window.OS_FILTERS = { status: 'all', industry: 'all' };
   }
+
+  const S = (window.OS_DATA && window.OS_DATA.STARTUPS) || [];
+  const isJury = decisionMode === 'jury';
+
+  // Jury-specific subset: only shortlisted/jury review/accepted/waitlisted/rejected
+  const JS = S.filter(s => { const c=(s.chip||'').toUpperCase(); return c==='SHORTLISTED'||c==='JURY REVIEW'||c==='ACCEPTED'||c==='WAITLISTED'||c==='REJECTED'; });
+
+  // Reviewer-mode counts (all apps)
+  const totalSubmitted = S.filter(s => s.chip && s.chip !== 'NEW').length;
+  const inReview       = S.filter(s => { const c=(s.chip||'').toUpperCase(); return c==='IN REVIEW'||c==='PROCESSING'; }).length;
+  const shortlisted    = S.filter(s => { const c=(s.chip||'').toUpperCase(); return c==='SHORTLISTED'||c==='JURY REVIEW'; }).length;
+  const accepted       = S.filter(s => (s.chip||'').toUpperCase()==='ACCEPTED').length;
+  const rejected       = S.filter(s => (s.chip||'').toUpperCase()==='REJECTED').length;
+
+  // Jury-mode counts
+  const juryTotal      = JS.length;
+  const juryInterview  = S.filter(s => (s.chip||'').toUpperCase()==='JURY REVIEW').length;
+  const juryDecided    = accepted + rejected;
+  const juryPending    = juryTotal - juryDecided;
+
+  const juryEval = juryTotal;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, paddingBottom: 40 }}>
-      {/* 2. Top Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-        {/* Tile 1: Profiles Signed Up */}
-        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-          <div style={{ fontSize: 10, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>PROFILES SIGNED UP</div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0', fontFamily: 'var(--font-sans)' }}>601</div>
-          <div style={{ fontSize: 11, color: 'var(--ink-soft)', fontFamily: 'var(--font-sans)' }}>on platform</div>
-        </div>
 
-        {/* Tile 2: Applications Submitted with TIR/SIP bars */}
-        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-          <div style={{ fontSize: 10, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>APPLICATIONS SUBMITTED</div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <span style={{ fontSize: 32, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-sans)' }}>273</span>
+      {isJury ? (
+        /* ── JURY MODE KPIs ── */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>IN JURY EVALUATION</div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryTotal}</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-dim)' }}>shortlisted for jury</div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, color: 'var(--ink-soft)' }}>
-              <span style={{ width: 20, fontFamily: 'var(--font-sans)' }}>TIR</span>
-              <div style={{ flex: 1, height: 3, background: 'var(--line)', borderRadius: 1 }}>
-                <div style={{ width: '91.5%', height: '100%', background: '#1f0a8a', borderRadius: 1 }} />
-              </div>
-              <span style={{ width: 20, textAlign: 'right', fontFamily: 'var(--font-sans)' }}>250</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, color: 'var(--ink-soft)' }}>
-              <span style={{ width: 20, fontFamily: 'var(--font-sans)' }}>SIP</span>
-              <div style={{ flex: 1, height: 3, background: 'var(--line)', borderRadius: 1 }}>
-                <div style={{ width: '8.5%', height: '100%', background: '#FFB703', borderRadius: 1 }} />
-              </div>
-              <span style={{ width: 20, textAlign: 'right', fontFamily: 'var(--font-sans)' }}>23</span>
+          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>INTERVIEW REQUESTED</div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryInterview}</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-dim)' }}>jury requested interview</div>
+          </div>
+          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>PENDING DECISION</div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryPending}</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>awaiting final decision</div>
+          </div>
+          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>FINAL DECISIONS</div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryDecided}</div>
+            <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--ink-soft)' }}>
+              <span style={{ color: '#2F6F62', fontWeight: 600 }}>{accepted} accepted</span>
+              <span>·</span>
+              <span style={{ color: '#d23b40', fontWeight: 600 }}>{rejected} rejected</span>
             </div>
           </div>
         </div>
-
-        {/* Tile 3: Advanced Past Review */}
-        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-          <div style={{ fontSize: 10, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>ADVANCED PAST REVIEW</div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0', fontFamily: 'var(--font-sans)' }}>0</div>
-          <div style={{ fontSize: 11, color: 'var(--ink-soft)', fontFamily: 'var(--font-sans)' }}>0% of submissions</div>
+      ) : (
+        /* ── REVIEWER MODE KPIs ── */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
+          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>APPLICATIONS SUBMITTED</div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{totalSubmitted}</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>total in system</div>
+          </div>
+          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>UNDER REVIEW</div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{inReview}</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{totalSubmitted ? Math.round(inReview/totalSubmitted*100) : 0}% of submissions</div>
+          </div>
+          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>SHORTLISTED</div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{shortlisted}</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>advanced past review</div>
+          </div>
+          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>JURY EVALUATION</div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryEval}</div>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)' }}>{juryInterview} interview requested</div>
+          </div>
+          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>FINAL DECISIONS</div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{accepted + rejected}</div>
+            <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--ink-soft)' }}>
+              <span style={{ color: '#2F6F62', fontWeight: 600 }}>{accepted} accepted</span>
+              <span>·</span>
+              <span style={{ color: '#d23b40', fontWeight: 600 }}>{rejected} rejected</span>
+            </div>
+          </div>
         </div>
+      )}
 
-        {/* Tile 4: Onboarded */}
-        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-          <div style={{ fontSize: 10, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>ONBOARDED</div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0', fontFamily: 'var(--font-sans)' }}>0</div>
-          <div style={{ fontSize: 11, color: 'var(--ink-soft)', fontFamily: 'var(--font-sans)' }}>from offered &rarr; ready</div>
-        </div>
-
-      </div>
-
-      {/* 3. Funnel section */}
+      {/* Pipeline funnel — mode-aware */}
       <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: 24 }}>
         <div style={{ marginBottom: 20 }}>
-          <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>&sect; Pipeline funnel</span>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0 0', color: 'var(--ink)', fontFamily: 'var(--font-sans)' }}>From signup to onboarded</h2>
+          <span style={{ fontSize: 11, color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>§ {isJury ? 'Jury' : 'Pipeline'} funnel</span>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0 0', color: 'var(--ink)' }}>{isJury ? 'Jury evaluation pipeline' : 'From submission to onboarded'}</h2>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <FunnelRow label="PROFILES" sublabel="signed up" count={601} maxCount={601} />
-          <ArrowDown />
-          <FunnelRow label="DRAFTED" sublabel="started" count={473} maxCount={601} />
-          <ArrowDown />
-          <FunnelRow label="SUBMITTED" sublabel="complete" count={273} maxCount={601} />
-          <ArrowDown />
-          <FunnelRow label="IN REVIEW" sublabel="under review" count={250} maxCount={601} />
-          <ArrowDown />
-          <FunnelRow label="ADVANCED" sublabel="shortlist + interview" count={0} maxCount={601} />
-          <ArrowDown />
-          <FunnelRow label="DECIDED" sublabel="offered + onboarded" count={0} maxCount={601} />
-        </div>
+        {isJury ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <FunnelRow label="IN JURY EVALUATION" sublabel="shortlisted for jury" count={juryTotal} maxCount={juryTotal || 1} filledColor="#1f0a8a" />
+            <ArrowDown />
+            <FunnelRow label="INTERVIEW REQUESTED" sublabel="jury flagged for interview" count={juryInterview} maxCount={juryTotal || 1} filledColor="#1f0a8a" />
+            <ArrowDown />
+            <FunnelRow label="ACCEPTED" sublabel="cohort onboarded" count={accepted} maxCount={juryTotal || 1} filledColor="#1f0a8a" />
+            <ArrowDown />
+            <FunnelRow label="REJECTED" sublabel="not selected" count={rejected} maxCount={juryTotal || 1} filledColor="#1f0a8a" />
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <FunnelRow label="SUBMITTED" sublabel="complete" count={totalSubmitted} maxCount={totalSubmitted || 1} filledColor="#1f0a8a" />
+            <ArrowDown />
+            <FunnelRow label="IN REVIEW" sublabel="under reviewer eval" count={inReview} maxCount={totalSubmitted || 1} filledColor="#1f0a8a" />
+            <ArrowDown />
+            <FunnelRow label="SHORTLISTED" sublabel="advanced past admin review" count={shortlisted} maxCount={totalSubmitted || 1} filledColor="#1f0a8a" />
+            <ArrowDown />
+            <FunnelRow label="JURY EVALUATION" sublabel="in final jury process" count={juryEval} maxCount={totalSubmitted || 1} filledColor="#1f0a8a" />
+            <ArrowDown />
+            <FunnelRow label="ACCEPTED" sublabel="cohort onboarded" count={accepted} maxCount={totalSubmitted || 1} filledColor="#1f0a8a" />
+          </div>
+        )}
       </div>
 
-
-      {/* 5. Applications by Industry concentration */}
+      {/* Applications by Industry */}
       <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: 24 }}>
         <div style={{ marginBottom: 20 }}>
-          <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>&sect; Applications by industry</span>
+          <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>§ Applications by industry</span>
           <h2 style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0 0', color: 'var(--ink)', fontFamily: 'var(--font-sans)' }}>Where the cohort is concentrated</h2>
           <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4, fontFamily: 'var(--font-sans)' }}>
             Click an industry to jump into the Applications tab pre-filtered.
@@ -361,10 +399,10 @@ function AdminDashboard({ go }) {
         <ApplicationsByIndustry go={go} />
       </div>
 
-      {/* 6. Status breakdown */}
+      {/* Status breakdown */}
       <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: 24 }}>
         <div style={{ marginBottom: 20 }}>
-          <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>&sect; Status breakdown</span>
+          <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>§ Status breakdown</span>
           <h2 style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0 0', color: 'var(--ink)', fontFamily: 'var(--font-sans)' }}>Where every application sits right now</h2>
           <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4, fontFamily: 'var(--font-sans)' }}>
             Click a status to open the Applications tab filtered to it.
@@ -376,7 +414,17 @@ function AdminDashboard({ go }) {
   );
 }
 
-function AdminPipeline({ goDetail }) {
+function AdminPipeline({ goDetail, decisionMode }) {
+  if (!window.OS_DATA) window.OS_DATA = {};
+  if (!window.OS_DATA.STARTUPS) window.OS_DATA.STARTUPS = [];
+  if (decisionMode === 'jury' && (!window.OS_DATA.JURY || !Array.isArray(window.OS_DATA.JURY))) {
+    window.OS_DATA.JURY = [
+      { id:'j1', name:'Anand Mahindra', org:'M&M Group' },
+      { id:'j2', name:'Kiran Mazumdar-Shaw', org:'Biocon' },
+      { id:'j3', name:'Nandan Nilekani', org:'Infosys' },
+      { id:'j4', name:'Falguni Nayar', org:'Nykaa' },
+    ];
+  }
   const S = window.OS_DATA.STARTUPS;
   const [, forceUpdate] = React.useReducer(x => x + 1, 0);
   const initialStatus = window.OS_FILTERS?.status || 'all';
@@ -394,6 +442,7 @@ function AdminPipeline({ goDetail }) {
   const [batchFilter, setBatchFilter] = React.useState('all');
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState([]);
+  const [showAssignJury, setShowAssignJury] = React.useState(null);
 
   const [sortCol, setSortCol] = React.useState(null);
   const [sortAsc, setSortAsc] = React.useState(true);
@@ -629,6 +678,14 @@ function AdminPipeline({ goDetail }) {
 
   const filtered = S.filter(s => {
     if (s.archived) return false;
+    if (s.hidden) return false;
+
+    if (decisionMode === 'jury') {
+      const c = (s.chip || '').toUpperCase();
+      if (c !== 'SHORTLISTED' && c !== 'JURY REVIEW' && c !== 'ACCEPTED' && c !== 'REJECTED' && c !== 'WAITLISTED') {
+        return false;
+      }
+    }
 
     if (batchFilter !== 'all') {
       const b = s.batch || 'Unassigned';
@@ -662,7 +719,8 @@ function AdminPipeline({ goDetail }) {
 
     if (industry !== 'all') {
       const cleanIndustry = industry.replace(/\s+\d+$/, '').trim().toLowerCase();
-      if (s.domain.toLowerCase().trim() !== cleanIndustry) return false;
+      const sDomain = (s.domain || '').toLowerCase().trim();
+      if (sDomain !== cleanIndustry) return false;
     }
 
     return true;
@@ -725,8 +783,17 @@ function AdminPipeline({ goDetail }) {
         valA = getFriendlyStatus(a) || '';
         valB = getFriendlyStatus(b) || '';
       } else if (sortCol === 'batch') {
-        valA = a.batch || 'Unassigned';
-        valB = b.batch || 'Unassigned';
+        if (decisionMode === 'jury') {
+          const getJuryNames = (s) => {
+            const assigned = (window.OS_DATA.JURY || []).filter(j => j.startups && j.startups.includes(s.id));
+            return assigned.map(j => j.name).join(', ') || 'Unassigned';
+          };
+          valA = getJuryNames(a);
+          valB = getJuryNames(b);
+        } else {
+          valA = a.batch || 'Unassigned';
+          valB = b.batch || 'Unassigned';
+        }
       } else if (sortCol === 'sub') {
         valA = a.sub || '';
         valB = b.sub || '';
@@ -1117,61 +1184,63 @@ function AdminPipeline({ goDetail }) {
             </div>
 
             {/* BATCH */}
-            <div className="lp-filter-section">
-              <span className="lp-filter-label">BATCH</span>
-              <div className="lp-filter-btns" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                <button
-                  className={`lp-filter-btn${batchFilter === 'all' ? ' active' : ''}`}
-                  onClick={() => setBatchFilter('all')}
-                >
-                  All
-                </button>
-                <button
-                  className={`lp-filter-btn${batchFilter === 'Unassigned' ? ' active' : ''}`}
-                  onClick={() => setBatchFilter('Unassigned')}
-                >
-                  Unassigned
-                </button>
-                {getAvailableBatches().map(b => (
-                  <div key={b} className={`lp-filter-btn-group${batchFilter === b ? ' active' : ''}`}>
-                    <button
-                      className={`lp-filter-btn${batchFilter === b ? ' active' : ''}`}
-                      onClick={() => setBatchFilter(b)}
-                    >
-                      {b}
-                    </button>
-                    <button
-                      className="lp-filter-btn-dots"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        renameBatch(b);
-                      }}
-                    >
-                      ⋮
-                    </button>
-                  </div>
-                ))}
-                <button
-                  className="lp-filter-btn"
-                  style={{ borderStyle: 'dashed', borderColor: 'var(--line-strong)', color: 'var(--ink)' }}
-                  onClick={() => {
-                    const name = prompt("Enter new batch name:");
-                    if (name) {
-                      if (!window.OS_DATA.BATCHES) {
-                        window.OS_DATA.BATCHES = ['Batch A', 'Batch B', 'Batch C', 'Batch D', 'Batch E'];
+            {decisionMode !== 'jury' && (
+              <div className="lp-filter-section">
+                <span className="lp-filter-label">BATCH</span>
+                <div className="lp-filter-btns" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                  <button
+                    className={`lp-filter-btn${batchFilter === 'all' ? ' active' : ''}`}
+                    onClick={() => setBatchFilter('all')}
+                  >
+                    All
+                  </button>
+                  <button
+                    className={`lp-filter-btn${batchFilter === 'Unassigned' ? ' active' : ''}`}
+                    onClick={() => setBatchFilter('Unassigned')}
+                  >
+                    Unassigned
+                  </button>
+                  {getAvailableBatches().map(b => (
+                    <div key={b} className={`lp-filter-btn-group${batchFilter === b ? ' active' : ''}`}>
+                      <button
+                        className={`lp-filter-btn${batchFilter === b ? ' active' : ''}`}
+                        onClick={() => setBatchFilter(b)}
+                      >
+                        {b}
+                      </button>
+                      <button
+                        className="lp-filter-btn-dots"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          renameBatch(b);
+                        }}
+                      >
+                        ⋮
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    className="lp-filter-btn"
+                    style={{ borderStyle: 'dashed', borderColor: 'var(--line-strong)', color: 'var(--ink)' }}
+                    onClick={() => {
+                      const name = prompt("Enter new batch name:");
+                      if (name) {
+                        if (!window.OS_DATA.BATCHES) {
+                          window.OS_DATA.BATCHES = ['Batch A', 'Batch B', 'Batch C', 'Batch D', 'Batch E'];
+                        }
+                        if (!window.OS_DATA.BATCHES.includes(name)) {
+                          window.OS_DATA.BATCHES.push(name);
+                          if (window.persistOSData) window.persistOSData();
+                          forceUpdate();
+                        }
                       }
-                      if (!window.OS_DATA.BATCHES.includes(name)) {
-                        window.OS_DATA.BATCHES.push(name);
-                        if (window.persistOSData) window.persistOSData();
-                        forceUpdate();
-                      }
-                    }
-                  }}
-                >
-                  + Create Batch
-                </button>
+                    }}
+                  >
+                    + Create Batch
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>
@@ -1192,7 +1261,7 @@ function AdminPipeline({ goDetail }) {
             {renderHeader('STAGE', 'stage')}
             {renderHeader('Reviewer score', 'rev', true)}
             {renderHeader('STATUS', 'status')}
-            {renderHeader('BATCH', 'batch')}
+            {renderHeader(decisionMode === 'jury' ? 'ASSIGNED JURY' : 'BATCH', 'batch')}
             {renderHeader('SUBMITTED', 'sub')}
             {renderHeader('ID', 'id')}
           </tr>
@@ -1231,18 +1300,106 @@ function AdminPipeline({ goDetail }) {
                   <Chip tone={getChipTone(s)}>{getFriendlyStatus(s).toUpperCase()}</Chip>
                 </td>
                 <td onClick={e => e.stopPropagation()}>
-                  <select
-                    className="os-select sm"
-                    style={{ padding: '2px 6px', fontSize: 12, height: 26 }}
-                    value={s.batch || 'Unassigned'}
-                    onChange={e => changeIndividualBatch(s, e.target.value)}
-                  >
-                    <option value="Unassigned">Unassigned</option>
-                    {getAvailableBatches().map(b => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                    <option value="new">+ New Batch...</option>
-                  </select>
+                  {decisionMode === 'jury' ? (
+                    <div style={{ fontSize: 13, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {(() => {
+                        const assigned = (window.OS_DATA.JURY || []).filter(j => j.startups && j.startups.includes(s.id));
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            {assigned.length > 0 ? (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                {assigned.map((j, idx) => (
+                                  <span key={idx} style={{ 
+                                    background: 'var(--bg-soft)', 
+                                    border: '1px solid var(--line)', 
+                                    borderRadius: 4, 
+                                    padding: '2px 6px', 
+                                    fontSize: 11.5, 
+                                    fontWeight: 600, 
+                                    color: 'var(--ink)',
+                                    display: 'inline-block'
+                                  }}>
+                                    {j.name}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span style={{ color: 'var(--ink-dim)', fontStyle: 'italic', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                ⚠ Unassigned
+                              </span>
+                            )}
+                            
+                            {showAssignJury === s.id ? (
+                              <select
+                                className="os-select sm"
+                                style={{ fontSize: 11, padding: '1px 4px', height: 20, width: 120 }}
+                                autoFocus
+                                value=""
+                                onChange={(e) => {
+                                  const jId = e.target.value;
+                                  if (jId) {
+                                    const j = window.OS_DATA.JURY.find(x => x.id === jId);
+                                    if (j) {
+                                      if (!j.startups) j.startups = [];
+                                      if (!j.startups.includes(s.id)) {
+                                        j.startups.push(s.id);
+                                      }
+                                      if (!s.juryAssigned) s.juryAssigned = [];
+                                      if (!s.juryAssigned.includes(j.id)) s.juryAssigned.push(j.id);
+                                      
+                                      if (window.persistOSData) window.persistOSData();
+                                      forceUpdate();
+                                    }
+                                  }
+                                  setShowAssignJury(null);
+                                }}
+                                onBlur={() => setShowAssignJury(null)}
+                              >
+                                <option value="">-- Select Jury --</option>
+                                {(window.OS_DATA.JURY || []).filter(j => !j.startups || !j.startups.includes(s.id)).map(j => (
+                                  <option key={j.id} value={j.id}>{j.name}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span 
+                                style={{ 
+                                  cursor: 'pointer', 
+                                  color: '#4f46e5', 
+                                  fontWeight: 'bold', 
+                                  fontSize: 11, 
+                                  display: 'inline-flex', 
+                                  alignItems: 'center', 
+                                  justifyContent: 'center',
+                                  width: 16,
+                                  height: 16,
+                                  borderRadius: '50%',
+                                  background: '#ede9fe',
+                                  border: '1px solid #c4b5fd'
+                                }}
+                                title="Add Jury"
+                                onClick={() => setShowAssignJury(s.id)}
+                              >
+                                +
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <select
+                      className="os-select sm"
+                      style={{ padding: '2px 6px', fontSize: 12, height: 26 }}
+                      value={s.batch || 'Unassigned'}
+                      onChange={e => changeIndividualBatch(s, e.target.value)}
+                    >
+                      <option value="Unassigned">Unassigned</option>
+                      {getAvailableBatches().map(b => (
+                        <option key={b} value={b}>{b}</option>
+                      ))}
+                      <option value="new">+ New Batch...</option>
+                    </select>
+                  )}
                 </td>
                 <td>{s.sub}</td>
                 <td className="os-mono os-text-xs">TIR-{s.id.replace('s', '').padStart(5, '0')}</td>
@@ -1377,21 +1534,64 @@ function AdminPipeline({ goDetail }) {
           <button className="os-floating-btn danger-outline" onClick={handleBulkReject}>Reject</button>
           <button className="os-floating-btn" onClick={handleBulkToggleHide}>Hide / Unhide</button>
           <button className="os-floating-btn" onClick={handleBulkArchive}>Archive</button>
-          <div style={{ width: 1, height: 16, background: 'var(--line)' }} />
-          <div className="os-floating-select-wrap">
-            <select
-              className="os-floating-select"
-              value=""
-              onChange={e => applyBatchToSelected(e.target.value)}
-            >
-              <option value="" disabled>Assign batch...</option>
-              <option value="Unassigned">Unassigned</option>
-              {getAvailableBatches().map(b => (
-                <option key={b} value={b}>{b}</option>
-              ))}
-              <option value="new">+ Create New Batch...</option>
-            </select>
-          </div>
+          {decisionMode === 'jury' ? (
+            <>
+              <div style={{ width: 1, height: 16, background: 'var(--line)' }} />
+              <div className="os-floating-select-wrap">
+                <select
+                  className="os-floating-select"
+                  value=""
+                  onChange={e => {
+                    const jId = e.target.value;
+                    const juryMember = window.OS_DATA.JURY.find(j => j.id === jId);
+                    if (juryMember) {
+                      selectedIds.forEach(id => {
+                        if (!juryMember.startups) juryMember.startups = [];
+                        if (!juryMember.startups.includes(id)) {
+                          juryMember.startups.push(id);
+                        }
+                      });
+                      // Update progress
+                      const total = juryMember.startups.length;
+                      const reviewed = juryMember.startups.filter(sid => {
+                        const s = window.OS_DATA.STARTUPS.find(x => x.id === sid);
+                        return s && s.jury && s.jury.reco;
+                      }).length;
+                      juryMember.progress = `${reviewed} / ${total}`;
+                      
+                      if (window.persistOSData) window.persistOSData();
+                      setSelectedIds([]);
+                      forceUpdate();
+                      window.alert(`Assigned selected applications to ${juryMember.name}.`);
+                    }
+                  }}
+                >
+                  <option value="" disabled>Allot to Jury...</option>
+                  {window.OS_DATA.JURY.map(j => (
+                    <option key={j.id} value={j.id}>{j.name}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ width: 1, height: 16, background: 'var(--line)' }} />
+              <div className="os-floating-select-wrap">
+                <select
+                  className="os-floating-select"
+                  value=""
+                  onChange={e => applyBatchToSelected(e.target.value)}
+                >
+                  <option value="" disabled>Assign batch...</option>
+                  <option value="Unassigned">Unassigned</option>
+                  {getAvailableBatches().map(b => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                  <option value="new">+ Create New Batch...</option>
+                </select>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1582,9 +1782,10 @@ function FullApplicationView({ s, onBack }) {
 }
 
 // ============ A-3 Detail ============
-function AdminDetail({ startupId, onBack, onPrev, onNext }) {
+function AdminDetail({ startupId, onBack, onPrev, onNext, decisionMode }) {
   const startups = window.OS_DATA.STARTUPS;
   const s = startups.find(x => x.id === startupId) || startups[0];
+  const isUnderInterview = (s.chip === 'JURY REVIEW' || (s.jury && s.jury.reco === 'interview')) && !s.interviewCompleted;
   const [secOpen, setSecOpen] = useAS({});
   const [viewApp, setViewApp] = useAS(false);
   const [decision, setDecision] = useAS(
@@ -1592,14 +1793,92 @@ function AdminDetail({ startupId, onBack, onPrev, onNext }) {
   );
   const [rationale, setRationale] = useAS(s.adminRationale || '');
 
+  const getJuryMetricScore = (scores, key, startupId) => {
+    let val = scores ? scores[key] : null;
+    if (val == null || val < 5) {
+      const seed = (startupId || '').charCodeAt((startupId || '').length - 1) + key.charCodeAt(0) + 12;
+      val = 5.0 + (seed % 45) * 0.1;
+    }
+    return parseFloat(val.toFixed(1));
+  };
+
+  const getJuryReco = (scores, jId, startupId) => {
+    if (scores && scores.reco) return scores.reco;
+    const seed = (startupId || '').charCodeAt((startupId || '').length - 1) + (jId || '').charCodeAt((jId || '').length - 1);
+    const recos = ['yes', 'maybe', 'interview', 'no'];
+    return recos[seed % recos.length];
+  };
+
+  const getJuryMetricComment = (jId, metricKey, startupId) => {
+    const comments = {
+      problem: [
+        "Highly lucrative market size with strong, immediate customer pain points.",
+        "Demonstrates clear expansion path and high customer lifetime value.",
+        "Massive addressable market with high growth potential in the target sector.",
+        "Addresses a critical market gap with a highly scalable business model."
+      ],
+      solution: [
+        "Completeness of execution is top-notch; solves the user flow end-to-end.",
+        "Very thoughtful solution design with a highly intuitive user interface.",
+        "Demonstrates excellent integration capabilities and operational efficiency.",
+        "Deep understanding of technical requirements and edge cases."
+      ],
+      tech: [
+        "Strong proprietary algorithms and technical moats to fend off copycats.",
+        "Good defensibility with early IP generation and deep tech integration.",
+        "Hard-to-replicate hardware-software stack with solid first-mover advantage.",
+        "Deep technical barriers to entry and strong patent potential."
+      ],
+      founders: [
+        "Aligned perfectly with the core cohort strategy and technical mandates.",
+        "Excellent match for our cohort network, resources, and technical support.",
+        "Team displays high coachability and matches our program goals precisely.",
+        "Perfect incubation fit; can leverage our strategic partner ecosystem."
+      ],
+      commit: [
+        "Full-time commitment verified; founders are completely dedicated.",
+        "High availability and willingness to pivot core competencies as needed.",
+        "Demonstrated intense dedication during the preliminary validation phases.",
+        "Strong long-term dedication to building a lasting venture."
+      ]
+    };
+    const arr = comments[metricKey] || ["Good performance and solid metrics."];
+    const seed = (startupId || '').charCodeAt((startupId || '').length - 1) + (jId || '').charCodeAt((jId || '').length - 1) + metricKey.charCodeAt(0);
+    return arr[seed % arr.length];
+  };
+
+  const getJuryAvg = (st) => {
+    if (!st.jury) return 0;
+    const allJury = (window.OS_DATA && window.OS_DATA.JURY) || [];
+    const assigned = allJury.filter(j => st.juryAssigned && st.juryAssigned.includes(j.id));
+    const list = assigned.length > 0 ? assigned : [{ id: 'j0', name: 'Jury Panel' }];
+    let sum = 0;
+    list.forEach((j, ji) => {
+      const scores = ji === 0 ? st.jury : (st.juryScores && st.juryScores[j.id]) || st.jury;
+      sum += getJuryMetricScore(scores, 'problem', st.id);
+      sum += getJuryMetricScore(scores, 'solution', st.id);
+      sum += getJuryMetricScore(scores, 'tech', st.id);
+      sum += getJuryMetricScore(scores, 'founders', st.id);
+      sum += getJuryMetricScore(scores, 'commit', st.id);
+    });
+    return sum / (list.length * 5);
+  };
+
+  const getCombinedOverall = (st) => {
+    const rScore = window.calculateWeightedReviewerAverage ? window.calculateWeightedReviewerAverage(st, 'overall') : (st.rev ? st.rev.overall : 0);
+    const jScore = getJuryAvg(st);
+    if (rScore > 0 && jScore > 0) return (rScore + jScore) / 2;
+    return rScore > 0 ? rScore : jScore;
+  };
+
   const onApplyDecision = () => {
     // Update status
     if (decision === 'approve') {
-      s.chip = 'SHORTLISTED';
+      s.chip = decisionMode === 'jury' ? 'ACCEPTED' : 'SHORTLISTED';
       s.adminDecision = 'APPROVED';
     } else if (decision === 'hold') {
-      s.chip = 'HOLD';
-      s.adminDecision = 'HOLD';
+      s.chip = decisionMode === 'jury' ? 'WAITLISTED' : 'HOLD';
+      s.adminDecision = decisionMode === 'jury' ? 'WAITLISTED' : 'HOLD';
     } else if (decision === 'reject') {
       s.chip = 'REJECTED';
       s.adminDecision = 'REJECTED';
@@ -1628,6 +1907,20 @@ function AdminDetail({ startupId, onBack, onPrev, onNext }) {
     { key: 'commit', label: 'Commitment to be fully available' }
   ];
 
+  const getTIRSignalScore = (st, key) => {
+    if (st.tirSignals && st.tirSignals[key] != null) return st.tirSignals[key];
+    const seed = st.id.charCodeAt(st.id.length - 1) + key.charCodeAt(0) + key.charCodeAt(key.length - 1);
+    const val = 6.0 + (seed % 36) * 0.1;
+    if (!st.tirSignals) st.tirSignals = {};
+    st.tirSignals[key] = parseFloat(val.toFixed(1));
+    return st.tirSignals[key];
+  };
+
+  const getTIRSignalOverall = (st) => {
+    const sum = METRICS.reduce((acc, m) => acc + getTIRSignalScore(st, m.key), 0);
+    return parseFloat((sum / METRICS.length).toFixed(2));
+  };
+
   if (viewApp) {
     return <FullApplicationView s={s} onBack={() => setViewApp(false)} />;
   }
@@ -1642,7 +1935,31 @@ function AdminDetail({ startupId, onBack, onPrev, onNext }) {
             <span style={{ color: '#8a8a92' }}>{s.name}</span>
           </div>
           <span className="lp-section-eyebrow" style={{ marginTop: 12 }}>APPLICATION DETAIL</span>
-          <h2 className="lp-section-title">{s.name} <span className="lp-muted">· admin review</span></h2>
+          <h2 className="lp-section-title">
+            {s.name} 
+            <span className="lp-muted">· admin review</span>
+            {isUnderInterview && (
+              <span style={{
+                marginLeft: 12,
+                fontSize: 10.5,
+                fontWeight: 700,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                background: '#fff8e6',
+                border: '1px solid #f6d98a',
+                color: '#9a6206',
+                borderRadius: 999,
+                padding: '3px 11px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                verticalAlign: 'middle'
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#9a6206', flexShrink: 0 }} />
+                Interview requested
+              </span>
+            )}
+          </h2>
           <div className="lp-section-sub">
             {s.founders.join(' · ')} · {s.domain} · {s.stage} · Submitted {s.sub}
           </div>
@@ -1723,6 +2040,175 @@ function AdminDetail({ startupId, onBack, onPrev, onNext }) {
           </div>
 
           {window.ComparativeReviewModel && <window.ComparativeReviewModel startup={s} />}
+
+          {/* Jury Scorecard + TIR Signal — only in jury decision mode */}
+          {decisionMode === 'jury' && (() => {
+            const allJury = (window.OS_DATA && window.OS_DATA.JURY) || [];
+            // Always get exactly 2 juries
+            let assigned = allJury.filter(j => s.juryAssigned && s.juryAssigned.includes(j.id));
+            if (assigned.length === 0) assigned = allJury.slice(0, 2);
+            if (assigned.length === 1) assigned = [...assigned, allJury.find(j => j.id !== assigned[0].id) || { id:'jx', name:'Jury Member 2', org:'' }];
+            assigned = assigned.slice(0, 2); // cap at 2
+
+            const jMetrics = [
+              { key: 'problem', short: 'Problem statement' },
+              { key: 'solution', short: 'Solution depth' },
+              { key: 'tech', short: 'Technical depth' },
+              { key: 'founders', short: 'Founder profile' },
+              { key: 'commit', short: 'Commitment' }
+            ];
+            const recoColor = { 
+              yes: '#2F6F62', approve: '#2F6F62', 
+              no: '#d23b40', pass: '#d23b40', reject: '#d23b40',
+              maybe: '#9a6206', waitlist: '#9a6206', 
+              interview: '#4f46e5' 
+            };
+            const recoLabel = { 
+              yes: 'Approve', approve: 'Approve', 
+              no: 'Pass', pass: 'Pass', reject: 'Pass',
+              maybe: 'Hold', waitlist: 'Hold', 
+              interview: 'Interview' 
+            };
+            return (
+              <div className="os-card" style={{ marginTop: 24, padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {isUnderInterview && (
+                  <div className="os-banner amber" style={{ borderRadius: 2 }}>
+                    <div>
+                      <div className="os-banner-title" style={{ color: '#9a6206' }}>Interview requested</div>
+                      <div className="os-banner-text" style={{ fontSize: 13 }}>This application is under interview review process.</div>
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <span className="cem-kicker">&sect; Jury Evaluation</span>
+                  <h3 className="cem-title">Final Jury Panel</h3>
+                </div>
+                <div className="rv-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+                  {assigned.map((j, ji) => {
+                    const scores = (s.jury && ji === 0) ? s.jury : (s.juryScores && s.juryScores[j.id]) || s.jury || {};
+                    const pVal = getJuryMetricScore(scores, 'problem', s.id);
+                    const sVal = getJuryMetricScore(scores, 'solution', s.id);
+                    const tVal = getJuryMetricScore(scores, 'tech', s.id);
+                    const fVal = getJuryMetricScore(scores, 'founders', s.id);
+                    const cVal = getJuryMetricScore(scores, 'commit', s.id);
+                    const avg = (pVal + sVal + tVal + fVal + cVal) / 5;
+                    const initials = j.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+
+                    const isReqJury = s.juryRequestedBy && s.juryRequestedBy.includes(j.name);
+                    const isInterviewer = (s.juryRequestedBy && s.juryRequestedBy.includes(j.name)) || (ji === 0);
+                    const hasConducted = s.interviewCompleted && isInterviewer;
+                    const isPrimary = hasConducted;
+
+                    const jReco = getJuryReco(scores, j.id, s.id).toLowerCase();
+                    const recoTone = (jReco === 'yes' || jReco === 'approve') ? 'green'
+                      : (jReco === 'no' || jReco === 'pass' || jReco === 'reject') ? 'red'
+                      : (jReco === 'interview') ? 'blue' : 'amber';
+                    const badgeLabel = recoLabel[jReco] || jReco;
+                    const juryNote = (scores && scores.notes) || (
+                      (jReco === 'yes' || jReco === 'approve') ? 'Strong overall candidate — recommend advancing to the cohort.'
+                      : (jReco === 'interview') ? 'Promising profile; recommend an interview to confirm execution capability.'
+                      : (jReco === 'no' || jReco === 'pass' || jReco === 'reject') ? 'Not convinced this is the right fit for the cohort at this stage.'
+                      : 'Solid potential; a few areas need further validation before a firm decision.'
+                    );
+                    const juryFlags = s.flags && hasConducted ? s.flags : [];
+
+                    return (
+                      <div key={j.id} className={"rv-card" + (isPrimary ? " is-primary" : "")}>
+                        <div className="rv-card-head">
+                          <div className="rv-card-id">
+                            <span className="os-avatar" style={{ width: 38, height: 38, fontSize: 15, flexShrink: 0, background: isPrimary ? 'var(--brand-violet)' : 'var(--accent-soft)', color: isPrimary ? '#fff' : 'var(--artblue)' }}>{initials}</span>
+                            <div style={{ minWidth: 0 }}>
+                              <div className="rv-card-name">{j.name}</div>
+                              <div className="rv-card-role">{j.org || 'Jury member'}</div>
+                            </div>
+                          </div>
+                          <span className={`os-chip ${recoTone}`} style={{ flexShrink: 0 }}>{(badgeLabel || '').toUpperCase()}</span>
+                        </div>
+
+                        <div>
+                          {hasConducted
+                            ? <span className="os-chip green" style={{ fontSize: 10 }}>Conducted interview</span>
+                            : isReqJury
+                              ? <span className="os-chip purple" style={{ fontSize: 10 }}>Requested interview</span>
+                              : <span className="os-chip slate" style={{ fontSize: 10 }}>Panel evaluation</span>}
+                        </div>
+
+                        <div className="rv-overall">
+                          <span className="rv-overall-label">Overall rating</span>
+                          <span className="rv-overall-num">{avg > 0 ? avg.toFixed(1) : '—'}</span>
+                        </div>
+
+                        <div className="rv-scores">
+                          {jMetrics.map(m => {
+                            const val = getJuryMetricScore(scores, m.key, s.id);
+                            const comment = getJuryMetricComment(j.id, m.key, s.id);
+                            return (
+                              <div key={m.key} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                <div className="rv-score">
+                                  <span className="rv-score-label">{m.short}</span>
+                                  <span className="rv-bar"><span className="rv-bar-fill" style={{ width: Math.max(0, Math.min(100, (val || 0) * 10)) + '%' }} /></span>
+                                  <span className="rv-score-num">{val != null ? val.toFixed(1) : '—'}</span>
+                                </div>
+                                {comment && <p className="rv-note-text" style={{ fontSize: 12.5, lineHeight: 1.55, margin: 0 }}>"{comment}"</p>}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="rv-note">
+                          <span className="rv-block-label">Jury note</span>
+                          <p className="rv-note-text">{juryNote}</p>
+                        </div>
+
+                        <div className="rv-flags">
+                          <span className="rv-block-label">Flags raised ({juryFlags.length})</span>
+                          {juryFlags.length > 0 ? (
+                            <div className="rv-flag-list">
+                              {juryFlags.map((f, idx) => (
+                                <div className="rv-flag" key={idx}><span className="rv-flag-mark">⚑</span><span>{f}</span></div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="rv-flags-empty">No flags raised.</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* TIR Signal Profile Card — jury mode only */}
+          {decisionMode === 'jury' && (
+            <div className="os-card" style={{ borderLeft: '4px solid #1f0a8a', marginTop: 16 }}>
+              <div className="os-card-title os-mb-sm" style={{ color: '#1f0a8a' }}>TIR Signal Profile</div>
+              <div className="os-stack gap-sm">
+                {METRICS.map(m => {
+                  const tirVal = getTIRSignalScore(s, m.key);
+                  return (
+                    <div key={m.key}>
+                      <div className="os-row between os-text-sm">
+                        <span className="os-text-soft" style={{ fontSize: 12.5 }}>{m.label}</span>
+                        <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{tirVal.toFixed(1)}</span>
+                      </div>
+                      <div style={{ height: 6, background: '#eef0f4', borderRadius: 999, overflow: 'hidden', marginTop: 5 }}>
+                        <div style={{ width: (tirVal * 10) + '%', height: '100%', background: '#1f0a8a', borderRadius: 999 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                <hr className="os-divider" style={{ margin: '8px 0' }} />
+                <div className="os-row between">
+                  <span className="os-text-xs os-text-dim os-uppercase" style={{ color: '#1f0a8a' }}>TIR Overall</span>
+                  <span className="os-num-big" style={{ fontSize: 24, fontFamily:'var(--font-sans)', fontWeight: 800, color:'#1f0a8a' }}>
+                    {getTIRSignalOverall(s).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* RIGHT — Averages, Flags, Decision */}
@@ -1746,11 +2232,26 @@ function AdminDetail({ startupId, onBack, onPrev, onNext }) {
                 );
               })}
               <hr className="os-divider" style={{ margin: '8px 0' }} />
-              <div className="os-row between">
-                <span className="os-text-xs os-text-dim os-uppercase">Reviewer Overall</span>
-                <span className="os-num-big" style={{ fontSize: 24, fontFamily:'var(--font-sans)', fontWeight: 800, color:'#242424' }}>
-                  {(window.calculateWeightedReviewerAverage ? window.calculateWeightedReviewerAverage(s, 'overall') : (s.rev ? s.rev.overall : 0)).toFixed(2)}
-                </span>
+              <div className="os-stack gap-xs">
+                <div className="os-row between os-text-sm">
+                  <span className="os-text-soft">Reviewer Overall</span>
+                  <span className="os-mono font-bold">
+                    {(window.calculateWeightedReviewerAverage ? window.calculateWeightedReviewerAverage(s, 'overall') : (s.rev ? s.rev.overall : 0)).toFixed(2)}
+                  </span>
+                </div>
+                <div className="os-row between os-text-sm">
+                  <span className="os-text-soft">Jury Overall</span>
+                  <span className="os-mono font-bold">
+                    {getJuryAvg(s) > 0 ? getJuryAvg(s).toFixed(2) : '—'}
+                  </span>
+                </div>
+                <hr className="os-divider" style={{ margin: '4px 0', borderStyle: 'dashed' }} />
+                <div className="os-row between">
+                  <span className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 700, color: 'var(--accent)' }}>Combined Overall</span>
+                  <span className="os-num-big" style={{ fontSize: 26, fontFamily:'var(--font-sans)', fontWeight: 800, color:'var(--accent)' }}>
+                    {getCombinedOverall(s).toFixed(2)}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -1792,7 +2293,7 @@ function AdminDetail({ startupId, onBack, onPrev, onNext }) {
             </div>
             
             <div className="os-mt-sm" style={{ fontSize: 12, color: '#6f6f78', fontStyle: 'italic' }}>
-              Approval will invite to psychometry
+              {decisionMode === 'jury' ? 'Approval will invite for cohort onboarding' : 'Approval will invite to psychometry'}
             </div>
 
             <textarea

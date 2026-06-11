@@ -120,22 +120,45 @@ window.OS_DATA = (function(){
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      if (parsed.STARTUPS) {
-        parsed.STARTUPS = parsed.STARTUPS.map(ps => {
-          const ds = data.STARTUPS.find(x => x.id === ps.id);
-          if (ds) {
-            const merged = {
-              ...ds,
-              ...ps,
-              rev: ps.rev ? { ...ds.rev, ...ps.rev, disagreements: ps.rev.disagreements || ds.rev?.disagreements } : ds.rev
-            };
-            merged.stage = ds.stage;
-            return merged;
-          }
-          return ps;
-        });
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.STARTUPS && Array.isArray(parsed.STARTUPS) && parsed.STARTUPS.length > 0) {
+          parsed.STARTUPS = parsed.STARTUPS.map(ps => {
+            const ds = data.STARTUPS.find(x => x.id === ps.id);
+            if (ds) {
+              const merged = {
+                ...ds,
+                ...ps,
+                rev: ps.rev ? { ...ds.rev, ...ps.rev, disagreements: ps.rev.disagreements || ds.rev?.disagreements } : ds.rev
+              };
+              merged.stage = ds.stage;
+              return merged;
+            }
+            return ps;
+          });
+          data.STARTUPS = parsed.STARTUPS;
+        }
+
+        if (parsed.REVIEWERS && Array.isArray(parsed.REVIEWERS) && parsed.REVIEWERS.length > 0) {
+          data.REVIEWERS = parsed.REVIEWERS;
+        }
+
+        if (parsed.JURY && Array.isArray(parsed.JURY) && parsed.JURY.length > 0) {
+          data.JURY = parsed.JURY;
+        }
+
+        if (parsed.ACTIVITY && Array.isArray(parsed.ACTIVITY) && parsed.ACTIVITY.length > 0) {
+          data.ACTIVITY = parsed.ACTIVITY;
+        }
+
+        if (parsed.NOTIFICATIONS_FOUNDER && Array.isArray(parsed.NOTIFICATIONS_FOUNDER) && parsed.NOTIFICATIONS_FOUNDER.length > 0) {
+          data.NOTIFICATIONS_FOUNDER = parsed.NOTIFICATIONS_FOUNDER;
+        }
       }
-      data = { ...data, ...parsed };
+      
+      // Ensure JURY array is non-empty and correctly initialized
+      if (!data.JURY || !Array.isArray(data.JURY) || data.JURY.length === 0) {
+        data.JURY = JURY;
+      }
     } catch(e) {
       console.error("Failed to load saved state", e);
     }
