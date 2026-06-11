@@ -906,6 +906,7 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
     API.saveEvaluation(appId, payload(), source).then(() => { setSaveState('saved'); window.toast('Draft saved'); });
   };
   const submitEval = () => {
+    if (!notes.trim()) { window.toast('Notes are required before you can submit.'); return; }
     const wasAmend = submitted && reopened;
     API.submitEvaluation(appId, payload(), source).then(() => {
       setSubmitted(true); setReopened(false);
@@ -959,7 +960,8 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
                 <button className="os-btn ghost" disabled={timeLeft === 0} onClick={saveDraftNow}>Save draft</button>
                 <button
                   className="os-btn"
-                  disabled={timeLeft === 0}
+                  disabled={timeLeft === 0 || !notes.trim()}
+                  title={!notes.trim() ? 'Add notes to submit' : ''}
                   onClick={submitEval}
                 >{submitted ? 'Re-submit evaluation →' : 'Submit evaluation →'}</button>
               </>
@@ -1089,7 +1091,7 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
 
           <div className="os-card">
             <div className="os-row between os-mb-sm" style={{ alignItems: 'center' }}>
-              <div className="os-card-title">Notes <span className="os-text-dim" style={{ textTransform:'none', letterSpacing:0, fontWeight:400 }}>(recommended)</span></div>
+              <div className="os-card-title">Notes <span style={{ textTransform:'none', letterSpacing:0, fontWeight:600, color:'var(--artblue)' }}>(required)</span></div>
               {!lockedSubmitted && saveState !== 'idle' && (
                 <span className="saved" style={{ fontSize: 11, opacity: saveState === 'saving' ? 0.5 : 1 }}>
                   {saveState === 'saving' ? 'Saving…' : '✓ Saved'}
@@ -1097,7 +1099,9 @@ function ReviewerEvalForm({ application, evaluation, source = 'queue', onBack, o
               )}
             </div>
             <textarea className="notes-area" placeholder="What stood out in your assessment? Key strengths, concerns, or context behind your scores." value={notes} onChange={(e) => setNotes(e.target.value)} disabled={lockedSubmitted}/>
-            <div className="os-text-xs os-text-dim os-mt-sm">Saved automatically as you type.</div>
+            <div className="os-text-xs os-mt-sm" style={{ color: notes.trim() ? 'var(--ink-dim)' : 'var(--artblue)' }}>
+              {notes.trim() ? 'Saved automatically as you type.' : 'Notes are required before you can submit.'}
+            </div>
           </div>
 
           <div className="os-card soft">
