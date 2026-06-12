@@ -994,3 +994,50 @@ def test_mine_probe_returns_null_when_no_review(
     r = client.get("/reviewer/reviews/mine?application_id=app1")
     assert r.status_code == 200
     assert r.json()["review"] is None
+
+
+# ─── Half-point score acceptance ──────────────────────────────────────
+
+
+def test_submit_review_accepts_half_point_scores(
+    client, monkeypatch, _clear_overrides,
+):
+    """Prototype sliders move in 0.5 steps; conint would 422 on 7.5."""
+    me = "rev-1"
+    fake = _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    body = {
+        "application_id": "app1",
+        "application_track": "tir",
+        "assignment_id": "a1",
+        "score_problem":    7.5,
+        "score_solution":   8.0,
+        "score_tech":       6.5,
+        "score_founders":   7.0,
+        "score_commitment": 7.5,
+        "recommendation": "yes",
+        "strengths": None,
+        "concerns": None,
+        "quick_notes": None,
+        "draft": False,
+    }
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 201, (
+        f"Expected 201 but got {r.status_code}; body: {r.text}"
+    )
+    data = r.json()
+    assert data["review"]["score_problem"] == 7.5
+
+
+def test_submit_review_rejects_non_half_step_score(
+    client, monkeypatch, _clear_overrides,
+):
+    """numeric(4,1) would silently round 7.77 — the API must 422 instead."""
+    me = "rev-1"
+    _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    body = dict(_VALID_SUBMIT)
+    body["score_tech"] = 7.77
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 422

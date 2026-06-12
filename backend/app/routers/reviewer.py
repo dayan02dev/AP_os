@@ -19,11 +19,11 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
-from pydantic import BaseModel, ConfigDict, Field, conint
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..deps import get_current_user
 from ..rbac import require_capability
@@ -75,6 +75,10 @@ async def get_application_for_reviewer(
 
 # ─── POST /reviewer/reviews ────────────────────────────────────────────
 
+# Scores arrive from a 0.5-step slider; the DB column is numeric(4,1).
+# multiple_of=0.5 rejects values Postgres would otherwise silently round.
+Score = Annotated[float, Field(ge=0, le=10, multiple_of=0.5)] | None
+
 
 class ReviewSubmitBody(BaseModel):
     """Payload for submit (or save-as-draft).
@@ -88,11 +92,11 @@ class ReviewSubmitBody(BaseModel):
     application_id: str = Field(..., min_length=1)
     application_track: Literal["tir", "sip"]
     assignment_id: str = Field(..., min_length=1)
-    score_problem:    conint(ge=0, le=10) | None = None
-    score_solution:   conint(ge=0, le=10) | None = None
-    score_tech:       conint(ge=0, le=10) | None = None
-    score_founders:   conint(ge=0, le=10) | None = None
-    score_commitment: conint(ge=0, le=10) | None = None
+    score_problem:    Score = None
+    score_solution:   Score = None
+    score_tech:       Score = None
+    score_founders:   Score = None
+    score_commitment: Score = None
     recommendation:   Literal["yes", "maybe", "no"] | None = None
     strengths:   str | None = None
     concerns:    str | None = None
@@ -274,11 +278,11 @@ class ReviewPatchBody(BaseModel):
     """
     model_config = ConfigDict(extra="forbid")
 
-    score_problem:    conint(ge=0, le=10) | None = None
-    score_solution:   conint(ge=0, le=10) | None = None
-    score_tech:       conint(ge=0, le=10) | None = None
-    score_founders:   conint(ge=0, le=10) | None = None
-    score_commitment: conint(ge=0, le=10) | None = None
+    score_problem:    Score = None
+    score_solution:   Score = None
+    score_tech:       Score = None
+    score_founders:   Score = None
+    score_commitment: Score = None
     recommendation:   Literal["yes", "maybe", "no"] | None = None
     strengths:   str | None = None
     concerns:    str | None = None
