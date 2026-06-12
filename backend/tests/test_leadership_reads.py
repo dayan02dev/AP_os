@@ -343,10 +343,10 @@ def test_collect_application_file_paths_tir():
     }
     out = applications_query.collect_application_file_paths("tir", row)
     assert out == {
-        "u1/evidence/a.pdf": "evidence-files",
-        "u1/evidence/b.png": "evidence-files",
-        "u1/evidence/deck.pdf": "evidence-files",
-        "u1/milestone/c.xlsx": "milestone-files",
+        "u1/evidence/a.pdf": "tir-evidence-files",
+        "u1/evidence/b.png": "tir-evidence-files",
+        "u1/evidence/deck.pdf": "tir-evidence-files",
+        "u1/milestone/c.xlsx": "tir-milestone-files",
     }
 
 
@@ -471,7 +471,7 @@ def test_signed_url_success_signs_only_allowed_path(client, _clear_overrides, mo
     body = res.json()
     assert body["url"].startswith("https://signed.example/")
     assert body["expires_in"] == 120
-    assert calls["bucket"] == "evidence-files"
+    assert calls["bucket"] == "tir-evidence-files"
     assert calls["path"] == "u1/evidence/known.pdf"
     assert calls["ttl"] == 120
 

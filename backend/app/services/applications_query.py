@@ -376,14 +376,16 @@ _SIP_FILE_FIELDS: list[tuple[str, str]] = [
     ("sip_cap_table_file", "single"),
 ]
 
-# (track, field) → bucket. Source of truth: migrations 002/004/006 (TIR) and
-# 011 (SIP). TIR evidence/deck → "evidence-files"; TIR milestone →
-# "milestone-files". SIP milestone → "sip-milestone-files"; all other SIP
-# evidence (pitch deck, cap table, traction LOIs, patents) → "sip-evidence-files".
+# (track, field) → bucket. Source of truth: migration 010 (renamed the TIR
+# buckets created in 002/004/006 to tir-*; the old un-prefixed buckets survive
+# only as empty husks) and 011 (SIP). TIR evidence/deck → "tir-evidence-files";
+# TIR milestone → "tir-milestone-files". SIP milestone → "sip-milestone-files";
+# all other SIP evidence (pitch deck, cap table, traction LOIs, patents) →
+# "sip-evidence-files".
 _FIELD_BUCKET: dict[tuple[str, str], str] = {
-    ("tir", "evidence_files"): "evidence-files",
-    ("tir", "evidence_deck"): "evidence-files",
-    ("tir", "execution_milestone_files"): "milestone-files",
+    ("tir", "evidence_files"): "tir-evidence-files",
+    ("tir", "evidence_deck"): "tir-evidence-files",
+    ("tir", "execution_milestone_files"): "tir-milestone-files",
     ("sip", "execution_milestone_files"): "sip-milestone-files",
     ("sip", "sip_traction_files"): "sip-evidence-files",
     ("sip", "sip_patents_files"): "sip-evidence-files",
