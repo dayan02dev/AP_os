@@ -101,6 +101,8 @@ class ReviewSubmitBody(BaseModel):
     strengths:   str | None = None
     concerns:    str | None = None
     quick_notes: str | None = None
+    flags: list[str] | None = None
+    disagree_with_ai: dict[str, str] | None = None
     draft: bool = False
 
 
@@ -120,6 +122,103 @@ def _validate_complete(body: ReviewSubmitBody) -> None:
             status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": "incomplete_review", "missing": missing},
         )
+
+
+_MAX_FLAGS = 8
+_MAX_FLAG_LEN = 80
+
+
+def _validate_flags(flags: list[str] | None) -> None:
+    if flags is None:
+        return
+    if len(flags) > _MAX_FLAGS or any(
+        (not isinstance(f, str)) or len(f) > _MAX_FLAG_LEN or not f.strip()
+        for f in flags
+    ):
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "flags_invalid",
+                    "message": f"Max {_MAX_FLAGS} flags, each non-empty and ≤{_MAX_FLAG_LEN} chars."},
+        )
+
+
+def _validate_notes(quick_notes: str | None, draft: bool) -> None:
+    if draft:
+        return
+    if not (quick_notes or "").strip():
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "notes_required",
+                    "message": "Notes are required before you can submit."},
+        )
+
+
+# CLIENT-FACING CONTRACT: these short keys ("problem", "solution", "tech",
+# "founders", "commit") are the canonical dimension identifiers used by the
+# reviewer-UI prototype's `scores` and `disagree_with_ai` objects.  The
+# `disagree_with_ai` request dict and the 422 "disagreement_reason_required"
+# `dimensions` array both use them.  Do NOT rename "commit" to "commitment" —
+# that would break frontend alignment.
+_DIM_MAP = [  # (short, review_col, ai_col)
+    ("problem",  "score_problem",    "score_problem"),
+    ("solution", "score_solution",   "score_completeness"),
+    ("tech",     "score_tech",       "score_tech"),
+    ("founders", "score_founders",   "score_founders"),
+    ("commit",   "score_commitment", "score_commitment"),
+]
+
+# Score columns touched by a review body — used to gate the ai_screening fetch
+# in patch_review (only fetch when a score is actually changing or we're
+# flipping to submitted).
+_SCORE_COLS = {
+    "score_problem", "score_solution", "score_tech",
+    "score_founders", "score_commitment",
+}
+
+
+def _validate_disagreements(merged: dict, ai_row: dict | None,
+                            disagree: dict[str, str] | None) -> None:
+    """Spec §4.7: any dimension where |reviewer − AI| > 1.0 needs a written
+    reason under the dimension's SHORT name in `disagree_with_ai`."""
+    if ai_row is None:
+        return
+    disagree = disagree or {}
+    missing = []
+    for short, rc, ac in _DIM_MAP:
+        rv, av = merged.get(rc), ai_row.get(ac)
+        if rv is None or av is None:
+            continue
+        if abs(float(rv) - float(av)) > 1.0 and not (disagree.get(short) or "").strip():
+            missing.append(short)
+    if missing:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "disagreement_reason_required", "dimensions": missing},
+        )
+
+
+def _fetch_ai_screening_row(sb, application_id: str, application_track: str) -> dict | None:
+    """Best-effort fetch for the disagreement check. A fetch error must not
+    block a submit (log + skip), so failures return None instead of 502."""
+    try:
+        rows = (
+            sb.table("ai_screening")
+            .select("*")
+            .eq("application_id", application_id)
+            .eq("application_track", application_track)
+            .limit(1)
+            .execute()
+            .data
+        ) or []
+        return rows[0] if rows else None
+    except Exception as exc:
+        log.warning(
+            "ai_screening fetch failed; skipping disagreement check",
+            extra={"application_id": application_id,
+                   "application_track": application_track,
+                   "err": str(exc)},
+        )
+        return None
 
 
 @router.post(
@@ -143,6 +242,8 @@ async def submit_review(
         reviewer for the app has submitted.
     """
     _validate_complete(body)
+    _validate_flags(body.flags)
+    _validate_notes(body.quick_notes, body.draft)
 
     # Verify the caller actually owns this assignment. The RBAC gate already
     # confirmed they hold the ``score_app`` capability, but that's role-wide;
@@ -194,6 +295,14 @@ async def submit_review(
             },
         )
 
+    # High-variance disagreement gate (spec §4.7) — non-draft only. A failed
+    # ai_screening fetch is logged and skipped, never a 502.
+    if not body.draft:
+        ai_row = _fetch_ai_screening_row(
+            sb, body.application_id, body.application_track,
+        )
+        _validate_disagreements(body.model_dump(), ai_row, body.disagree_with_ai)
+
     now = datetime.now(UTC)
     submitted_at = None if body.draft else now.isoformat()
     locked_at    = None if body.draft else (now + timedelta(minutes=60)).isoformat()
@@ -212,6 +321,8 @@ async def submit_review(
         "strengths":         body.strengths,
         "concerns":          body.concerns,
         "quick_notes":       body.quick_notes,
+        "flags":             body.flags or [],
+        "disagree_with_ai":  body.disagree_with_ai,
         "submitted_at":      submitted_at,
         "locked_at":         locked_at,
     }
@@ -264,7 +375,11 @@ async def submit_review(
             just_completed_assignment_id=body.assignment_id,
         )
 
-    return {"review": review_row}
+    return {
+        "review": review_row,
+        "overall": reviewer_query._weighted_overall(review_row),
+        "editWindowExpiresAt": review_row.get("locked_at"),
+    }
 
 
 # ─── PATCH /reviewer/reviews/{review_id} ───────────────────────────────
@@ -287,6 +402,8 @@ class ReviewPatchBody(BaseModel):
     strengths:   str | None = None
     concerns:    str | None = None
     quick_notes: str | None = None
+    flags: list[str] | None = None
+    disagree_with_ai: dict[str, str] | None = None
     draft: bool | None = None  # flip draft → submitted (stamps submitted_at/locked_at)
 
 
@@ -358,25 +475,69 @@ async def patch_review(
         if k != "draft"
     }
 
+    # Always validate flag shape — the 80-char per-flag limit has no DB backstop.
+    _validate_flags(patch.get("flags"))
+
     # Draft → submitted transition: stamp timestamps NOW.
     flipping_to_submitted = (
         body.draft is False and existing.get("submitted_at") is None
     )
-    if flipping_to_submitted:
+
+    # Re-run submit-time invariants whenever the review is already submitted
+    # OR is being flipped to submitted right now.
+    must_satisfy_submit_invariants = (
+        flipping_to_submitted or existing.get("submitted_at") is not None
+    )
+
+    if must_satisfy_submit_invariants:
         # Compute the final state after the patch is applied.
         final = {**existing, **patch}
-        missing: list[str] = []
-        for col in ("score_problem", "score_solution", "score_tech",
-                    "score_founders", "score_commitment"):
-            if final.get(col) is None:
-                missing.append(col)
-        if final.get("recommendation") is None:
-            missing.append("recommendation")
-        if missing:
-            raise HTTPException(
-                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={"code": "incomplete_review", "missing": missing},
+
+        if flipping_to_submitted:
+            # Completeness check only on the flip path — scores can't be
+            # unset by exclude_unset semantics on a draft, but if a score
+            # key is explicitly set to null on an already-submitted review
+            # we catch that in the shared null check below.
+            missing: list[str] = []
+            for col in ("score_problem", "score_solution", "score_tech",
+                        "score_founders", "score_commitment"):
+                if final.get(col) is None:
+                    missing.append(col)
+            if final.get("recommendation") is None:
+                missing.append("recommendation")
+            if missing:
+                raise HTTPException(
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"code": "incomplete_review", "missing": missing},
+                )
+        else:
+            # Already-submitted review: a caller explicitly setting a score
+            # or recommendation to null would violate submit invariants.
+            # Only check columns the caller actually included in this patch
+            # (exclude_unset means absent keys weren't touched).
+            explicitly_nulled: list[str] = []
+            for col in ("score_problem", "score_solution", "score_tech",
+                        "score_founders", "score_commitment", "recommendation"):
+                if col in patch and patch[col] is None:
+                    explicitly_nulled.append(col)
+            if explicitly_nulled:
+                raise HTTPException(
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"code": "incomplete_review", "missing": explicitly_nulled},
+                )
+
+        # Submit-time gates shared by both paths: notes-required and the
+        # spec §4.7 disagreement check against the merged final state.
+        # Only fetch ai_screening when a score column is actually in the patch
+        # OR we're flipping to submitted — avoids a redundant DB round-trip on
+        # text-only edits (quick_notes, flags, etc.).
+        _validate_notes(final.get("quick_notes"), draft=False)
+        ai_row = None
+        if flipping_to_submitted or _SCORE_COLS.intersection(patch):
+            ai_row = _fetch_ai_screening_row(
+                sb, existing["application_id"], existing["application_track"],
             )
+        _validate_disagreements(final, ai_row, final.get("disagree_with_ai"))
     now = datetime.now(UTC)
     if flipping_to_submitted:
         patch["submitted_at"] = now.isoformat()
@@ -428,7 +589,13 @@ async def patch_review(
             just_completed_assignment_id=existing.get("assignment_id"),
         )
 
-    return {"review_id": review_id, "patched": list(patch.keys())}
+    final_row = {**existing, **patch}
+    return {
+        "review_id": review_id,
+        "patched": list(patch.keys()),
+        "overall": reviewer_query._weighted_overall(final_row),
+        "editWindowExpiresAt": final_row.get("locked_at"),
+    }
 
 
 # ─── POST /reviewer/assignments/{id}/decline ───────────────────────────

@@ -354,7 +354,9 @@ _VALID_SUBMIT = {
     "recommendation": "maybe",
     "strengths": None,
     "concerns": None,
-    "quick_notes": None,
+    # Non-draft submits require non-empty notes (Task 3); keep the canonical
+    # valid body valid.
+    "quick_notes": "solid team",
     "draft": False,
 }
 
@@ -535,6 +537,129 @@ def test_submit_review_409_when_review_already_exists(
     assert r.json()["detail"]["review_id"] == "existing-rev"
 
 
+# ─── POST /reviewer/reviews — Task 3 extensions ────────────────────────
+#     flags, disagree_with_ai, notes-required, richer responses
+
+
+def test_submit_requires_notes(client, monkeypatch, _clear_overrides):
+    """Non-draft submits must carry non-empty quick_notes (spec §4.7)."""
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    body = dict(_VALID_SUBMIT)
+    body["quick_notes"] = None
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "notes_required"
+
+    body["quick_notes"] = "   "  # whitespace-only is still empty
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "notes_required"
+
+
+def test_submit_persists_flags_and_disagreements(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    fake = _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    body = dict(_VALID_SUBMIT)
+    body["flags"] = ["pivot risk", "ip ownership unclear"]
+    body["disagree_with_ai"] = {"problem": "AI undersold the pilot data"}
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 201, r.text
+
+    review_inserts = [p for n, p in fake.inserts if n == "reviews"]
+    assert len(review_inserts) == 1
+    row = review_inserts[0]
+    assert row["flags"] == ["pivot risk", "ip ownership unclear"]
+    assert row["disagree_with_ai"] == {"problem": "AI undersold the pilot data"}
+
+
+def test_submit_rejects_more_than_8_flags(client, monkeypatch, _clear_overrides):
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    body = dict(_VALID_SUBMIT)
+    body["flags"] = [f"flag-{i}" for i in range(9)]
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "flags_invalid"
+
+
+def test_submit_response_includes_weighted_overall_and_lock(
+    client, monkeypatch, _clear_overrides,
+):
+    """Weights: problem 22 / solution 30 / tech 22 / founders 14 / commitment 12.
+    8*.22 + 6*.30 + 7*.22 + 9*.14 + 5*.12 = 6.96"""
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    body = dict(_VALID_SUBMIT)
+    body.update(score_problem=8, score_solution=6, score_tech=7,
+                score_founders=9, score_commitment=5)
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 201, r.text
+    payload = r.json()
+    assert payload["overall"] == 6.96
+    assert payload["editWindowExpiresAt"] is not None
+
+
+def test_submit_requires_disagreement_reason_on_high_variance(
+    client, monkeypatch, _clear_overrides,
+):
+    """Spec §4.7: |reviewer − AI| > 1.0 on any dimension requires a written
+    reason in disagree_with_ai[<short name>]."""
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me, ai_screening=[
+        {"application_id": "app1", "application_track": "tir",
+         "score_problem": 5.0, "score_completeness": 7.0, "score_tech": 7.0,
+         "score_founders": 7.0, "score_commitment": 7.0},
+    ])
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    body = dict(_VALID_SUBMIT)
+    # problem: |8.0 − 5.0| = 3.0 → reason required. Every other dimension is
+    # within ±1.0 of the AI row (solution maps to AI score_completeness).
+    body.update(score_problem=8.0, score_solution=7.0, score_tech=6.0,
+                score_founders=8.0, score_commitment=7.0)
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "disagreement_reason_required"
+    assert "problem" in detail["dimensions"]
+
+    body["disagree_with_ai"] = {"problem": "AI missed the pilot data"}
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 201, r.text
+
+
+def test_draft_save_skips_notes_and_disagreement_validation(
+    client, monkeypatch, _clear_overrides,
+):
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me, ai_screening=[
+        {"application_id": "app1", "application_track": "tir",
+         "score_problem": 1.0, "score_completeness": 1.0, "score_tech": 1.0,
+         "score_founders": 1.0, "score_commitment": 1.0},
+    ])
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    body = dict(_VALID_SUBMIT)
+    body.update(draft=True, quick_notes=None, score_tech=None,
+                score_founders=None, score_commitment=None,
+                recommendation=None)
+    # score_problem stays 7 vs AI 1.0 → variance 6.0, but drafts skip both
+    # the notes requirement and the disagreement check.
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 201, r.text
+
+
 # ─── PATCH /reviewer/reviews/{id} ──────────────────────────────────────
 
 
@@ -577,9 +702,12 @@ def test_patch_review_within_window_succeeds(
              "application_id": "app1", "application_track": "tir",
              "submitted_at": "2026-05-18T10:00:00+00:00",
              "locked_at": "2026-05-18T11:00:00+00:00",
-             "score_problem": 5, "recommendation": "maybe"},
+             "score_problem": 5, "score_solution": 6, "score_tech": 6,
+             "score_founders": 6, "score_commitment": 6,
+             "recommendation": "maybe", "quick_notes": "looks ok"},
         ],
         "application_status_log": [],
+        "ai_screening": [],
     })
     app.dependency_overrides[get_current_user] = _override_user(me)
     r = client.patch("/reviewer/reviews/rev1", json={"score_problem": 8})
@@ -626,9 +754,12 @@ def test_patch_review_does_not_extend_lock(
              "application_id": "app1", "application_track": "tir",
              "submitted_at": "2026-05-18T10:00:00+00:00",
              "locked_at": "2026-05-18T11:00:00+00:00",
-             "score_problem": 5, "recommendation": "maybe"},
+             "score_problem": 5, "score_solution": 6, "score_tech": 6,
+             "score_founders": 6, "score_commitment": 6,
+             "recommendation": "maybe", "quick_notes": "looks ok"},
         ],
         "application_status_log": [],
+        "ai_screening": [],
     })
     app.dependency_overrides[get_current_user] = _override_user(me)
     r = client.patch("/reviewer/reviews/rev1", json={"score_problem": 8})
@@ -712,7 +843,7 @@ def test_patch_flip_draft_to_submitted_runs_full_pipeline(
              "submitted_at": None, "locked_at": None,
              "score_problem": 7, "score_solution": 5, "score_tech": 6,
              "score_founders": 8, "score_commitment": 7,
-             "recommendation": "maybe"},
+             "recommendation": "maybe", "quick_notes": "ok"},
         ],
         "application_status_log": [],
     })
@@ -1019,7 +1150,7 @@ def test_submit_review_accepts_half_point_scores(
         "recommendation": "yes",
         "strengths": None,
         "concerns": None,
-        "quick_notes": None,
+        "quick_notes": "half-point scores ok",  # notes required on submit
         "draft": False,
     }
     r = client.post("/reviewer/reviews", json=body)
@@ -1041,3 +1172,226 @@ def test_submit_review_rejects_non_half_step_score(
     body["score_tech"] = 7.77
     r = client.post("/reviewer/reviews", json=body)
     assert r.status_code == 422
+
+
+# ─── PATCH validation gap fixes ────────────────────────────────────────
+
+
+def test_patch_rejects_invalid_flags(client, monkeypatch, _clear_overrides):
+    """PATCH on a draft review with an over-length flag must 422 flags_invalid.
+    The 80-char limit has no DB backstop; the router must catch it before write."""
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [],
+        "sip_applications": [],
+        "reviews": [
+            {"id": "rev-draft", "reviewer_user_id": me,
+             "application_id": "app1", "application_track": "tir",
+             "submitted_at": None, "locked_at": None,
+             "score_problem": 5, "recommendation": None,
+             "quick_notes": None},
+        ],
+        "application_status_log": [],
+        "ai_screening": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    # flag that exceeds the 80-char limit
+    r = client.patch("/reviewer/reviews/rev-draft", json={"flags": ["x" * 81]})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "flags_invalid"
+
+
+def test_patch_submitted_review_enforces_disagreement_gate(
+    client, monkeypatch, _clear_overrides,
+):
+    """Editing an already-submitted review must re-run the spec §4.7
+    disagreement gate.  A score change that crosses the >1.0 variance
+    threshold without a reason must 422; providing the reason must 200."""
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [],
+        "sip_applications": [],
+        "reviews": [
+            # Fully-compliant submitted review, locked_at in the future.
+            {"id": "rev1", "reviewer_user_id": me,
+             "application_id": "app1", "application_track": "tir",
+             "submitted_at": "2026-05-18T10:00:00+00:00",
+             "locked_at": "2026-05-18T11:00:00+00:00",
+             "score_problem": 7.0, "score_solution": 7.0, "score_tech": 7.0,
+             "score_founders": 7.0, "score_commitment": 7.0,
+             "recommendation": "maybe", "quick_notes": "solid team",
+             "disagree_with_ai": None},
+        ],
+        "application_status_log": [],
+        "ai_screening": [
+            # All AI scores 7.0; reviewer bumping problem to 9.0 → |9−7|=2.0 > 1.0
+            {"application_id": "app1", "application_track": "tir",
+             "score_problem": 7.0, "score_completeness": 7.0,
+             "score_tech": 7.0, "score_founders": 7.0, "score_commitment": 7.0},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    # Without disagree_with_ai → 422 disagreement_reason_required
+    r = client.patch("/reviewer/reviews/rev1", json={"score_problem": 9.0})
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "disagreement_reason_required"
+    assert "problem" in detail["dimensions"]
+
+    # With the required reason → 200
+    r = client.patch(
+        "/reviewer/reviews/rev1",
+        json={"score_problem": 9.0, "disagree_with_ai": {"problem": "pilot data missed by AI"}},
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_patch_draft_review_skips_submit_gates(
+    client, monkeypatch, _clear_overrides,
+):
+    """Editing a draft (submitted_at IS NULL) must NOT run submit-time gates.
+    A score change with no notes and high variance should still return 200."""
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [],
+        "sip_applications": [],
+        "reviews": [
+            {"id": "rev-draft", "reviewer_user_id": me,
+             "application_id": "app1", "application_track": "tir",
+             "submitted_at": None, "locked_at": None,
+             "score_problem": 5.0, "score_solution": 5.0, "score_tech": 5.0,
+             "score_founders": 5.0, "score_commitment": 5.0,
+             "recommendation": None, "quick_notes": None,
+             "disagree_with_ai": None},
+        ],
+        "application_status_log": [],
+        "ai_screening": [
+            # High-variance AI row — would trigger disagreement gate on a submitted review
+            {"application_id": "app1", "application_track": "tir",
+             "score_problem": 1.0, "score_completeness": 1.0,
+             "score_tech": 1.0, "score_founders": 1.0, "score_commitment": 1.0},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    # score_problem 9.0 vs AI 1.0 → variance 8.0; no notes, no disagree_with_ai
+    # On a draft these gates must be skipped entirely → 200
+    r = client.patch("/reviewer/reviews/rev-draft", json={"score_problem": 9.0})
+    assert r.status_code == 200, r.text
+
+
+# ─── New hardening tests ────────────────────────────────────────────────
+
+
+def test_submit_disagreement_gate_on_commit_dimension(
+    client, monkeypatch, _clear_overrides,
+):
+    """'commit' is the client-facing short key for score_commitment.
+    Variance >1.0 on commitment requires disagree_with_ai['commit']; providing
+    it clears the gate."""
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me, ai_screening=[
+        {"application_id": "app1", "application_track": "tir",
+         "score_problem": 7.0, "score_completeness": 7.0, "score_tech": 7.0,
+         "score_founders": 7.0, "score_commitment": 5.0,
+         "score_completeness": 7.0},
+    ])
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    body = dict(_VALID_SUBMIT)
+    # commitment: |8.0 − 5.0| = 3.0 → reason required; all others within ±1.0
+    body.update(
+        score_problem=7.0, score_solution=7.0, score_tech=7.0,
+        score_founders=7.0, score_commitment=8.0,
+    )
+
+    # Without reason → 422, "commit" in dimensions
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "disagreement_reason_required"
+    assert "commit" in detail["dimensions"]
+
+    # With reason under the 'commit' key → 201
+    body["disagree_with_ai"] = {"commit": "AI undervalued commitment"}
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 201, r.text
+
+
+def test_submit_disagreement_boundary_exactly_one_is_allowed(
+    client, monkeypatch, _clear_overrides,
+):
+    """The gate uses strict > 1.0, so a delta of exactly 1.0 must NOT require a
+    reason and must return 201."""
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me, ai_screening=[
+        {"application_id": "app1", "application_track": "tir",
+         "score_problem": 6.0, "score_completeness": 7.0, "score_tech": 7.0,
+         "score_founders": 7.0, "score_commitment": 7.0},
+    ])
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    body = dict(_VALID_SUBMIT)
+    # problem: |7.0 − 6.0| = 1.0 exactly → NOT > 1.0 → no reason needed
+    body.update(
+        score_problem=7.0, score_solution=7.0, score_tech=7.0,
+        score_founders=7.0, score_commitment=7.0,
+    )
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 201, r.text
+
+
+def test_submit_accepts_exactly_8_flags_of_80_chars(
+    client, monkeypatch, _clear_overrides,
+):
+    """8 flags each of exactly 80 chars is the boundary that must pass (both
+    max-count and max-length are inclusive)."""
+    me = "rev-a"
+    _seed_one_assignment(monkeypatch, me)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    body = dict(_VALID_SUBMIT)
+    body["flags"] = ["x" * 80 for _ in range(8)]
+    r = client.post("/reviewer/reviews", json=body)
+    assert r.status_code == 201, r.text
+
+
+def test_patch_text_only_edit_on_submitted_review_skips_ai_fetch(
+    client, monkeypatch, _clear_overrides,
+):
+    """A text-only PATCH (quick_notes only) on a submitted review within the
+    lock window must succeed even when there is NO ai_screening row.  This
+    proves the gated fetch path: score columns absent → ai_row stays None →
+    _validate_disagreements no-ops."""
+    me = "rev-a"
+    _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [],
+        "tir_applications": [],
+        "sip_applications": [],
+        "reviews": [
+            # Fully-compliant submitted review; locked_at in the future.
+            {"id": "rev1", "reviewer_user_id": me,
+             "application_id": "app1", "application_track": "tir",
+             "submitted_at": "2026-05-18T10:00:00+00:00",
+             "locked_at": "2026-05-18T11:00:00+00:00",
+             "score_problem": 7.0, "score_solution": 7.0, "score_tech": 7.0,
+             "score_founders": 7.0, "score_commitment": 7.0,
+             "recommendation": "maybe", "quick_notes": "original notes",
+             "disagree_with_ai": None},
+        ],
+        "application_status_log": [],
+        # No ai_screening row — fetch must be skipped entirely for text-only PATCH
+        "ai_screening": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.patch("/reviewer/reviews/rev1", json={"quick_notes": "updated"})
+    assert r.status_code == 200, r.text
