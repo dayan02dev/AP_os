@@ -190,9 +190,12 @@ def fetch_application_for_reviewer(
     Returns None if the reviewer has no active assignment for this app
     (the router converts None → 403).
 
-    The `ai_screening` key is always present in the response dict but is
-    None unless the reviewer has a submitted (non-draft) review. This is
-    the load-bearing privacy boundary — see spec §6.3.
+    The `ai_screening` key is always present in the response dict.
+    Per the 2026-06-12 spec §1 decision, the reviewer prototypes are the
+    source of truth and show AI scores at all times, so ai_screening is
+    included unconditionally (anti-anchoring strip is OFF). To restore the
+    privacy boundary later, set ``include_ai`` below to:
+        bool(my_review and my_review.get("submitted_at"))
     """
     sb = get_admin_client()
 
@@ -251,9 +254,13 @@ def fetch_application_for_reviewer(
         review_rows = []
     my_review = review_rows[0] if review_rows else None
 
-    # ── Privacy boundary ──────────────────────────────────────────
+    # ── AI screening ──────────────────────────────────────────────
+    # Spec 2026-06-12 §1 decision: the reviewer prototypes are the source of
+    # truth and show AI scores pre-submit, so anti-anchoring is OFF. To restore
+    # it later, set this to: bool(my_review and my_review.get("submitted_at")).
+    include_ai = True
     ai_screening = None
-    if my_review and my_review.get("submitted_at"):
+    if include_ai:
         try:
             ai_rows = (
                 sb.table("ai_screening")

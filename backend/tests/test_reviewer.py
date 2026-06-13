@@ -215,9 +215,12 @@ def test_inbox_assignment_shape(client, monkeypatch, _clear_overrides):
 # ─── GET /reviewer/applications/{track}/{id} ───────────────────────────
 
 
-def test_app_detail_strips_ai_when_no_submitted_review(
+def test_app_detail_includes_ai_screening_before_submit(
     client, monkeypatch, _clear_overrides,
 ):
+    """Spec 2026-06-12 §1 decision: reviewer prototypes are the source of truth
+    and show AI scores pre-submit, so ai_screening must be included even when
+    the reviewer has no review yet (anti-anchoring strip is OFF)."""
     me = "rev-a"
     _install_db(monkeypatch, {
         "reviewer_assignments": [
@@ -241,7 +244,8 @@ def test_app_detail_strips_ai_when_no_submitted_review(
     r = client.get("/reviewer/applications/tir/app1")
     assert r.status_code == 200
     body = r.json()
-    assert body["ai_screening"] is None, "AI must be stripped before submit"
+    assert body["ai_screening"] is not None, "AI must be included pre-submit (UI-is-truth)"
+    assert body["ai_screening"]["score_overall"] == 7.5
 
 
 def test_app_detail_includes_ai_after_submit(
@@ -296,13 +300,12 @@ def test_app_detail_403_when_not_assigned(
     assert r.status_code == 403
 
 
-def test_app_detail_strips_ai_when_review_is_draft(
+def test_app_detail_includes_ai_when_review_is_draft(
     client, monkeypatch, _clear_overrides,
 ):
-    """Path C of the privacy boundary: caller has an active assignment AND a
-    draft review (submitted_at IS NULL) AND ai_screening data exists — but
-    ai_screening MUST still be stripped because the reviewer hasn't submitted
-    yet. Tests the `my_review.get("submitted_at")` short-circuit explicitly.
+    """Spec 2026-06-12 §1 decision: reviewer prototypes are the source of truth
+    and show AI scores at all times. A draft review (submitted_at IS NULL) must
+    still receive ai_screening — the anti-anchoring strip is OFF entirely.
     """
     me = "rev-a"
     _install_db(monkeypatch, {
@@ -335,8 +338,9 @@ def test_app_detail_strips_ai_when_review_is_draft(
     body = r.json()
     assert body["my_review"] is not None
     assert body["my_review"]["submitted_at"] is None
-    assert body["ai_screening"] is None, \
-        "Draft review must not unlock AI screening (anti-anchoring)"
+    assert body["ai_screening"] is not None, \
+        "AI must be included even on a draft review (UI-is-truth, anti-anchoring OFF)"
+    assert body["ai_screening"]["score_overall"] == 7.5
 
 
 # ─── POST /reviewer/reviews ────────────────────────────────────────────

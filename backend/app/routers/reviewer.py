@@ -1,13 +1,14 @@
 """Reviewer endpoints (Phase 1.5).
 
 Every endpoint guarded by `require_capability(...)`. Mutations append to
-`audit_log_v2`. Privacy boundary: GET /reviewer/applications/{track}/{id}
-returns ai_screening: null unless the caller has a submitted review.
+`audit_log_v2`. Per the 2026-06-12 spec §1 decision, the reviewer prototypes
+are the source of truth and show AI scores at all times — ai_screening is
+included in GET /reviewer/applications/{track}/{id} unconditionally.
 
 Routes (built up across Tasks 1-7 of the implementation plan):
 
     GET    /reviewer/assignments                       inbox
-    GET    /reviewer/applications/{track}/{id}         app detail (AI stripped)
+    GET    /reviewer/applications/{track}/{id}         app detail (AI included)
     GET    /reviewer/reviews/mine?application_id=...   probe
     GET    /reviewer/reviews?mine=true&locked=true     completed list
     POST   /reviewer/reviews                           submit (or draft)
