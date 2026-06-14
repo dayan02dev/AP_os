@@ -15,6 +15,19 @@ from ..supabase_client import get_admin_client
 log = logging.getLogger(__name__)
 
 
+def actor_role_of(user: dict) -> str:
+    """Derive a single canonical role string from a user dict's ``roles`` list.
+
+    Priority: admin > leadership > first-role > "admin" (safe fallback).
+    """
+    roles = user.get("roles") or []
+    if "admin" in roles:
+        return "admin"
+    if "leadership" in roles:
+        return "leadership"
+    return roles[0] if roles else "admin"
+
+
 def write_audit(
     *,
     actor_user_id: str | None,

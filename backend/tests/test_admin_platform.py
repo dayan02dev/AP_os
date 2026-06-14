@@ -55,6 +55,12 @@ class _FakeQuery:
         self._parent.inserts.append((self._name, payload))
         return self
 
+    def upsert(self, payload, on_conflict=None):
+        self._mode = "insert"
+        self._payload = payload
+        self._parent.inserts.append((self._name, payload))
+        return self
+
     def update(self, payload):
         self._mode = "update"
         self._payload = payload
@@ -356,3 +362,49 @@ def test_bulk_decision_per_id_results(client, monkeypatch, _clear_overrides):
     assert res["app-2"] == "illegal_transition"      # draft can't shortlist
     assert res["app-3"] == "rationale_required"      # reject w/o rationale
     assert res["app-99"] == "not_found"              # non-existent application id
+
+
+# ─── PATCH /admin/platform/applications/{track}/{id}/meta (Task 9) ──────
+
+
+def test_meta_hide_then_restore(client, monkeypatch, _clear_overrides):
+    fake = _install_db(monkeypatch, {"tir_applications":[{"id":"app-1","status":"evaluated"}],
+        "sip_applications":[], "application_admin_meta":[]})
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+    r = client.patch("/admin/platform/applications/tir/app-1/meta", json={"is_hidden": True, "hidden_reason":"dupe"})
+    assert r.status_code == 200, r.text
+    # the upserted meta row carries is_hidden True + updated_by
+    rows = [p for (t,p) in fake.inserts if t=="application_admin_meta"] + [u for (n,u,_) in fake.updates if n=="application_admin_meta"]
+    assert any(p.get("is_hidden") is True for p in rows)
+    r2 = client.patch("/admin/platform/applications/tir/app-1/meta", json={"is_hidden": False})
+    assert r2.status_code == 200
+
+
+def test_meta_rejects_unknown_field(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {"tir_applications":[{"id":"app-1"}],"sip_applications":[],"application_admin_meta":[]})
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+    r = client.patch("/admin/platform/applications/tir/app-1/meta", json={"bogus": 1})
+    assert r.status_code == 422
+
+
+def test_meta_empty_body_422(client, monkeypatch, _clear_overrides):
+    """PATCH meta with an empty body {} must 422 with code 'no_fields'."""
+    _install_db(monkeypatch, {"tir_applications":[{"id":"app-1"}],"sip_applications":[],"application_admin_meta":[]})
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+    r = client.patch("/admin/platform/applications/tir/app-1/meta", json={})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "no_fields"
+
+
+def test_meta_sets_updated_by(client, monkeypatch, _clear_overrides):
+    """PATCH meta is_hidden true → upserted row's updated_by matches caller's user_id."""
+    fake = _install_db(monkeypatch, {"tir_applications":[{"id":"app-1","status":"evaluated"}],
+        "sip_applications":[], "application_admin_meta":[]})
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+    r = client.patch("/admin/platform/applications/tir/app-1/meta", json={"is_hidden": True})
+    assert r.status_code == 200, r.text
+    upserted = [p for (t, p) in fake.inserts if t == "application_admin_meta"]
+    assert upserted, "expected at least one upsert into application_admin_meta"
+    assert upserted[-1].get("updated_by") == "lead-1"

@@ -31,7 +31,7 @@ from . import state_machine
 from .audit import write_audit
 
 
-def record_decision(*, track, application_id, decision, rationale, decided_by) -> dict:
+def record_decision(*, track, application_id, decision, rationale, decided_by, decided_by_role: str | None = None) -> dict:
     """Gate-1 decision: pre-validate, write admin_decisions row, then move status.
 
     The decision row is written before the status moves so any failure prior
@@ -76,7 +76,7 @@ def record_decision(*, track, application_id, decision, rationale, decided_by) -
 
     # 4. Best-effort audit.
     write_audit(
-        actor_user_id=decided_by, actor_role="admin",
+        actor_user_id=decided_by, actor_role=decided_by_role or "admin",
         action_type="gate1_decision",
         target_table=table, target_id=application_id,
         after={"decision": decision, "from_status": from_status},
@@ -89,7 +89,7 @@ def record_decision(*, track, application_id, decision, rationale, decided_by) -
     }
 
 
-def record_decision_safe(*, track, application_id, decision, rationale, decided_by) -> dict:
+def record_decision_safe(*, track, application_id, decision, rationale, decided_by, decided_by_role: str | None = None) -> dict:
     """record_decision wrapped to a per-id status string instead of raising."""
     if decision in ("rejected", "waitlisted", "on_hold") and not (rationale or "").strip():
         return {"application_id": application_id, "track": track, "status": "rationale_required"}
@@ -97,6 +97,7 @@ def record_decision_safe(*, track, application_id, decision, rationale, decided_
         record_decision(
             track=track, application_id=application_id, decision=decision,
             rationale=rationale, decided_by=decided_by,
+            decided_by_role=decided_by_role,
         )
         return {"application_id": application_id, "track": track, "status": "decided"}
     except HTTPException as exc:

@@ -17,6 +17,7 @@ capabilities (`view_all_apps` / `view_app_detail`) that admins also hold — see
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,7 +27,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..deps import get_current_user
 from ..rbac import require_capability
 from ..services import admin_query, decisions
-from ..supabase_client import get_admin_client  # noqa: F401  (test monkeypatch hook)
+from ..services.audit import actor_role_of, write_audit
+from ..supabase_client import get_admin_client
 
 router = APIRouter(prefix="/admin/platform", tags=["admin-platform"])
 
@@ -110,6 +112,7 @@ async def decide(
         track=track, application_id=application_id,
         decision=body.decision, rationale=body.rationale,
         decided_by=user["user_id"],
+        decided_by_role=actor_role_of(user),
     )
 
 
@@ -129,12 +132,60 @@ class BulkDecisionBody(BaseModel):
 @router.post("/decisions/bulk", dependencies=[Depends(require_capability("decide_application"))])
 async def bulk_decide(body: BulkDecisionBody, user: dict = Depends(get_current_user)) -> dict:
     """Bulk gate-1 decisions: per-id result dict instead of raising on individual failures."""
+    caller_role = actor_role_of(user)
     results = [
         decisions.record_decision_safe(
             track=i.track, application_id=i.application_id,
             decision=i.decision, rationale=i.rationale,
             decided_by=user["user_id"],
+            decided_by_role=caller_role,
         )
         for i in body.items
     ]
     return {"results": results}
+
+
+class MetaBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    is_hidden: bool | None = None
+    is_archived: bool | None = None
+    hidden_reason: str | None = None
+
+
+@router.patch(
+    "/applications/{track}/{application_id}/meta",
+    dependencies=[Depends(require_capability("view_all_apps"))],
+)
+async def update_meta(
+    track: Literal["tir", "sip"],
+    application_id: str,
+    body: MetaBody,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Upsert hide/archive meta for an application; audited."""
+    fields = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
+    if not fields:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "no_fields", "message": "Provide at least one field."},
+        )
+    sb = get_admin_client()
+    row = {
+        "application_id": application_id,
+        "application_track": track,
+        "updated_at": datetime.now(UTC).isoformat(),
+        "updated_by": user["user_id"],
+        **fields,
+    }
+    sb.table("application_admin_meta").upsert(
+        row, on_conflict="application_id,application_track"
+    ).execute()
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="admin_meta_update",
+        target_table=f"{track}_applications",
+        target_id=application_id,
+        after=fields,
+    )
+    return {"application_id": application_id, "track": track, **fields}
