@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..deps import get_current_user
 from ..rbac import require_capability
 from ..services import review_presenter, reviewer_query, state_machine
+from ..services import rubric as rubric_service
 from ..services.audit import write_audit
 from ..supabase_client import get_admin_client
 
@@ -781,6 +782,16 @@ async def list_reviews(
 async def get_history(user: dict = Depends(get_current_user)) -> dict:
     """Spec §4.5 — submitted reviews + AI variance + current admin decision."""
     return reviewer_query.fetch_history(user["user_id"])
+
+
+@router.get(
+    "/rubric",
+    dependencies=[Depends(require_capability("view_assigned_apps"))],
+)
+async def get_rubric(
+    track: Literal["tir", "sip"] = Query("tir"),
+) -> dict:
+    return rubric_service.get_rubric(track)
 
 
 @router.get(

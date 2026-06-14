@@ -1618,3 +1618,71 @@ def test_history_rows_variance_and_admin_decision(
 
     # Newest submitted first.
     assert [row["appId"] for row in body["rows"]] == ["app-1", "app-2", "app-3"]
+
+
+# ─── GET /reviewer/rubric ──────────────────────────────────────────────
+
+
+def test_rubric_endpoint_versioned_and_weighted(client, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user("rev-1")
+    r = client.get("/reviewer/rubric?track=tir")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["version"] == "v3.1"
+    assert sum(d["weight"] for d in body["dimensions"]) == 100
+    assert [d["key"] for d in body["dimensions"]] == ["problem", "solution", "tech", "founders", "commit"]
+    assert body["title"].startswith("TIR")
+    # every dimension has all 5 anchor tiers
+    for d in body["dimensions"]:
+        assert set(d["anchors"].keys()) == {"10", "8", "6", "4", "2"}
+
+
+def test_rubric_endpoint_sip_track_title(client, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user("rev-1")
+    r = client.get("/reviewer/rubric?track=sip")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["title"].startswith("VIP")
+
+
+def test_rubric_weights_match_score_weights(client, _clear_overrides):
+    """Guard: rubric dimension weights must stay in lockstep with _SCORE_WEIGHTS."""
+    from app.services import rubric as rubric_service
+    from app.services.reviewer_query import _SCORE_WEIGHTS
+
+    # Map dimension key → _SCORE_WEIGHTS column name
+    key_to_col = {
+        "problem":   "score_problem",
+        "solution":  "score_solution",
+        "tech":      "score_tech",
+        "founders":  "score_founders",
+        "commit":    "score_commitment",
+    }
+    rubric = rubric_service.get_rubric("tir")
+    for dim in rubric["dimensions"]:
+        col = key_to_col[dim["key"]]
+        assert dim["weight"] == _SCORE_WEIGHTS[col], (
+            f"Rubric weight for '{dim['key']}' ({dim['weight']}) "
+            f"differs from _SCORE_WEIGHTS['{col}'] ({_SCORE_WEIGHTS[col]})"
+        )
+
+
+def test_rubric_anchor_text_is_locked(client, _clear_overrides):
+    """Guard: verbatim anchor text for two sentinel entries so an unintentional
+    edit to rubric.py is caught immediately."""
+    app.dependency_overrides[get_current_user] = _override_user("rev-1")
+    r = client.get("/reviewer/rubric?track=tir")
+    assert r.status_code == 200
+    dims = r.json()["dimensions"]
+
+    # dimensions[1] is 'solution' (weight 30)
+    solution_dim = dims[1]
+    assert solution_dim["key"] == "solution"
+    assert solution_dim["anchors"]["10"] == (
+        "Solution maps 1:1 to problem · differentiated vs all known alternatives"
+    )
+
+    # dimensions[4] is 'commit' (weight 12)
+    commit_dim = dims[4]
+    assert commit_dim["key"] == "commit"
+    assert commit_dim["anchors"]["4"] == 'Partial commitment, "validating"'
