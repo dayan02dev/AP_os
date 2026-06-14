@@ -35,8 +35,10 @@ LEGAL_TRANSITIONS: dict[str, frozenset[str]] = {
     "ai_screening":     frozenset({"withdrawn"}),
     "screening_failed": frozenset({"withdrawn"}),
     "under_review":     frozenset({"evaluated", "withdrawn"}),
-    "evaluated":        frozenset({"shortlisted", "rejected", "waitlisted", "withdrawn"}),
-    "shortlisted":      frozenset({"withdrawn"}),
+    "evaluated":        frozenset({"shortlisted", "on_hold", "rejected", "waitlisted", "withdrawn"}),
+    "on_hold":          frozenset({"evaluated", "shortlisted", "rejected", "waitlisted", "withdrawn"}),
+    "shortlisted":      frozenset({"jury_review", "withdrawn"}),
+    "jury_review":      frozenset({"withdrawn"}),
     "interview":        frozenset({"withdrawn"}),
     "offered":          frozenset({"withdrawn"}),
     "onboarded":        frozenset({"withdrawn"}),
@@ -70,7 +72,7 @@ def assert_legal_transition(from_status: str | None, to_status: str) -> None:
     hint: str | None = None
     # Rewinds are the most likely thing a user attempts and gets surprised by;
     # name-check the source/target shape and surface the Phase 1.5 message.
-    if from_status in {"evaluated", "shortlisted", "rejected", "waitlisted"} \
+    if from_status in {"evaluated", "shortlisted", "on_hold", "jury_review", "rejected", "waitlisted"} \
             and to_status in {"under_review", "submitted", "ai_screening"}:
         hint = "Rewinding a decision requires a Phase 1.5 escalation."
 
@@ -201,3 +203,46 @@ def auto_transition_to_evaluated_if_complete(
         )
 
     return True
+
+
+def apply_status_change(
+    application_id: str,
+    track: str,
+    *,
+    to_status: str,
+    changed_by: str | None,
+    reason: str | None = None,
+) -> str:
+    """Guarded status write: assert legal transition, update app row, log to
+    application_status_log. Returns previous status. 404 if app missing, 422 if illegal."""
+    sb = get_admin_client()
+    table = "tir_applications" if track == "tir" else "sip_applications"
+    rows = (
+        sb.table(table).select("status").eq("id", application_id).limit(1).execute().data
+        or []
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "application_not_found"},
+        )
+    from_status = rows[0].get("status")
+    assert_legal_transition(from_status, to_status)
+    now_iso = datetime.now(UTC).isoformat()
+    sb.table(table).update({"status": to_status}).eq("id", application_id).execute()
+    try:
+        sb.table("application_status_log").insert({
+            "application_id":    application_id,
+            "application_track": track,
+            "from_status":       from_status,
+            "to_status":         to_status,
+            "changed_by":        changed_by,
+            "reason":            reason,
+            "changed_at":        now_iso,
+        }).execute()
+    except Exception as exc:
+        log.warning(
+            "apply_status_change: status_log insert failed (swallowed)",
+            extra={"application_id": application_id, "err": str(exc)},
+        )
+    return from_status
