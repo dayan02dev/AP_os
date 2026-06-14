@@ -1,8 +1,8 @@
-"""The 7 deterministic cap rules from spec §5.
+"""7 TIR cap rules from spec §5, plus 1 provisional SIP rule (rule_sip_preincorp / SIP1).
 
 Each rule is a pure function (application_row, scores, resume_meta) →
 (maybe-CapEvent, signal-name-and-cap-value-tuple-or-None). The dispatcher
-runs all 7 and applies the minimum of all caps that fire per signal.
+runs all applicable rules and applies the minimum of all caps that fire per signal.
 """
 from __future__ import annotations
 
@@ -126,21 +126,68 @@ def rule_c9(row, scores, resume_meta):
 ALL_RULES = (rule_c1, rule_c2, rule_c3, rule_c5, rule_c6, rule_c7, rule_c9)
 
 
+# ─── PROVISIONAL_V0 — SIP-only cap ───────────────────────────────────────
+# The 7 TIR rules above all no-op cleanly on SIP rows: every TIR-specific
+# column they read (solution_stage, problem_defined, evidence_*) is absent
+# from sip_applications, so .get() → None → the guard returns None. C1/C3/C5/
+# C7 read columns SHARED with SIP (basic_incubator_*, solution_core_tech,
+# the long-text fields) and apply identically — that is intended.
+#
+# This single provisional rule is the SIP skeleton: a pre-incorporation
+# company OR very-early TRL (≤3) caps overall maturity and flags for human
+# review. It is a PLACEHOLDER — the real SIP rubric will replace it.
+
+_SIP_PREINCORP = "Not yet — we're still pre-incorporation"
+_SIP_TRL3 = "TRL 3 or earlier — research stage"
+
+
+def rule_sip_preincorp(row, scores, resume_meta):
+    """PROVISIONAL_V0 — cap completeness + behavioural at 5 for pre-incorporation
+    or TRL≤3 SIP applications, and flag for human review.
+
+    Only invoked when track == "sip" (threaded by apply_all_caps). Reads the
+    sip_* columns directly off the application_row.
+    """
+    incorporated = row.get("sip_incorporated")
+    trl = row.get("sip_trl")
+    pre_incorp = incorporated == _SIP_PREINCORP
+    early_trl = trl == _SIP_TRL3
+    if not (pre_incorp or early_trl):
+        return None
+    reason = []
+    if pre_incorp:
+        reason.append("pre-incorporation")
+    if early_trl:
+        reason.append("TRL≤3")
+    return (["completeness", "behavioural"], 5,
+            f"SIP maturity gate: {', '.join(reason)} "
+            f"(incorporated={incorporated!r}, trl={trl!r})",
+            "sip_preincorp_or_early_trl", "SIP1")
+
+
 def apply_all_caps(
     application_row: dict,
     scores: dict[str, SignalScore],
     resume_meta: dict | None,
+    track: str = "tir",
 ) -> tuple[dict[str, SignalScore], list[CapEvent]]:
-    """Run all 7 rules; return (capped_scores, fired_events).
+    """Run all cap rules; return (capped_scores, fired_events).
 
     Caps stack via min(): if two rules cap the same signal, the lower
     cap wins. This matches spec §5.
+
+    `track` defaults to "tir" so existing callers/tests are byte-identical;
+    when track == "sip" the PROVISIONAL_V0 SIP rule is appended.
     """
     events: list[CapEvent] = []
     # signal_name → tightest cap that fired
     tightest: dict[str, int] = {}
 
-    for rule in ALL_RULES:
+    rules = ALL_RULES
+    if track == "sip":
+        rules = ALL_RULES + (rule_sip_preincorp,)  # PROVISIONAL_V0
+
+    for rule in rules:
         result = rule(application_row, scores, resume_meta)
         if result is None:
             continue

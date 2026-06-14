@@ -30,6 +30,7 @@ from ..models.sip_application import (
     SipCompletionStatus,
     SipSubmissionResult,
 )
+from ..services import sqs_publisher
 from ..supabase_client import get_admin_client
 from ..utils.rate_limit import (
     check_rate,
@@ -418,6 +419,8 @@ async def submit_application(
 
     _audit(user_id=user_id, action="sip_application.submitted",
            metadata={"application_id": submitted["id"]}, request=request)
+
+    sqs_publisher.publish(submitted["id"], "sip")
 
     _send_submission_email(
         user_id=user_id,

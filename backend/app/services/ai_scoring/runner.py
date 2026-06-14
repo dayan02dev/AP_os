@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 
 def _load_application_row(supabase, application_id: str, track: str) -> dict:
     table = f"{track}_applications"
+    # TODO(SIP rubric final): narrow column list once the SIP prompt is stable
     res = (
         supabase.table(table)
         .select("*")
@@ -94,9 +95,11 @@ def score_application(
     you may need to pass config={"max_concurrency": 1} to force sequential
     execution when using a non-thread-safe FakeListChatModel.
     """
-    if track != "tir":
-        raise ValueError(f"v1 only supports TIR; got {track!r}")
-
+    # Track-agnostic: _load_application_row parameterises the table by track
+    # and the graph's extract_evidence node passes the whole row to a generic
+    # prompt, so SIP rows flow through with their own columns. SIP-specific
+    # evidence shaping + caps are marked PROVISIONAL_V0 (see tracks/sip_evidence.py
+    # and caps.rule_sip_preincorp) and will be replaced when the SIP rubric is final.
     application_row = _load_application_row(supabase, application_id, track)
     resume_meta = _load_resume_meta(supabase, application_row.get("user_id"), track)
 

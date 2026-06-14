@@ -46,13 +46,9 @@ async def run_ai_screening(body: RunRequest) -> dict[str, Any]:
             detail={"code": "ai_scoring_disabled",
                     "message": "AI_SCORING_ENABLED env var is not set to 'true'."},
         )
-    if body.track != "tir":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "track_unsupported",
-                    "message": "v1 only supports the TIR track."},
-        )
-
+    # SIP scoring is enabled with PROVISIONAL_V0 prompts/caps (reuses the TIR
+    # graph as a baseline). The RunRequest.track pattern already restricts to
+    # tir|sip, so no track guard is needed here.
     sb = get_admin_client()
 
     # Resolve target ID list

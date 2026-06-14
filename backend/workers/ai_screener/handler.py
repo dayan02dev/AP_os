@@ -172,31 +172,20 @@ def _process_record(record: dict) -> None:
         application_track,
     )
 
-    # SIP support deferred until the SIP router merges into this branch.
-    # INTEGRATION NOTE (when SIP merges):
-    #   1. Delete this whole `if application_track == "sip"` block.
-    #   2. Change the SELECT at the next block from hardcoded `tir_applications`
-    #      to f"{application_track}_applications" — the SIP table has a
-    #      different column set so adjust the column list accordingly.
-    #   3. Add `sqs_publisher.publish(submitted["id"], "sip")` inside the
-    #      SIP submit handler in backend/app/routers/sip_applications.py.
-    if application_track == "sip":
-        log.warning(
-            "application_track='sip' is not yet supported on this branch — "
-            "skipping application_id=%s without error",
-            application_id,
-        )
-        return
-
     client = get_admin_client()
 
     # ── 1. Read current application row ───────────────────────────────────
+    # Track-aware: TIR and SIP have different column sets. Rather than
+    # maintain a per-track column list (the SIP table drops solution_stage /
+    # evidence_* and adds sip_* columns — see app/models/sip_application.py),
+    # select("*"). Downstream scoring reads specific keys defensively via
+    # .get(), so selecting all columns is robust at this volume and avoids a
+    # column list that silently drifts when a migration adds a field.
+    # TODO(SIP rubric final): narrow column list once the SIP prompt is stable
+    table = f"{application_track}_applications"
     res = (
-        client.table("tir_applications")
-        .select(
-            "id, status, basic_full_name, basic_org, "
-            "problem_describe, solution_describe, solution_core_tech"
-        )
+        client.table(table)
+        .select("*")
         .eq("id", application_id)
         .maybe_single()
         .execute()
@@ -205,7 +194,7 @@ def _process_record(record: dict) -> None:
 
     if app_row is None:
         raise ValueError(
-            f"application_id={application_id} not found in tir_applications"
+            f"application_id={application_id} not found in {table}"
         )
 
     current_status: str = app_row.get("status", "")

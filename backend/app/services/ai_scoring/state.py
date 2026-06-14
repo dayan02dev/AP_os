@@ -49,7 +49,8 @@ class SignalScore(BaseModel):
 # ─── Pass 3 audit trail ─────────────────────────────────────────────
 
 
-CapRuleId = Literal["C1", "C2", "C3", "C5", "C6", "C7", "C9"]
+# "SIP1" is PROVISIONAL_V0 — the SIP maturity cap (caps.rule_sip_preincorp).
+CapRuleId = Literal["C1", "C2", "C3", "C5", "C6", "C7", "C9", "SIP1"]
 
 
 class CapEvent(BaseModel):
@@ -111,7 +112,7 @@ class ScoringState(TypedDict, total=False):
     # Inputs
     application_id: str
     track: Literal["tir", "sip"]
-    application_row: dict          # raw tir_applications row
+    application_row: dict          # raw {track}_applications row (TIR or SIP)
     resume_meta: dict | None       # tir_resume_uploads.parsed_data if available
 
     # Pass 1 output
@@ -126,6 +127,9 @@ class ScoringState(TypedDict, total=False):
 
     # Pass 3 outputs
     caps_applied: list[CapEvent]
+    # PROVISIONAL_V0 — set by apply_caps when the SIP maturity cap fires; ORed
+    # into needs_human_review at persistence. Absent on the TIR path.
+    caps_needs_human_review: bool
     composite_percentage: float
     strength_label: str
     confidence_overall: float

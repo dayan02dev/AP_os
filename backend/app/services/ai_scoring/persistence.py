@@ -58,7 +58,11 @@ def persist_score(client, state: dict) -> None:
     cap_events = state.get("caps_applied", [])
     payload["flags"] = {
         "cap_events": [e.model_dump(mode="json") for e in cap_events],
-        "needs_human_review": bool(state.get("qg_needs_human_review", False)),
+        "needs_human_review": bool(
+            state.get("qg_needs_human_review", False)
+            # PROVISIONAL_V0 — SIP maturity cap can independently flag review.
+            or state.get("caps_needs_human_review", False)
+        ),
         "qg_last_failures": state.get("qg_last_failures", []),
     }
 

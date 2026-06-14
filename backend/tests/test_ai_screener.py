@@ -158,24 +158,89 @@ def test_stub_scores_in_range():
 # ─── handler.py tests ─────────────────────────────────────────────────────────
 
 
+@patch.dict("os.environ", {"AI_STUB": "true"})
 @patch("workers.ai_screener.handler.get_admin_client")
-def test_handler_sip_returns_success_without_writing(mock_get_client):
-    """SIP messages must be skipped (warning logged) without any DB write."""
+def test_handler_processes_sip_track_in_stub_mode(mock_get_client):
+    """A SIP message must score (stub) and upsert an ai_screening row with
+    application_track == 'sip' — NOT early-return."""
     from workers.ai_screener.handler import lambda_handler
 
-    mock_client = MagicMock()
-    mock_get_client.return_value = mock_client
+    app_id = "5151515b-0000-0000-0000-000000000099"
+
+    # A SIP row carries sip_* columns (not solution_stage/evidence_*); the
+    # handler now selects * so any column set flows through.
+    sip_row = {
+        "id": app_id,
+        "status": "submitted",
+        "basic_full_name": "SIP Founder",
+        "basic_org": "SIP Co",
+        "problem_describe": "A real SIP problem.",
+        "solution_describe": "A solution.",
+        "solution_core_tech": "Python",
+        "sip_incorporated": "Yes — Pvt Ltd, registered in India",
+        "sip_trl": "TRL 5 — pilot-tested in a relevant environment",
+        "sip_traction": "Paying pilots — customers have paid for early access",
+    }
+
+    upsert_rows: list[dict] = []
+    upsert_kwargs: list[dict] = []
+    update_payloads: list[dict] = []
+    tables_accessed: list[str] = []
+
+    def _make_table(name: str) -> MagicMock:
+        tables_accessed.append(name)
+        tbl = MagicMock()
+
+        select_chain = MagicMock()
+        select_chain.eq.return_value = select_chain
+        select_chain.maybe_single.return_value = select_chain
+        select_chain.execute.return_value = SimpleNamespace(data=sip_row)
+        tbl.select.return_value = select_chain
+
+        def _upsert(row, **kwargs):
+            upsert_rows.append(row)
+            upsert_kwargs.append(kwargs)
+            chain = MagicMock()
+            chain.execute.return_value = SimpleNamespace(data=[])
+            return chain
+
+        tbl.upsert.side_effect = _upsert
+
+        insert_chain = MagicMock()
+        insert_chain.execute.return_value = SimpleNamespace(data=[])
+        tbl.insert.return_value = insert_chain
+
+        def _update(payload):
+            update_payloads.append(payload)
+            chain = MagicMock()
+            chain.eq.return_value = chain
+            chain.execute.return_value = SimpleNamespace(data=[])
+            return chain
+
+        tbl.update.side_effect = _update
+        return tbl
+
+    fake_client = MagicMock()
+    fake_client.table.side_effect = _make_table
+    mock_get_client.return_value = fake_client
 
     event = _make_sqs_event(
-        {"application_id": str(uuid.uuid4()), "application_track": "sip"}
+        {"application_id": app_id, "application_track": "sip"}
     )
     result = lambda_handler(event, None)
 
-    # Message must NOT be in batchItemFailures (i.e. treated as success).
     assert result["batchItemFailures"] == []
 
-    # Supabase client must never have been called for a write.
-    mock_client.table.assert_not_called()
+    # The SIP table must have been read (not tir_applications).
+    assert "sip_applications" in tables_accessed
+    assert "tir_applications" not in tables_accessed
+    # ai_screening upserted with the SIP track.
+    assert "ai_screening" in tables_accessed
+    assert upsert_rows, "ai_screening was not upserted for SIP"
+    assert upsert_rows[0]["application_track"] == "sip"
+    assert upsert_kwargs[0].get("on_conflict") == "application_id,application_track"
+    # Status advanced on the sip_applications table.
+    assert any("under_review" in str(p) for p in update_payloads)
 
 
 @patch.dict("os.environ", {"AI_STUB": "true"})

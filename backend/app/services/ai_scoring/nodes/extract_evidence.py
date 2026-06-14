@@ -26,6 +26,16 @@ def run(state: dict, *, llm: BaseChatModel) -> dict:
         "application_row": row,
         "resume_meta": resume_meta,
     }
+
+    # PROVISIONAL_V0 — SIP-only evidence augmentation. The SIP track reuses
+    # this TIR-shaped node + prompt as a baseline; we attach a sip_evidence
+    # block (especially traction, which has no TIR analogue) so the LLM sees
+    # the SIP-salient signals. The TIR path adds NO key and is unchanged.
+    if state.get("track") == "sip":
+        from ..tracks.sip_evidence import sip_application_evidence
+
+        user_payload["sip_evidence"] = sip_application_evidence(row)
+
     messages = [
         SystemMessage(content=_PROMPT_TEXT),
         HumanMessage(content=json.dumps(user_payload, default=str)),
