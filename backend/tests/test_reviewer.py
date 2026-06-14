@@ -1531,3 +1531,90 @@ def test_content_endpoint_404_when_not_assigned(client, monkeypatch, _clear_over
 
     r = client.get("/reviewer/applications/tir/app-x/content")
     assert r.status_code == 404
+
+
+# ─── GET /reviewer/history ─────────────────────────────────────────────
+
+
+def test_history_rows_variance_and_admin_decision(
+    client, monkeypatch, _clear_overrides,
+):
+    """Spec §4.5 — submitted reviews, AI variance, admin-decision mapping.
+    Three submitted reviews exercise the three decision branches:
+      app-1 shortlisted → approved, app-2 rejected → rejected,
+      app-3 under_review → pending."""
+    me = "rev-1"
+    _install_db(monkeypatch, {
+        "reviews": [
+            {"id": "rv-1", "application_id": "app-1", "application_track": "tir",
+             "reviewer_user_id": me,
+             "score_problem": 8.0, "score_solution": 8.0, "score_tech": 8.0,
+             "score_founders": 8.0, "score_commitment": 8.0,
+             "recommendation": "yes",
+             "submitted_at": "2026-06-03T00:00:00+00:00",
+             "locked_at": "2026-06-03T01:00:00+00:00"},
+            {"id": "rv-2", "application_id": "app-2", "application_track": "tir",
+             "reviewer_user_id": me,
+             "score_problem": 6.0, "score_solution": 6.0, "score_tech": 6.0,
+             "score_founders": 6.0, "score_commitment": 6.0,
+             "recommendation": "no",
+             "submitted_at": "2026-06-02T00:00:00+00:00",
+             "locked_at": "2026-06-02T01:00:00+00:00"},
+            {"id": "rv-3", "application_id": "app-3", "application_track": "tir",
+             "reviewer_user_id": me,
+             "score_problem": 7.0, "score_solution": 7.0, "score_tech": 7.0,
+             "score_founders": 7.0, "score_commitment": 7.0,
+             "recommendation": "maybe",
+             "submitted_at": "2026-06-01T00:00:00+00:00",
+             "locked_at": "2026-06-01T01:00:00+00:00"},
+            # A draft (no submitted_at) must NOT appear in history.
+            {"id": "rv-4", "application_id": "app-4", "application_track": "tir",
+             "reviewer_user_id": me, "submitted_at": None, "locked_at": None},
+        ],
+        "tir_applications": [
+            {"id": "app-1", "display_seq": 26001, "basic_org": "Karkhana",
+             "status": "shortlisted", "submitted_at": "2026-05-20T00:00:00+00:00"},
+            {"id": "app-2", "display_seq": 26002, "basic_org": "Saathi",
+             "status": "rejected", "submitted_at": "2026-05-19T00:00:00+00:00"},
+            {"id": "app-3", "display_seq": 26003, "basic_org": "Vidya",
+             "status": "under_review", "submitted_at": "2026-05-18T00:00:00+00:00"},
+        ],
+        "sip_applications": [],
+        "ai_screening": [
+            {"application_id": "app-1", "application_track": "tir",
+             "score_overall": 8.5, "project_name": "Karkhana Robotics"},
+        ],
+        "reviewer_assignments": [], "industry_categories": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get("/reviewer/history")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["stats"]["total"] == 3
+    assert body["stats"]["consistencyPct"] is None
+    assert body["stats"]["avgMinutes"] is None
+    # Only app-1 has an AI overall → it's the only row with a variance.
+    assert body["stats"]["avgVariance"] == 0.5
+
+    by_id = {row["appId"]: row for row in body["rows"]}
+
+    a1 = by_id["app-1"]
+    assert a1["myScore"] == 8.0          # weighted mean of all-8s
+    assert a1["aiScore"] == 8.5
+    assert a1["variance"] == 0.5
+    assert a1["adminDecision"] == "approved"   # shortlisted → approved
+    assert a1["reco"] == "yes"
+    assert a1["name"] == "Karkhana Robotics"   # AI project_name wins
+
+    a2 = by_id["app-2"]
+    assert a2["adminDecision"] == "rejected"   # rejected → rejected
+    assert a2["aiScore"] is None               # no AI row
+    assert a2["variance"] is None
+    assert a2["name"] == "Saathi"              # falls back to basic_org
+
+    a3 = by_id["app-3"]
+    assert a3["adminDecision"] == "pending"    # under_review → pending
+
+    # Newest submitted first.
+    assert [row["appId"] for row in body["rows"]] == ["app-1", "app-2", "app-3"]

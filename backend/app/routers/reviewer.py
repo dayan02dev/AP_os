@@ -775,6 +775,15 @@ async def list_reviews(
 
 
 @router.get(
+    "/history",
+    dependencies=[Depends(require_capability("view_assigned_apps"))],
+)
+async def get_history(user: dict = Depends(get_current_user)) -> dict:
+    """Spec §4.5 — submitted reviews + AI variance + current admin decision."""
+    return reviewer_query.fetch_history(user["user_id"])
+
+
+@router.get(
     "/reviews/mine",
     dependencies=[Depends(require_capability("view_assigned_apps"))],
 )

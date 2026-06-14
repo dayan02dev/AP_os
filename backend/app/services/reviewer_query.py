@@ -531,6 +531,83 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
     return out
 
 
+_APPROVED_STATUSES = {"shortlisted", "interview", "offered", "onboarded", "accepted"}
+
+
+def _admin_decision(app_status: str | None) -> str:
+    if app_status in _APPROVED_STATUSES:
+        return "approved"
+    if app_status == "rejected":
+        return "rejected"
+    return "pending"
+
+
+def fetch_history(reviewer_user_id: str) -> dict:
+    """Spec §4.5 — every SUBMITTED review by this reviewer, newest first."""
+    sb = get_admin_client()
+    try:
+        rows = (sb.table("reviews").select("*")
+                .eq("reviewer_user_id", reviewer_user_id).execute().data) or []
+    except Exception as exc:
+        log.warning("history: reviews fetch failed",
+                    extra={"reviewer": reviewer_user_id, "err": str(exc)})
+        return {"stats": {"total": 0, "avgVariance": None,
+                          "consistencyPct": None, "avgMinutes": None}, "rows": []}
+
+    submitted = [r for r in rows if r.get("submitted_at")]
+    submitted.sort(key=lambda r: r.get("submitted_at") or "", reverse=True)
+
+    out_rows: list[dict] = []
+    variances: list[float] = []
+    for r in submitted:
+        track = r["application_track"]
+        table = "tir_applications" if track == "tir" else "sip_applications"
+        try:
+            app_rows = (sb.table(table).select("*")
+                        .eq("id", r["application_id"]).limit(1).execute().data) or []
+        except Exception:
+            app_rows = []
+        app_row = app_rows[0] if app_rows else {}
+
+        try:
+            ai_rows = (sb.table("ai_screening").select("*")
+                       .eq("application_id", r["application_id"])
+                       .eq("application_track", track).execute().data) or []
+        except Exception:
+            ai_rows = []
+        ai_row = ai_rows[0] if ai_rows else None
+
+        my_score = _weighted_overall(r)
+        ai_score = (ai_row or {}).get("score_overall")
+        variance = (round(abs(my_score - ai_score), 1)
+                    if my_score is not None and ai_score is not None else None)
+        if variance is not None:
+            variances.append(variance)
+
+        out_rows.append({
+            "appId":         r["application_id"],
+            "reviewId":      r["id"],
+            "track":         track,
+            "name":          (ai_row or {}).get("project_name")
+                             or app_row.get("basic_org")
+                             or app_row.get("basic_full_name") or "—",
+            "date":          r.get("submitted_at"),
+            "myScore":       my_score,
+            "aiScore":       ai_score,
+            "variance":      variance,
+            "reco":          r.get("recommendation"),
+            "adminDecision": _admin_decision(app_row.get("status")),
+            "editWindowExpiresAt": r.get("locked_at"),
+        })
+
+    avg_var = round(sum(variances) / len(variances), 2) if variances else None
+    return {
+        "stats": {"total": len(out_rows), "avgVariance": avg_var,
+                  "consistencyPct": None, "avgMinutes": None},
+        "rows": out_rows,
+    }
+
+
 def fetch_my_review_for_application(
     reviewer_user_id: str, application_id: str,
 ) -> dict | None:
