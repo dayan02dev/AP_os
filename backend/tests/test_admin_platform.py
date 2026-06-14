@@ -52,7 +52,11 @@ class _FakeQuery:
     def insert(self, payload):
         self._mode = "insert"
         self._payload = payload
-        self._parent.inserts.append((self._name, payload))
+        if isinstance(payload, list):
+            for row in payload:
+                self._parent.inserts.append((self._name, row))
+        else:
+            self._parent.inserts.append((self._name, payload))
         return self
 
     def upsert(self, payload, on_conflict=None):
@@ -454,3 +458,52 @@ def test_batch_assign_unknown_batch_404(client, monkeypatch, _clear_overrides):
                     json={"items": [{"track": "tir", "application_id": "app-1"}]})
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "batch_not_found"
+
+
+# ─── Task 11: Reviewer roster (metrics + profile patch + rebalance) ────────
+
+
+def test_roster_metrics(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {
+        "user_roles":[{"user_id":"rev-1","role":"reviewer"}],
+        "profiles":[{"id":"rev-1","email":"r1@x.in","full_name":"Rev One"}],
+        "reviewer_profiles":[{"reviewer_user_id":"rev-1","expertise_domains":["Robotics"],"weight":2.0}],
+        "reviewer_assignments":[
+            {"id":"a1","reviewer_user_id":"rev-1","application_id":"app-1","application_track":"tir","declined_at":None,"reassigned_to":None,"completed_at":"2026-06-03T00:00:00+00:00","assigned_at":"2026-06-01T00:00:00+00:00"},
+            {"id":"a2","reviewer_user_id":"rev-1","application_id":"app-2","application_track":"tir","declined_at":None,"reassigned_to":None,"completed_at":None,"assigned_at":"2026-06-01T00:00:00+00:00"}],
+        "reviews":[{"id":"rv1","reviewer_user_id":"rev-1","application_id":"app-1","application_track":"tir","score_problem":8,"score_solution":8,"score_tech":8,"score_founders":8,"score_commitment":8,"submitted_at":"2026-06-03T00:00:00+00:00"}],
+        "ai_screening":[{"application_id":"app-1","application_track":"tir","score_overall":8.5}],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.get("/admin/platform/reviewers")
+    assert r.status_code == 200, r.text
+    row = {x["user_id"]: x for x in r.json()["reviewers"]}["rev-1"]
+    assert row["name"] == "Rev One"
+    assert row["weight"] == 2.0
+    assert row["domains"] == ["Robotics"]
+    assert row["assigned"] == 2 and row["completed"] == 1
+    assert row["progress"] == "1 / 2"
+    assert row["consistency"] == 0.95    # |8.0 - 8.5| / 10 = 0.05 → 1 - 0.05 = 0.95
+
+
+def test_roster_patch_profile(client, monkeypatch, _clear_overrides):
+    fake = _install_db(monkeypatch, {"reviewer_profiles":[]})
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.patch("/admin/platform/reviewers/rev-1", json={"weight":3.0,"domains":["AI","Robotics"]})
+    assert r.status_code == 200
+    rows = [p for (t,p) in fake.inserts if t=="reviewer_profiles"] + [u for (n,u,_) in fake.updates if n=="reviewer_profiles"]
+    assert any(p.get("weight")==3.0 for p in rows)
+
+
+def test_roster_rebalance(client, monkeypatch, _clear_overrides):
+    fake = _install_db(monkeypatch, {
+        "user_roles":[{"user_id":"rev-1","role":"reviewer"},{"user_id":"rev-2","role":"reviewer"}],
+        "tir_applications":[{"id":f"app-{i}","status":"under_review"} for i in range(4)],
+        "sip_applications":[], "reviewer_assignments":[], "profiles":[]})
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.post("/admin/platform/reviewers/rebalance", json={})
+    assert r.status_code == 200
+    created = [p for (t,p) in fake.inserts if t=="reviewer_assignments"]
+    assert len(created) == 4    # 4 unassigned apps distributed across 2 reviewers

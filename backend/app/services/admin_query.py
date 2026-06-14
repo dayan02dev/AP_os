@@ -25,7 +25,7 @@ import logging
 from typing import Any
 
 from ..supabase_client import get_admin_client
-from . import applications_query, stats
+from . import applications_query, reviewer_query, stats
 
 log = logging.getLogger(__name__)
 
@@ -362,3 +362,166 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
         "meta":                 meta,
         "batch":                batch,
     }
+
+
+# ─── Task 11: Reviewer roster ────────────────────────────────────────────
+
+
+def _reviewer_user_ids() -> list[str]:
+    """Distinct user_ids holding the 'reviewer' role."""
+    try:
+        rows = (
+            get_admin_client()
+            .table("user_roles")
+            .select("user_id,role")
+            .eq("role", "reviewer")
+            .execute()
+            .data
+        ) or []
+    except Exception as exc:
+        log.warning("roster: user_roles fetch failed", extra={"err": str(exc)})
+        return []
+    # Fake .eq() filters; real PostgREST narrows server-side. Enforce in Python
+    # either way and dedupe.
+    return sorted({r["user_id"] for r in rows if r.get("role") == "reviewer"})
+
+
+def fetch_roster() -> dict[str, Any]:
+    """Reviewer roster with per-reviewer workload + consistency metrics.
+
+    All sub-tables are bulk-fetched once and grouped in Python (no per-reviewer
+    N+1). Consistency compares the reviewer's weighted overall (reviewer_query.
+    _weighted_overall) against ai_screening.score_overall for the same app:
+        consistency = round(1 - mean(|reviewer - ai|)/10, 2), clamped 0..1,
+        None when no submitted review has a matching ai_overall.
+    """
+    sb = get_admin_client()
+    reviewer_ids = _reviewer_user_ids()
+    if not reviewer_ids:
+        return {"reviewers": []}
+    id_set = set(reviewer_ids)
+
+    def _fetch(table: str) -> list[dict]:
+        try:
+            return (sb.table(table).select("*").execute().data) or []
+        except Exception as exc:
+            log.warning("roster: fetch failed", extra={"table": table, "err": str(exc)})
+            return []
+
+    profiles = {p["id"]: p for p in _fetch("profiles") if p.get("id") in id_set}
+    rp_rows = {
+        p["reviewer_user_id"]: p
+        for p in _fetch("reviewer_profiles")
+        if p.get("reviewer_user_id") in id_set
+    }
+
+    # Assignments grouped per reviewer.
+    assignments_by_rev: dict[str, list[dict]] = {rid: [] for rid in reviewer_ids}
+    for a in _fetch("reviewer_assignments"):
+        rid = a.get("reviewer_user_id")
+        if rid in id_set:
+            assignments_by_rev[rid].append(a)
+
+    # Reviews grouped per reviewer (submitted only matter for consistency).
+    reviews_by_rev: dict[str, list[dict]] = {rid: [] for rid in reviewer_ids}
+    reviewed_keys: set[tuple[str, str]] = set()
+    for r in _fetch("reviews"):
+        rid = r.get("reviewer_user_id")
+        if rid in id_set:
+            reviews_by_rev[rid].append(r)
+            reviewed_keys.add((r.get("application_id"), r.get("application_track")))
+
+    # ai_screening keyed by (application_id, application_track) for the apps that
+    # these reviewers have reviewed.
+    ai_by_key: dict[tuple[str, str], dict] = {}
+    for row in _fetch("ai_screening"):
+        key = (row.get("application_id"), row.get("application_track"))
+        if key in reviewed_keys:
+            ai_by_key.setdefault(key, row)
+
+    out: list[dict[str, Any]] = []
+    for rid in reviewer_ids:
+        prof = profiles.get(rid) or {}
+        rp = rp_rows.get(rid) or {}
+
+        active = [
+            a for a in assignments_by_rev[rid]
+            if a.get("declined_at") is None and a.get("reassigned_to") is None
+        ]
+        assigned = len(active)
+        completed = len([a for a in active if a.get("completed_at")])
+
+        # Consistency over submitted reviews with a matching ai_overall.
+        diffs: list[float] = []
+        last_activity: str | None = None
+        for r in reviews_by_rev[rid]:
+            sub = r.get("submitted_at")
+            if sub and (last_activity is None or sub > last_activity):
+                last_activity = sub
+            if not sub:
+                continue
+            mine = reviewer_query._weighted_overall(r)
+            ai_row = ai_by_key.get((r.get("application_id"), r.get("application_track")))
+            ai_overall = (ai_row or {}).get("score_overall")
+            if mine is None or ai_overall is None:
+                continue
+            diffs.append(abs(mine - ai_overall))
+        if diffs:
+            consistency = round(1 - (sum(diffs) / len(diffs)) / 10, 2)
+            consistency = max(0.0, min(1.0, consistency))
+        else:
+            consistency = None
+
+        weight = rp.get("weight")
+        out.append({
+            "user_id":      rid,
+            "name":         prof.get("full_name") or prof.get("email") or rid,
+            "email":        prof.get("email"),
+            "weight":       float(weight) if weight is not None else 1.0,
+            "domains":      rp.get("expertise_domains") or [],
+            "batch":        rp.get("batch_id"),
+            "assigned":     assigned,
+            "completed":    completed,
+            "progress":     f"{completed} / {assigned}",
+            "consistency":  consistency,
+            "lastActivity": last_activity,
+        })
+
+    return {"reviewers": out}
+
+
+def fetch_unassigned_apps(track: str | None = None) -> list[dict[str, Any]]:
+    """Non-draft applications with NO active reviewer_assignment.
+
+    Used by the rebalance endpoint. `track` restricts to one track; otherwise
+    both are considered. Returns ``[{"application_id", "application_track"}]``.
+    """
+    sb = get_admin_client()
+    tracks = [track] if track in stats.TRACKS else list(stats.TRACKS)
+
+    # Active-assignment keys to exclude.
+    assigned_keys: set[tuple[str, str]] = set()
+    try:
+        for a in (sb.table("reviewer_assignments").select("*").execute().data) or []:
+            if a.get("declined_at") is None and a.get("reassigned_to") is None:
+                assigned_keys.add((a.get("application_id"), a.get("application_track")))
+    except Exception as exc:
+        log.warning("rebalance: assignments fetch failed", extra={"err": str(exc)})
+
+    out: list[dict[str, Any]] = []
+    for t in tracks:
+        table = "tir_applications" if t == "tir" else "sip_applications"
+        try:
+            rows = (sb.table(table).select("id,status").execute().data) or []
+        except Exception as exc:
+            log.warning("rebalance: app fetch failed",
+                        extra={"track": t, "err": str(exc)})
+            rows = []
+        for r in rows:
+            if (r.get("status") or "draft") == "draft":
+                continue
+            aid = r.get("id")
+            if aid is None or (aid, t) in assigned_keys:
+                continue
+            out.append({"application_id": aid, "application_track": t})
+    return out
