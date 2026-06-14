@@ -21,10 +21,11 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi import status as http_status
+from pydantic import BaseModel, ConfigDict
 
 from ..deps import get_current_user
 from ..rbac import require_capability
-from ..services import admin_query
+from ..services import admin_query, decisions
 from ..supabase_client import get_admin_client  # noqa: F401  (test monkeypatch hook)
 
 router = APIRouter(prefix="/admin/platform", tags=["admin-platform"])
@@ -75,3 +76,38 @@ async def get_detail(
             detail={"code": "application_not_found"},
         )
     return payload
+
+
+class DecisionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["shortlisted", "on_hold", "rejected", "waitlisted"]
+    rationale: str | None = None
+
+
+@router.post(
+    "/applications/{track}/{application_id}/decision",
+    dependencies=[Depends(require_capability("decide_application"))],
+)
+async def decide(
+    track: Literal["tir", "sip"],
+    application_id: str,
+    body: DecisionBody,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Gate-1 admin decision: guarded status change + admin_decisions + audit.
+
+    Reject / waitlist / hold require a rationale; shortlist may omit one.
+    """
+    if body.decision in ("rejected", "waitlisted", "on_hold") and not (body.rationale or "").strip():
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "rationale_required",
+                "message": "A rationale is required for reject / waitlist / hold.",
+            },
+        )
+    return decisions.record_decision(
+        track=track, application_id=application_id,
+        decision=body.decision, rationale=body.rationale,
+        decided_by=user["user_id"],
+    )

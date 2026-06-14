@@ -104,10 +104,14 @@ def _clear_overrides():
 
 def _install_db(monkeypatch, tables):
     from app.routers import admin_platform as ap
-    from app.services import admin_query, applications_query
+    from app.services import admin_query, applications_query, decisions, state_machine
     fake = _FakeAdminClient(tables=tables)
     monkeypatch.setattr(admin_query, "get_admin_client", lambda: fake)
     monkeypatch.setattr(applications_query, "get_admin_client", lambda: fake)
+    # Decision endpoint (Task 7) drives the state machine + admin_decisions
+    # writes through their own module-level client handles.
+    monkeypatch.setattr(decisions, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(state_machine, "get_admin_client", lambda: fake)
     # The detail path may reach into the leadership router's client for the
     # industry-label lookup; patch there too if present.
     monkeypatch.setattr(ap, "get_admin_client", lambda: fake, raising=False)
@@ -281,3 +285,51 @@ def test_pipeline_search_matches_display_seq(client, monkeypatch, _clear_overrid
         "display_seq '26013' should match via Python re-filter but got 0 results"
     )
     assert body["applications"][0]["id"] == app_id
+
+
+# ─── POST /admin/platform/applications/{track}/{id}/decision (Task 7) ───
+
+
+def test_decision_shortlist_writes_status_decision_audit(client, monkeypatch, _clear_overrides):
+    fake = _install_db(monkeypatch, {"tir_applications":[{"id":"app-1","status":"evaluated"}],
+        "sip_applications":[], "admin_decisions":[], "application_status_log":[]})
+    monkeypatch.setattr("app.services.decisions.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+    r = client.post("/admin/platform/applications/tir/app-1/decision",
+                    json={"decision":"shortlisted","rationale":"strong team"})
+    assert r.status_code == 200, r.text
+    assert any(t=="admin_decisions" for t,_ in fake.inserts)
+    upd = [u for n,u,_ in fake.updates if n=="tir_applications"]
+    assert any(u.get("status")=="shortlisted" for u in upd)
+
+
+def test_decision_illegal_transition_422(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {"tir_applications":[{"id":"app-1","status":"draft"}],"sip_applications":[],"admin_decisions":[],"application_status_log":[]})
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+    r = client.post("/admin/platform/applications/tir/app-1/decision", json={"decision":"shortlisted"})
+    assert r.status_code == 422 and r.json()["detail"]["code"]=="illegal_transition"
+
+
+def test_decision_requires_rationale_for_reject(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {"tir_applications":[{"id":"app-1","status":"evaluated"}],"sip_applications":[],"admin_decisions":[],"application_status_log":[]})
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+    r = client.post("/admin/platform/applications/tir/app-1/decision", json={"decision":"rejected"})
+    assert r.status_code == 422 and r.json()["detail"]["code"]=="rationale_required"
+
+
+def test_decision_shortlist_no_rationale_ok(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {"tir_applications":[{"id":"app-1","status":"evaluated"}],"sip_applications":[],"admin_decisions":[],"application_status_log":[]})
+    monkeypatch.setattr("app.services.decisions.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+    r = client.post("/admin/platform/applications/tir/app-1/decision", json={"decision":"shortlisted"})
+    assert r.status_code == 200
+
+
+def test_decision_illegal_writes_no_decision_row(client, monkeypatch, _clear_overrides):
+    """An illegal transition must 422 with ZERO writes — in particular, no
+    admin_decisions row may be inserted before the legality gate."""
+    fake = _install_db(monkeypatch, {"tir_applications":[{"id":"app-1","status":"draft"}],"sip_applications":[],"admin_decisions":[],"application_status_log":[]})
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+    r = client.post("/admin/platform/applications/tir/app-1/decision", json={"decision":"shortlisted"})
+    assert r.status_code == 422 and r.json()["detail"]["code"]=="illegal_transition"
+    assert not any(t=="admin_decisions" for t,_ in fake.inserts)
