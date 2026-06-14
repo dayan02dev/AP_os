@@ -37,10 +37,7 @@ import AdminLayout from "./pages/admin/AdminLayout.jsx";
 import UserListPage from "./pages/admin/UserListPage.jsx";
 import UserDetailPage from "./pages/admin/UserDetailPage.jsx";
 import AdminAddUser from "./pages/admin/AdminAddUser.jsx";
-import ReviewerAppShell from "./pages/reviewer/ReviewerAppShell.jsx";
-import ReviewerInboxPage from "./pages/reviewer/ReviewerInboxPage.jsx";
-import ReviewerCompletedPage from "./pages/reviewer/ReviewerCompletedPage.jsx";
-import ReviewerScoringPage from "./pages/reviewer/ReviewerScoringPage.jsx";
+import ReviewerPortal from "./pages/reviewer/v2/ReviewerPortal.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
 import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
@@ -141,6 +138,27 @@ function AdminRoute() {
     );
   }
   return <AdminLayout />;
+}
+
+// Capability gate for /reviewer/*. ProtectedRoute enforces auth; this layer
+// enforces `view_assigned_apps` (reviewer role). Mirrors LeadershipRoute.
+function ReviewerRoute({ tab }) {
+  const { user } = useAuth();
+  const roles = user?.roles || [];
+  if (!hasCapability(roles, "view_assigned_apps")) {
+    return (
+      <div style={{ padding: 40, fontFamily: "system-ui" }}>
+        <h1>Access denied — reviewer role required</h1>
+        <p>
+          You need the <code>reviewer</code> role to view this page.
+        </p>
+        <p>
+          Your roles: <code>{roles.join(", ") || "(none)"}</code>
+        </p>
+      </div>
+    );
+  }
+  return <ReviewerPortal tab={tab} />;
 }
 
 const SECTION_SLUGS = [
@@ -298,23 +316,39 @@ export default function AppRoutes() {
         <Route path="users/:id" element={<UserDetailPage />} />
       </Route>
 
-      {/* Reviewer surface (Phase 1.5). */}
+      {/* Reviewer Portal v2 (2026-06-12). Capability-gated to
+          `view_assigned_apps`; the eval screen also needs `score_app` (the
+          backend enforces both — this layer is the UX gate). Deep-linkable:
+          dashboard / queue / eval/:track/:appId / history. */}
       <Route
+        path="/reviewer"
         element={
           <ProtectedRoute>
-            <ReviewerAppShell />
+            <ReviewerRoute tab="dashboard" />
           </ProtectedRoute>
         }
-      >
-        <Route path="/reviewer" element={<Navigate to="/reviewer/inbox" replace />} />
-        <Route path="/reviewer/inbox" element={<ReviewerInboxPage />} />
-        <Route path="/reviewer/completed" element={<ReviewerCompletedPage />} />
-      </Route>
+      />
       <Route
-        path="/reviewer/:track/:id/score"
+        path="/reviewer/queue"
         element={
           <ProtectedRoute>
-            <ReviewerScoringPage />
+            <ReviewerRoute tab="queue" />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reviewer/eval/:track/:appId"
+        element={
+          <ProtectedRoute>
+            <ReviewerRoute tab="eval" />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reviewer/history"
+        element={
+          <ProtectedRoute>
+            <ReviewerRoute tab="history" />
           </ProtectedRoute>
         }
       />

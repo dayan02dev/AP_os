@@ -6,14 +6,14 @@
 // Priority (highest first):
 //   leadership → /leadership      (the day-to-day dashboard)
 //   admin      → /admin           (reached via the Switch button on /leadership)
-//   reviewer   → /reviewer/inbox
+//   reviewer   → /reviewer       (Reviewer Portal v2 dashboard)
 //   mentor / applicant / none → /apply
 
 export function landingPathFor(roles) {
   const r = Array.isArray(roles) ? roles : [];
   if (r.includes("leadership")) return "/leadership";
   if (r.includes("admin")) return "/admin";
-  if (r.includes("reviewer")) return "/reviewer/inbox";
+  if (r.includes("reviewer")) return "/reviewer";
   return "/apply";
 }
 
