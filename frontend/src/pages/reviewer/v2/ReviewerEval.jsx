@@ -6,11 +6,12 @@
 //                 { id, applicationId, track, name, aiSummary, fields[],
 //                   sections[], attachments[], evaluation (raw review row|null),
 //                   assignment { assignment_id, assigned_at } }
-//   * AI numeric block ← reviewerApi.getQueue() row matched by appId
-//                 (the content endpoint exposes aiSummary but not the numeric
-//                 dimension scores; the queue row carries `ai{}`). Used for the
+//   * AI numeric block ← content.ai (the content endpoint serves the full
+//                 {overall,conf,problem,solution,tech,founders,commit} block,
+//                 or null if the app was never AI-scored). Used for the
 //                 AI-baseline panel AND the client-side |score−AI|>1.0
-//                 disagreement gate.
+//                 disagreement gate. Sourced from the content response so a
+//                 deep link works even when the app isn't in the active queue.
 //   * first save  → submitReview({...payload, draft:true})  (POST; captures id)
 //   * later saves → patchReview(reviewId, {...patch})        (PATCH)
 //   * submit      → patchReview(reviewId, {...patch, draft:false})
@@ -48,12 +49,9 @@ export default function ReviewerEval({ track, appId, onBack }) {
     () => reviewerApi.getContent(track, appId),
     [track, appId],
   );
-  // AI numeric block lives on the queue row (content has only aiSummary).
-  const { data: queue } = useAsync(() => reviewerApi.getQueue(), []);
-  const aiBlock = useMemo(() => {
-    const row = (queue || []).find((q) => q.id === appId && q.track === track);
-    return row ? row.ai : null;
-  }, [queue, appId, track]);
+  // AI numeric block is served by the content endpoint itself (content.ai) —
+  // no queue lookup, so deep links work regardless of queue membership.
+  const aiBlock = content ? content.ai : null;
 
   if (loading)
     return (
@@ -477,8 +475,18 @@ function ReviewerEvalForm({ content, aiBlock, onBack }) {
             ) : (
               <button
                 className="os-btn"
-                disabled={!editable || !notes.trim()}
-                title={!notes.trim() ? "Add notes to submit" : ""}
+                disabled={
+                  !editable ||
+                  !notes.trim() ||
+                  highVarianceDims.some((k) => !(disagreements[k] || "").trim())
+                }
+                title={
+                  !notes.trim()
+                    ? "Add notes to submit"
+                    : highVarianceDims.some((k) => !(disagreements[k] || "").trim())
+                      ? "Explain dimensions where your score differs from AI by more than 1.0"
+                      : ""
+                }
                 onClick={submitEval}
               >
                 {submitted ? "Re-submit evaluation →" : "Submit evaluation →"}

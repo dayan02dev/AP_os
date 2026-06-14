@@ -1506,7 +1506,8 @@ def test_content_endpoint_returns_presenter_shape(client, monkeypatch, _clear_ov
         "reviews": [],
         "ai_screening": [
             {"application_id": "app-1", "application_track": "tir",
-             "summary": "Strong robotics play.", "project_name": "Karkhana Robotics"}],
+             "summary": "Strong robotics play.", "project_name": "Karkhana Robotics",
+             "score_overall": 7.5, "score_completeness": 6.0}],
         "industry_categories": [],
     })
     app.dependency_overrides[get_current_user] = _override_user(me)
@@ -1520,6 +1521,10 @@ def test_content_endpoint_returns_presenter_shape(client, monkeypatch, _clear_ov
     assert {"Problem defined", "Problem description"} <= labels
     assert body["sections"][0]["num"] == "01"
     assert body["attachments"] == []
+    # AI numeric block served straight from the content endpoint (no queue fetch).
+    assert body["ai"] is not None
+    assert body["ai"]["overall"] == 7.5
+    assert body["ai"]["solution"] == 6.0  # score_completeness → solution (mig 016 naming)
 
 
 def test_content_endpoint_404_when_not_assigned(client, monkeypatch, _clear_overrides):
