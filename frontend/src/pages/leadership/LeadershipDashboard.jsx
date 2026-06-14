@@ -164,6 +164,10 @@ export default function LeadershipDashboard() {
   // users would just bounce them back here via ApplyRoleGate.
   const showSwitchToApplicant =
     !roles.includes("leadership") && !roles.includes("admin");
+  // Leadership ⇄ reviewer: accounts holding both roles (e.g. nirav) can jump
+  // straight into the reviewer portal from here. Reviewer→leadership is the
+  // existing role-switch menu in ReviewerPortal.
+  const showSwitchToReviewer = roles.includes("reviewer");
 
   const [view, setView] = useState("dashboard");
 
@@ -442,6 +446,17 @@ export default function LeadershipDashboard() {
           <span className="email">{user?.email || user?.full_name || "—"}</span>
           <span className="menu-dot" aria-hidden="true">⌄</span>
         </div>
+
+        {showSwitchToReviewer && (
+          <button
+            type="button"
+            className="applicant-btn"
+            onClick={() => navigate("/reviewer")}
+            aria-label="Switch to reviewer view"
+          >
+            Reviewer <span className="arrow" style={{ marginLeft: 2, marginRight: 0 }}>→</span>
+          </button>
+        )}
 
         {showSwitchToApplicant && (
           <a className="applicant-btn" href="/apply" aria-label="Switch to applicant view">

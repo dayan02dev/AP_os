@@ -5,7 +5,7 @@
 // "history". Navigation is route-based (deep-linkable); the eval screen reads
 // :track/:appId from the URL. The portal stylesheet is imported once here.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 
 import "../../../styles/reviewer-portal.css";
@@ -57,9 +57,11 @@ function ReviewerTopbar({ tab }) {
       <button className="lp-home-btn" onClick={() => navigate("/reviewer")}>← HOME</button>
 
       <div className="lp-brand">
-        <span style={{ fontWeight: 700 }}>ARTPARK</span>
-        <span style={{ color: "var(--line-strong)", margin: "0 6px" }}>/</span>
-        <span>OS</span>
+        <img
+          src="/assets/artpark-iisc-logo.webp"
+          alt="ARTPARK · AI & Robotics Technology Park at IISc"
+          className="lp-brand-combined"
+        />
       </div>
 
       <div className="lp-topbar-crumb">
@@ -153,6 +155,21 @@ async function exportReviewerQueueCsv() {
 // ── Cohort page header ─────────────────────────────────────────────────
 function ReviewerCohortHeader() {
   const [exporting, setExporting] = useState(false);
+  // Human-readable snapshot timestamp, rendered at page load (IST). Matches the
+  // prototype's "live snapshot · 28 May 2026 · 15:04 IST" format.
+  const snapshotAt = useMemo(
+    () =>
+      new Date().toLocaleString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "Asia/Kolkata",
+      }).replace(",", " ·") + " IST",
+    [],
+  );
   const onExport = async () => {
     if (exporting) return;
     setExporting(true);
@@ -172,7 +189,9 @@ function ReviewerCohortHeader() {
           <h1 className="lp-cohort-title">
             {COHORT_LABEL.replace(/ 2026$/, "")} <span className="lp-year">2026</span>
           </h1>
-          <div className="lp-cohort-sub">applications closed 22 May 2026 · live snapshot</div>
+          <div className="lp-cohort-sub">
+            applications closed 22 May 2026 · live snapshot · {snapshotAt}
+          </div>
         </div>
         <div style={{ marginTop: 4 }}>
           <button className="os-btn ghost" onClick={onExport} disabled={exporting}>
@@ -251,6 +270,7 @@ export default function ReviewerPortal({ tab = "dashboard" }) {
               track={params.track}
               appId={params.appId}
               onBack={() => navigate("/reviewer/queue")}
+              onOpen={openEval}
             />
           </div>
         )}

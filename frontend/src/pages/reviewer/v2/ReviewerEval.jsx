@@ -44,7 +44,7 @@ const MAX_FLAGS = 8;
 const HIGH_VARIANCE = 1.0;
 
 // ── Loader ─────────────────────────────────────────────────────────────
-export default function ReviewerEval({ track, appId, onBack }) {
+export default function ReviewerEval({ track, appId, onBack, onOpen }) {
   const { data: content, loading, error, reload } = useAsync(
     () => reviewerApi.getContent(track, appId),
     [track, appId],
@@ -52,6 +52,25 @@ export default function ReviewerEval({ track, appId, onBack }) {
   // AI numeric block is served by the content endpoint itself (content.ai) —
   // no queue lookup, so deep links work regardless of queue membership.
   const aiBlock = content ? content.ai : null;
+
+  // Separate concern: fetch the reviewer's queue ONCE only to resolve the
+  // current app's position so the header can offer Prev/Next navigation
+  // through the ordered queue. This is intentionally NOT used for the AI block
+  // (that stays sourced from content.ai above) — queue rows carry only a
+  // summary `ai`, and a deep-linked app may not be in the queue at all.
+  const { data: queue } = useAsync(() => reviewerApi.getQueue(), []);
+  const neighbors = useMemo(() => {
+    if (!queue || !onOpen) return { prev: null, next: null, hasPosition: false };
+    // Queue row click opens /reviewer/eval/{track}/{row.id}, so the route
+    // appId matches row.id.
+    const idx = queue.findIndex((q) => String(q.id) === String(appId));
+    if (idx === -1) return { prev: null, next: null, hasPosition: false };
+    return {
+      prev: idx > 0 ? queue[idx - 1] : null,
+      next: idx < queue.length - 1 ? queue[idx + 1] : null,
+      hasPosition: true,
+    };
+  }, [queue, appId, onOpen]);
 
   if (loading)
     return (
@@ -74,6 +93,9 @@ export default function ReviewerEval({ track, appId, onBack }) {
       content={content}
       aiBlock={aiBlock}
       onBack={onBack}
+      onPrev={neighbors.prev && onOpen ? () => onOpen(neighbors.prev.track, neighbors.prev.id) : null}
+      onNext={neighbors.next && onOpen ? () => onOpen(neighbors.next.track, neighbors.next.id) : null}
+      showNav={neighbors.hasPosition}
     />
   );
 }
@@ -231,7 +253,7 @@ function RubricModal({ onClose, track }) {
 }
 
 // ── Eval form ───────────────────────────────────────────────────────────
-function ReviewerEvalForm({ content, aiBlock, onBack }) {
+function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav }) {
   // The application object the form reads from. We adapt the content payload
   // to the fields the prototype referenced (name/track/id/assignmentId for the
   // payload; sections/attachments for the full view; ai for the baseline panel).
@@ -349,6 +371,38 @@ function ReviewerEvalForm({ content, aiBlock, onBack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scores, reco, notes, flags, disagreements, editable]);
 
+  // ── Explicit "Save draft" ────────────────────────────────────────────
+  // Flushes the current evaluation immediately using the SAME path the
+  // debounced autosave uses (POST draft if no review yet, else PATCH).
+  // Reuses the shared saveState ("Saving…/✓ Saved") indicator.
+  const saveDraftNow = async () => {
+    if (!editable || savingRef.current) return;
+    savingRef.current = true;
+    setSaveState("saving");
+    try {
+      if (!reviewIdRef.current) {
+        const res = await reviewerApi.submitReview(
+          evaluationToPayload(currentEval, { application, draft: true }),
+        );
+        const newId = res?.review?.id;
+        if (newId) setReviewId(newId);
+      } else {
+        await reviewerApi.patchReview(
+          reviewIdRef.current,
+          evaluationToPatch(currentEval, {}),
+        );
+      }
+      setSaveState("saved");
+    } catch (err) {
+      if (err?.status === 409 && err?.details?.review_id) {
+        setReviewId(err.details.review_id);
+      }
+      setSaveState("error");
+    } finally {
+      savingRef.current = false;
+    }
+  };
+
   // ── Submit ───────────────────────────────────────────────────────────
   const validateForSubmit = () => {
     const errs = { notes: false, dimensions: [] };
@@ -452,6 +506,19 @@ function ReviewerEvalForm({ content, aiBlock, onBack }) {
           </div>
         </div>
         <div className="lp-section-actions">
+          {/* Top line — navigate between applications in the queue. Hidden on
+              deep links where the current app isn't in the reviewer's queue. */}
+          {showNav && (
+            <div className="os-row gap-sm">
+              <button className="os-btn ghost sm" onClick={onPrev} disabled={!onPrev}>
+                ← Prev application
+              </button>
+              <button className="os-btn ghost sm" onClick={onNext} disabled={!onNext}>
+                Next application →
+              </button>
+            </div>
+          )}
+          {/* Bottom line — actions for the current application */}
           <div className="os-row gap-sm" style={{ alignItems: "center" }}>
             <button className="os-btn secondary" onClick={onBack}>↩ My queue</button>
             {editable && saveState !== "idle" && (
@@ -473,24 +540,29 @@ function ReviewerEvalForm({ content, aiBlock, onBack }) {
                 )}
               </>
             ) : (
-              <button
-                className="os-btn"
-                disabled={
-                  !editable ||
-                  !notes.trim() ||
-                  highVarianceDims.some((k) => !(disagreements[k] || "").trim())
-                }
-                title={
-                  !notes.trim()
-                    ? "Add notes to submit"
-                    : highVarianceDims.some((k) => !(disagreements[k] || "").trim())
-                      ? "Explain dimensions where your score differs from AI by more than 1.0"
-                      : ""
-                }
-                onClick={submitEval}
-              >
-                {submitted ? "Re-submit evaluation →" : "Submit evaluation →"}
-              </button>
+              <>
+                <button className="os-btn ghost" disabled={!editable} onClick={saveDraftNow}>
+                  Save draft
+                </button>
+                <button
+                  className="os-btn"
+                  disabled={
+                    !editable ||
+                    !notes.trim() ||
+                    highVarianceDims.some((k) => !(disagreements[k] || "").trim())
+                  }
+                  title={
+                    !notes.trim()
+                      ? "Add notes to submit"
+                      : highVarianceDims.some((k) => !(disagreements[k] || "").trim())
+                        ? "Explain dimensions where your score differs from AI by more than 1.0"
+                        : ""
+                  }
+                  onClick={submitEval}
+                >
+                  {submitted ? "Re-submit evaluation →" : "Submit evaluation →"}
+                </button>
+              </>
             )}
           </div>
         </div>
