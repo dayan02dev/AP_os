@@ -29,4 +29,11 @@ export const reviewerApi = {
 
   listCompletedReviews: (params = {}) =>
     api.get(`/reviewer/reviews${buildQuery({ mine: true, locked: true, ...params })}`),
+
+  getQueue: () => api.get("/reviewer/queue"),
+  getContent: (track, id) =>
+    api.get(`/reviewer/applications/${track}/${id}/content`),
+  getHistory: () => api.get("/reviewer/history"),
+  getRubric: (track) =>
+    api.get(`/reviewer/rubric?track=${encodeURIComponent(track)}`),
 };
