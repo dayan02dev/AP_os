@@ -333,3 +333,26 @@ def test_decision_illegal_writes_no_decision_row(client, monkeypatch, _clear_ove
     r = client.post("/admin/platform/applications/tir/app-1/decision", json={"decision":"shortlisted"})
     assert r.status_code == 422 and r.json()["detail"]["code"]=="illegal_transition"
     assert not any(t=="admin_decisions" for t,_ in fake.inserts)
+
+
+# ─── POST /admin/platform/decisions/bulk (Task 8) ──────────────────────
+
+
+def test_bulk_decision_per_id_results(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {
+        "tir_applications":[{"id":"app-1","status":"evaluated"},{"id":"app-2","status":"draft"}],
+        "sip_applications":[], "admin_decisions":[], "application_status_log":[]})
+    monkeypatch.setattr("app.services.decisions.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+    r = client.post("/admin/platform/decisions/bulk", json={"items":[
+        {"track":"tir","application_id":"app-1","decision":"shortlisted"},
+        {"track":"tir","application_id":"app-2","decision":"shortlisted"},
+        {"track":"tir","application_id":"app-3","decision":"rejected"},  # missing rationale
+        {"track":"tir","application_id":"app-99","decision":"shortlisted"},  # non-existent
+    ]})
+    assert r.status_code == 200, r.text
+    res = {x["application_id"]: x["status"] for x in r.json()["results"]}
+    assert res["app-1"] == "decided"
+    assert res["app-2"] == "illegal_transition"      # draft can't shortlist
+    assert res["app-3"] == "rationale_required"      # reject w/o rationale
+    assert res["app-99"] == "not_found"              # non-existent application id

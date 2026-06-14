@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from fastapi import HTTPException, status
+
 from ..supabase_client import get_admin_client
 from . import state_machine
 from .audit import write_audit
@@ -46,7 +48,6 @@ def record_decision(*, track, application_id, decision, rationale, decided_by) -
         or []
     )
     if not rows:
-        from fastapi import HTTPException, status
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "application_not_found"},
@@ -86,3 +87,23 @@ def record_decision(*, track, application_id, decision, rationale, decided_by) -
         "decision": decision,
         "from_status": from_status,
     }
+
+
+def record_decision_safe(*, track, application_id, decision, rationale, decided_by) -> dict:
+    """record_decision wrapped to a per-id status string instead of raising."""
+    if decision in ("rejected", "waitlisted", "on_hold") and not (rationale or "").strip():
+        return {"application_id": application_id, "track": track, "status": "rationale_required"}
+    try:
+        record_decision(
+            track=track, application_id=application_id, decision=decision,
+            rationale=rationale, decided_by=decided_by,
+        )
+        return {"application_id": application_id, "track": track, "status": "decided"}
+    except HTTPException as exc:
+        code = (exc.detail or {}).get("code") if isinstance(exc.detail, dict) else None
+        status_map = {
+            "illegal_transition": "illegal_transition",
+            "application_not_found": "not_found",
+        }
+        return {"application_id": application_id, "track": track,
+                "status": status_map.get(code, "error")}

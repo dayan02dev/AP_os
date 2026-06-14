@@ -21,7 +21,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi import status as http_status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..deps import get_current_user
 from ..rbac import require_capability
@@ -111,3 +111,30 @@ async def decide(
         decision=body.decision, rationale=body.rationale,
         decided_by=user["user_id"],
     )
+
+
+class BulkDecisionItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    track: Literal["tir", "sip"]
+    application_id: str
+    decision: Literal["shortlisted", "on_hold", "rejected", "waitlisted"]
+    rationale: str | None = None
+
+
+class BulkDecisionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[BulkDecisionItem] = Field(..., min_length=1, max_length=200)
+
+
+@router.post("/decisions/bulk", dependencies=[Depends(require_capability("decide_application"))])
+async def bulk_decide(body: BulkDecisionBody, user: dict = Depends(get_current_user)) -> dict:
+    """Bulk gate-1 decisions: per-id result dict instead of raising on individual failures."""
+    results = [
+        decisions.record_decision_safe(
+            track=i.track, application_id=i.application_id,
+            decision=i.decision, rationale=i.rationale,
+            decided_by=user["user_id"],
+        )
+        for i in body.items
+    ]
+    return {"results": results}
