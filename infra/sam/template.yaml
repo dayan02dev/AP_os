@@ -2,6 +2,13 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: ARTPARK EIR API — FastAPI on Lambda + HTTP API Gateway (Phase 9B)
 
+# ─── Conditions ──────────────────────────────────────────────────────
+Conditions:
+  # Prod CORS stays locked to the production origin; non-prod (staging/dev)
+  # additionally allows the Vercel preview URLs. Uses a literal-list Fn::If
+  # (NOT !Split) to dodge the SAM transform bug noted at CorsConfiguration.
+  IsProduction: !Equals [!Ref EnvName, production]
+
 # ─── Parameters ──────────────────────────────────────────────────────
 # Non-secret params are passed plainly; secrets are NoEcho so they never
 # appear in CloudFormation events / console audit trails.
@@ -143,8 +150,13 @@ Resources:
         # FrontendOrigin (the env var) is still set to the comma-joined
         # value so FastAPI's own CORS middleware can use it for non-
         # API-Gateway code paths.
-        AllowOrigins:
-          - "https://apply.artpark.info"
+        AllowOrigins: !If
+          - IsProduction
+          - - "https://apply.artpark.info"
+          - - "https://apply.artpark.info"
+            - "https://ap-os-git-staging-artpark.vercel.app"
+            - "https://ap-os-git-staging-rolebaseddashboard-artpark.vercel.app"
+            - "https://ap-os-git-reviewer-v2-pilot-artpark.vercel.app"
         AllowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
         AllowHeaders: [Authorization, Content-Type, X-Request-ID, X-Admin-Key]
         AllowCredentials: true
