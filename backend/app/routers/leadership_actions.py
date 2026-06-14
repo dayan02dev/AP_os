@@ -2,12 +2,11 @@
 
 Mounted under `/leadership/applications/{application_id}/...`:
 
+    POST   /reviewers                           bulk-assign reviewers
     DELETE /reviewers/{reviewer_user_id}        unassign a reviewer
 
-The status-change (`PATCH /status`, `GET /legal-next-statuses`) and
-reviewer-assignment (`POST /reviewers`) endpoints were removed from the
-leadership surface. Only reviewer un-assignment remains — it's still used by
-the review page's Reviewers tab. The canonical status state machine lives in
+The status-change (`PATCH /status`, `GET /legal-next-statuses`) endpoints were
+removed from the leadership surface. The canonical status state machine lives in
 `services/state_machine.py` and is still used by the reviewer flow.
 
 Track is server-inferred via `applications_query.find_application_with_track`
@@ -20,9 +19,11 @@ back the primary mutation.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..deps import get_current_user
 from ..rbac import require_capability
@@ -51,6 +52,95 @@ def _resolve_app(application_id: str) -> tuple[str, dict[str, Any]]:
             detail={"code": "application_not_found", "application_id": application_id},
         )
     return found
+
+
+# ─── Reviewer bulk-assignment ─────────────────────────────────────────
+
+
+class AssignReviewersBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reviewer_user_ids: list[str] = Field(..., min_length=1, max_length=10)
+    due_at: str | None = None
+
+    @field_validator("reviewer_user_ids")
+    @classmethod
+    def _ids_nonempty(cls, v):
+        if any(not str(s).strip() for s in v):
+            raise ValueError("reviewer_user_ids items must be non-empty strings")
+        return v
+
+
+@router.post(
+    "/{application_id}/reviewers",
+    dependencies=[Depends(require_capability("assign_reviewers"))],
+)
+async def assign_reviewers(
+    application_id: str,
+    body: AssignReviewersBody,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Bulk-create reviewer assignments. Per-id result statuses:
+    created | already_assigned | not_a_reviewer. 404 if the app doesn't exist.
+    Track is server-inferred (matches the DELETE-unassign convention).
+
+    v1 treats ANY existing row for a (application_id, application_track,
+    reviewer_user_id) triple as already_assigned — including declined rows.
+    This keeps the logic simple; a future iteration can filter out declined
+    rows to allow re-assignment after a decline.
+    """
+    track, _row = _resolve_app(application_id)
+    sb = get_admin_client()
+
+    role_rows = (
+        sb.table("user_roles")
+        .select("user_id")
+        .eq("role", "reviewer")
+        .execute()
+        .data
+    ) or []
+    reviewer_ids = {r["user_id"] for r in role_rows}
+
+    existing_rows = (
+        sb.table("reviewer_assignments")
+        .select("reviewer_user_id")
+        .eq("application_id", application_id)
+        .eq("application_track", track)
+        .execute()
+        .data
+    ) or []
+    already = {r["reviewer_user_id"] for r in existing_rows}
+
+    now = datetime.now(UTC).isoformat()
+    results: list[dict] = []
+    for rid in body.reviewer_user_ids:
+        if rid not in reviewer_ids:
+            results.append({"reviewer_user_id": rid, "status": "not_a_reviewer"})
+            continue
+        if rid in already:
+            results.append({"reviewer_user_id": rid, "status": "already_assigned"})
+            continue
+        row = {
+            "application_id": application_id,
+            "application_track": track,
+            "reviewer_user_id": rid,
+            "assigned_by": user["user_id"],
+            "assigned_at": now,
+            "state": "pending",
+            "due_at": body.due_at,
+        }
+        sb.table("reviewer_assignments").insert(row).execute()
+        write_audit(
+            actor_user_id=user["user_id"],
+            actor_role="leadership",
+            action_type="reviewer.assigned",
+            target_table="reviewer_assignments",
+            target_id=f"{application_id}:{rid}",
+            after={"application_track": track, "due_at": body.due_at},
+        )
+        already.add(rid)
+        results.append({"reviewer_user_id": rid, "status": "created"})
+
+    return {"application_id": application_id, "track": track, "results": results}
 
 
 # ─── Reviewer un-assignment ────────────────────────────────────────────

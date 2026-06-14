@@ -369,3 +369,126 @@ class TestLeadershipWritesStagingIntegration:
         )
         assert r.status_code == 403
         assert r.json()["detail"]["code"] == "missing_capability"
+
+
+# ─── POST /reviewers bulk assignment ──────────────────────────────────────
+
+
+def test_assign_reviewers_bulk_creates_rows(client, monkeypatch, _clear_overrides):
+    """Happy path: two valid reviewers are created as pending assignments."""
+    app_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    fake = _install_db(monkeypatch, {
+        "tir_applications": [
+            {"id": app_id, "status": "under_review"},
+        ],
+        "sip_applications": [],
+        "user_roles": [
+            {"user_id": "rev-1", "role": "reviewer"},
+            {"user_id": "rev-2", "role": "reviewer"},
+        ],
+        "reviewer_assignments": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"], user_id="leader-u")
+
+    res = client.post(
+        f"/leadership/applications/{app_id}/reviewers",
+        json={"reviewer_user_ids": ["rev-1", "rev-2"], "due_at": "2026-06-20T00:00:00Z"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["application_id"] == app_id
+    assert body["track"] == "tir"
+
+    results_by_id = {r["reviewer_user_id"]: r for r in body["results"]}
+    assert results_by_id["rev-1"]["status"] == "created"
+    assert results_by_id["rev-2"]["status"] == "created"
+
+    # Two inserts into reviewer_assignments.
+    ra_inserts = [payload for name, payload in fake.inserts if name == "reviewer_assignments"]
+    assert len(ra_inserts) == 2
+
+    inserted_ids = {row["reviewer_user_id"] for row in ra_inserts}
+    assert inserted_ids == {"rev-1", "rev-2"}
+
+    for row in ra_inserts:
+        assert row["assigned_by"] == "leader-u"
+        assert row["application_track"] == "tir"
+        assert row["due_at"] == "2026-06-20T00:00:00Z"
+        assert row["state"] == "pending"
+
+
+def test_assign_reviewers_conflict_and_not_reviewer(client, monkeypatch, _clear_overrides):
+    """rev-1 already assigned → already_assigned; stranger-9 has no reviewer role → not_a_reviewer."""
+    app_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    fake = _install_db(monkeypatch, {
+        "tir_applications": [
+            {"id": app_id, "status": "under_review"},
+        ],
+        "sip_applications": [],
+        "user_roles": [
+            {"user_id": "rev-1", "role": "reviewer"},
+        ],
+        "reviewer_assignments": [
+            {"reviewer_user_id": "rev-1", "application_id": app_id, "application_track": "tir", "state": "pending"},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.post(
+        f"/leadership/applications/{app_id}/reviewers",
+        json={"reviewer_user_ids": ["rev-1", "stranger-9"]},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+
+    results_by_id = {r["reviewer_user_id"]: r for r in body["results"]}
+    assert results_by_id["rev-1"]["status"] == "already_assigned"
+    assert results_by_id["stranger-9"]["status"] == "not_a_reviewer"
+
+    # No new inserts for reviewer_assignments.
+    ra_inserts = [payload for name, payload in fake.inserts if name == "reviewer_assignments"]
+    assert ra_inserts == []
+
+
+def test_assign_reviewers_rejects_empty_id(client, monkeypatch, _clear_overrides):
+    """Empty string in reviewer_user_ids → 422 from Pydantic field validator."""
+    app_id = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+    _install_db(monkeypatch, {
+        "tir_applications": [
+            {"id": app_id, "status": "under_review"},
+        ],
+        "sip_applications": [],
+        "user_roles": [
+            {"user_id": "rev-1", "role": "reviewer"},
+        ],
+        "reviewer_assignments": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.post(
+        f"/leadership/applications/{app_id}/reviewers",
+        json={"reviewer_user_ids": ["", "rev-1"]},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 422
+
+
+def test_assign_reviewers_404_when_app_missing(client, monkeypatch, _clear_overrides):
+    """Application not found in either track table → 404 application_not_found."""
+    _install_db(monkeypatch, {
+        "tir_applications": [],
+        "sip_applications": [],
+        "user_roles": [],
+        "reviewer_assignments": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.post(
+        "/leadership/applications/cccccccc-cccc-cccc-cccc-cccccccccccc/reviewers",
+        json={"reviewer_user_ids": ["rev-1"]},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 404
+    assert res.json()["detail"]["code"] == "application_not_found"
