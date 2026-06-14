@@ -1484,3 +1484,50 @@ def test_queue_shape_includes_ai_due_and_review_status(
     assert items[0]["id"] == "app-3"
     assert items[1]["id"] == "app-1"
     assert items[-1]["id"] == "app-2"
+
+
+# ─── GET /reviewer/applications/{track}/{id}/content ───────────────────
+
+
+def test_content_endpoint_returns_presenter_shape(client, monkeypatch, _clear_overrides):
+    me = "rev-1"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [{
+            "id": "asg-1", "application_id": "app-1", "application_track": "tir",
+            "reviewer_user_id": me, "declined_at": None, "reassigned_to": None,
+            "assigned_at": "2026-06-01T00:00:00+00:00"}],
+        "tir_applications": [{
+            "id": "app-1", "display_seq": 26001, "basic_full_name": "Aanya Mehta",
+            "basic_org": "Karkhana", "problem_defined": "Yes",
+            "problem_describe": "Robots are costly. Integration is slow.",
+            "solution_stage": "Pilot-ready product",
+            "submitted_at": "2026-05-20T00:00:00+00:00", "evidence_files": []}],
+        "sip_applications": [],
+        "reviews": [],
+        "ai_screening": [
+            {"application_id": "app-1", "application_track": "tir",
+             "summary": "Strong robotics play.", "project_name": "Karkhana Robotics"}],
+        "industry_categories": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get("/reviewer/applications/tir/app-1/content")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["aiSummary"] == "Strong robotics play."
+    assert body["name"] == "Karkhana Robotics"
+    labels = {f["label"] for f in body["fields"]}
+    assert {"Problem defined", "Problem description"} <= labels
+    assert body["sections"][0]["num"] == "01"
+    assert body["attachments"] == []
+
+
+def test_content_endpoint_404_when_not_assigned(client, monkeypatch, _clear_overrides):
+    me = "rev-1"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [], "tir_applications": [], "sip_applications": [],
+        "reviews": [], "ai_screening": [], "industry_categories": []})
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get("/reviewer/applications/tir/app-x/content")
+    assert r.status_code == 404

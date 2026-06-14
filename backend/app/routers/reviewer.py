@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..deps import get_current_user
 from ..rbac import require_capability
-from ..services import reviewer_query, state_machine
+from ..services import review_presenter, reviewer_query, state_machine
 from ..services.audit import write_audit
 from ..supabase_client import get_admin_client
 
@@ -54,6 +54,58 @@ async def list_assignments(user: dict = Depends(get_current_user)) -> dict:
 async def get_queue(user: dict = Depends(get_current_user)) -> list[dict]:
     """Spec §4.2 — canonical reviewer queue (replaces the prototype's buildReviewerQueue())."""
     return reviewer_query.fetch_queue(user["user_id"])
+
+
+@router.get(
+    "/applications/{track}/{application_id}/content",
+    dependencies=[Depends(require_capability("view_assigned_apps"))],
+)
+async def get_application_content(
+    track: Literal["tir", "sip"],
+    application_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Spec §4.3 presenter — the full application as the eval screen renders it.
+    404 (not 403) when unassigned: no app-existence enumeration."""
+    payload = reviewer_query.fetch_application_for_reviewer(
+        user["user_id"], track, application_id,
+    )
+    if payload is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                            detail={"code": "not_found"})
+    app_row = payload["application"]
+    ai = payload.get("ai_screening") or {}
+    field_map = (review_presenter.TIR_FIELD_MAP if track == "tir"
+                 else review_presenter.SIP_FIELD_MAP)
+
+    attachments = []
+    sb = get_admin_client()
+    for att in review_presenter.collect_attachment_paths(app_row, track):
+        try:
+            signed = (sb.storage.from_(att["bucket"])
+                      .create_signed_url(att["storage_path"], 120))
+            url = None
+            if isinstance(signed, dict):
+                url = signed.get("signedURL") or signed.get("signedUrl") or signed.get("url")
+            if url:
+                attachments.append({"kind": att["kind"], "name": att["name"], "url": url})
+        except Exception:
+            log.warning("content: signed url failed",
+                        extra={"path": att["storage_path"]})
+
+    return {
+        "id": application_id,
+        "applicationId": reviewer_query._display_id(track, app_row),
+        "track": track,
+        "name": ai.get("project_name") or app_row.get("basic_org")
+                or app_row.get("basic_full_name") or "—",
+        "aiSummary": ai.get("summary"),
+        "fields": review_presenter.build_fields(app_row, field_map),
+        "sections": review_presenter.build_sections(app_row, track),
+        "attachments": attachments,
+        "evaluation": payload.get("my_review"),
+        "assignment": payload.get("assignment"),
+    }
 
 
 @router.get(
