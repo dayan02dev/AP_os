@@ -390,6 +390,147 @@ def fetch_completed_reviews(
     }
 
 
+def _display_id(track: str, app_row: dict) -> str:
+    seq = app_row.get("display_seq")
+    prefix = "TIR" if track == "tir" else "SIP"
+    return f"{prefix}-{seq}" if seq is not None else _compose_app_identifier(
+        track, app_row.get("id", ""), app_row.get("submitted_at"))
+
+
+def _founder_names(track: str, app_row: dict) -> list[str]:
+    names = [app_row.get("basic_full_name") or ""]
+    extra = app_row.get("basic_teammates") if track == "tir" else app_row.get("sip_founders")
+    for t in (extra or []):
+        n = (t or {}).get("name") or (t or {}).get("fullName")
+        if n:
+            names.append(n)
+    return [n for n in names if n]
+
+
+def _ai_block(ai_row: dict | None) -> dict | None:
+    if not ai_row:
+        return None
+    conf = ai_row.get("confidence")
+    return {
+        "overall":  ai_row.get("score_overall"),
+        "conf":     round(conf * 100) if isinstance(conf, (int, float)) else None,
+        "problem":  ai_row.get("score_problem"),
+        "solution": ai_row.get("score_completeness"),  # ai_screening naming (mig 016)
+        "tech":     ai_row.get("score_tech"),
+        "founders": ai_row.get("score_founders"),
+        "commit":   ai_row.get("score_commitment"),
+    }
+
+
+def _review_status(my_review: dict | None) -> str:
+    if my_review is None:
+        return "not-started"
+    if my_review.get("submitted_at"):
+        return "submitted"
+    return "draft"
+
+
+def fetch_queue(reviewer_user_id: str) -> list[dict]:
+    """Spec §4.2 — one canonical record per active assignment. SUBMITTED reviews
+    stay in the queue (status chip); AI scores included pre-submit."""
+    from . import stats  # local import avoids any circular-import risk
+
+    sb = get_admin_client()
+    try:
+        assignments = (sb.table("reviewer_assignments").select("*")
+                       .eq("reviewer_user_id", reviewer_user_id).execute().data) or []
+    except Exception as exc:
+        log.warning("queue: assignments fetch failed",
+                    extra={"reviewer": reviewer_user_id, "err": str(exc)})
+        return []
+    assignments = [a for a in assignments
+                   if a.get("declined_at") is None and a.get("reassigned_to") is None]
+
+    try:
+        cats = (sb.table("industry_categories").select("*").execute().data) or []
+    except Exception as exc:
+        log.warning(
+            "queue: industry_categories fetch failed",
+            extra={"reviewer": reviewer_user_id, "err": str(exc)},
+        )
+        cats = []
+    cat_label = {c["id"]: c.get("label") for c in cats}
+
+    out: list[dict] = []
+    for a in assignments:
+        track = a["application_track"]
+        table = "tir_applications" if track == "tir" else "sip_applications"
+        try:
+            app_rows = (sb.table(table).select("*")
+                        .eq("id", a["application_id"]).limit(1).execute().data) or []
+        except Exception as exc:
+            log.warning("queue: app fetch failed",
+                        extra={"application_id": a.get("application_id"), "err": str(exc)})
+            continue
+        if not app_rows:
+            continue
+        app_row = app_rows[0]
+
+        try:
+            ai_rows = (sb.table("ai_screening").select("*")
+                       .eq("application_id", a["application_id"])
+                       .eq("application_track", track).execute().data) or []
+        except Exception as exc:
+            log.warning(
+                "queue: ai_screening fetch failed",
+                extra={
+                    "reviewer": reviewer_user_id,
+                    "application_id": a.get("application_id"),
+                    "err": str(exc),
+                },
+            )
+            ai_rows = []
+        ai_row = ai_rows[0] if ai_rows else None
+
+        try:
+            rv_rows = (sb.table("reviews").select("*")
+                       .eq("application_id", a["application_id"])
+                       .eq("application_track", track)
+                       .eq("reviewer_user_id", reviewer_user_id).execute().data) or []
+        except Exception as exc:
+            log.warning(
+                "queue: reviews fetch failed",
+                extra={
+                    "reviewer": reviewer_user_id,
+                    "application_id": a.get("application_id"),
+                    "err": str(exc),
+                },
+            )
+            rv_rows = []
+        my_review = rv_rows[0] if rv_rows else None
+
+        industry = None
+        if ai_row and ai_row.get("industry_category_id"):
+            industry = cat_label.get(ai_row["industry_category_id"])
+
+        stage_info = stats.derive_stage_label({**app_row, "track": track})
+        stage = stage_info.get("label") if stage_info else None
+
+        out.append({
+            "id":            a["application_id"],
+            "assignmentId":  a["id"],
+            "applicationId": _display_id(track, app_row),
+            "track":         track,
+            "name":          (ai_row or {}).get("project_name")
+                             or app_row.get("basic_org")
+                             or app_row.get("basic_full_name") or "—",
+            "founders":      _founder_names(track, app_row),
+            "industry":      industry or "—",
+            "stage":         stage or "—",
+            "due":           a.get("due_at"),
+            "ai":            _ai_block(ai_row),
+            "reviewStatus":  _review_status(my_review),
+            "editWindowExpiresAt": (my_review or {}).get("locked_at"),
+        })
+    out.sort(key=lambda x: x.get("due") or "9999")
+    return out
+
+
 def fetch_my_review_for_application(
     reviewer_user_id: str, application_id: str,
 ) -> dict | None:

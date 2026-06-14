@@ -48,6 +48,15 @@ async def list_assignments(user: dict = Depends(get_current_user)) -> dict:
 
 
 @router.get(
+    "/queue",
+    dependencies=[Depends(require_capability("view_assigned_apps"))],
+)
+async def get_queue(user: dict = Depends(get_current_user)) -> list[dict]:
+    """Spec §4.2 — canonical reviewer queue (replaces the prototype's buildReviewerQueue())."""
+    return reviewer_query.fetch_queue(user["user_id"])
+
+
+@router.get(
     "/applications/{track}/{application_id}",
     dependencies=[Depends(require_capability("view_assigned_apps"))],
 )

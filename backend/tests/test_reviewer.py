@@ -1399,3 +1399,88 @@ def test_patch_text_only_edit_on_submitted_review_skips_ai_fetch(
 
     r = client.patch("/reviewer/reviews/rev1", json={"quick_notes": "updated"})
     assert r.status_code == 200, r.text
+
+
+# ─── GET /reviewer/queue (Task 6) ──────────────────────────────────────
+
+
+def test_queue_shape_includes_ai_due_and_review_status(
+    client, monkeypatch, _clear_overrides,
+):
+    """Spec §4.2 canonical queue: AI block, due date, review status chip.
+    app-1 (tir) has AI + a submitted review; app-2 (sip) has neither.
+    app-3 (tir) has a draft review — exercises the 'draft' reviewStatus branch."""
+    me = "rev-1"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [
+            {"id": "asg-1", "application_id": "app-1", "application_track": "tir",
+             "reviewer_user_id": me, "due_at": "2026-06-20T00:00:00+00:00",
+             "declined_at": None, "reassigned_to": None},
+            {"id": "asg-2", "application_id": "app-2", "application_track": "sip",
+             "reviewer_user_id": me, "due_at": None,
+             "declined_at": None, "reassigned_to": None},
+            {"id": "asg-3", "application_id": "app-3", "application_track": "tir",
+             "reviewer_user_id": me, "due_at": "2026-06-10T00:00:00+00:00",
+             "declined_at": None, "reassigned_to": None},
+        ],
+        "tir_applications": [
+            {"id": "app-1", "display_seq": 26001, "basic_full_name": "Aanya Mehta",
+             "basic_org": "Karkhana", "solution_stage": "Pilot-ready product",
+             "submitted_at": "2026-05-20T00:00:00+00:00", "basic_teammates": []},
+            {"id": "app-3", "display_seq": 26003, "basic_full_name": "X",
+             "solution_stage": "Prototype built",
+             "submitted_at": "2026-05-22T00:00:00+00:00", "basic_teammates": []},
+        ],
+        "sip_applications": [
+            {"id": "app-2", "display_seq": 26002, "basic_full_name": "Priya Iyer",
+             "basic_org": "Saathi", "sip_trl": "TRL 5", "sip_traction": "Active pilots",
+             "submitted_at": "2026-05-21T00:00:00+00:00", "sip_founders": []},
+        ],
+        "reviews": [
+            {"id": "rv-1", "application_id": "app-1", "application_track": "tir",
+             "reviewer_user_id": me, "submitted_at": "2026-06-03T00:00:00+00:00",
+             "locked_at": "2026-06-03T01:00:00+00:00"},
+            {"id": "rv-3", "application_id": "app-3", "application_track": "tir",
+             "reviewer_user_id": me, "submitted_at": None, "locked_at": None},
+        ],
+        "ai_screening": [
+            {"application_id": "app-1", "application_track": "tir",
+             "project_name": "Karkhana Robotics", "score_overall": 8.4,
+             "confidence": 0.92, "score_problem": 8.6, "score_completeness": 8.2,
+             "score_tech": 9.0, "score_founders": 7.8, "score_commitment": 8.4,
+             "industry_category_id": "robotics"},
+        ],
+        "industry_categories": [
+            {"id": "robotics", "label": "Robotics & Automation"},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get("/reviewer/queue")
+    assert r.status_code == 200, r.text
+    items = r.json()
+    by_id = {item["id"]: item for item in items}
+
+    a1 = by_id["app-1"]
+    assert a1["applicationId"] == "TIR-26001"
+    assert a1["name"] == "Karkhana Robotics"  # AI project_name wins
+    assert a1["industry"] == "Robotics & Automation"
+    assert a1["due"] == "2026-06-20T00:00:00+00:00"
+    assert a1["ai"]["overall"] == 8.4
+    assert a1["ai"]["solution"] == 8.2  # maps score_completeness
+    assert a1["ai"]["conf"] == 92
+    assert a1["reviewStatus"] == "submitted"
+    assert a1["editWindowExpiresAt"] == "2026-06-03T01:00:00+00:00"
+
+    a2 = by_id["app-2"]
+    assert a2["applicationId"] == "SIP-26002"
+    assert a2["ai"] is None
+    assert a2["reviewStatus"] == "not-started"
+
+    a3 = by_id["app-3"]
+    assert a3["reviewStatus"] == "draft"
+
+    # Sort order: due ascending, None last → app-3 (06-10), app-1 (06-20), app-2 (None)
+    assert items[0]["id"] == "app-3"
+    assert items[1]["id"] == "app-1"
+    assert items[-1]["id"] == "app-2"
