@@ -445,6 +445,71 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
         return []
     assignments = [a for a in assignments
                    if a.get("declined_at") is None and a.get("reassigned_to") is None]
+    if not assignments:
+        return []
+
+    # ── Bulk-fetch every table once instead of 3 queries per assignment. ──
+    # Partition the application ids by track so each *_applications table is
+    # read at most once via .in_("id", ids). Then look up ai_screening /
+    # reviews with a single .in_("application_id", all_ids) each, keying by
+    # (application_id, application_track) in Python (the fake client's .in_()
+    # is a no-op, and production may return cross-track rows, so we always
+    # filter/assemble here rather than trusting server-side narrowing).
+    all_ids = [a["application_id"] for a in assignments]
+    ids_by_track: dict[str, list[str]] = {}
+    for a in assignments:
+        ids_by_track.setdefault(a["application_track"], []).append(a["application_id"])
+
+    # Application rows: {(id, track): row}
+    apps_by_key: dict[tuple[str, str], dict] = {}
+    for track, ids in ids_by_track.items():
+        if not ids:
+            continue
+        table = "tir_applications" if track == "tir" else "sip_applications"
+        try:
+            app_rows = (sb.table(table).select("*").in_("id", ids).execute().data) or []
+        except Exception as exc:
+            log.warning("queue: app fetch failed",
+                        extra={"reviewer": reviewer_user_id, "track": track,
+                               "err": str(exc)})
+            app_rows = []
+        for row in app_rows:
+            rid = row.get("id")
+            if rid is not None:
+                apps_by_key[(rid, track)] = row
+
+    # AI screening rows: {(application_id, application_track): row}
+    ai_by_key: dict[tuple[str, str], dict] = {}
+    try:
+        ai_rows = (sb.table("ai_screening").select("*")
+                   .in_("application_id", all_ids).execute().data) or []
+    except Exception as exc:
+        log.warning(
+            "queue: ai_screening fetch failed",
+            extra={"reviewer": reviewer_user_id, "err": str(exc)},
+        )
+        ai_rows = []
+    for row in ai_rows:
+        ai_by_key.setdefault(
+            (row.get("application_id"), row.get("application_track")), row)
+
+    # This reviewer's reviews: {(application_id, application_track): row}
+    rv_by_key: dict[tuple[str, str], dict] = {}
+    try:
+        rv_rows = (sb.table("reviews").select("*")
+                   .eq("reviewer_user_id", reviewer_user_id)
+                   .in_("application_id", all_ids).execute().data) or []
+    except Exception as exc:
+        log.warning(
+            "queue: reviews fetch failed",
+            extra={"reviewer": reviewer_user_id, "err": str(exc)},
+        )
+        rv_rows = []
+    for row in rv_rows:
+        if row.get("reviewer_user_id") != reviewer_user_id:
+            continue  # fake .in_/.eq don't filter; enforce ownership here
+        rv_by_key.setdefault(
+            (row.get("application_id"), row.get("application_track")), row)
 
     try:
         cats = (sb.table("industry_categories").select("*").execute().data) or []
@@ -459,50 +524,12 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
     out: list[dict] = []
     for a in assignments:
         track = a["application_track"]
-        table = "tir_applications" if track == "tir" else "sip_applications"
-        try:
-            app_rows = (sb.table(table).select("*")
-                        .eq("id", a["application_id"]).limit(1).execute().data) or []
-        except Exception as exc:
-            log.warning("queue: app fetch failed",
-                        extra={"application_id": a.get("application_id"), "err": str(exc)})
+        app_row = apps_by_key.get((a["application_id"], track))
+        if not app_row:
             continue
-        if not app_rows:
-            continue
-        app_row = app_rows[0]
 
-        try:
-            ai_rows = (sb.table("ai_screening").select("*")
-                       .eq("application_id", a["application_id"])
-                       .eq("application_track", track).execute().data) or []
-        except Exception as exc:
-            log.warning(
-                "queue: ai_screening fetch failed",
-                extra={
-                    "reviewer": reviewer_user_id,
-                    "application_id": a.get("application_id"),
-                    "err": str(exc),
-                },
-            )
-            ai_rows = []
-        ai_row = ai_rows[0] if ai_rows else None
-
-        try:
-            rv_rows = (sb.table("reviews").select("*")
-                       .eq("application_id", a["application_id"])
-                       .eq("application_track", track)
-                       .eq("reviewer_user_id", reviewer_user_id).execute().data) or []
-        except Exception as exc:
-            log.warning(
-                "queue: reviews fetch failed",
-                extra={
-                    "reviewer": reviewer_user_id,
-                    "application_id": a.get("application_id"),
-                    "err": str(exc),
-                },
-            )
-            rv_rows = []
-        my_review = rv_rows[0] if rv_rows else None
+        ai_row = ai_by_key.get((a["application_id"], track))
+        my_review = rv_by_key.get((a["application_id"], track))
 
         industry = None
         if ai_row and ai_row.get("industry_category_id"):

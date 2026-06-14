@@ -96,9 +96,14 @@ class _FakeAdminClient:
         self.tables = tables or {}
         self.inserts: list[tuple[str, Any]] = []
         self.updates: list[tuple[str, Any, list]] = []
+        self._table_calls: dict[str, int] = {}
 
     def table(self, name: str) -> _FakeQuery:
+        self._table_calls[name] = self._table_calls.get(name, 0) + 1
         return _FakeQuery(self, name)
+
+    def table_call_counts(self) -> dict[str, int]:
+        return dict(self._table_calls)
 
 
 def _override_user(user_id: str, roles: list[str] = None):
@@ -1484,6 +1489,61 @@ def test_queue_shape_includes_ai_due_and_review_status(
     assert items[0]["id"] == "app-3"
     assert items[1]["id"] == "app-1"
     assert items[-1]["id"] == "app-2"
+
+
+def test_queue_bulk_fetches_without_per_assignment_loop(
+    client, monkeypatch, _clear_overrides,
+):
+    """Perf contract (Task 2): fetch_queue must batch its reads instead of
+    looping 3 queries per assignment. With 3 active assignments (tir+sip mix)
+    the reviewer_assignments / ai_screening / reviews tables must each be hit
+    no more than twice — proving there's no per-assignment N+1.
+
+    The fake's `.in_()` is a no-op (no filtering), so this test asserts on the
+    assembled output + the table-call counts, never on fake-side filtering:
+    production filters in Python after the bulk fetch.
+    """
+    me = "rev-1"
+    fake = _install_db(monkeypatch, {
+        "reviewer_assignments": [
+            {"id": "asg-1", "application_id": "app-1", "application_track": "tir",
+             "reviewer_user_id": me, "due_at": "2026-06-20T00:00:00+00:00",
+             "declined_at": None, "reassigned_to": None},
+            {"id": "asg-2", "application_id": "app-2", "application_track": "sip",
+             "reviewer_user_id": me, "due_at": "2026-06-21T00:00:00+00:00",
+             "declined_at": None, "reassigned_to": None},
+            {"id": "asg-3", "application_id": "app-3", "application_track": "tir",
+             "reviewer_user_id": me, "due_at": "2026-06-22T00:00:00+00:00",
+             "declined_at": None, "reassigned_to": None},
+        ],
+        "tir_applications": [
+            {"id": "app-1", "display_seq": 26001, "basic_full_name": "Aanya",
+             "submitted_at": "2026-05-20T00:00:00+00:00", "basic_teammates": []},
+            {"id": "app-3", "display_seq": 26003, "basic_full_name": "Rahul",
+             "submitted_at": "2026-05-22T00:00:00+00:00", "basic_teammates": []},
+        ],
+        "sip_applications": [
+            {"id": "app-2", "display_seq": 26002, "basic_full_name": "Priya",
+             "submitted_at": "2026-05-21T00:00:00+00:00", "sip_founders": []},
+        ],
+        "reviews": [],
+        "ai_screening": [],
+        "industry_categories": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get("/reviewer/queue")
+    assert r.status_code == 200, r.text
+    items = r.json()
+    ids = {item["id"] for item in items}
+    assert ids == {"app-1", "app-2", "app-3"}, ids
+
+    counts = fake.table_call_counts()
+    # No per-assignment loop: each of these is queried at most twice
+    # (once is the expected single bulk read; allow 2 as headroom).
+    assert counts.get("reviewer_assignments", 0) <= 2, counts
+    assert counts.get("ai_screening", 0) <= 2, counts
+    assert counts.get("reviews", 0) <= 2, counts
 
 
 # ─── GET /reviewer/applications/{track}/{id}/content ───────────────────
