@@ -55,3 +55,9 @@ def test_six_roles_in_constant():
 def test_empty_roles_list_has_no_capabilities():
     assert capabilities_for([]) == set()
     assert has_capability([], "manage_users") is False
+
+
+def test_admin_has_platform_capabilities():
+    from app.rbac import ROLE_CAPABILITIES as C
+    assert {"decide_application","manage_batches","manage_reviewers_roster"} <= C["admin"]
+    assert "decide_application" in C["leadership"]
