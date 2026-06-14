@@ -152,6 +152,142 @@ class MetaBody(BaseModel):
     hidden_reason: str | None = None
 
 
+# ─── Task 10: Batches CRUD + bulk assign ──────────────────────────────────
+
+
+class BatchCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(..., min_length=1)
+    phase: str | None = None
+
+
+class BatchRename(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str | None = None
+    phase: str | None = None
+
+
+class BatchAssignItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    track: Literal["tir", "sip"]
+    application_id: str
+
+
+class BatchAssign(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[BatchAssignItem] = Field(..., min_length=1, max_length=500)
+
+
+@router.get("/batches", dependencies=[Depends(require_capability("manage_batches"))])
+async def list_batches() -> dict:
+    """List all batches."""
+    sb = get_admin_client()
+    data = sb.table("batches").select("*").execute().data or []
+    return {"batches": data}
+
+
+@router.post("/batches", dependencies=[Depends(require_capability("manage_batches"))])
+async def create_batch(body: BatchCreate, user: dict = Depends(get_current_user)) -> dict:
+    """Create a new batch."""
+    sb = get_admin_client()
+    row: dict[str, Any] = {
+        "name": body.name,
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    if body.phase is not None:
+        row["phase"] = body.phase
+    result = sb.table("batches").insert(row).execute()
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="batch_created",
+        target_table="batches",
+        target_id=None,
+        after=row,
+    )
+    data = result.data
+    return data[0] if data else row
+
+
+@router.patch(
+    "/batches/{batch_id}",
+    dependencies=[Depends(require_capability("manage_batches"))],
+)
+async def rename_batch(
+    batch_id: str,
+    body: BatchRename,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Update batch name and/or phase."""
+    fields = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
+    if not fields:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "no_fields", "message": "Provide at least one field."},
+        )
+    sb = get_admin_client()
+    existing = sb.table("batches").select("id").eq("id", batch_id).limit(1).execute().data
+    if not existing:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "batch_not_found"},
+        )
+    fields["updated_at"] = datetime.now(UTC).isoformat()
+    sb.table("batches").update(fields).eq("id", batch_id).execute()
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="batch_updated",
+        target_table="batches",
+        target_id=batch_id,
+        after=fields,
+    )
+    return {"batch_id": batch_id, **fields}
+
+
+@router.post(
+    "/batches/{batch_id}/applications",
+    dependencies=[Depends(require_capability("manage_batches"))],
+)
+async def assign_applications(
+    batch_id: str,
+    body: BatchAssign,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Bulk-assign applications to a batch (upsert moves app between batches)."""
+    sb = get_admin_client()
+    existing = sb.table("batches").select("id").eq("id", batch_id).limit(1).execute().data
+    if not existing:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "batch_not_found"},
+        )
+    now = datetime.now(UTC).isoformat()
+    rows = [
+        {
+            "application_id": item.application_id,
+            "application_track": item.track,
+            "batch_id": batch_id,
+            "added_at": now,
+        }
+        for item in body.items
+    ]
+    sb.table("application_batches").upsert(
+        rows, on_conflict="application_id,application_track"
+    ).execute()
+    n = len(body.items)
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="batch_applications_assigned",
+        target_table="application_batches",
+        target_id=batch_id,
+        after={"count": n},
+    )
+    return {"assigned": n}
+
+
 @router.patch(
     "/applications/{track}/{application_id}/meta",
     dependencies=[Depends(require_capability("view_all_apps"))],

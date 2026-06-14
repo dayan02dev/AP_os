@@ -58,7 +58,11 @@ class _FakeQuery:
     def upsert(self, payload, on_conflict=None):
         self._mode = "insert"
         self._payload = payload
-        self._parent.inserts.append((self._name, payload))
+        if isinstance(payload, list):
+            for row in payload:
+                self._parent.inserts.append((self._name, row))
+        else:
+            self._parent.inserts.append((self._name, payload))
         return self
 
     def update(self, payload):
@@ -408,3 +412,45 @@ def test_meta_sets_updated_by(client, monkeypatch, _clear_overrides):
     upserted = [p for (t, p) in fake.inserts if t == "application_admin_meta"]
     assert upserted, "expected at least one upsert into application_admin_meta"
     assert upserted[-1].get("updated_by") == "lead-1"
+
+
+# ─── Task 10: Batches CRUD + bulk assign ──────────────────────────────────
+
+
+def test_batches_list_create_rename(client, monkeypatch, _clear_overrides):
+    fake = _install_db(monkeypatch, {"batches":[{"id":"b1","name":"Batch A","phase":"phase1"}]})
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    assert client.get("/admin/platform/batches").status_code == 200
+    r = client.post("/admin/platform/batches", json={"name":"Batch B","phase":"phase1"})
+    assert r.status_code == 200 and any(t=="batches" for t,_ in fake.inserts)
+    r2 = client.patch("/admin/platform/batches/b1", json={"name":"Batch A renamed"})
+    assert r2.status_code == 200 and any(n=="batches" for n,_,_ in fake.updates)
+
+
+def test_batch_assign_applications(client, monkeypatch, _clear_overrides):
+    fake = _install_db(monkeypatch, {"batches":[{"id":"b1","name":"Batch A"}], "application_batches":[]})
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.post("/admin/platform/batches/b1/applications", json={"items":[
+        {"track":"tir","application_id":"app-1"},{"track":"sip","application_id":"app-2"}]})
+    assert r.status_code == 200
+    inserted = [p for (t, p) in fake.inserts if t == "application_batches"]
+    assert len(inserted) == 2 and all(p.get("batch_id") == "b1" for p in inserted)
+
+
+def test_batches_requires_capability(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {"batches":[]})
+    app.dependency_overrides[get_current_user] = _override_user("rev-1", roles=["reviewer"])
+    assert client.post("/admin/platform/batches", json={"name":"X"}).status_code == 403
+
+
+def test_batch_assign_unknown_batch_404(client, monkeypatch, _clear_overrides):
+    """POST /batches/bad-id/applications with no batches seeded → 404 batch_not_found."""
+    _install_db(monkeypatch, {"batches": [], "application_batches": []})
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.post("/admin/platform/batches/bad-id/applications",
+                    json={"items": [{"track": "tir", "application_id": "app-1"}]})
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "batch_not_found"
