@@ -152,6 +152,18 @@ async function exportReviewerQueueCsv() {
 
 // ── Cohort page header ─────────────────────────────────────────────────
 function ReviewerCohortHeader() {
+  const [exporting, setExporting] = useState(false);
+  const onExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await exportReviewerQueueCsv();
+    } catch (err) {
+      alert("Export failed — please try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
   return (
     <div className="lp-page-header">
       <div className="lp-breadcrumb" style={{ marginBottom: 8 }}>ARTPARK / OS · Reviewer Portal</div>
@@ -163,7 +175,9 @@ function ReviewerCohortHeader() {
           <div className="lp-cohort-sub">applications closed 22 May 2026 · live snapshot</div>
         </div>
         <div style={{ marginTop: 4 }}>
-          <button className="os-btn ghost" onClick={exportReviewerQueueCsv}>Export CSV ↓</button>
+          <button className="os-btn ghost" onClick={onExport} disabled={exporting}>
+            {exporting ? "Exporting…" : "Export CSV ↓"}
+          </button>
         </div>
       </div>
     </div>
@@ -171,10 +185,10 @@ function ReviewerCohortHeader() {
 }
 
 // ── Tab bar (badge reflects the live queue length) ─────────────────────
-function ReviewerTabBar({ tab }) {
+// queueCount is passed down from the shell's single getQueue fetch so the
+// badge does not trigger a second identical request per page view.
+function ReviewerTabBar({ tab, queueCount }) {
   const navigate = useNavigate();
-  const { data: queue } = useAsync(() => reviewerApi.getQueue(), []);
-  const queueCount = queue ? queue.length : null;
   return (
     <div className="lp-tabs">
       <div className={`lp-tab${tab === "dashboard" ? " active" : ""}`} onClick={() => navigate("/reviewer")}>
@@ -206,15 +220,31 @@ export default function ReviewerPortal({ tab = "dashboard" }) {
   const openEval = (track, appId) => navigate(`/reviewer/eval/${track}/${appId}`);
   const pickIndustry = (domain) => navigate("/reviewer/queue", { state: { domain } });
 
+  // Single getQueue fetch per page view, lifted into the shell. Only the
+  // dashboard and queue surfaces (and the tab badge) need it — the eval and
+  // history tabs read their own data — so we skip the request entirely on
+  // those tabs. The async result is passed down to both children so neither
+  // refetches the queue itself.
+  const needsQueue = tab === "dashboard" || tab === "queue";
+  const queueAsync = useAsync(
+    () => (needsQueue ? reviewerApi.getQueue() : Promise.resolve(null)),
+    [needsQueue],
+  );
+  const queueCount = queueAsync.data ? queueAsync.data.length : null;
+
   return (
     <div className="rv-portal os-shell">
       <ReviewerTopbar tab={tab} />
       <div className="lp-layout">
         {tab !== "eval" && <ReviewerCohortHeader />}
-        {tab !== "eval" && <ReviewerTabBar tab={tab} />}
+        {tab !== "eval" && <ReviewerTabBar tab={tab} queueCount={queueCount} />}
 
-        {tab === "dashboard" && <ReviewerDashboard onPickIndustry={pickIndustry} />}
-        {tab === "queue" && <ReviewerQueue onOpen={openEval} initialDomain={initialDomain} />}
+        {tab === "dashboard" && (
+          <ReviewerDashboard onPickIndustry={pickIndustry} queueAsync={queueAsync} />
+        )}
+        {tab === "queue" && (
+          <ReviewerQueue onOpen={openEval} initialDomain={initialDomain} queueAsync={queueAsync} />
+        )}
         {tab === "eval" && (
           <div className="lp-tab-content lp-tab-content--full">
             <ReviewerEval

@@ -4,12 +4,13 @@
 // scores may be null, and there is no "in-progress" review status (only
 // not-started | draft | submitted). The COMPS weights stay display constants.
 
-import { useAsync } from "../../../hooks/useAsync.js";
-import { reviewerApi } from "../../../lib/reviewerApi.js";
 import { LoadingState, ErrorState, EmptyState } from "./ui.jsx";
 
-export default function ReviewerDashboard({ onPickIndustry }) {
-  const { data: queue, loading, error, reload } = useAsync(() => reviewerApi.getQueue(), []);
+// The queue is fetched once at the ReviewerPortal shell level and passed down
+// via `queueAsync` ({ data, loading, error, reload }) so the dashboard and the
+// tab badge share a single getQueue request per page view.
+export default function ReviewerDashboard({ onPickIndustry, queueAsync }) {
+  const { data: queue, loading, error, reload } = queueAsync;
   if (loading) return <LoadingState label="Loading dashboard…" />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
   if (!queue || !queue.length) return <EmptyState label="No applications assigned." />;

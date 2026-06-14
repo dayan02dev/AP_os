@@ -2,7 +2,7 @@
 // LoadingState / ErrorState / EmptyState + the shell.jsx Chip/ScoreBar/Slider).
 // These were window-globals in the prototype; here they are real exports.
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 export function LoadingState({ label = "Loading…" }) {
   return (
@@ -63,6 +63,9 @@ export function ScoreBar({ label, value, max = 10, kind = "", ticks = true }) {
 // Draggable 0–10 slider (0.5 steps) — ported from shell.jsx.
 export function Slider({ label, value, onChange, kind = "", min = 0, max = 10, step = 0.5, disabled = false }) {
   const trackRef = useRef(null);
+  // Track any in-flight drag listeners so we can detach them if the component
+  // unmounts mid-drag (otherwise window mousemove/mouseup leak until mouseup).
+  const dragRef = useRef(null);
   const pct = ((value - min) / (max - min)) * 100;
   const handle = (clientX) => {
     if (disabled || !trackRef.current) return;
@@ -72,6 +75,15 @@ export function Slider({ label, value, onChange, kind = "", min = 0, max = 10, s
     v = Math.round(v / step) * step;
     onChange(v);
   };
+  useEffect(() => {
+    return () => {
+      if (dragRef.current) {
+        window.removeEventListener("mousemove", dragRef.current.move);
+        window.removeEventListener("mouseup", dragRef.current.up);
+        dragRef.current = null;
+      }
+    };
+  }, []);
   return (
     <div className={"os-slider-row " + kind} aria-disabled={disabled}>
       <div className="os-slider-label">{label}</div>
@@ -86,7 +98,9 @@ export function Slider({ label, value, onChange, kind = "", min = 0, max = 10, s
           const up = () => {
             window.removeEventListener("mousemove", move);
             window.removeEventListener("mouseup", up);
+            dragRef.current = null;
           };
+          dragRef.current = { move, up };
           window.addEventListener("mousemove", move);
           window.addEventListener("mouseup", up);
         }}

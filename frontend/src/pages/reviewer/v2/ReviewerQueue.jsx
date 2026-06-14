@@ -8,8 +8,6 @@
 //   * `due` is an ISO timestamp (or null) → rendered as a short date
 
 import { useState } from "react";
-import { useAsync } from "../../../hooks/useAsync.js";
-import { reviewerApi } from "../../../lib/reviewerApi.js";
 import { LoadingState, ErrorState, Chip } from "./ui.jsx";
 
 function fmtDue(due) {
@@ -19,14 +17,17 @@ function fmtDue(due) {
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 }
 
-export default function ReviewerQueue({ onOpen, initialDomain = "all" }) {
+// The queue is fetched once at the ReviewerPortal shell level and passed down
+// via `queueAsync` ({ data, loading, error, reload }) so the queue table and
+// the tab badge share a single getQueue request per page view.
+export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsync }) {
   const [search, setSearch] = useState("");
   const [track, setTrack] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [stageFilter, setStageFilter] = useState("all");
   const [domainFilter, setDomainFilter] = useState(initialDomain);
 
-  const { data, loading, error, reload } = useAsync(() => reviewerApi.getQueue(), []);
+  const { data, loading, error, reload } = queueAsync;
   const allQueue = data || [];
 
   const filtered = allQueue.filter((s) => {
