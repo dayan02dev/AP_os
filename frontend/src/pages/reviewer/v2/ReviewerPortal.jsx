@@ -39,6 +39,7 @@ function ReviewerTopbar({ tab }) {
   const ROLES = [
     { key: "reviewer", label: "Reviewer", to: "/reviewer" },
     { key: "leadership", label: "Leadership", to: "/leadership" },
+    { key: "admin", label: "Admin", to: "/admin" },
   ].filter((r) => r.key === "reviewer" || roles.includes(r.key));
 
   const switchRole = (r) => {

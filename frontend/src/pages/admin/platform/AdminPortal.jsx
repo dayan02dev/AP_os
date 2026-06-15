@@ -9,6 +9,7 @@
 // For T14 every tab renders a placeholder stub; the real screens land in
 // T15–T20. Jury / Psychometry / Gate-2 are intentionally omitted.
 
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import "../../../styles/admin-portal.css";
@@ -55,6 +56,20 @@ function AdminTopbar({ tab }) {
   const { user, logout } = useAuth();
   const initials = initialsOf(user?.full_name, user?.email);
   const email = user?.email || "admin@artpark.in";
+  const roles = user?.roles || [];
+
+  const [roleMenu, setRoleMenu] = useState(false);
+
+  // Build the list of other roles this user can switch to from Admin.
+  const OTHER_ROLES = [
+    { key: "leadership", label: "Leadership", to: "/leadership" },
+    { key: "reviewer", label: "Reviewer", to: "/reviewer" },
+  ].filter((r) => roles.includes(r.key));
+
+  const switchRole = (r) => {
+    setRoleMenu(false);
+    navigate(r.to);
+  };
 
   const signOut = async () => {
     await logout();
@@ -80,14 +95,50 @@ function AdminTopbar({ tab }) {
 
       <div className="adm-topbar-spacer" />
 
-      <div className="adm-user-chip" aria-label="Signed in user">
-        <span
-          className="os-avatar"
-          style={{ width: 28, height: 28, fontSize: 11, flexShrink: 0 }}
+      <div className="lp-topbar-user-wrap">
+        <button
+          className="adm-user-chip"
+          aria-label="Signed in user"
+          onClick={() => OTHER_ROLES.length > 0 && setRoleMenu((m) => !m)}
+          aria-haspopup={OTHER_ROLES.length > 0 ? "menu" : undefined}
+          aria-expanded={OTHER_ROLES.length > 0 ? roleMenu : undefined}
         >
-          {initials}
-        </span>
-        <span>{email}</span>
+          <span
+            className="os-avatar"
+            style={{ width: 28, height: 28, fontSize: 11, flexShrink: 0 }}
+          >
+            {initials}
+          </span>
+          <span>{email}</span>
+          {OTHER_ROLES.length > 0 && <span className="caret">▾</span>}
+        </button>
+        {roleMenu && OTHER_ROLES.length > 0 && (
+          <>
+            <div className="lp-menu-backdrop" onClick={() => setRoleMenu(false)} />
+            <div className="lp-role-menu" role="menu">
+              <div className="lp-role-menu-head">Switch role</div>
+              <button
+                role="menuitem"
+                className="lp-role-item is-active"
+              >
+                <span className="lp-role-dot" />
+                <span>Admin</span>
+                <span className="lp-role-check">✓</span>
+              </button>
+              {OTHER_ROLES.map((r) => (
+                <button
+                  key={r.key}
+                  role="menuitem"
+                  className="lp-role-item"
+                  onClick={() => switchRole(r)}
+                >
+                  <span className="lp-role-dot" />
+                  <span>{r.label}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
       <button className="adm-signout" onClick={signOut}>SIGN OUT ↗</button>
     </div>

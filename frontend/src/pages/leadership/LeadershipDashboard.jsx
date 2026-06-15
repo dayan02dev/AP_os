@@ -168,6 +168,8 @@ export default function LeadershipDashboard() {
   // straight into the reviewer portal from here. Reviewer→leadership is the
   // existing role-switch menu in ReviewerPortal.
   const showSwitchToReviewer = roles.includes("reviewer");
+  // Leadership ⇄ admin: accounts holding both roles can jump to the admin portal.
+  const showSwitchToAdmin = roles.includes("admin");
 
   const [view, setView] = useState("dashboard");
 
@@ -455,6 +457,17 @@ export default function LeadershipDashboard() {
             aria-label="Switch to reviewer view"
           >
             Reviewer <span className="arrow" style={{ marginLeft: 2, marginRight: 0 }}>→</span>
+          </button>
+        )}
+
+        {showSwitchToAdmin && (
+          <button
+            type="button"
+            className="applicant-btn"
+            onClick={() => navigate("/admin")}
+            aria-label="Switch to admin view"
+          >
+            Admin <span className="arrow" style={{ marginLeft: 2, marginRight: 0 }}>→</span>
           </button>
         )}
 
