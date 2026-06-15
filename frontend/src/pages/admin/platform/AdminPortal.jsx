@@ -19,6 +19,10 @@ import AdminDashboard from "./AdminDashboard.jsx";
 import AdminPipeline from "./AdminPipeline.jsx";
 import AdminGate1Review from "./AdminGate1Review.jsx";
 import AdminReviewerRoster from "./AdminReviewerRoster.jsx";
+import AdminAuditLog from "./AdminAuditLog.jsx";
+import AdminAnalytics from "./AdminAnalytics.jsx";
+import AdminBatches from "./AdminBatches.jsx";
+import AdminSettings from "./AdminSettings.jsx";
 
 const TABS = [
   { key: "dashboard", label: "Dashboard", to: "/admin" },
@@ -42,13 +46,9 @@ const CRUMB = {
   settings: "SETTINGS",
 };
 
-const STUB_TEXT = {
-  reviewers: "Reviewers — coming in T17",
-  batches: "Batches — coming in T19",
-  audit: "Audit — coming in T20",
-  analytics: "Analytics — coming in T20",
-  settings: "Settings — coming in T20",
-};
+// All admin tabs now render real screens (T15–T20); kept for any future tab
+// that lands ahead of its screen.
+const STUB_TEXT = {};
 
 function AdminTopbar({ tab }) {
   const navigate = useNavigate();
@@ -146,6 +146,14 @@ export default function AdminPortal({ tab = "dashboard" }) {
           <AdminReviewerRoster />
         ) : tab === "gate1" ? (
           <AdminGate1Review />
+        ) : tab === "batches" ? (
+          <AdminBatches />
+        ) : tab === "audit" ? (
+          <AdminAuditLog />
+        ) : tab === "analytics" ? (
+          <AdminAnalytics />
+        ) : tab === "settings" ? (
+          <AdminSettings />
         ) : (
           <TabStub tab={tab} />
         )}
