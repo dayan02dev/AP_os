@@ -984,6 +984,35 @@
 .app-header .signout-btn:hover,
 .app-header .applicant-btn:hover { border-color: var(--ink); color: var(--ink); }
 
+/* Consolidated role-switch dropdown in the leadership header. Mirrors the
+   .rv-portal / .adm-portal `lp-role-menu` pattern, re-scoped under .app-header
+   so the same menu reads correctly on the leadership shell. */
+.app-header .lp-topbar-user-wrap { position: relative; display: inline-flex; }
+.app-header .applicant-btn .caret { font-size: 10px; color: var(--ink-dim); }
+.app-header .lp-menu-backdrop { position: fixed; inset: 0; z-index: 90; }
+.app-header .lp-role-menu {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 100;
+  min-width: 210px; padding: 6px;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 14px 36px rgba(36, 36, 36, 0.14);
+}
+.app-header .lp-role-menu-head {
+  font-family: var(--font-display); font-size: 10px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--ink-dim); padding: 8px 10px 6px;
+}
+.app-header .lp-role-item {
+  width: 100%; display: flex; align-items: center; gap: 9px;
+  padding: 9px 10px; background: transparent; border: none; cursor: pointer;
+  font-family: var(--font-body); font-size: 14px; color: var(--ink);
+  border-radius: 7px; text-align: left;
+}
+.app-header .lp-role-item:hover { background: var(--paper-soft, #f4f4f6); }
+.app-header .lp-role-item.is-active { color: var(--artblue); font-weight: 600; cursor: default; }
+.app-header .lp-role-item:disabled:hover { background: transparent; }
+.app-header .lp-role-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-dim); flex-shrink: 0; }
+.app-header .lp-role-item.is-active .lp-role-dot { background: var(--artblue); }
+.app-header .lp-role-check { margin-left: auto; color: var(--artblue); font-size: 13px; }
+
 /* Role indicator pill in the header center — purple dot + uppercase label.
    Uses --r-pill (999px) per documented exception for status-style indicators. */
 .role-pill {

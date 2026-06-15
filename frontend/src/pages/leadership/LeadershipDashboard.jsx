@@ -164,12 +164,20 @@ export default function LeadershipDashboard() {
   // users would just bounce them back here via ApplyRoleGate.
   const showSwitchToApplicant =
     !roles.includes("leadership") && !roles.includes("admin");
-  // Leadership ⇄ reviewer: accounts holding both roles (e.g. nirav) can jump
-  // straight into the reviewer portal from here. Reviewer→leadership is the
-  // existing role-switch menu in ReviewerPortal.
-  const showSwitchToReviewer = roles.includes("reviewer");
-  // Leadership ⇄ admin: accounts holding both roles can jump to the admin portal.
-  const showSwitchToAdmin = roles.includes("admin");
+  // Consolidated role-switch dropdown (mirrors AdminPortal / ReviewerPortal).
+  // Lists the staff portals this account can reach; Leadership is the current
+  // one and is shown as active. Only rendered when the user holds ≥2 of
+  // {leadership, reviewer, admin} so there's somewhere to switch to.
+  const otherPortals = [
+    { key: "reviewer", label: "Reviewer", to: "/reviewer" },
+    { key: "admin", label: "Admin", to: "/admin" },
+  ].filter((p) => roles.includes(p.key));
+  const showRoleSwitch = otherPortals.length > 0;
+  const [roleMenu, setRoleMenu] = useState(false);
+  const switchPortal = (p) => {
+    setRoleMenu(false);
+    navigate(p.to);
+  };
 
   const [view, setView] = useState("dashboard");
 
@@ -449,32 +457,49 @@ export default function LeadershipDashboard() {
           <span className="menu-dot" aria-hidden="true">⌄</span>
         </div>
 
-        {showSwitchToReviewer && (
-          <button
-            type="button"
-            className="applicant-btn"
-            onClick={() => navigate("/reviewer")}
-            aria-label="Switch to reviewer view"
-          >
-            Reviewer <span className="arrow" style={{ marginLeft: 2, marginRight: 0 }}>→</span>
-          </button>
-        )}
-
-        {showSwitchToAdmin && (
-          <button
-            type="button"
-            className="applicant-btn"
-            onClick={() => navigate("/admin")}
-            aria-label="Switch to admin view"
-          >
-            Admin <span className="arrow" style={{ marginLeft: 2, marginRight: 0 }}>→</span>
-          </button>
-        )}
-
         {showSwitchToApplicant && (
           <a className="applicant-btn" href="/apply" aria-label="Switch to applicant view">
             <span className="arrow" style={{ marginLeft: 0, marginRight: 2 }}>←</span> Applicant
           </a>
+        )}
+
+        {showRoleSwitch && (
+          <div className="lp-topbar-user-wrap">
+            <button
+              type="button"
+              className="applicant-btn"
+              onClick={() => setRoleMenu((m) => !m)}
+              aria-haspopup="menu"
+              aria-expanded={roleMenu}
+              aria-label="Switch role"
+            >
+              Switch role <span className="caret" style={{ marginLeft: 4 }}>▾</span>
+            </button>
+            {roleMenu && (
+              <>
+                <div className="lp-menu-backdrop" onClick={() => setRoleMenu(false)} />
+                <div className="lp-role-menu" role="menu">
+                  <div className="lp-role-menu-head">Switch role</div>
+                  <button role="menuitem" className="lp-role-item is-active" disabled>
+                    <span className="lp-role-dot" />
+                    <span>Leadership</span>
+                    <span className="lp-role-check">✓</span>
+                  </button>
+                  {otherPortals.map((p) => (
+                    <button
+                      key={p.key}
+                      role="menuitem"
+                      className="lp-role-item"
+                      onClick={() => switchPortal(p)}
+                    >
+                      <span className="lp-role-dot" />
+                      <span>{p.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         )}
 
         <button
