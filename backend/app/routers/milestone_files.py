@@ -263,7 +263,7 @@ async def delete_milestone_file(
                       "metadata_delete_failed",
                       f"Could not remove attachment (ref {req_id}).")
 
-    with _suppress(Exception):
+    with contextlib.suppress(Exception):
         admin.storage.from_(_BUCKET).remove([target["path"]])
 
     log.info(
