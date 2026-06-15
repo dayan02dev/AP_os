@@ -18,6 +18,7 @@ import { initialsOf } from "./ui.jsx";
 import AdminDashboard from "./AdminDashboard.jsx";
 import AdminPipeline from "./AdminPipeline.jsx";
 import AdminGate1Review from "./AdminGate1Review.jsx";
+import AdminReviewerRoster from "./AdminReviewerRoster.jsx";
 
 const TABS = [
   { key: "dashboard", label: "Dashboard", to: "/admin" },
@@ -141,6 +142,8 @@ export default function AdminPortal({ tab = "dashboard" }) {
           <AdminDashboard />
         ) : tab === "pipeline" ? (
           <AdminPipeline />
+        ) : tab === "reviewers" ? (
+          <AdminReviewerRoster />
         ) : tab === "gate1" ? (
           <AdminGate1Review />
         ) : (
