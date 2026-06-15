@@ -118,7 +118,7 @@ def _clear_overrides():
 
 def _install_db(monkeypatch, tables):
     from app.routers import admin_platform as ap
-    from app.services import admin_query, applications_query, decisions, state_machine
+    from app.services import admin_query, applications_query, decisions, state_machine, stats
     fake = _FakeAdminClient(tables=tables)
     monkeypatch.setattr(admin_query, "get_admin_client", lambda: fake)
     monkeypatch.setattr(applications_query, "get_admin_client", lambda: fake)
@@ -129,6 +129,8 @@ def _install_db(monkeypatch, tables):
     # The detail path may reach into the leadership router's client for the
     # industry-label lookup; patch there too if present.
     monkeypatch.setattr(ap, "get_admin_client", lambda: fake, raising=False)
+    # Stats service uses its own client handle (called by admin stats endpoint).
+    monkeypatch.setattr(stats, "get_admin_client", lambda: fake)
     return fake
 
 
@@ -575,3 +577,43 @@ def test_audit_log_filters_by_date(client, monkeypatch, _clear_overrides):
     rows2 = r2.json()["entries"]
     assert len(rows2) == 1, f"expected 1 row with to filter, got {len(rows2)}"
     assert rows2[0]["ts"].startswith("2026-06-09")
+
+
+# ─── Task 13: Reviewer-calibration analytics + admin dashboard stats ────────
+
+
+def test_reviewer_calibration(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {
+        "user_roles":[{"user_id":"rev-1","role":"reviewer"}],
+        "profiles":[{"id":"rev-1","email":"r1@x.in","full_name":"Rev One"}],
+        "reviewer_profiles":[],
+        "reviews":[
+            {"reviewer_user_id":"rev-1","application_id":"app-1","application_track":"tir","score_problem":8,"score_solution":8,"score_tech":8,"score_founders":8,"score_commitment":8,"submitted_at":"2026-06-03T00:00:00+00:00"},
+            {"reviewer_user_id":"rev-1","application_id":"app-2","application_track":"tir","score_problem":6,"score_solution":6,"score_tech":6,"score_founders":6,"score_commitment":6,"submitted_at":"2026-06-04T00:00:00+00:00"}],
+        "ai_screening":[
+            {"application_id":"app-1","application_track":"tir","score_overall":8.5},
+            {"application_id":"app-2","application_track":"tir","score_overall":7.0}],
+        "reviewer_assignments":[],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.get("/admin/platform/analytics/reviewer-calibration")
+    assert r.status_code == 200, r.text
+    row = {x["user_id"]: x for x in r.json()["reviewers"]}["rev-1"]
+    assert row["n_reviews"] == 2
+    assert row["avg_score"] == 7.0          # mean(8.0, 6.0)
+    assert row["avg_variance_vs_ai"] == 0.75   # mean(|8.0-8.5|, |6.0-7.0|) = mean(0.5,1.0)
+
+
+def test_admin_stats_includes_decision_counts(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {
+        "tir_applications":[{"id":"app-1","status":"shortlisted"}], "sip_applications":[],
+        "admin_decisions":[
+            {"application_id":"app-1","application_track":"tir","decision":"shortlisted"},
+            {"application_id":"app-2","application_track":"tir","decision":"rejected"}],
+        "ai_screening":[], "reviews":[], "reviewer_assignments":[], "profiles":[], "industry_categories":[]})
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.get("/admin/platform/stats")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "decisions" in body
+    assert body["decisions"]["shortlisted"] == 1 and body["decisions"]["rejected"] == 1

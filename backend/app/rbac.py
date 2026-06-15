@@ -63,6 +63,7 @@ ROLE_CAPABILITIES: dict[str, Set[str]] = {
         "decide_application",
         "manage_batches",
         "manage_reviewers_roster",
+        "view_stats",
     },
 }
 

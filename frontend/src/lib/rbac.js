@@ -49,6 +49,7 @@ export const ROLE_CAPABILITIES = Object.freeze({
     "view_all_apps",
     "view_app_detail",
     "change_app_status",
+    "view_stats",
     "view_audit_log",
     "manage_support",
     "decide_application",

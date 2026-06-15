@@ -19,8 +19,11 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from datetime import UTC, datetime
 from typing import Any, Literal
+
+log = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
@@ -433,6 +436,56 @@ async def update_reviewer_profile(
         after=fields,
     )
     return {"reviewer_user_id": user_id, **fields}
+
+
+# ─── Task 13: Reviewer-calibration analytics + admin dashboard stats ────────
+
+
+@router.get(
+    "/analytics/reviewer-calibration",
+    dependencies=[Depends(require_capability("view_stats"))],
+)
+async def get_reviewer_calibration() -> dict[str, Any]:
+    """Per-reviewer calibration analytics: n_reviews, avg_score, avg_variance_vs_ai.
+
+    Gated by `view_stats` (leadership + admin). Bulk-fetches reviewers,
+    submitted reviews, and ai_screening rows without per-reviewer N+1 loops.
+    """
+    return admin_query.fetch_calibration()
+
+
+@router.get(
+    "/stats",
+    dependencies=[Depends(require_capability("view_stats"))],
+)
+async def get_admin_stats() -> dict[str, Any]:
+    """Admin dashboard stats: full leadership stats shape + admin_decisions counts.
+
+    Reuses the leadership get_stats route logic for totals/funnel/status_counts/
+    ai_score_overalls, then layers in a `decisions` dict counting admin_decisions
+    rows by their decision value (shortlisted/on_hold/rejected/waitlisted).
+    """
+    from .leadership import get_stats as _leadership_get_stats
+
+    # Call the leadership stats aggregation (same async route fn, no required args).
+    base: dict[str, Any] = await _leadership_get_stats()
+
+    # Count admin_decisions by decision value — one bulk fetch, grouped in Python.
+    sb = admin_query.get_admin_client()
+    try:
+        dec_rows = (sb.table("admin_decisions").select("decision").execute().data) or []
+    except Exception as exc:
+        log.warning("admin_stats: admin_decisions fetch failed", extra={"err": str(exc)})
+        dec_rows = []
+
+    decision_counts: dict[str, int] = {}
+    for row in dec_rows:
+        d = row.get("decision")
+        if d:
+            decision_counts[d] = decision_counts.get(d, 0) + 1
+
+    base["decisions"] = decision_counts
+    return base
 
 
 @router.post(

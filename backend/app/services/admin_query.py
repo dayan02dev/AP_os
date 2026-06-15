@@ -490,6 +490,88 @@ def fetch_roster() -> dict[str, Any]:
     return {"reviewers": out}
 
 
+# ─── Task 13: Reviewer-calibration analytics ────────────────────────────
+
+
+def fetch_calibration() -> dict[str, Any]:
+    """Per-reviewer calibration metrics: n_reviews, avg_score, avg_variance_vs_ai.
+
+    Bulk-fetches all reviewers, their submitted reviews, and ai_screening rows
+    in three queries (no per-reviewer N+1). Returns:
+        {
+            "reviewers": [
+                {
+                    "user_id": str,
+                    "name": str,
+                    "n_reviews": int,            # submitted reviews only
+                    "avg_score": float | None,   # mean weighted_overall (round 2)
+                    "avg_variance_vs_ai": float | None,  # mean |weighted − ai| (round 2)
+                }
+            ]
+        }
+    """
+    sb = get_admin_client()
+    reviewer_ids = _reviewer_user_ids()
+    if not reviewer_ids:
+        return {"reviewers": []}
+    id_set = set(reviewer_ids)
+
+    def _fetch(table: str) -> list[dict]:
+        try:
+            return (sb.table(table).select("*").execute().data) or []
+        except Exception as exc:
+            log.warning("calibration: fetch failed", extra={"table": table, "err": str(exc)})
+            return []
+
+    profiles = {p["id"]: p for p in _fetch("profiles") if p.get("id") in id_set}
+
+    # Submitted reviews grouped per reviewer.
+    reviews_by_rev: dict[str, list[dict]] = {rid: [] for rid in reviewer_ids}
+    reviewed_keys: set[tuple[str, str]] = set()
+    for r in _fetch("reviews"):
+        rid = r.get("reviewer_user_id")
+        if rid in id_set and r.get("submitted_at"):
+            reviews_by_rev[rid].append(r)
+            reviewed_keys.add((r.get("application_id"), r.get("application_track")))
+
+    # ai_screening keyed by (application_id, application_track) for apps reviewed.
+    ai_by_key: dict[tuple[str, str], dict] = {}
+    for row in _fetch("ai_screening"):
+        key = (row.get("application_id"), row.get("application_track"))
+        if key in reviewed_keys:
+            ai_by_key.setdefault(key, row)
+
+    out: list[dict[str, Any]] = []
+    for rid in reviewer_ids:
+        prof = profiles.get(rid) or {}
+        submitted = reviews_by_rev[rid]
+
+        scores: list[float] = []
+        variances: list[float] = []
+        for r in submitted:
+            w = reviewer_query._weighted_overall(r)
+            if w is None:
+                continue
+            scores.append(w)
+            ai_row = ai_by_key.get((r.get("application_id"), r.get("application_track")))
+            ai_overall = (ai_row or {}).get("score_overall")
+            if ai_overall is not None:
+                variances.append(abs(w - ai_overall))
+
+        avg_score = round(sum(scores) / len(scores), 2) if scores else None
+        avg_variance = round(sum(variances) / len(variances), 2) if variances else None
+
+        out.append({
+            "user_id":           rid,
+            "name":              prof.get("full_name") or prof.get("email") or rid,
+            "n_reviews":         len(submitted),
+            "avg_score":         avg_score,
+            "avg_variance_vs_ai": avg_variance,
+        })
+
+    return {"reviewers": out}
+
+
 # ─── Task 12: Audit log ─────────────────────────────────────────────────
 
 
