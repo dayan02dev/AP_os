@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { adaptPipelineRow, adaptStats, STATUS_TO_CHIP, DECISION_TO_ADMIN } from "../adminDataAdapter";
+import { adaptPipelineRow, adaptStats, adaptDetail, STATUS_TO_CHIP, DECISION_TO_ADMIN } from "../adminDataAdapter";
 
 describe("adaptPipelineRow", () => {
   const row = {
@@ -46,5 +46,52 @@ describe("adaptStats", () => {
     expect(d.totals.apps_submitted).toBe(250);
     expect(d.aiScores).toEqual([8.4, 7.2, 9.0]);
     expect(d.decisions.shortlisted).toBe(12);
+  });
+});
+
+describe("adaptDetail", () => {
+  const detail = {
+    id: "u1", track: "tir", display_id: "TIR-26013", project_name: "Karkhana Robotics",
+    founder: { name: "Aanya Mehta", affiliation: "IISc" },
+    industry: { id: "robotics", label: "Robotics & Automation" }, stage: "Pilot-ready",
+    application: { status: "under_review", submitted_at: "2026-04-12T00:00:00Z" },
+    ai_screening: {
+      score_overall: 8.4, score_problem: 8.6, score_completeness: 8.2, score_tech: 9.0,
+      score_founders: 7.8, score_commitment: 8.4, score_integrity: 8.4, summary: "TL;DR…",
+    },
+    reviews: [
+      { reviewer_user_id: "r1", submitted_at: "2026-05-01T00:00:00Z",
+        score_overall: 7.9, score_problem: 8, score_completeness: 7.5, score_tech: 8.5,
+        score_founders: 7.5, score_commitment: 8, score_integrity: 8, recommendation: "yes" },
+    ],
+    reviewer_assignments: [{ reviewer_user_id: "r1", state: "completed" }],
+    decision: { decision: "shortlisted", rationale: "Strong" },
+    meta: { is_hidden: false, is_archived: false },
+    batch: { id: "b1", name: "Batch A" },
+  };
+  it("maps ai_screening categories to s.ai", () => {
+    const s = adaptDetail(detail);
+    expect(s.ai).toMatchObject({ overall: 8.4, problem: 8.6, solution: 8.2, tech: 9.0,
+      founders: 7.8, commit: 8.4, integrity: 8.4 });
+    expect(s.aiSummary).toBe("TL;DR…");
+  });
+  it("maps reviews[] to s.rev with category names", () => {
+    const s = adaptDetail(detail);
+    expect(s.rev).toMatchObject({ overall: 7.9, problem: 8, solution: 7.5, tech: 8.5,
+      founders: 7.5, commit: 8, integrity: 8, reco: "yes" });
+  });
+  it("maps identity, decision, batch, assignments", () => {
+    const s = adaptDetail(detail);
+    expect(s.founders).toEqual(["Aanya Mehta", "IISc"]);
+    expect(s.domain).toBe("Robotics & Automation");
+    expect(s.adminDecision).toBe("APPROVED");
+    expect(s.adminRationale).toBe("Strong");
+    expect(s.batch).toBe("Batch A");
+    expect(s.assignedReviewers).toEqual(["r1"]);
+  });
+  it("tolerates missing ai_screening / reviews", () => {
+    const s = adaptDetail({ ...detail, ai_screening: null, reviews: [] });
+    expect(s.ai).toEqual({ overall: null });
+    expect(s.rev).toBeUndefined();
   });
 });

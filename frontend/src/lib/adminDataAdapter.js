@@ -49,3 +49,53 @@ export function adaptStats(api) {
     decisions: api.decisions || {},
   };
 }
+
+const AI_CAT = { score_problem: "problem", score_completeness: "solution", score_tech: "tech",
+  score_founders: "founders", score_commitment: "commit", score_integrity: "integrity" };
+const REV_CAT = AI_CAT; // reviews rows use the same score_* column names
+
+function adaptAi(scr) {
+  if (!scr) return { overall: null };
+  const out = { overall: scr.score_overall ?? null, conf: null };
+  for (const [k, v] of Object.entries(AI_CAT)) if (scr[k] != null) out[v] = scr[k];
+  return out;
+}
+function adaptOneReview(rv) {
+  const out = { overall: rv.score_overall ?? null, reco: rv.recommendation || rv.reco,
+    notes: rv.notes || rv.comment || "" };
+  for (const [k, v] of Object.entries(REV_CAT)) if (rv[k] != null) out[v] = rv[k];
+  return out;
+}
+
+export function adaptDetail(d) {
+  const founders = [];
+  if (d.founder?.name) founders.push(d.founder.name);
+  if (d.founder?.affiliation) founders.push(d.founder.affiliation);
+  const reviews = Array.isArray(d.reviews) ? d.reviews.filter(r => r.submitted_at) : [];
+  return {
+    id: d.id,
+    track: d.track,
+    applicationId: d.display_id,
+    name: d.project_name,
+    founders,
+    domain: d.industry?.label || "—",
+    stage: d.stage || "—",
+    trl: d.application?.tir_trl ?? d.application?.sip_trl ?? "—",
+    sub: d.application?.submitted_at ? d.application.submitted_at.slice(0, 10) : "",
+    chip: STATUS_TO_CHIP[d.application?.status] || "NEW",
+    flag: flagColor(d.application?.status),
+    ai: adaptAi(d.ai_screening),
+    aiSummary: d.ai_screening?.summary || "",
+    rev: reviews.length ? adaptOneReview(reviews[0]) : undefined,
+    reviews: reviews.map(adaptOneReview),
+    flags: [],
+    variance: null,
+    adminDecision: d.decision?.decision ? DECISION_TO_ADMIN[d.decision.decision] : undefined,
+    adminRationale: d.decision?.rationale || "",
+    batch: d.batch?.name || "Unassigned",
+    assignedReviewers: (d.reviewer_assignments || []).map(a => a.reviewer_user_id),
+    statusHistory: d.status_history || [],
+    hidden: !!d.meta?.is_hidden,
+    archived: !!d.meta?.is_archived,
+  };
+}
