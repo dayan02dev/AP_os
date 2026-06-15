@@ -38,6 +38,7 @@ import UserListPage from "./pages/admin/UserListPage.jsx";
 import UserDetailPage from "./pages/admin/UserDetailPage.jsx";
 import AdminAddUser from "./pages/admin/AdminAddUser.jsx";
 import ReviewerPortal from "./pages/reviewer/v2/ReviewerPortal.jsx";
+import AdminPortal from "./pages/admin/platform/AdminPortal.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
 import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
@@ -138,6 +139,29 @@ function AdminRoute() {
     );
   }
   return <AdminLayout />;
+}
+
+// Capability gate for the Admin Platform portal (/admin, /admin/pipeline, …).
+// ProtectedRoute enforces auth; this layer enforces an admin platform
+// capability. `view_all_apps` is granted to both admin and leadership per
+// rbac.ROLE_CAPABILITIES — the per-action backend gates remain authoritative.
+function AdminPlatformRoute({ tab }) {
+  const { user } = useAuth();
+  const roles = user?.roles || [];
+  if (!hasCapability(roles, "view_all_apps")) {
+    return (
+      <div style={{ padding: 40, fontFamily: "system-ui" }}>
+        <h1>Access denied — admin role required</h1>
+        <p>
+          You need the <code>view_all_apps</code> capability to view this page.
+        </p>
+        <p>
+          Your roles: <code>{roles.join(", ") || "(none)"}</code>
+        </p>
+      </div>
+    );
+  }
+  return <AdminPortal tab={tab} />;
 }
 
 // Capability gate for /reviewer/*. ProtectedRoute enforces auth; this layer
@@ -300,20 +324,52 @@ export default function AppRoutes() {
         }
       />
 
-      {/* Admin shell (Session 3). Capability-gated to `manage_users`. */}
+      {/* Admin Platform portal (T14). Capability-gated to `view_all_apps`.
+          `/admin` is now the platform Dashboard; the 8 tab routes are
+          deep-linkable. Jury / Psychometry / Gate-2 are intentionally omitted.
+          The legacy user-management surface stays mounted under /admin/users
+          (AdminLayout, capability `manage_users`) so it keeps working. */}
       <Route
         path="/admin"
+        element={
+          <ProtectedRoute>
+            <AdminPlatformRoute tab="dashboard" />
+          </ProtectedRoute>
+        }
+      />
+      {[
+        ["pipeline", "pipeline"],
+        ["reviewers", "reviewers"],
+        ["gate1", "gate1"],
+        ["batches", "batches"],
+        ["audit", "audit"],
+        ["analytics", "analytics"],
+        ["settings", "settings"],
+      ].map(([path, tab]) => (
+        <Route
+          key={`admin-${path}`}
+          path={`/admin/${path}`}
+          element={
+            <ProtectedRoute>
+              <AdminPlatformRoute tab={tab} />
+            </ProtectedRoute>
+          }
+        />
+      ))}
+
+      {/* Legacy admin user-management shell (Session 3). Gated to `manage_users`.
+          Kept intact under /admin/users* so user CRUD is unaffected. */}
+      <Route
+        path="/admin/users"
         element={
           <ProtectedRoute>
             <AdminRoute />
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="users" replace />} />
-        <Route path="dashboard" element={<Navigate to="../users" replace />} />
-        <Route path="users" element={<UserListPage />} />
-        <Route path="users/new" element={<AdminAddUser />} />
-        <Route path="users/:id" element={<UserDetailPage />} />
+        <Route index element={<UserListPage />} />
+        <Route path="new" element={<AdminAddUser />} />
+        <Route path=":id" element={<UserDetailPage />} />
       </Route>
 
       {/* Reviewer Portal v2 (2026-06-12). Capability-gated to
