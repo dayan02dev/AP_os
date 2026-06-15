@@ -16,6 +16,7 @@ import "../../../styles/admin-portal.css";
 import { useAuth } from "../../../hooks/useAuth.jsx";
 import { initialsOf } from "./ui.jsx";
 import AdminDashboard from "./AdminDashboard.jsx";
+import AdminPipeline from "./AdminPipeline.jsx";
 
 const TABS = [
   { key: "dashboard", label: "Dashboard", to: "/admin" },
@@ -40,7 +41,6 @@ const CRUMB = {
 };
 
 const STUB_TEXT = {
-  pipeline: "Pipeline — coming in T16",
   reviewers: "Reviewers — coming in T17",
   gate1: "Gate 1 — coming in T18",
   batches: "Batches — coming in T19",
@@ -137,7 +137,13 @@ export default function AdminPortal({ tab = "dashboard" }) {
       <AdminTopbar tab={tab} />
       <div className="adm-layout">
         <AdminTabBar tab={tab} />
-        {tab === "dashboard" ? <AdminDashboard /> : <TabStub tab={tab} />}
+        {tab === "dashboard" ? (
+          <AdminDashboard />
+        ) : tab === "pipeline" ? (
+          <AdminPipeline />
+        ) : (
+          <TabStub tab={tab} />
+        )}
       </div>
     </div>
   );
