@@ -204,6 +204,10 @@ def test_pipeline_list_joins_decision_meta_batch(client, monkeypatch, _clear_ove
     assert item["industry"] == "Robotics & Automation"
     assert item["status"] == "evaluated"
     assert item["ai_score_overall"] == 8.4
+    # stage must be a plain string (the label), never the {raw,label} dict —
+    # a dict child crashes the pipeline table with React error #31.
+    assert item["stage"] == "Prototype"  # derive_stage_label maps the raw value
+    assert isinstance(item["stage"], str)
 
 
 def test_pipeline_excludes_hidden_by_default(client, monkeypatch, _clear_overrides):

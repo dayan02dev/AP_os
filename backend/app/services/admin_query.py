@@ -30,6 +30,15 @@ from . import applications_query, reviewer_query, stats
 log = logging.getLogger(__name__)
 
 
+def _stage_label(row: dict) -> str | None:
+    """Stage as a plain string for the UI. ``stats.derive_stage_label`` returns
+    ``{"raw", "label"}`` (or None); the admin pipeline/detail tables render the
+    value directly, so we must hand them the label string, never the dict
+    (a dict child triggers React error #31)."""
+    info = stats.derive_stage_label(row)
+    return info.get("label") if info else None
+
+
 # ─── Bulk join helpers ──────────────────────────────────────────────────
 
 
@@ -269,7 +278,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
             "name":             name,
             "founder":          r.get("basic_full_name"),
             "industry":         (ind or {}).get("label"),
-            "stage":            stats.derive_stage_label({**r, "track": r["track"]}),
+            "stage":            _stage_label({**r, "track": r["track"]}),
             "ai_score_overall": scores.get(key),
             "status":           r.get("status"),
             "decision":         decision,
@@ -351,7 +360,7 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
             "affiliation":      app_row.get("basic_org"),
         },
         "industry":             industry_obj,
-        "stage":                stats.derive_stage_label(app_row_with_track),
+        "stage":                _stage_label(app_row_with_track),
         "application":          app_row,
         "ai_screening":         ai_screening,
         "reviews":              reviews,
