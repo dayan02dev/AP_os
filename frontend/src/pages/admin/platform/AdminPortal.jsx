@@ -17,6 +17,7 @@ import { useAuth } from "../../../hooks/useAuth.jsx";
 import { initialsOf } from "./ui.jsx";
 import AdminDashboard from "./AdminDashboard.jsx";
 import AdminPipeline from "./AdminPipeline.jsx";
+import AdminGate1Review from "./AdminGate1Review.jsx";
 
 const TABS = [
   { key: "dashboard", label: "Dashboard", to: "/admin" },
@@ -42,7 +43,6 @@ const CRUMB = {
 
 const STUB_TEXT = {
   reviewers: "Reviewers — coming in T17",
-  gate1: "Gate 1 — coming in T18",
   batches: "Batches — coming in T19",
   audit: "Audit — coming in T20",
   analytics: "Analytics — coming in T20",
@@ -141,6 +141,8 @@ export default function AdminPortal({ tab = "dashboard" }) {
           <AdminDashboard />
         ) : tab === "pipeline" ? (
           <AdminPipeline />
+        ) : tab === "gate1" ? (
+          <AdminGate1Review />
         ) : (
           <TabStub tab={tab} />
         )}
