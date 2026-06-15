@@ -57,6 +57,7 @@ ROLE_CAPABILITIES: dict[str, Set[str]] = {
         "reset_password",
         "view_all_apps",
         "view_app_detail",
+        "assign_reviewers",
         "change_app_status",
         "view_audit_log",
         "manage_support",

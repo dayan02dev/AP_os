@@ -39,6 +39,7 @@ import UserDetailPage from "./pages/admin/UserDetailPage.jsx";
 import AdminAddUser from "./pages/admin/AdminAddUser.jsx";
 import ReviewerPortal from "./pages/reviewer/v2/ReviewerPortal.jsx";
 import AdminPortal from "./pages/admin/platform/AdminPortal.jsx";
+import AdminApplicationDetail from "./pages/admin/platform/AdminApplicationDetail.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
 import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
@@ -162,6 +163,30 @@ function AdminPlatformRoute({ tab }) {
     );
   }
   return <AdminPortal tab={tab} />;
+}
+
+// Capability gate for the Admin application-detail screen (A-2, T17), reached
+// from a pipeline row at /admin/application/:track/:id. ProtectedRoute enforces
+// auth; this layer enforces `view_app_detail` (granted to admin AND leadership
+// per rbac.ROLE_CAPABILITIES). The per-action backend gates (decide_application,
+// assign_reviewers, manage_batches) remain authoritative for the writes.
+function AdminAppDetailRoute() {
+  const { user } = useAuth();
+  const roles = user?.roles || [];
+  if (!hasCapability(roles, "view_app_detail")) {
+    return (
+      <div style={{ padding: 40, fontFamily: "system-ui" }}>
+        <h1>Access denied — admin or leadership role required</h1>
+        <p>
+          You need the <code>view_app_detail</code> capability to view this page.
+        </p>
+        <p>
+          Your roles: <code>{roles.join(", ") || "(none)"}</code>
+        </p>
+      </div>
+    );
+  }
+  return <AdminApplicationDetail />;
 }
 
 // Capability gate for /reviewer/*. ProtectedRoute enforces auth; this layer
@@ -356,6 +381,17 @@ export default function AppRoutes() {
           }
         />
       ))}
+
+      {/* Admin application detail (A-2, T17). Full-page screen launched from a
+          pipeline row. Capability-gated to `view_app_detail`. */}
+      <Route
+        path="/admin/application/:track/:id"
+        element={
+          <ProtectedRoute>
+            <AdminAppDetailRoute />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Legacy admin user-management shell (Session 3). Gated to `manage_users`.
           Kept intact under /admin/users* so user CRUD is unaffected. */}

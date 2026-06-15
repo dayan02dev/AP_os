@@ -49,4 +49,15 @@ export const leadershipApi = {
     api.del(
       `/leadership/applications/${id}/reviewers/${encodeURIComponent(reviewer_user_id)}`,
     ),
+
+  // Bulk-assign reviewers to one application. Maps to
+  //   POST /leadership/applications/{id}/reviewers
+  // (leadership_actions router; capability `assign_reviewers`). The backend
+  // infers track from the id, so `track` is accepted for signature symmetry
+  // with the list rows but is ignored on the wire. Body:
+  //   { reviewer_user_ids: string[], due_at?: string }
+  // Response: { application_id, track, results: [{reviewer_user_id, status}] }
+  // where status ∈ created | already_assigned | not_a_reviewer.
+  assignReviewers: (id, track, body) =>
+    api.post(`/leadership/applications/${id}/reviewers`, body),
 };

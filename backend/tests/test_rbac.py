@@ -59,5 +59,5 @@ def test_empty_roles_list_has_no_capabilities():
 
 def test_admin_has_platform_capabilities():
     from app.rbac import ROLE_CAPABILITIES as C
-    assert {"decide_application","manage_batches","manage_reviewers_roster"} <= C["admin"]
+    assert {"decide_application","manage_batches","manage_reviewers_roster","assign_reviewers"} <= C["admin"]
     assert "decide_application" in C["leadership"]
