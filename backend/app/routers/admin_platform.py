@@ -17,11 +17,14 @@ capabilities (`view_all_apps` / `view_app_detail`) that admins also hold — see
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..deps import get_current_user
@@ -150,6 +153,45 @@ class MetaBody(BaseModel):
     is_hidden: bool | None = None
     is_archived: bool | None = None
     hidden_reason: str | None = None
+
+
+# ─── Task 12: Audit-log read endpoint + CSV ──────────────────────────────
+
+
+@router.get(
+    "/audit-log",
+    dependencies=[Depends(require_capability("view_audit_log"))],
+)
+async def get_audit_log(
+    actor: str | None = None,
+    action: str | None = None,
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = Query(None),
+    format: str = "json",
+    user: dict = Depends(get_current_user),
+):
+    """Merged audit-log from audit_log_v2 + application_status_log.
+
+    Returns JSON {entries: [...]} by default; format=csv returns text/csv.
+    Each entry has keys: ts, actor, action, target, detail.
+    Filters: actor (substring), action (eq/prefix), from (ts >=), to (ts <=).
+    """
+    entries = admin_query.fetch_audit({
+        "actor":  actor,
+        "action": action,
+        "from":   from_,
+        "to":     to,
+    })
+
+    if format == "csv":
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["ts", "actor", "action", "target", "detail"])
+        for e in entries:
+            writer.writerow([e["ts"], e["actor"], e["action"], e["target"], e["detail"]])
+        return Response(content=buf.getvalue(), media_type="text/csv")
+
+    return {"entries": entries}
 
 
 # ─── Task 10: Batches CRUD + bulk assign ──────────────────────────────────

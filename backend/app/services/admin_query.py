@@ -490,6 +490,98 @@ def fetch_roster() -> dict[str, Any]:
     return {"reviewers": out}
 
 
+# ─── Task 12: Audit log ─────────────────────────────────────────────────
+
+
+def fetch_audit(filters: dict[str, Any]) -> list[dict[str, Any]]:
+    """Fetch and merge audit_log_v2 + application_status_log into a common shape.
+
+    Common shape per entry: {ts, actor, action, target, detail}
+
+    Filters (applied in Python for fake-friendliness):
+        actor   — substring/eq match on actor field
+        action  — eq match (also matches status rows where action starts with value)
+        from    — ts >= from
+        to      — ts <= to
+    """
+    sb = get_admin_client()
+
+    # Fetch audit_log_v2
+    try:
+        v2_rows = (sb.table("audit_log_v2").select("*").execute().data) or []
+    except Exception as exc:
+        log.warning("fetch_audit: audit_log_v2 fetch failed", extra={"err": str(exc)})
+        v2_rows = []
+
+    # Fetch application_status_log
+    try:
+        sl_rows = (sb.table("application_status_log").select("*").execute().data) or []
+    except Exception as exc:
+        log.warning("fetch_audit: application_status_log fetch failed", extra={"err": str(exc)})
+        sl_rows = []
+
+    entries: list[dict[str, Any]] = []
+
+    for row in v2_rows:
+        target_table = row.get("target_table") or ""
+        target_id = row.get("target_id") or ""
+        target = f"{target_table}:{target_id}" if target_id else target_table
+        # Summarise detail from after/before/reason
+        after = row.get("after")
+        before = row.get("before")
+        reason = row.get("reason")
+        if after:
+            detail = str(after)
+        elif before:
+            detail = str(before)
+        elif reason:
+            detail = str(reason)
+        else:
+            detail = ""
+        entries.append({
+            "ts":     row.get("created_at") or "",
+            "actor":  row.get("actor_user_id") or "",
+            "action": row.get("action_type") or "",
+            "target": target,
+            "detail": detail,
+        })
+
+    for row in sl_rows:
+        from_status = row.get("from_status") or ""
+        to_status = row.get("to_status") or ""
+        track = row.get("application_track") or ""
+        app_id = row.get("application_id") or ""
+        entries.append({
+            "ts":     row.get("changed_at") or "",
+            "actor":  row.get("changed_by") or "",
+            "action": f"status:{from_status}->{to_status}",
+            "target": f"{track}_applications:{app_id}" if app_id else f"{track}_applications",
+            "detail": row.get("reason") or "",
+        })
+
+    # Apply filters in Python
+    actor_filter = filters.get("actor")
+    action_filter = filters.get("action")
+    from_filter = filters.get("from")
+    to_filter = filters.get("to")
+
+    filtered: list[dict[str, Any]] = []
+    for e in entries:
+        if actor_filter and actor_filter not in (e["actor"] or ""):
+            continue
+        if action_filter and not (e["action"] == action_filter or e["action"].startswith(action_filter)):
+            continue
+        if from_filter and e["ts"] < from_filter:
+            continue
+        if to_filter and e["ts"] > to_filter:
+            continue
+        filtered.append(e)
+
+    # Sort newest first
+    filtered.sort(key=lambda e: e["ts"], reverse=True)
+    return filtered
+
+
 def fetch_unassigned_apps(track: str | None = None) -> list[dict[str, Any]]:
     """Non-draft applications with NO active reviewer_assignment.
 

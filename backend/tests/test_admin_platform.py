@@ -507,3 +507,71 @@ def test_roster_rebalance(client, monkeypatch, _clear_overrides):
     assert r.status_code == 200
     created = [p for (t,p) in fake.inserts if t=="reviewer_assignments"]
     assert len(created) == 4    # 4 unassigned apps distributed across 2 reviewers
+
+
+# ─── Task 12: Audit-log read endpoint + CSV ──────────────────────────────
+
+
+def test_audit_log_merges_sources(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {
+        "audit_log_v2":[{"id":1,"actor_user_id":"u1","actor_role":"admin","action_type":"gate1_decision","target_table":"tir_applications","target_id":"app-1","after":{"decision":"shortlisted"},"created_at":"2026-06-10T10:00:00+00:00"}],
+        "application_status_log":[{"id":"s1","application_id":"app-1","application_track":"tir","from_status":"evaluated","to_status":"shortlisted","changed_by":"u1","reason":"ok","changed_at":"2026-06-10T09:00:00+00:00"}],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.get("/admin/platform/audit-log")
+    assert r.status_code == 200, r.text
+    rows = r.json()["entries"]
+    assert len(rows) == 2
+    # newest first: the audit_log_v2 (10:00) before status_log (09:00)
+    assert rows[0]["action"] == "gate1_decision"
+    assert all({"ts","actor","action","target"} <= set(e.keys()) for e in rows)
+
+
+def test_audit_log_csv(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {"audit_log_v2":[{"id":1,"actor_user_id":"u1","actor_role":"admin","action_type":"x","created_at":"2026-06-10T10:00:00+00:00"}],"application_status_log":[]})
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.get("/admin/platform/audit-log?format=csv")
+    assert r.status_code == 200
+    assert "text/csv" in r.headers["content-type"]
+    assert "ts,actor,action,target" in r.text.splitlines()[0]
+
+
+def test_audit_log_filters_by_action(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {"audit_log_v2":[
+        {"id":1,"action_type":"gate1_decision","actor_user_id":"u1","created_at":"2026-06-10T10:00:00+00:00"},
+        {"id":2,"action_type":"admin_meta_update","actor_user_id":"u1","created_at":"2026-06-10T11:00:00+00:00"}],
+        "application_status_log":[]})
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.get("/admin/platform/audit-log?action=gate1_decision")
+    assert r.status_code == 200
+    rows = r.json()["entries"]
+    assert len(rows) == 1 and rows[0]["action"]=="gate1_decision"
+
+
+def test_audit_log_filters_by_date(client, monkeypatch, _clear_overrides):
+    """?from=YYYY-MM-DD binds via the Query alias and filters ts >= value.
+    ?to=YYYY-MM-DD filters ts <= value.  Proves the trailing-underscore alias fix."""
+    _install_db(monkeypatch, {
+        "audit_log_v2": [
+            {"id": 1, "action_type": "gate1_decision", "actor_user_id": "u1",
+             "created_at": "2026-06-09T08:00:00+00:00"},
+            {"id": 2, "action_type": "admin_meta_update", "actor_user_id": "u1",
+             "created_at": "2026-06-11T12:00:00+00:00"},
+        ],
+        "application_status_log": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+
+    # ?from=2026-06-10 → only the 2026-06-11 row survives
+    r = client.get("/admin/platform/audit-log?from=2026-06-10")
+    assert r.status_code == 200, r.text
+    rows = r.json()["entries"]
+    assert len(rows) == 1, f"expected 1 row with from filter, got {len(rows)}"
+    assert rows[0]["ts"].startswith("2026-06-11")
+
+    # ?to=2026-06-10 → only the 2026-06-09 row survives
+    r2 = client.get("/admin/platform/audit-log?to=2026-06-10")
+    assert r2.status_code == 200, r2.text
+    rows2 = r2.json()["entries"]
+    assert len(rows2) == 1, f"expected 1 row with to filter, got {len(rows2)}"
+    assert rows2[0]["ts"].startswith("2026-06-09")
