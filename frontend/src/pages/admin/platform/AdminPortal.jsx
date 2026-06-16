@@ -22,6 +22,7 @@ import { AdminPipeline } from "./screens/AdminPipeline";
 import { AdminDetail } from "./screens/AdminDetail";
 import AdminGate1 from "./screens/AdminGate1";
 import { AdminReviewers } from "./screens/AdminReviewers";
+import { AdminAnalytics } from "./screens/AdminAnalytics";
 
 function initialsFor(email) {
   const local = (email || '').split('@')[0] || '';
@@ -461,7 +462,7 @@ function AdminApp() {
             {page === 'jury'        && <ScreenStub name="Jury Mgmt" />}
             {page === 'gate2'       && <ScreenStub name="Gate 2 Final" />}
             {page === 'audit'       && <ScreenStub name="Audit Log" />}
-            {page === 'analytics'   && <ScreenStub name="Analytics" />}
+            {page === 'analytics'   && <AdminAnalytics />}
           </div>
         </div>
       </div>

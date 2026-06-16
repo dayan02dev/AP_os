@@ -1,25 +1,21 @@
-// AdminAnalytics — A-9 Reviewer Calibration (Task 20)
+// AdminAnalytics — A-9 Reviewer Calibration
 //
-// Read-only analytics surface. Fetches
-// GET /admin/platform/analytics/reviewer-calibration
-// (adminPlatformApi.getCalibration) once on mount and renders per-reviewer
-// calibration metrics:
+// Ports prototype AdminAnalytics (admin-2.jsx:3180) verbatim markup,
+// replacing mock rows with live data from useAdminData("calibration").
 //
-//   Response: { reviewers: [{ user_id, name, n_reviews, avg_score,
-//                             avg_variance_vs_ai }] }
-//
-// avg_score and avg_variance_vs_ai may be null (reviewer with no scored
-// reviews, or no overlapping AI baseline) and must render "—", never crash.
-//
-// Variance interpretation: LOW variance vs the AI baseline is GOOD (reviewer
-// tracks the model closely); HIGH variance is worth a look. Each reviewer gets
-// a small bar whose width scales with variance and whose colour encodes the
-// band (green = low/good, amber = mid, red = high).
+// Adapted fields (via adaptCalibrationRow):
+//   id         ← r.user_id
+//   name       ← r.name
+//   nReviews   ← r.n_reviews
+//   avgScore   ← r.avg_score       (may be null → "—")
+//   variance   ← r.avg_variance_vs_ai  (may be null → "—" + no bar)
 
-import { adminPlatformApi } from "../../../lib/adminPlatformApi.js";
-import { useAsync, LoadingState, ErrorState, EmptyState } from "./ui.jsx";
+import React from "react";
+import { useAdminData } from "../../../../hooks/useAdminData";
+import { PageHead } from "../shell/osAtoms";
+import { LoadingState, ErrorState, EmptyState } from "../ui.jsx";
 
-// Variance is |weighted reviewer overall − AI overall| on a 0–10 scale, so it
+// Variance is |weighted reviewer overall − AI overall| on a 0–10 scale;
 // realistically sits in 0–~4. Scale the bar against a 3.0 ceiling for contrast.
 const VARIANCE_CEILING = 3.0;
 
@@ -37,11 +33,8 @@ const BAND_COLOR = {
   none: "var(--line)",
 };
 
-export default function AdminAnalytics() {
-  const { data, loading, error, reload } = useAsync(
-    () => adminPlatformApi.getCalibration(),
-    [],
-  );
+export function AdminAnalytics() {
+  const { data, loading, error, reload } = useAdminData("calibration");
 
   const reviewers = data?.reviewers ?? [];
 
@@ -51,12 +44,11 @@ export default function AdminAnalytics() {
 
       <div className="pl-head">
         <div>
-          <div className="dash-section-tag">A-9 · ANALYTICS</div>
-          <div className="dash-card-title">Reviewer calibration</div>
-          <div className="os-text-soft os-text-sm" style={{ marginTop: 2 }}>
-            How closely each reviewer tracks the AI baseline. Lower variance is
-            better.
-          </div>
+          <PageHead
+            eyebrow="A-9 · ANALYTICS"
+            title='Reviewer <em>Calibration</em>'
+            sub="How closely each reviewer tracks the AI baseline. Lower variance is better."
+          />
         </div>
       </div>
 
@@ -79,7 +71,7 @@ export default function AdminAnalytics() {
             </thead>
             <tbody>
               {reviewers.map((r) => {
-                const variance = r?.avg_variance_vs_ai;
+                const variance = r?.variance;
                 const band = varianceBand(variance);
                 const hasVariance =
                   variance !== null && variance !== undefined;
@@ -90,16 +82,16 @@ export default function AdminAnalytics() {
                     )
                   : 0;
                 return (
-                  <tr key={r?.user_id ?? r?.name}>
+                  <tr key={r?.id ?? r?.name}>
                     <td style={{ fontWeight: 600, color: "var(--ink)" }}>
                       {r?.name ?? "—"}
                     </td>
                     <td className="num">
-                      {typeof r?.n_reviews === "number" ? r.n_reviews : "—"}
+                      {typeof r?.nReviews === "number" ? r.nReviews : "—"}
                     </td>
                     <td className="num">
-                      {typeof r?.avg_score === "number"
-                        ? r.avg_score.toFixed(1)
+                      {typeof r?.avgScore === "number"
+                        ? r.avgScore.toFixed(1)
                         : "—"}
                     </td>
                     <td>
@@ -135,6 +127,8 @@ export default function AdminAnalytics() {
     </div>
   );
 }
+
+export default AdminAnalytics;
 
 const ANALYTICS_CSS = `
 .adm-portal .pl-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
