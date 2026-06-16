@@ -1,214 +1,446 @@
-// Admin Platform Portal — shell. Mirrors reviewer/v2/ReviewerPortal.jsx.
+// Admin Platform Portal — ported shell from the prototype admin-2.jsx.
 //
-// `tab` selects the active surface: "dashboard" | "pipeline" | "reviewers" |
-// "gate1" | "batches" | "audit" | "analytics" | "settings". Navigation is
-// route-based (deep-linkable). The portal stylesheet is imported once here and
-// the whole subtree is wrapped in `.adm-portal` so the ported prototype CSS
-// (scoped under that root) never leaks into other surfaces.
+// Contains AdminTopbar, AdminCohortHeader, AdminTabBar, and AdminApp, copied
+// verbatim from the prototype with minimal production adaptations:
+//   - useAS2 alias resolved to React.useState
+//   - window.OS_DATA accesses guarded with optional-chaining (?.)
+//   - All screen components replaced with <ScreenStub> (real screens land in
+//     Tasks 8-13)
+//   - ReactDOM.createRoot(...) render call removed (router mounts AdminApp)
+//   - Root element wrapped in <div className="adm-portal"> for CSS scoping
 //
-// For T14 every tab renders a placeholder stub; the real screens land in
-// T15–T20. Jury / Psychometry / Gate-2 are intentionally omitted.
+// The portal stylesheet (admin-portal.css) is scoped under .adm-portal so the
+// prototype CSS does not leak into other surfaces.
 
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-
+import React from "react";
 import "../../../styles/admin-portal.css";
+import { ScreenStub } from "./screens/ScreenStub";
 
-import { useAuth } from "../../../hooks/useAuth.jsx";
-import { initialsOf } from "./ui.jsx";
-import AdminDashboard from "./AdminDashboard.jsx";
-import AdminPipeline from "./AdminPipeline.jsx";
-import AdminGate1Review from "./AdminGate1Review.jsx";
-import AdminReviewerRoster from "./AdminReviewerRoster.jsx";
-import AdminAuditLog from "./AdminAuditLog.jsx";
-import AdminAnalytics from "./AdminAnalytics.jsx";
-import AdminBatches from "./AdminBatches.jsx";
-import AdminSettings from "./AdminSettings.jsx";
-
-const TABS = [
-  { key: "dashboard", label: "Dashboard", to: "/admin" },
-  { key: "pipeline", label: "Pipeline", to: "/admin/pipeline" },
-  { key: "reviewers", label: "Reviewers", to: "/admin/reviewers" },
-  { key: "gate1", label: "Gate 1", to: "/admin/gate1" },
-  { key: "batches", label: "Batches", to: "/admin/batches" },
-  { key: "audit", label: "Audit", to: "/admin/audit" },
-  { key: "analytics", label: "Analytics", to: "/admin/analytics" },
-  { key: "settings", label: "Settings", to: "/admin/settings" },
-];
-
-const CRUMB = {
-  dashboard: "DASHBOARD",
-  pipeline: "PIPELINE",
-  reviewers: "REVIEWERS",
-  gate1: "GATE 1",
-  batches: "BATCHES",
-  audit: "AUDIT LOG",
-  analytics: "ANALYTICS",
-  settings: "SETTINGS",
-};
-
-// All admin tabs now render real screens (T15–T20); kept for any future tab
-// that lands ahead of its screen.
-const STUB_TEXT = {};
-
-function AdminTopbar({ tab }) {
-  const navigate = useNavigate();
-  const { user, logout } = useAuth();
-  const initials = initialsOf(user?.full_name, user?.email);
-  const email = user?.email || "admin@artpark.in";
-  const roles = user?.roles || [];
-
-  const [roleMenu, setRoleMenu] = useState(false);
-
-  // Build the list of other roles this user can switch to from Admin.
-  const OTHER_ROLES = [
-    { key: "leadership", label: "Leadership", to: "/leadership" },
-    { key: "reviewer", label: "Reviewer", to: "/reviewer" },
-  ].filter((r) => roles.includes(r.key));
-
-  const switchRole = (r) => {
-    setRoleMenu(false);
-    navigate(r.to);
+function AdminTopbar({ page, decisionMode }) {
+  const crumbMap = {
+    dashboard:'DASHBOARD', pipeline:'APPLICATIONS', detail:'APPLICATION DETAIL',
+    reviewers: decisionMode === 'jury' ? 'JURY PANEL' : 'REVIEWERS',
+    roles:'USER ROLES',
+    gate1: decisionMode === 'jury' ? 'FINAL GATE' : 'ADMIN REVIEW',
+    psychometry:'PSYCHOMETRY',
+    jury:'JURY MGMT', gate2:'GATE 2 FINAL', audit:'AUDIT LOG', analytics:'ANALYTICS',
   };
+  const crumb = crumbMap[page] || 'DASHBOARD';
+  const [menuOpen, setMenuOpen] = React.useState(false);
 
-  const signOut = async () => {
-    await logout();
-    navigate("/apply/signin");
+  React.useEffect(() => {
+    if (!menuOpen) return;
+    const handleClose = () => setMenuOpen(false);
+    window.addEventListener('click', handleClose);
+    return () => window.removeEventListener('click', handleClose);
+  }, [menuOpen]);
+
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [, forceTick] = React.useReducer(x => x + 1, 0);
+  const allStartups = (window.OS_DATA && window.OS_DATA.STARTUPS) || [];
+  const isStatus = (s, set) => { const c = (s.chip || '').toUpperCase(); const d = (s.adminDecision || '').toUpperCase(); return set.includes(c) || set.includes(d); };
+  const archivedApps = allStartups.filter(s => s.archived);
+  const hiddenApps = allStartups.filter(s => s.hidden && !s.archived);
+  const heldApps = allStartups.filter(s => !s.archived && isStatus(s, ['HOLD', 'WAITLISTED']));
+  const rejectedApps = allStartups.filter(s => !s.archived && isStatus(s, ['REJECTED']));
+  // Persist + re-render the modal AND the whole admin app (so the list/dashboard update live).
+  const afterMutate = () => {
+    if (window.persistOSData) window.persistOSData();
+    forceTick();
+    if (window.__osDataBump) window.__osDataBump();
   };
+  const restoreFlag = (id, flag) => { const s = allStartups.find(x => x.id === id); if (s) { s[flag] = false; afterMutate(); } };
+  const restoreStatus = (id) => { const s = allStartups.find(x => x.id === id); if (s) { s.chip = 'EVALUATED'; s.adminDecision = null; afterMutate(); } };
 
   return (
-    <div className="adm-topbar">
-      <button className="adm-home-btn" onClick={() => navigate("/admin")}>← HOME</button>
-
-      <div className="adm-brand">
-        <img
-          src="/assets/artpark-iisc-logo.webp"
-          alt="ARTPARK · AI & Robotics Technology Park at IISc"
-          className="adm-brand-logo"
-        />
+    <div className="lp-topbar">
+      <button className="lp-home-btn" onClick={() => { window.location.reload(); }}>← HOME</button>
+      <div className="lp-brand">
+        <img className="lp-brand-combined" src="assets/artpark-iisc-combined.webp" alt="ARTPARK · AI & Robotics Technology Park @ IISc" />
       </div>
-
-      <span className="adm-portal-tag">
-        <span className="adm-live-dot" />
-        ADMIN PORTAL · {CRUMB[tab] || "DASHBOARD"}
-      </span>
-
-      <div className="adm-topbar-spacer" />
-
-      <div className="lp-topbar-user-wrap">
+      <div className="lp-topbar-crumb">
+        <div className="lp-topbar-pill">
+          <span className="lp-live-dot" style={{background:'#3213b7'}}/>
+          <span>ADMIN · {crumb}</span>
+        </div>
+      </div>
+      <div className="lp-topbar-right">
         <button
-          className="adm-user-chip"
-          aria-label="Signed in user"
-          onClick={() => OTHER_ROLES.length > 0 && setRoleMenu((m) => !m)}
-          aria-haspopup={OTHER_ROLES.length > 0 ? "menu" : undefined}
-          aria-expanded={OTHER_ROLES.length > 0 ? roleMenu : undefined}
+          onClick={() => setSettingsOpen(true)}
+          title="Settings"
+          aria-label="Settings"
+          style={{
+            width: 38, height: 38, flexShrink: 0,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            border: '1px solid var(--line)', borderRadius: 2,
+            background: 'var(--bg-paper)', color: 'var(--ink-soft)', cursor: 'pointer',
+            transition: 'background 120ms, border-color 120ms, color 120ms'
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-soft)'; e.currentTarget.style.color = 'var(--ink)'; e.currentTarget.style.borderColor = 'var(--line-strong)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-paper)'; e.currentTarget.style.color = 'var(--ink-soft)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
         >
-          <span
-            className="os-avatar"
-            style={{ width: 28, height: 28, fontSize: 11, flexShrink: 0 }}
-          >
-            {initials}
-          </span>
-          <span>{email}</span>
-          {OTHER_ROLES.length > 0 && <span className="caret">▾</span>}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
-        {roleMenu && OTHER_ROLES.length > 0 && (
-          <>
-            <div className="lp-menu-backdrop" onClick={() => setRoleMenu(false)} />
-            <div className="lp-role-menu" role="menu">
-              <div className="lp-role-menu-head">Switch role</div>
-              <button
-                role="menuitem"
-                className="lp-role-item is-active"
+        <div
+          className="lp-topbar-user"
+          style={{
+            position: 'relative',
+            border: '1px solid var(--line)',
+            borderRadius: '20px',
+            padding: '4px 12px 4px 6px',
+            background: 'var(--bg-soft)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            cursor: 'pointer',
+            userSelect: 'none'
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuOpen(!menuOpen);
+          }}
+        >
+          <div className="os-avatar" style={{width:24,height:24,fontSize:10,flexShrink:0,background:'#3213b7',color:'#fff'}}>TB</div>
+          <span style={{fontSize: 13, fontWeight: 500}}>tanvi@artpark.in</span>
+          <span className="caret">▾</span>
+
+          {menuOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                background: 'var(--bg-paper)',
+                border: '1px solid var(--line-strong)',
+                borderRadius: '2px',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                padding: '6px',
+                zIndex: 9999,
+                minWidth: '220px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{padding: '8px 12px', fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--ink-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--line)', marginBottom: 4}}>
+                Switch Panel
+              </div>
+              <div
+                style={{
+                  padding: '9px 12px',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'var(--artblue)',
+                  background: 'var(--bg-soft)',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 9
+                }}
               >
-                <span className="lp-role-dot" />
-                <span>Admin</span>
-                <span className="lp-role-check">✓</span>
-              </button>
-              {OTHER_ROLES.map((r) => (
-                <button
-                  key={r.key}
-                  role="menuitem"
-                  className="lp-role-item"
-                  onClick={() => switchRole(r)}
-                >
-                  <span className="lp-role-dot" />
-                  <span>{r.label}</span>
-                </button>
-              ))}
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--artblue)', flexShrink: 0 }} />
+                <span>Admin Panel</span>
+                <span style={{ color: 'var(--artblue)', marginLeft: 'auto', fontWeight: 700 }}>✓</span>
+              </div>
+              <a
+                href="../Reviewer-Portal/reviewer-portal.html"
+                style={{
+                  padding: '8px 12px',
+                  fontSize: 13,
+                  color: 'var(--ink-soft)',
+                  borderRadius: '2px',
+                  textDecoration: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  cursor: 'pointer'
+                }}
+                className="dropdown-hover-item"
+                onMouseEnter={(e) => {
+                  e.target.style.background = 'var(--bg-soft)';
+                  e.target.style.color = 'var(--ink)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = 'transparent';
+                  e.target.style.color = 'var(--ink-soft)';
+                }}
+              >
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--line-strong)', flexShrink: 0 }} />
+                <span>Reviewer Panel</span>
+              </a>
             </div>
-          </>
-        )}
+          )}
+        </div>
+        <button className="lp-signout" onClick={() => { if (window.confirm('Sign out of the Admin portal?')) window.location.reload(); }}>SIGN OUT ↗</button>
       </div>
-      <button className="adm-signout" onClick={signOut}>SIGN OUT ↗</button>
+
+      {settingsOpen && (
+        <div className="os-modal-backdrop" onClick={() => setSettingsOpen(false)}>
+          <div className="os-modal" style={{ maxWidth: 640 }} onClick={e => e.stopPropagation()}>
+            <div className="os-modal-head">
+              <div>
+                <div style={{ fontFamily: 'var(--font-serif)', fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>Settings</div>
+                <div className="os-text-sm os-text-dim" style={{ marginTop: 2 }}>Restore archived or hidden applications</div>
+              </div>
+              <button className="os-btn ghost sm" onClick={() => setSettingsOpen(false)}>Close</button>
+            </div>
+            <div className="os-modal-body os-stack" style={{ gap: 24 }}>
+              <div>
+                <div className="os-card-title os-mb-sm">Archived applications ({archivedApps.length})</div>
+                {archivedApps.length === 0 ? (
+                  <div className="os-text-dim os-text-sm">No archived applications.</div>
+                ) : (
+                  <div className="os-stack gap-sm">
+                    {archivedApps.map(s => (
+                      <div key={s.id} className="os-row between" style={{ border: '1px solid var(--line)', borderRadius: 2, padding: '10px 14px' }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: 'var(--ink)' }}>{s.name}</div>
+                          <div className="os-text-xs os-text-dim">{s.domain} · {s.id.toUpperCase()}</div>
+                        </div>
+                        <button className="os-btn sm secondary" onClick={() => restoreFlag(s.id, 'archived')}>Unarchive</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="os-card-title os-mb-sm">Hidden applications ({hiddenApps.length})</div>
+                {hiddenApps.length === 0 ? (
+                  <div className="os-text-dim os-text-sm">No hidden applications.</div>
+                ) : (
+                  <div className="os-stack gap-sm">
+                    {hiddenApps.map(s => (
+                      <div key={s.id} className="os-row between" style={{ border: '1px solid var(--line)', borderRadius: 2, padding: '10px 14px' }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: 'var(--ink)' }}>{s.name}</div>
+                          <div className="os-text-xs os-text-dim">{s.domain} · {s.id.toUpperCase()}</div>
+                        </div>
+                        <button className="os-btn sm secondary" onClick={() => restoreFlag(s.id, 'hidden')}>Unhide</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="os-card-title os-mb-sm">On hold / waitlisted ({heldApps.length})</div>
+                {heldApps.length === 0 ? (
+                  <div className="os-text-dim os-text-sm">No applications on hold.</div>
+                ) : (
+                  <div className="os-stack gap-sm">
+                    {heldApps.map(s => (
+                      <div key={s.id} className="os-row between" style={{ border: '1px solid var(--line)', borderRadius: 2, padding: '10px 14px' }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: 'var(--ink)' }}>{s.name}</div>
+                          <div className="os-text-xs os-text-dim">{s.domain} · {s.id.toUpperCase()}</div>
+                        </div>
+                        <button className="os-btn sm secondary" onClick={() => restoreStatus(s.id)}>Release hold</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="os-card-title os-mb-sm">Rejected ({rejectedApps.length})</div>
+                {rejectedApps.length === 0 ? (
+                  <div className="os-text-dim os-text-sm">No rejected applications.</div>
+                ) : (
+                  <div className="os-stack gap-sm">
+                    {rejectedApps.map(s => (
+                      <div key={s.id} className="os-row between" style={{ border: '1px solid var(--line)', borderRadius: 2, padding: '10px 14px' }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: 'var(--ink)' }}>{s.name}</div>
+                          <div className="os-text-xs os-text-dim">{s.domain} · {s.id.toUpperCase()}</div>
+                        </div>
+                        <button className="os-btn sm secondary" onClick={() => restoreStatus(s.id)}>Restore</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function AdminTabBar({ tab }) {
-  const navigate = useNavigate();
+function AdminCohortHeader({ page, setPage, decisionMode, setDecisionMode }) {
   return (
-    <div className="adm-tabbar" role="tablist">
-      {TABS.map((t) => (
-        <button
-          key={t.key}
-          role="tab"
-          aria-selected={tab === t.key}
-          className={"adm-tab" + (tab === t.key ? " active" : "")}
-          onClick={() => navigate(t.to)}
-        >
-          {t.label}
-        </button>
+    <div className="lp-page-header">
+      <div className="lp-breadcrumb" style={{marginBottom:8}}>ARTPARK / OS · Admin Portal</div>
+      <div className="lp-header-row">
+        <div>
+          <h1 className="lp-cohort-title">TIR + VIP cohort <span className="lp-year">2026</span></h1>
+          <div className="lp-cohort-sub">
+            Admin control panel · live state across all 7 layers · last updated 2m ago
+          </div>
+        </div>
+        <div style={{marginTop:4,display:'flex',gap:12,alignItems:'center'}}>
+          <div className="lp-toggle-control">
+            <button
+              className={`lp-toggle-btn ${decisionMode === 'reviewer' ? 'active' : ''}`}
+              onClick={() => setDecisionMode('reviewer')}
+            >
+              Reviewer Decision
+            </button>
+            <button
+              className={`lp-toggle-btn ${decisionMode === 'jury' ? 'active' : ''}`}
+              onClick={() => setDecisionMode('jury')}
+            >
+              Jury Decision
+            </button>
+          </div>
+          <button
+            className={`os-btn ${page === 'roles' ? '' : 'ghost'}`}
+            onClick={() => setPage(page === 'roles' ? 'dashboard' : 'roles')}
+          >
+            {page === 'roles' ? '← Back to Dashboard' : 'User Roles'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminTabBar({ page, setPage, decisionMode }) {
+  const getAppCount = () => {
+    if (!window.OS_DATA || !window.OS_DATA.STARTUPS) return 0;
+    if (decisionMode === 'jury') {
+      return window.OS_DATA.STARTUPS.filter(s => {
+        const c = (s.chip || '').toUpperCase();
+        return c === 'SHORTLISTED' || c === 'JURY REVIEW' || c === 'ACCEPTED' || c === 'REJECTED' || c === 'WAITLISTED';
+      }).length;
+    }
+    return window.OS_DATA.STARTUPS.filter(s => !s.archived).length;
+  };
+
+  const tabs = [
+    { id:'dashboard',    label:'Dashboard',    sub:'OVERVIEW · PIPELINE',       badge:null },
+    {
+      id:'reviewers',
+      label: decisionMode === 'jury' ? 'Jury' : 'Reviewers',
+      sub: decisionMode === 'jury' ? 'PANEL · ASSIGNMENTS' : 'ROSTER · PROGRESS',
+      badge:null
+    },
+    { id:'pipeline',     label:'Applications', sub:'ALL SUBMISSIONS',            badge: String(getAppCount()) },
+    {
+      id:'gate1',
+      label: decisionMode === 'jury' ? 'Final Gate' : 'Admin Review',
+      sub: decisionMode === 'jury' ? 'CONSOLIDATED DECISIONS' : 'PENDING DECISIONS',
+      badge: decisionMode === 'jury' ? null : '12'
+    },
+  ];
+
+  return (
+    <div className="lp-tabs">
+      {tabs.map(t => (
+        <div key={t.id} className={`lp-tab${page === t.id ? ' active' : ''}`} onClick={() => setPage(t.id)}>
+          <div className="lp-tab-label">
+            {t.label}
+            {t.badge && <span className="lp-tab-badge">{t.badge}</span>}
+          </div>
+          <div className="lp-tab-sub">{t.sub}</div>
+        </div>
       ))}
-      {/* Link out to the existing user-management surface (kept separate). */}
-      <button
-        className="adm-tab adm-tab-link"
-        onClick={() => navigate("/admin/users")}
-      >
-        Users ↗
-      </button>
     </div>
   );
 }
 
-function TabStub({ tab }) {
-  return (
-    <div className="adm-stub">
-      <h2>{STUB_TEXT[tab] || "Coming soon"}</h2>
-      <p>
-        This surface is a placeholder. The live screen lands in a later task; the
-        portal shell, navigation, API seam, and scoped styles are in place.
-      </p>
-    </div>
-  );
-}
+function AdminApp() {
+  const [page, setPage] = React.useState('dashboard');
+  const [selectedStartupId, setSelectedStartupId] = React.useState(null);
+  const [backPage, setBackPage] = React.useState('pipeline');
+  const [decisionMode, setDecisionMode] = React.useState('reviewer');
 
-export default function AdminPortal({ tab = "dashboard" }) {
+  // Global re-render hook: any component (e.g. the Settings panel) can call
+  // window.__osDataBump() after mutating OS_DATA to refresh the whole admin tree live.
+  const [, forceAppUpdate] = React.useReducer(x => x + 1, 0);
+  React.useEffect(() => { window.__osDataBump = forceAppUpdate; return () => { if (window.__osDataBump === forceAppUpdate) window.__osDataBump = null; }; }, []);
+
+  const startups = window.OS_DATA?.STARTUPS || [];
+  const currentIdx = startups.findIndex(s => s.id === selectedStartupId);
+
+  // Auto-promote startups to 'JURY REVIEW' (Interview) if jury requested interview, unless already decided
+  React.useEffect(() => {
+    if (window.OS_DATA?.STARTUPS) {
+      let changed = false;
+      window.OS_DATA.STARTUPS.forEach(s => {
+        if (s.jury) {
+          const reco = (s.jury.reco || '').toLowerCase();
+          if ((reco === 'interview' || reco === 'maybe' || reco === 'yes') &&
+              (!s.chip || s.chip === 'SHORTLISTED' || s.chip === 'NEW' || s.chip === 'EVALUATED')) {
+            s.chip = 'JURY REVIEW';
+            changed = true;
+          }
+        }
+      });
+      if (changed && window.persistOSData) {
+        window.persistOSData();
+      }
+    }
+  }, []);
+
+  const goDetail = (id, fromPage = 'pipeline') => {
+    setSelectedStartupId(id);
+    setBackPage(fromPage);
+    setPage('detail');
+  };
+
+  const onPrev = () => {
+    if (currentIdx > 0) {
+      setSelectedStartupId(startups[currentIdx - 1].id);
+    }
+  };
+
+  const onNext = () => {
+    if (currentIdx < startups.length - 1) {
+      setSelectedStartupId(startups[currentIdx + 1].id);
+    }
+  };
+
+  const isDetail = page === 'detail';
+
   return (
-    <div className="adm-portal os-shell">
-      <AdminTopbar tab={tab} />
-      <div className="adm-layout">
-        <AdminTabBar tab={tab} />
-        {tab === "dashboard" ? (
-          <AdminDashboard />
-        ) : tab === "pipeline" ? (
-          <AdminPipeline />
-        ) : tab === "reviewers" ? (
-          <AdminReviewerRoster />
-        ) : tab === "gate1" ? (
-          <AdminGate1Review />
-        ) : tab === "batches" ? (
-          <AdminBatches />
-        ) : tab === "audit" ? (
-          <AdminAuditLog />
-        ) : tab === "analytics" ? (
-          <AdminAnalytics />
-        ) : tab === "settings" ? (
-          <AdminSettings />
-        ) : (
-          <TabStub tab={tab} />
-        )}
+    <div className="adm-portal">
+      <div className="os-shell">
+        <AdminTopbar page={page} decisionMode={decisionMode} />
+        <div className="lp-layout">
+          {!isDetail && (
+            <AdminCohortHeader
+              page={page}
+              setPage={setPage}
+              decisionMode={decisionMode}
+              setDecisionMode={setDecisionMode}
+            />
+          )}
+          {!isDetail && page !== 'roles' && (
+            <AdminTabBar
+              page={page}
+              setPage={setPage}
+              decisionMode={decisionMode}
+            />
+          )}
+          <div className="lp-tab-content">
+            {page === 'dashboard'   && <ScreenStub name="Dashboard" />}
+            {page === 'pipeline'    && <ScreenStub name="Applications" />}
+            {page === 'detail'      && (
+              <ScreenStub name="Application Detail" />
+            )}
+            {page === 'reviewers'   && <ScreenStub name="Reviewers" />}
+            {page === 'roles'       && <ScreenStub name="User Roles" />}
+            {page === 'gate1'       && (decisionMode === 'jury' ? <ScreenStub name="Gate 2 Final" /> : <ScreenStub name="Admin Review" />)}
+            {page === 'psychometry' && <ScreenStub name="Psychometry" />}
+            {page === 'jury'        && <ScreenStub name="Jury Mgmt" />}
+            {page === 'gate2'       && <ScreenStub name="Gate 2 Final" />}
+            {page === 'audit'       && <ScreenStub name="Audit Log" />}
+            {page === 'analytics'   && <ScreenStub name="Analytics" />}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
+
+export default AdminApp;

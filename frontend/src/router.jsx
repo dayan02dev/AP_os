@@ -142,11 +142,12 @@ function AdminRoute() {
   return <AdminLayout />;
 }
 
-// Capability gate for the Admin Platform portal (/admin, /admin/pipeline, …).
+// Capability gate for the Admin Platform portal (/admin/*).
 // ProtectedRoute enforces auth; this layer enforces an admin platform
 // capability. `view_all_apps` is granted to both admin and leadership per
 // rbac.ROLE_CAPABILITIES — the per-action backend gates remain authoritative.
-function AdminPlatformRoute({ tab }) {
+// AdminPortal now owns all tab + detail state internally (no tab prop needed).
+function AdminPlatformRoute() {
   const { user } = useAuth();
   const roles = user?.roles || [];
   if (!hasCapability(roles, "view_all_apps")) {
@@ -162,7 +163,7 @@ function AdminPlatformRoute({ tab }) {
       </div>
     );
   }
-  return <AdminPortal tab={tab} />;
+  return <AdminPortal />;
 }
 
 // Capability gate for the Admin application-detail screen (A-2, T17), reached
@@ -349,52 +350,9 @@ export default function AppRoutes() {
         }
       />
 
-      {/* Admin Platform portal (T14). Capability-gated to `view_all_apps`.
-          `/admin` is now the platform Dashboard; the 8 tab routes are
-          deep-linkable. Jury / Psychometry / Gate-2 are intentionally omitted.
-          The legacy user-management surface stays mounted under /admin/users
-          (AdminLayout, capability `manage_users`) so it keeps working. */}
-      <Route
-        path="/admin"
-        element={
-          <ProtectedRoute>
-            <AdminPlatformRoute tab="dashboard" />
-          </ProtectedRoute>
-        }
-      />
-      {[
-        ["pipeline", "pipeline"],
-        ["reviewers", "reviewers"],
-        ["gate1", "gate1"],
-        ["batches", "batches"],
-        ["audit", "audit"],
-        ["analytics", "analytics"],
-        ["settings", "settings"],
-      ].map(([path, tab]) => (
-        <Route
-          key={`admin-${path}`}
-          path={`/admin/${path}`}
-          element={
-            <ProtectedRoute>
-              <AdminPlatformRoute tab={tab} />
-            </ProtectedRoute>
-          }
-        />
-      ))}
-
-      {/* Admin application detail (A-2, T17). Full-page screen launched from a
-          pipeline row. Capability-gated to `view_app_detail`. */}
-      <Route
-        path="/admin/application/:track/:id"
-        element={
-          <ProtectedRoute>
-            <AdminAppDetailRoute />
-          </ProtectedRoute>
-        }
-      />
-
       {/* Legacy admin user-management shell (Session 3). Gated to `manage_users`.
-          Kept intact under /admin/users* so user CRUD is unaffected. */}
+          Kept intact under /admin/users* so user CRUD is unaffected.
+          MUST come before the /admin/* catch-all so it matches first. */}
       <Route
         path="/admin/users"
         element={
@@ -407,6 +365,20 @@ export default function AppRoutes() {
         <Route path="new" element={<AdminAddUser />} />
         <Route path=":id" element={<UserDetailPage />} />
       </Route>
+
+      {/* Admin Platform portal. Capability-gated to `view_all_apps`.
+          AdminPortal owns all tab + detail navigation internally via page-state
+          (no longer route-based). A single catch-all `/admin/*` covers the
+          dashboard and every sub-page so bookmarked /admin URLs still land here.
+          The legacy /admin/users* routes above take priority. */}
+      <Route
+        path="/admin/*"
+        element={
+          <ProtectedRoute>
+            <AdminPlatformRoute />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Reviewer Portal v2 (2026-06-12). Capability-gated to
           `view_assigned_apps`; the eval screen also needs `score_app` (the
