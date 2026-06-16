@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { adaptPipelineRow, adaptStats, adaptDetail, STATUS_TO_CHIP, DECISION_TO_ADMIN } from "../adminDataAdapter";
+import { adaptPipelineRow, adaptStats, adaptDetail, STATUS_TO_CHIP, DECISION_TO_ADMIN,
+  adaptReviewer, adaptCalibrationRow, adaptAuditEntry, adaptBatch } from "../adminDataAdapter";
 
 describe("adaptPipelineRow", () => {
   const row = {
@@ -93,5 +94,22 @@ describe("adaptDetail", () => {
     const s = adaptDetail({ ...detail, ai_screening: null, reviews: [] });
     expect(s.ai).toEqual({ overall: null });
     expect(s.rev).toBeUndefined();
+  });
+});
+
+import { adaptReviewer, adaptCalibrationRow, adaptAuditEntry, adaptBatch } from "../adminDataAdapter";
+describe("misc adapters", () => {
+  it("reviewer roster row", () => {
+    const r = adaptReviewer({ user_id: "r1", name: "Vikram Sundar", email: "v@x.in",
+      weight: 2.0, domains: ["Robotics"], batch: "Batch A", assigned: 12, completed: 9,
+      progress: "9 / 12", consistency: 0.92, lastActivity: "2026-05-01T00:00:00Z" });
+    expect(r).toMatchObject({ id: "r1", name: "Vikram Sundar", weight: 2.0, progress: "9 / 12",
+      consistency: 0.92, domain: "Robotics" });
+  });
+  it("calibration + audit + batch", () => {
+    expect(adaptCalibrationRow({ user_id: "r1", name: "V", n_reviews: 9, avg_score: 7.8,
+      avg_variance_vs_ai: 0.6 }).variance).toBe(0.6);
+    expect(adaptAuditEntry({ ts: "t", actor: "a", action: "x", target: "y", detail: "z" }).actor).toBe("a");
+    expect(adaptBatch({ id: "b1", name: "Batch A", phase: "p1" }).name).toBe("Batch A");
   });
 });

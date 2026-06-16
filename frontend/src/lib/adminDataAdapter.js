@@ -67,6 +67,21 @@ function adaptOneReview(rv) {
   return out;
 }
 
+export const adaptReviewer = (r) => ({
+  id: r.user_id, name: r.name, email: r.email, weight: r.weight ?? 1.0,
+  domains: r.domains || [], domain: (r.domains || []).join(", "), batch: r.batch || "Unassigned",
+  assigned: r.assigned, completed: r.completed, progress: r.progress || "0 / 0",
+  consistency: r.consistency, last: r.lastActivity, startups: [],
+});
+export const adaptCalibrationRow = (r) => ({
+  id: r.user_id, name: r.name, nReviews: r.n_reviews, avgScore: r.avg_score,
+  variance: r.avg_variance_vs_ai,
+});
+export const adaptAuditEntry = (e) => ({ ts: e.ts, actor: e.actor, action: e.action,
+  target: e.target, detail: e.detail });
+export const adaptBatch = (b) => ({ id: b.id, name: b.name, phase: b.phase || "",
+  created: b.created_at, updated: b.updated_at });
+
 export function adaptDetail(d) {
   const founders = [];
   if (d.founder?.name) founders.push(d.founder.name);
