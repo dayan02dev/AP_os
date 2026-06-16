@@ -205,13 +205,15 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
                 <td style={{ color: "var(--ink-soft)", fontSize: 13 }}>{s.stage}</td>
                 <td>
                   {s.ai && s.ai.overall != null ? (
-                    <div className="lp-score-bar">
-                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--ink)", flexShrink: 0, whiteSpace: "nowrap" }}>
+                    // Inline styles only — avoids the global (unscoped) .lp-score-bar
+                    // rule in leadership.css that leaks app-wide and clips this cell.
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ display: "inline-block", width: 48, height: 4, background: "#ececf0", borderRadius: 2, overflow: "hidden", flexShrink: 0 }}>
+                        <span style={{ display: "block", width: Math.max(0, Math.min(100, (s.ai.overall / 10) * 100)) + "%", height: "100%", background: "#2f6f62", borderRadius: 2 }} />
+                      </span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--ink)", flexShrink: 0, whiteSpace: "nowrap" }}>
                         {Number(s.ai.overall).toFixed(1)}
                       </span>
-                      <div className="lp-score-bar-track">
-                        <div className="lp-score-bar-fill" style={{ width: (s.ai.overall / 10) * 100 + "%" }} />
-                      </div>
                     </div>
                   ) : (
                     <span style={{ color: "var(--ink-dim)" }}>—</span>
