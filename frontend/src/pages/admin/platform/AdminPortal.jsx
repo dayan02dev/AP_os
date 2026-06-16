@@ -17,6 +17,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../hooks/useAuth.jsx";
 import "../../../styles/admin-portal.css";
 import { ScreenStub } from "./screens/ScreenStub";
+import { AdminDashboard } from "./screens/AdminDashboard";
 
 function initialsFor(email) {
   const local = (email || '').split('@')[0] || '';
@@ -435,7 +436,7 @@ function AdminApp() {
             />
           )}
           <div className="lp-tab-content">
-            {page === 'dashboard'   && <ScreenStub name="Dashboard" />}
+            {page === 'dashboard'   && <AdminDashboard go={setPage} decisionMode={decisionMode} />}
             {page === 'pipeline'    && <ScreenStub name="Applications" />}
             {page === 'detail'      && (
               <ScreenStub name="Application Detail" />
