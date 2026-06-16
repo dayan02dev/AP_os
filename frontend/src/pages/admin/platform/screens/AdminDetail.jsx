@@ -17,16 +17,12 @@
 // Jury helpers use seeded math against s.id only — no OS_DATA reads.
 
 import React, { useState, useEffect, useCallback, useReducer, useMemo } from "react";
-import { loadDetail } from "../../../../hooks/useAdminData";
+import { loadDetail, useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 import { BUTTON_TO_DECISION } from "../../../../lib/adminDataAdapter";
 import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
-import {
-  fieldBullets, isFactField, getThreeReviewers,
-  calculateWeightedReviewerAverage, getReviewerWeight, revInitials,
-} from "../helpers/adminHelpers";
-import { ScoreBar, Chip, FlagDot, RadarOverlay } from "../shell/osAtoms";
+import { Chip } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import { FullApplicationView } from "./FullApplicationView";
 
@@ -273,6 +269,13 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
   const [banner, setBanner] = useState(null);
   const [, forceRefresh] = useReducer(x => x + 1, 0);
 
+  // Reviewer roster → reviewer_user_id → display name (for the consensus cards).
+  const { data: reviewerData } = useAdminData('reviewers');
+  const reviewersById = useMemo(() => {
+    const list = reviewerData?.reviewers ?? [];
+    return Object.fromEntries(list.map(r => [r.id, r.name]));
+  }, [reviewerData]);
+
   const doLoad = useCallback(async () => {
     if (!startupId || !track) return;
     setLoading(true);
@@ -356,8 +359,18 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
   const isUnderInterview = s.chip === 'JURY REVIEW';
   const aiData = s.ai || {};
 
-  // ── Reviewer overall (seeded if no real data)
-  const revOverall = s.rev ? calculateWeightedReviewerAverage(s, 'overall') : 0;
+  // ── Reviewer averages — computed from the REAL submitted reviews (s.reviews).
+  //    Each category is averaged across reviews that scored it; the reviewer
+  //    overall is the average of the per-review overalls. 0 means "no data".
+  const realReviews = Array.isArray(s.reviews) ? s.reviews : [];
+  const reviewerCatAvg = (key) => {
+    const vals = realReviews.map(rv => rv[key]).filter(n => typeof n === 'number');
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  };
+  const revOverall = (() => {
+    const vals = realReviews.map(rv => rv.overall).filter(n => typeof n === 'number');
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  })();
   const jOverall = s.jury ? getJuryAvgFromSeeds(s) : 0;
   const combinedOverall = revOverall > 0 && jOverall > 0
     ? (revOverall + jOverall) / 2
@@ -476,8 +489,8 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
             </div>
           </div>
 
-          {/* Comparative review model (seeded reviewer data) */}
-          {s.rev && <ComparativeReviewModel startup={s} />}
+          {/* Comparative review model — real reviewer evaluations */}
+          <ComparativeReviewModel startup={s} reviewersById={reviewersById} />
 
           {/* Jury Scorecard + TIR Signal Profile — jury mode only, PreviewBadge'd */}
           {decisionMode === 'jury' && (() => {
@@ -624,7 +637,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
             <div className="os-card-title os-mb-sm">Reviewer Scores</div>
             <div className="os-stack gap-sm">
               {METRICS.map(m => {
-                const revVal = s.rev ? calculateWeightedReviewerAverage(s, m.key) : 0;
+                const revVal = reviewerCatAvg(m.key);
                 return (
                   <div key={m.key}>
                     <div className="os-row between os-text-sm">

@@ -52,7 +52,10 @@ export function adaptStats(api) {
 
 const AI_CAT = { score_problem: "problem", score_completeness: "solution", score_tech: "tech",
   score_founders: "founders", score_commitment: "commit", score_integrity: "integrity" };
-const REV_CAT = AI_CAT; // reviews rows use the same score_* column names
+// Reviews carry their OWN columns — there is NO score_completeness / score_integrity
+// on a review. The reviewer's "Solution" score lives in score_solution.
+const REVIEW_CAT = { score_problem: "problem", score_solution: "solution", score_tech: "tech",
+  score_founders: "founders", score_commitment: "commit" };
 
 function adaptAi(scr) {
   if (!scr) return { overall: null };
@@ -61,9 +64,21 @@ function adaptAi(scr) {
   return out;
 }
 function adaptOneReview(rv) {
-  const out = { overall: rv.score_overall ?? null, reco: rv.recommendation || rv.reco,
-    notes: rv.notes || rv.comment || "" };
-  for (const [k, v] of Object.entries(REV_CAT)) if (rv[k] != null) out[v] = rv[k];
+  const out = {
+    reco: rv.recommendation || rv.reco || null,
+    notes: rv.quick_notes || rv.notes || rv.comment || "",
+    flags: Array.isArray(rv.flags) ? rv.flags : [],
+    reviewerId: rv.reviewer_user_id || null,
+    submittedAt: rv.submitted_at || null,
+  };
+  for (const [k, v] of Object.entries(REVIEW_CAT)) if (rv[k] != null) out[v] = rv[k];
+  // Overall: explicit score_overall, else average of present category scores.
+  if (rv.score_overall != null) {
+    out.overall = rv.score_overall;
+  } else {
+    const cats = Object.values(REVIEW_CAT).map(v => out[v]).filter(n => typeof n === "number");
+    out.overall = cats.length ? Math.round((cats.reduce((a, b) => a + b, 0) / cats.length) * 10) / 10 : null;
+  }
   return out;
 }
 

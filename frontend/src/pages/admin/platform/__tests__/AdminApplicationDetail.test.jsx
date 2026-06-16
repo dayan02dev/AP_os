@@ -10,6 +10,8 @@ import { render, screen } from "@testing-library/react";
 // ── Mock loadDetail before importing AdminDetail ─────────────────────────────
 vi.mock("../../../../hooks/useAdminData", () => ({
   loadDetail: vi.fn(),
+  // AdminDetail fetches the reviewer roster to resolve reviewer names.
+  useAdminData: () => ({ data: { reviewers: [] }, loading: false, error: null, reload: vi.fn() }),
 }));
 vi.mock("../../../../lib/adminPlatformApi", () => ({
   adminPlatformApi: {

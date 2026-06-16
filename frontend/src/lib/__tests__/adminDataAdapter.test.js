@@ -62,8 +62,9 @@ describe("adaptDetail", () => {
     },
     reviews: [
       { reviewer_user_id: "r1", submitted_at: "2026-05-01T00:00:00Z",
-        score_overall: 7.9, score_problem: 8, score_completeness: 7.5, score_tech: 8.5,
-        score_founders: 7.5, score_commitment: 8, score_integrity: 8, recommendation: "yes" },
+        score_overall: 7.9, score_problem: 8, score_solution: 7.5, score_tech: 8.5,
+        score_founders: 7.5, score_commitment: 8, recommendation: "yes",
+        quick_notes: "Strong founder fit.", flags: ["Market competition risk"] },
     ],
     reviewer_assignments: [{ reviewer_user_id: "r1", state: "completed" }],
     decision: { decision: "shortlisted", rationale: "Strong" },
@@ -76,10 +77,29 @@ describe("adaptDetail", () => {
       founders: 7.8, commit: 8.4, integrity: 8.4 });
     expect(s.aiSummary).toBe("TL;DR…");
   });
-  it("maps reviews[] to s.rev with category names", () => {
+  it("maps reviews[] to s.rev using REAL review columns", () => {
     const s = adaptDetail(detail);
+    // score_solution → solution (NOT score_completeness), and quick_notes/flags map through.
     expect(s.rev).toMatchObject({ overall: 7.9, problem: 8, solution: 7.5, tech: 8.5,
-      founders: 7.5, commit: 8, integrity: 8, reco: "yes" });
+      founders: 7.5, commit: 8, reco: "yes" });
+    expect(s.rev.notes).toBe("Strong founder fit.");
+    expect(s.rev.flags).toEqual(["Market competition risk"]);
+    expect(s.rev.reviewerId).toBe("r1");
+    // No integrity on a review.
+    expect(s.rev.integrity).toBeUndefined();
+    expect(s.reviews).toHaveLength(1);
+  });
+  it("averages category scores when score_overall is absent", () => {
+    const s = adaptDetail({
+      ...detail,
+      reviews: [{ reviewer_user_id: "r2", submitted_at: "2026-05-02T00:00:00Z",
+        score_problem: 8, score_solution: 6, score_tech: 8, score_founders: 6,
+        score_commitment: 7, recommendation: "maybe" }],
+    });
+    // (8+6+8+6+7)/5 = 7.0
+    expect(s.rev.overall).toBe(7.0);
+    expect(s.rev.reco).toBe("maybe");
+    expect(s.rev.flags).toEqual([]);
   });
   it("maps identity, decision, batch, assignments", () => {
     const s = adaptDetail(detail);
