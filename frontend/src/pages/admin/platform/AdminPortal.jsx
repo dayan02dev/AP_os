@@ -16,7 +16,6 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../hooks/useAuth.jsx";
 import "../../../styles/admin-portal.css";
-import { ScreenStub } from "./screens/ScreenStub";
 import { AdminDashboard } from "./screens/AdminDashboard";
 import { AdminPipeline } from "./screens/AdminPipeline";
 import { AdminDetail } from "./screens/AdminDetail";
@@ -26,6 +25,9 @@ import { AdminAnalytics } from "./screens/AdminAnalytics";
 import { AdminAudit } from "./screens/AdminAudit";
 import { AdminGate2 } from "./screens/AdminGate2";
 import { AdminJury } from "./screens/AdminJury";
+import { AdminPsychometry } from "./screens/AdminPsychometry";
+import { AdminAIStatus } from "./screens/AdminAIStatus";
+import { AdminRoles } from "./screens/AdminRoles";
 
 function initialsFor(email) {
   const local = (email || '').split('@')[0] || '';
@@ -462,9 +464,10 @@ function AdminApp() {
               />
             )}
             {page === 'reviewers'   && <AdminReviewers decisionMode={decisionMode} />}
-            {page === 'roles'       && <ScreenStub name="User Roles" />}
+            {page === 'roles'       && <AdminRoles />}
             {page === 'gate1'       && (decisionMode === 'jury' ? <AdminGate2 goDetail={goDetail} /> : <AdminGate1 goDetail={goDetail} />)}
-            {page === 'psychometry' && <ScreenStub name="Psychometry" />}
+            {page === 'psychometry' && <AdminPsychometry />}
+            {page === 'aistatus'   && <AdminAIStatus />}
             {page === 'jury'        && <AdminJury />}
             {page === 'gate2'       && <AdminGate2 goDetail={goDetail} />}
             {page === 'audit'       && <AdminAudit />}
