@@ -71,6 +71,18 @@ describe("adminPlatformApi seam", () => {
     });
   });
 
+  it("assignBatchReviewers → POST /admin/platform/batches/{id}/reviewers", () => {
+    adminPlatformApi.assignBatchReviewers("b-1", { reviewer_user_ids: ["r-1"] });
+    expect(api.post).toHaveBeenCalledWith("/admin/platform/batches/b-1/reviewers", {
+      reviewer_user_ids: ["r-1"],
+    });
+  });
+
+  it("unassignBatchReviewer → DELETE /admin/platform/batches/{id}/reviewers/{rid}", () => {
+    adminPlatformApi.unassignBatchReviewer("b-1", "r-1");
+    expect(api.del).toHaveBeenCalledWith("/admin/platform/batches/b-1/reviewers/r-1");
+  });
+
   it("getReviewers → GET /admin/platform/reviewers", () => {
     adminPlatformApi.getReviewers();
     expect(api.get).toHaveBeenCalledWith("/admin/platform/reviewers");

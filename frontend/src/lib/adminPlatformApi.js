@@ -47,6 +47,11 @@ export const adminPlatformApi = {
   assignBatch: (id, body) =>
     api.post(`/admin/platform/batches/${id}/applications`, body),
 
+  assignBatchReviewers: (batchId, body) =>
+    api.post(`/admin/platform/batches/${batchId}/reviewers`, body),
+  unassignBatchReviewer: (batchId, reviewerId) =>
+    api.del(`/admin/platform/batches/${batchId}/reviewers/${reviewerId}`),
+
   getReviewers: () => api.get(`/admin/platform/reviewers`),
   patchReviewer: (id, body) =>
     api.patch(`/admin/platform/reviewers/${id}`, body),

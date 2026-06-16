@@ -333,6 +333,170 @@ async def assign_applications(
     return {"assigned": n}
 
 
+class BatchReviewersBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reviewer_user_ids: list[str] = Field(..., min_length=1, max_length=50)
+
+
+@router.post(
+    "/batches/{batch_id}/reviewers",
+    dependencies=[Depends(require_capability("manage_reviewers_roster"))],
+)
+async def assign_batch_reviewers(
+    batch_id: str,
+    body: BatchReviewersBody,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Assign reviewers to every application in a batch.
+
+    Creates one reviewer_assignment per (app in batch × reviewer), skipping any
+    (application_id, application_track, reviewer_user_id) triple that already
+    exists. Returns the number of rows actually inserted, the reviewer count,
+    and the number of applications in the batch.
+    """
+    sb = get_admin_client()
+    existing_batch = sb.table("batches").select("id").eq("id", batch_id).limit(1).execute().data
+    if not existing_batch:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "batch_not_found"},
+        )
+
+    # Apps in this batch. `.eq()` narrows on real PostgREST; the fake no-ops
+    # `.eq()` for non-PK selects, so re-filter in Python on batch_id.
+    link_rows = (
+        sb.table("application_batches")
+        .select("application_id,application_track,batch_id")
+        .eq("batch_id", batch_id)
+        .execute()
+        .data
+    ) or []
+    apps = [
+        (r["application_id"], r["application_track"])
+        for r in link_rows
+        if r.get("batch_id") == batch_id and r.get("application_id") and r.get("application_track")
+    ]
+
+    reviewer_ids = list(dict.fromkeys(body.reviewer_user_ids))  # dedupe, keep order
+
+    # Existing assignments for these apps × reviewers, so we skip duplicates.
+    # Bulk-fetch all assignments then filter in Python (fake `.in_()` no-ops).
+    app_keys = set(apps)
+    existing_pairs: set[tuple[str, str, str]] = set()
+    for a in (sb.table("reviewer_assignments").select("*").execute().data) or []:
+        key = (a.get("application_id"), a.get("application_track"))
+        rid = a.get("reviewer_user_id")
+        if key in app_keys and rid in set(reviewer_ids):
+            existing_pairs.add((a.get("application_id"), a.get("application_track"), rid))
+
+    now = datetime.now(UTC).isoformat()
+    rows = [
+        {
+            "application_id": aid,
+            "application_track": track,
+            "reviewer_user_id": rid,
+            "assigned_by": user["user_id"],
+            "assigned_at": now,
+            "state": "pending",
+            "due_at": None,
+        }
+        for (aid, track) in apps
+        for rid in reviewer_ids
+        if (aid, track, rid) not in existing_pairs
+    ]
+    if rows:
+        sb.table("reviewer_assignments").insert(rows).execute()
+    created = len(rows)
+
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="batch_reviewers_assigned",
+        target_table="batches",
+        target_id=batch_id,
+        after={
+            "created": created,
+            "reviewers": len(reviewer_ids),
+            "applications": len(apps),
+        },
+    )
+    return {
+        "created": created,
+        "reviewers": len(reviewer_ids),
+        "applications": len(apps),
+    }
+
+
+@router.delete(
+    "/batches/{batch_id}/reviewers/{reviewer_user_id}",
+    dependencies=[Depends(require_capability("manage_reviewers_roster"))],
+)
+async def unassign_batch_reviewer(
+    batch_id: str,
+    reviewer_user_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Remove a reviewer's assignments for a batch's apps.
+
+    Only deletes assignments where NO review has been submitted yet (mirrors the
+    leadership unassign guard). Returns the number of assignments removed.
+    """
+    sb = get_admin_client()
+    existing_batch = sb.table("batches").select("id").eq("id", batch_id).limit(1).execute().data
+    if not existing_batch:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "batch_not_found"},
+        )
+
+    link_rows = (
+        sb.table("application_batches")
+        .select("application_id,application_track,batch_id")
+        .eq("batch_id", batch_id)
+        .execute()
+        .data
+    ) or []
+    apps = [
+        (r["application_id"], r["application_track"])
+        for r in link_rows
+        if r.get("batch_id") == batch_id and r.get("application_id") and r.get("application_track")
+    ]
+
+    # Apps that already have a submitted review by this reviewer — guard so we
+    # never orphan a scored review. Bulk-fetch + Python filter (fake-friendly).
+    reviewed_keys: set[tuple[str, str]] = set()
+    for rv in (sb.table("reviews").select("*").execute().data) or []:
+        if (
+            rv.get("reviewer_user_id") == reviewer_user_id
+            and rv.get("status") == "submitted"
+        ):
+            reviewed_keys.add((rv.get("application_id"), rv.get("application_track")))
+
+    removed = 0
+    for (aid, track) in apps:
+        if (aid, track) in reviewed_keys:
+            continue
+        res = (
+            sb.table("reviewer_assignments")
+            .delete()
+            .eq("application_id", aid)
+            .eq("application_track", track)
+            .eq("reviewer_user_id", reviewer_user_id)
+            .execute()
+        )
+        removed += len(res.data or [])
+
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="batch_reviewers_unassigned",
+        target_table="batches",
+        target_id=batch_id,
+        after={"reviewer_user_id": reviewer_user_id, "removed": removed},
+    )
+    return {"removed": removed}
+
+
 @router.patch(
     "/applications/{track}/{application_id}/meta",
     dependencies=[Depends(require_capability("view_all_apps"))],

@@ -20,6 +20,8 @@ vi.mock("../../../../lib/adminPlatformApi", () => ({
   adminPlatformApi: {
     patchReviewer: vi.fn().mockResolvedValue({}),
     rebalance: vi.fn().mockResolvedValue({ assigned: 10, reviewers: 3 }),
+    assignBatchReviewers: vi.fn().mockResolvedValue({ created: 1, reviewers: 1, applications: 5 }),
+    unassignBatchReviewer: vi.fn().mockResolvedValue({ removed: 5 }),
   },
 }));
 
@@ -144,6 +146,47 @@ describe("AdminReviewers (reviewer-mode)", () => {
         "rev-001",
         expect.objectContaining({ weight: expect.any(Number), domains: expect.any(Array) })
       );
+    });
+  });
+
+  it("renders batch chips and calls unassignBatchReviewer when × is clicked", async () => {
+    const reload = vi.fn();
+    useAdminData.mockImplementation((kind) => {
+      if (kind === "batches") {
+        return { data: { batches: [{ id: "bid-A", name: "Batch A" }, { id: "bid-B", name: "Batch B" }] }, loading: false, error: null, reload: vi.fn() };
+      }
+      return {
+        data: { reviewers: [{ ...SAMPLE_REVIEWERS[0], batches: [{ name: "Batch A", count: 7 }] }] },
+        loading: false, error: null, reload,
+      };
+    });
+    render(<AdminReviewers decisionMode="reviewer" />);
+    // "7 of Batch A" summary text
+    expect(screen.getByText(/7 of Batch A/)).toBeTruthy();
+    // Click the × on the Batch A chip
+    const removeBtn = screen.getByLabelText(/Remove Batch A from Priya Sharma/i);
+    fireEvent.click(removeBtn);
+    await waitFor(() => {
+      expect(adminPlatformApi.unassignBatchReviewer).toHaveBeenCalledWith("bid-A", "rev-001");
+    });
+  });
+
+  it("assigns an unassigned batch via the + control", async () => {
+    const reload = vi.fn();
+    useAdminData.mockImplementation((kind) => {
+      if (kind === "batches") {
+        return { data: { batches: [{ id: "bid-A", name: "Batch A" }, { id: "bid-B", name: "Batch B" }] }, loading: false, error: null, reload: vi.fn() };
+      }
+      return {
+        data: { reviewers: [{ ...SAMPLE_REVIEWERS[0], batches: [{ name: "Batch A", count: 7 }] }] },
+        loading: false, error: null, reload,
+      };
+    });
+    render(<AdminReviewers decisionMode="reviewer" />);
+    const addSelect = screen.getByLabelText(/Assign a batch to Priya Sharma/i);
+    fireEvent.change(addSelect, { target: { value: "Batch B" } });
+    await waitFor(() => {
+      expect(adminPlatformApi.assignBatchReviewers).toHaveBeenCalledWith("bid-B", { reviewer_user_ids: ["rev-001"] });
     });
   });
 

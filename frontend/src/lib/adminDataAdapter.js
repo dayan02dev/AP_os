@@ -70,6 +70,7 @@ function adaptOneReview(rv) {
 export const adaptReviewer = (r) => ({
   id: r.user_id, name: r.name, email: r.email, weight: r.weight ?? 1.0,
   domains: r.domains || [], domain: (r.domains || []).join(", "), batch: r.batch || "Unassigned",
+  batches: r.batches || [],
   assigned: r.assigned, completed: r.completed, progress: r.progress || "0 / 0",
   consistency: r.consistency, last: r.lastActivity, startups: [],
 });

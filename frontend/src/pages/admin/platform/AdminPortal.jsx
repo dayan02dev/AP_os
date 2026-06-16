@@ -15,6 +15,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../hooks/useAuth.jsx";
+import { useAdminData } from "../../../hooks/useAdminData";
 import "../../../styles/admin-portal.css";
 import { AdminDashboard } from "./screens/AdminDashboard";
 import { AdminPipeline } from "./screens/AdminPipeline";
@@ -297,7 +298,7 @@ function AdminCohortHeader({ page, setPage, decisionMode, setDecisionMode }) {
         <div>
           <h1 className="lp-cohort-title">TIR + VIP cohort <span className="lp-year">2026</span></h1>
           <div className="lp-cohort-sub">
-            Admin control panel · live state across all 7 layers · last updated 2m ago
+            Admin control panel
           </div>
         </div>
         <div style={{marginTop:4,display:'flex',gap:12,alignItems:'center'}}>
@@ -327,18 +328,10 @@ function AdminCohortHeader({ page, setPage, decisionMode, setDecisionMode }) {
   );
 }
 
-function AdminTabBar({ page, setPage, decisionMode }) {
-  const getAppCount = () => {
-    if (!window.OS_DATA || !window.OS_DATA.STARTUPS) return 0;
-    if (decisionMode === 'jury') {
-      return window.OS_DATA.STARTUPS.filter(s => {
-        const c = (s.chip || '').toUpperCase();
-        return c === 'SHORTLISTED' || c === 'JURY REVIEW' || c === 'ACCEPTED' || c === 'REJECTED' || c === 'WAITLISTED';
-      }).length;
-    }
-    return window.OS_DATA.STARTUPS.filter(s => !s.archived).length;
-  };
-
+function AdminTabBar({ page, setPage, decisionMode, appsBadge, reviewBadge }) {
+  // Badges come from real /stats data (passed down from AdminApp). A null
+  // badge renders as no badge at all (see render below) — we never show a
+  // fabricated number.
   const tabs = [
     { id:'dashboard',    label:'Dashboard',    sub:'OVERVIEW · PIPELINE',       badge:null },
     {
@@ -347,12 +340,12 @@ function AdminTabBar({ page, setPage, decisionMode }) {
       sub: decisionMode === 'jury' ? 'PANEL · ASSIGNMENTS' : 'ROSTER · PROGRESS',
       badge:null
     },
-    { id:'pipeline',     label:'Applications', sub:'ALL SUBMISSIONS',            badge: String(getAppCount()) },
+    { id:'pipeline',     label:'Applications', sub:'ALL SUBMISSIONS',            badge: appsBadge == null ? null : String(appsBadge) },
     {
       id:'gate1',
       label: decisionMode === 'jury' ? 'Final Gate' : 'Admin Review',
       sub: decisionMode === 'jury' ? 'CONSOLIDATED DECISIONS' : 'PENDING DECISIONS',
-      badge: decisionMode === 'jury' ? null : '12'
+      badge: decisionMode === 'jury' ? null : (reviewBadge == null ? null : String(reviewBadge))
     },
     // extension: surface built Audit/Analytics screens the prototype left unreachable
     { id:'audit',     label:'Audit',     sub:'EVENT TRAIL',   badge:null },
@@ -385,6 +378,14 @@ function AdminApp() {
   // window.__osDataBump() after mutating OS_DATA to refresh the whole admin tree live.
   const [, forceAppUpdate] = React.useReducer(x => x + 1, 0);
   React.useEffect(() => { window.__osDataBump = forceAppUpdate; return () => { if (window.__osDataBump === forceAppUpdate) window.__osDataBump = null; }; }, []);
+
+  // Real tab-badge counts from /stats. While loading (or if the field is
+  // absent) we pass null so NO badge shows rather than a fabricated number.
+  const { data: statsData, loading: statsLoading } = useAdminData('stats');
+  const appsBadge = statsLoading ? null : (statsData?.totals?.apps_submitted ?? null);
+  // "Admin Review" = apps evaluated by reviewers and awaiting an admin decision.
+  const evaluatedEntry = (statsData?.statusCounts || []).find(s => s.id === 'evaluated');
+  const reviewBadge = statsLoading ? null : (evaluatedEntry ? evaluatedEntry.n : null);
 
   const startups = window.OS_DATA?.STARTUPS || [];
   const currentIdx = startups.findIndex(s => s.id === selectedStartupId);
@@ -448,6 +449,8 @@ function AdminApp() {
               page={page}
               setPage={setPage}
               decisionMode={decisionMode}
+              appsBadge={appsBadge}
+              reviewBadge={reviewBadge}
             />
           )}
           <div className="lp-tab-content">

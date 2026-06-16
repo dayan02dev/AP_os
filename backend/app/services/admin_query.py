@@ -448,6 +448,21 @@ def fetch_roster() -> dict[str, Any]:
         if key in reviewed_keys:
             ai_by_key.setdefault(key, row)
 
+    # Batch membership: (application_id, application_track) → batch name. Built
+    # once via application_batches → batches, used to group each reviewer's
+    # assigned apps by the batch they belong to (apps with no batch are omitted
+    # from the per-reviewer `batches` list).
+    batch_names: dict[str, str | None] = {
+        b["id"]: b.get("name") for b in _fetch("batches") if b.get("id")
+    }
+    app_batch_name: dict[tuple[str, str], str | None] = {}
+    for link in _fetch("application_batches"):
+        aid = link.get("application_id")
+        track = link.get("application_track")
+        bid = link.get("batch_id")
+        if aid and track and bid in batch_names:
+            app_batch_name[(aid, track)] = batch_names.get(bid)
+
     out: list[dict[str, Any]] = []
     for rid in reviewer_ids:
         prof = profiles.get(rid) or {}
@@ -459,6 +474,20 @@ def fetch_roster() -> dict[str, Any]:
         ]
         assigned = len(active)
         completed = len([a for a in active if a.get("completed_at")])
+
+        # Group this reviewer's active assignments by batch name. Apps with no
+        # batch membership are omitted (they still count in `assigned`).
+        batch_counts: dict[str, int] = {}
+        for a in active:
+            key = (a.get("application_id"), a.get("application_track"))
+            name = app_batch_name.get(key)
+            if name is None:
+                continue
+            batch_counts[name] = batch_counts.get(name, 0) + 1
+        batches = [
+            {"name": name, "count": count}
+            for name, count in sorted(batch_counts.items())
+        ]
 
         # Consistency over submitted reviews with a matching ai_overall.
         diffs: list[float] = []
@@ -494,6 +523,7 @@ def fetch_roster() -> dict[str, Any]:
             "progress":     f"{completed} / {assigned}",
             "consistency":  consistency,
             "lastActivity": last_activity,
+            "batches":      batches,
         })
 
     return {"reviewers": out}

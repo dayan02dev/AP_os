@@ -55,30 +55,16 @@ const ArrowDown = () => (
 );
 
 // ─── ApplicationsByIndustry ───────────────────────────────────────────────────
-// industry breakdown not in /stats yet — preview; derive from pipeline in a follow-up
-function ApplicationsByIndustry({ go }) {
-  const industries = [
-    { name: 'Robotics & Automation', count: 48, pct: '19.3%' },
-    { name: 'Healthcare / MedTech', count: 43, pct: '17.3%' },
-    { name: 'Artificial Intelligence / Foundational Models', count: 42, pct: '16.9%' },
-    { name: 'Defense & Aerospace', count: 39, pct: '15.7%' },
-    { name: 'Advanced Manufacturing / Industry 5.0', count: 20, pct: '8%' },
-    { name: 'EV Mobility & Services', count: 17, pct: '6.8%' },
-    { name: 'Other / Frontier', count: 10, pct: '4%' },
-    { name: 'Semiconductor / Hardware', count: 10, pct: '4%' },
-    { name: 'Climate Fintech / Urban Resilience', count: 6, pct: '2.4%' },
-    { name: 'Developer Tools / DevOps', count: 6, pct: '2.4%' },
-    { name: 'EdTech', count: 6, pct: '2.4%' },
-    { name: 'E-commerce & Artisanal Crafts', count: 2, pct: '0.8%' }
-  ];
-
+// Real industry breakdown: derived from the pipeline (grouped on `domain`).
+// `industries` is [{ name, count, pct }] sorted desc, computed by the caller.
+function ApplicationsByIndustry({ go, industries }) {
   const handleIndustryClick = (indName) => {
     if (!window.OS_FILTERS) window.OS_FILTERS = {};
     window.OS_FILTERS.industry = indName;
     go('pipeline');
   };
 
-  const maxCount = 48;
+  const maxCount = Math.max(1, ...industries.map(i => i.count));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -188,6 +174,26 @@ function StatusBreakdown({ go, statusCounts }) {
 // ─── AdminDashboard ───────────────────────────────────────────────────────────
 export function AdminDashboard({ go, decisionMode }) {
   const { data, loading, error } = useAdminData('stats');
+  // Pipeline drives the real "Applications by industry" breakdown.
+  const { data: pipelineData, loading: pipelineLoading } = useAdminData('pipeline', {});
+
+  // Group pipeline rows on their `domain` field → [{ name, count, pct }] sorted desc.
+  const industries = React.useMemo(() => {
+    const rows = pipelineData?.startups || [];
+    const total = rows.length;
+    const counts = new Map();
+    for (const r of rows) {
+      const name = (r.domain && r.domain !== '—') ? r.domain : 'Unspecified';
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({
+        name,
+        count,
+        pct: total > 0 ? `${((count / total) * 100).toFixed(1)}%` : '0%',
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [pipelineData]);
 
   if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
   if (error) return <div style={{ padding: 24 }} className="os-banner red">Failed to load dashboard.</div>;
@@ -327,13 +333,14 @@ export function AdminDashboard({ go, decisionMode }) {
           <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>§ Applications by industry</span>
           <h2 style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0 0', color: 'var(--ink)', fontFamily: 'var(--font-sans)', display: 'flex', alignItems: 'center' }}>
             Where the cohort is concentrated
-            <PreviewBadge />
           </h2>
           <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4, fontFamily: 'var(--font-sans)' }}>
             Click an industry to jump into the Applications tab pre-filtered.
           </div>
         </div>
-        <ApplicationsByIndustry go={go} />
+        {pipelineLoading && industries.length === 0
+          ? <div style={{ fontSize: 13, color: 'var(--ink-dim)' }}>…</div>
+          : <ApplicationsByIndustry go={go} industries={industries} />}
       </div>
 
       {/* Status breakdown */}

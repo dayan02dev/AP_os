@@ -75,7 +75,21 @@ class _FakeQuery:
         self._parent.updates.append((self._name, payload, list(self._eqs)))
         return self
 
+    def delete(self):
+        self._mode = "delete"
+        self._parent.deletes.append((self._name, list(self._eqs)))
+        return self
+
     def execute(self):
+        if self._mode == "delete":
+            # Actually remove matching rows from the in-memory table so the
+            # endpoint's `removed` count reflects real deletions, and echo the
+            # deleted rows back (mimics PostgREST returning='representation').
+            table = self._parent.tables.setdefault(self._name, [])
+            removed = [r for r in table if all(r.get(c) == v for c, v in self._eqs)]
+            kept = [r for r in table if r not in removed]
+            self._parent.tables[self._name] = kept
+            return SimpleNamespace(data=removed, count=len(removed))
         if self._mode in ("insert", "update"):
             data = self._payload if isinstance(self._payload, list) else (
                 [self._payload] if self._payload else [{"ok": True}]
@@ -95,6 +109,7 @@ class _FakeAdminClient:
         self.tables = tables or {}
         self.inserts: list[tuple[str, Any]] = []
         self.updates: list[tuple[str, Any, list]] = []
+        self.deletes: list[tuple[str, list]] = []
 
     def table(self, name: str) -> _FakeQuery:
         return _FakeQuery(self, name)
@@ -606,6 +621,149 @@ def test_reviewer_calibration(client, monkeypatch, _clear_overrides):
     assert row["n_reviews"] == 2
     assert row["avg_score"] == 7.0          # mean(8.0, 6.0)
     assert row["avg_variance_vs_ai"] == 0.75   # mean(|8.0-8.5|, |6.0-7.0|) = mean(0.5,1.0)
+
+
+# ─── Batch → reviewer assignment (POST/DELETE) + roster batches ───────────
+
+
+def test_batch_reviewers_assign_creates_n_by_m(client, monkeypatch, _clear_overrides):
+    """N apps in a batch × M reviewers → N*M reviewer_assignments, all pending."""
+    fake = _install_db(monkeypatch, {
+        "batches": [{"id": "b1", "name": "Batch A"}],
+        "application_batches": [
+            {"application_id": "app-1", "application_track": "tir", "batch_id": "b1"},
+            {"application_id": "app-2", "application_track": "sip", "batch_id": "b1"},
+        ],
+        "reviewer_assignments": [],
+    })
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.post("/admin/platform/batches/b1/reviewers",
+                    json={"reviewer_user_ids": ["rev-1", "rev-2"]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body == {"created": 4, "reviewers": 2, "applications": 2}
+    inserted = [p for (t, p) in fake.inserts if t == "reviewer_assignments"]
+    assert len(inserted) == 4
+    assert all(p.get("state") == "pending" for p in inserted)
+    assert all(p.get("assigned_by") == "admin-1" for p in inserted)
+
+
+def test_batch_reviewers_assign_dedupes_existing(client, monkeypatch, _clear_overrides):
+    """An existing (app, track, reviewer) triple is skipped, not re-inserted."""
+    fake = _install_db(monkeypatch, {
+        "batches": [{"id": "b1", "name": "Batch A"}],
+        "application_batches": [
+            {"application_id": "app-1", "application_track": "tir", "batch_id": "b1"},
+            {"application_id": "app-2", "application_track": "tir", "batch_id": "b1"},
+        ],
+        "reviewer_assignments": [
+            {"application_id": "app-1", "application_track": "tir",
+             "reviewer_user_id": "rev-1", "declined_at": None, "reassigned_to": None},
+        ],
+    })
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.post("/admin/platform/batches/b1/reviewers",
+                    json={"reviewer_user_ids": ["rev-1"]})
+    assert r.status_code == 200, r.text
+    # 2 apps × 1 reviewer = 2 pairs, but (app-1, tir, rev-1) already exists → 1 created.
+    assert r.json() == {"created": 1, "reviewers": 1, "applications": 2}
+    inserted = [p for (t, p) in fake.inserts if t == "reviewer_assignments"]
+    assert len(inserted) == 1
+    assert inserted[0]["application_id"] == "app-2"
+
+
+def test_batch_reviewers_assign_unknown_batch_404(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {"batches": [], "application_batches": [], "reviewer_assignments": []})
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.post("/admin/platform/batches/bad/reviewers",
+                    json={"reviewer_user_ids": ["rev-1"]})
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "batch_not_found"
+
+
+def test_batch_reviewers_assign_requires_capability(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {"batches": [{"id": "b1", "name": "A"}],
+                              "application_batches": [], "reviewer_assignments": []})
+    app.dependency_overrides[get_current_user] = _override_user("rev-1", roles=["reviewer"])
+    r = client.post("/admin/platform/batches/b1/reviewers",
+                    json={"reviewer_user_ids": ["rev-1"]})
+    assert r.status_code == 403
+
+
+def test_batch_reviewer_unassign_skips_reviewed(client, monkeypatch, _clear_overrides):
+    """DELETE removes only assignments with no submitted review for that reviewer."""
+    fake = _install_db(monkeypatch, {
+        "batches": [{"id": "b1", "name": "Batch A"}],
+        "application_batches": [
+            {"application_id": "app-1", "application_track": "tir", "batch_id": "b1"},
+            {"application_id": "app-2", "application_track": "tir", "batch_id": "b1"},
+        ],
+        "reviewer_assignments": [
+            {"application_id": "app-1", "application_track": "tir", "reviewer_user_id": "rev-1"},
+            {"application_id": "app-2", "application_track": "tir", "reviewer_user_id": "rev-1"},
+        ],
+        # rev-1 already submitted a review for app-1 → that assignment is protected.
+        "reviews": [
+            {"application_id": "app-1", "application_track": "tir",
+             "reviewer_user_id": "rev-1", "status": "submitted"},
+        ],
+    })
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.delete("/admin/platform/batches/b1/reviewers/rev-1")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"removed": 1}
+    # Only app-2's assignment was deleted; app-1 (reviewed) stays. The fake's
+    # execute() removes matching rows from the in-memory table, so the surviving
+    # rows are the proof of which assignment was (not) deleted.
+    remaining = fake.tables["reviewer_assignments"]
+    assert {r2["application_id"] for r2 in remaining} == {"app-1"}
+
+
+def test_batch_reviewer_unassign_unknown_batch_404(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, {"batches": [], "application_batches": [],
+                              "reviewer_assignments": [], "reviews": []})
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.delete("/admin/platform/batches/bad/reviewers/rev-1")
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "batch_not_found"
+
+
+def test_roster_includes_batches_grouping(client, monkeypatch, _clear_overrides):
+    """Each reviewer object carries a `batches` array of {name, count} derived
+    from reviewer_assignments → application_batches → batches.name; apps with no
+    batch are omitted from `batches` but still count in `assigned`."""
+    _install_db(monkeypatch, {
+        "user_roles": [{"user_id": "rev-1", "role": "reviewer"}],
+        "profiles": [{"id": "rev-1", "email": "r1@x.in", "full_name": "Rev One"}],
+        "reviewer_profiles": [],
+        "reviewer_assignments": [
+            {"id": "a1", "reviewer_user_id": "rev-1", "application_id": "app-1",
+             "application_track": "tir", "declined_at": None, "reassigned_to": None},
+            {"id": "a2", "reviewer_user_id": "rev-1", "application_id": "app-2",
+             "application_track": "tir", "declined_at": None, "reassigned_to": None},
+            # app-3 has no batch membership → omitted from `batches` grouping.
+            {"id": "a3", "reviewer_user_id": "rev-1", "application_id": "app-3",
+             "application_track": "tir", "declined_at": None, "reassigned_to": None},
+        ],
+        "reviews": [],
+        "ai_screening": [],
+        "application_batches": [
+            {"application_id": "app-1", "application_track": "tir", "batch_id": "b1"},
+            {"application_id": "app-2", "application_track": "tir", "batch_id": "b1"},
+        ],
+        "batches": [{"id": "b1", "name": "Batch A"}],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.get("/admin/platform/reviewers")
+    assert r.status_code == 200, r.text
+    row = {x["user_id"]: x for x in r.json()["reviewers"]}["rev-1"]
+    assert row["assigned"] == 3            # all three count toward assigned
+    assert row["batches"] == [{"name": "Batch A", "count": 2}]
 
 
 def test_admin_stats_includes_decision_counts(client, monkeypatch, _clear_overrides):

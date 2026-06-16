@@ -74,8 +74,9 @@ function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
     Array.isArray(reviewer.domains) ? reviewer.domains.join(', ') : (reviewer.domain || '')
   );
   const [batches, setBatches] = useState(
-    Array.isArray(reviewer.batches) ? [...reviewer.batches] :
-    (reviewer.batch && reviewer.batch !== 'Unassigned' ? [reviewer.batch] : [])
+    Array.isArray(reviewer.batches)
+      ? reviewer.batches.map(b => (typeof b === 'string' ? b : b.name))
+      : (reviewer.batch && reviewer.batch !== 'Unassigned' ? [reviewer.batch] : [])
   );
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
@@ -351,6 +352,43 @@ export function AdminReviewers({ decisionMode }) {
   const { data, loading, error, reload } = useAdminData('reviewers');
   const liveReviewers = data?.reviewers ?? [];
 
+  // Batches list — needed to map batch NAME (from the roster) → batch ID,
+  // which the assign/unassign endpoints require.
+  const { data: batchesData } = useAdminData('batches');
+  const batchList = batchesData?.batches ?? [];
+  const batchNameToId = useMemo(() => {
+    const m = new Map();
+    for (const b of batchList) m.set(b.name, b.id);
+    return m;
+  }, [batchList]);
+
+  // Transient error for assign/unassign calls.
+  const [assignErr, setAssignErr] = useState(null);
+
+  const handleAssignBatch = async (reviewerId, batchName) => {
+    const batchId = batchNameToId.get(batchName);
+    if (!batchId) { setAssignErr(`Unknown batch "${batchName}".`); return; }
+    setAssignErr(null);
+    try {
+      await adminPlatformApi.assignBatchReviewers(batchId, { reviewer_user_ids: [reviewerId] });
+      reload();
+    } catch (e) {
+      setAssignErr(e?.message || 'Assignment failed.');
+    }
+  };
+
+  const handleUnassignBatch = async (reviewerId, batchName) => {
+    const batchId = batchNameToId.get(batchName);
+    if (!batchId) { setAssignErr(`Unknown batch "${batchName}".`); return; }
+    setAssignErr(null);
+    try {
+      await adminPlatformApi.unassignBatchReviewer(batchId, reviewerId);
+      reload();
+    } catch (e) {
+      setAssignErr(e?.message || 'Unassign failed.');
+    }
+  };
+
   // jury uses local mock (no backend)
   const [juryList] = useState(() => MOCK_JURY.map(j => ({ ...j })));
 
@@ -401,13 +439,18 @@ export function AdminReviewers({ decisionMode }) {
     });
   }, [R, sortCol, sortAsc]);
 
-  // Batches (for drawer / invite selector)
-  const [batchData] = useState(null);
+  // Batches (for drawer / invite selector). Prefer the real batches list;
+  // fall back to names referenced by reviewers. A reviewer's `batches` is now
+  // [{ name, count }] from the roster endpoint, so map to names.
   const allBatches = useMemo(() => {
-    const base = ['Batch A', 'Batch B', 'Batch C', 'Batch D', 'Batch E'];
-    const fromReviewers = liveReviewers.flatMap(r => Array.isArray(r.batches) ? r.batches : (r.batch && r.batch !== 'Unassigned' ? [r.batch] : []));
-    return Array.from(new Set([...base, ...fromReviewers])).sort();
-  }, [liveReviewers]);
+    const fromBatchList = batchList.map(b => b.name);
+    const fromReviewers = liveReviewers.flatMap(r =>
+      Array.isArray(r.batches)
+        ? r.batches.map(b => (typeof b === 'string' ? b : b.name))
+        : (r.batch && r.batch !== 'Unassigned' ? [r.batch] : [])
+    );
+    return Array.from(new Set([...fromBatchList, ...fromReviewers].filter(Boolean))).sort();
+  }, [batchList, liveReviewers]);
 
   // Mutation state — reviewer mode
   const [manageTarget, setManageTarget] = useState(null);
@@ -550,6 +593,12 @@ export function AdminReviewers({ decisionMode }) {
           {rebalanceErr}
         </div>
       )}
+      {assignErr && (
+        <div style={{ color: 'var(--bad)', fontSize: 13, fontWeight: 600, padding: '8px 12px', background: 'var(--bad-soft)', borderRadius: 4, marginBottom: 16, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <span>{assignErr}</span>
+          <button className="os-btn sm ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => setAssignErr(null)}>Dismiss</button>
+        </div>
+      )}
 
       {loading && (
         <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--ink-soft)' }}>Loading reviewers…</div>
@@ -583,7 +632,12 @@ export function AdminReviewers({ decisionMode }) {
             </thead>
             <tbody>
               {sortedReviewers.map(r => {
-                const rBatches = Array.isArray(r.batches) ? r.batches : (r.batch && r.batch !== 'Unassigned' ? [r.batch] : []);
+                // Roster batches are [{ name, count }]; tolerate legacy string arrays / single batch.
+                const rBatches = Array.isArray(r.batches)
+                  ? r.batches.map(b => (typeof b === 'string' ? { name: b, count: null } : { name: b.name, count: b.count }))
+                  : (r.batch && r.batch !== 'Unassigned' ? [{ name: r.batch, count: null }] : []);
+                const assignedNames = rBatches.map(b => b.name);
+                const availableBatches = allBatches.filter(b => !assignedNames.includes(b));
                 const progressStr = r.progress || '0 / 0';
                 const pParts = progressStr.split('/');
                 const pNum = parseInt(pParts[0]) || 0;
@@ -609,17 +663,44 @@ export function AdminReviewers({ decisionMode }) {
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink)' }}>
-                          {rBatches.length > 0 ? rBatches.join(', ') : 'No assignments'}
+                          {rBatches.length > 0
+                            ? rBatches.map(b => (b.count != null ? `${b.count} of ${b.name}` : b.name)).join(', ')
+                            : 'No assignments'}
                         </div>
-                        {rBatches.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                            {rBatches.map(b => (
-                              <span key={b} className="os-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px', fontSize: 11 }}>
-                                {b}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                          {rBatches.map(b => (
+                            <span key={b.name} className="os-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px', fontSize: 11 }}>
+                              {b.name}
+                              <span
+                                role="button"
+                                aria-label={`Remove ${b.name} from ${r.name}`}
+                                title={`Remove ${b.name}`}
+                                style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 11, color: '#FF5A5F', marginLeft: 2 }}
+                                onClick={() => handleUnassignBatch(r.id, b.name)}
+                              >
+                                &times;
                               </span>
-                            ))}
-                          </div>
-                        )}
+                            </span>
+                          ))}
+                          {availableBatches.length > 0 ? (
+                            <select
+                              className="os-select sm"
+                              aria-label={`Assign a batch to ${r.name}`}
+                              style={{ padding: '0 4px', fontSize: 11, height: 24, width: 48, minWidth: 48 }}
+                              value=""
+                              onChange={e => { if (e.target.value) handleAssignBatch(r.id, e.target.value); }}
+                            >
+                              <option value="" disabled>+ ▾</option>
+                              {availableBatches.map(b => (
+                                <option key={b} value={b}>{b}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            batchList.length === 0 && (
+                              <span className="os-text-soft" style={{ fontSize: 11 }}>No batches — create one in Applications</span>
+                            )
+                          )}
+                        </div>
                       </div>
                     </td>
 

@@ -105,6 +105,12 @@ describe("misc adapters", () => {
       progress: "9 / 12", consistency: 0.92, lastActivity: "2026-05-01T00:00:00Z" });
     expect(r).toMatchObject({ id: "r1", name: "Vikram Sundar", weight: 2.0, progress: "9 / 12",
       consistency: 0.92, domain: "Robotics" });
+    // batches defaults to [] when absent
+    expect(r.batches).toEqual([]);
+  });
+  it("reviewer roster row passes through batches", () => {
+    const r = adaptReviewer({ user_id: "r2", name: "X", batches: [{ name: "Batch A", count: 12 }] });
+    expect(r.batches).toEqual([{ name: "Batch A", count: 12 }]);
   });
   it("calibration + audit + batch", () => {
     expect(adaptCalibrationRow({ user_id: "r1", name: "V", n_reviews: 9, avg_score: 7.8,
