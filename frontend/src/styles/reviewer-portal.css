@@ -913,6 +913,7 @@
 
 /* ── Score mini-bar ──────────────────────────────────────── */
 .rv-portal .lp-score-bar { display: flex; align-items: center; gap: 8px; }
+.rv-portal .lp-score-bar > span { flex-shrink: 0; white-space: nowrap; }
 .rv-portal .lp-score-bar-track {
   width: 52px; height: 4px;
   background: #f6f6f8; border: none; border-radius: 2px;

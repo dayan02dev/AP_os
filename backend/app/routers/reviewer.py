@@ -242,23 +242,14 @@ _SCORE_COLS = {
 
 def _validate_disagreements(merged: dict, ai_row: dict | None,
                             disagree: dict[str, str] | None) -> None:
-    """Spec §4.7: any dimension where |reviewer − AI| > 1.0 needs a written
-    reason under the dimension's SHORT name in `disagree_with_ai`."""
-    if ai_row is None:
-        return
-    disagree = disagree or {}
-    missing = []
-    for short, rc, ac in _DIM_MAP:
-        rv, av = merged.get(rc), ai_row.get(ac)
-        if rv is None or av is None:
-            continue
-        if abs(float(rv) - float(av)) > 1.0 and not (disagree.get(short) or "").strip():
-            missing.append(short)
-    if missing:
-        raise HTTPException(
-            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "disagreement_reason_required", "dimensions": missing},
-        )
+    """No-op: disagreement explanations are no longer required.
+
+    Previously (spec §4.7) any dimension where |reviewer − AI| > 1.0 required a
+    written reason in `disagree_with_ai`. The reviewer UI for entering those
+    reasons was removed, so the requirement is dropped. Kept as a stable hook
+    so the submit_review call site stays unchanged.
+    """
+    return
 
 
 def _fetch_ai_screening_row(sb, application_id: str, application_track: str) -> dict | None:

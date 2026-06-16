@@ -619,11 +619,11 @@ def test_submit_response_includes_weighted_overall_and_lock(
     assert payload["editWindowExpiresAt"] is not None
 
 
-def test_submit_requires_disagreement_reason_on_high_variance(
+def test_submit_high_variance_no_longer_requires_disagreement_reason(
     client, monkeypatch, _clear_overrides,
 ):
-    """Spec §4.7: |reviewer − AI| > 1.0 on any dimension requires a written
-    reason in disagree_with_ai[<short name>]."""
+    """Disagreement reasons are no longer required (reviewer UI removed): a
+    high-variance submit succeeds even without disagree_with_ai."""
     me = "rev-a"
     _seed_one_assignment(monkeypatch, me, ai_screening=[
         {"application_id": "app1", "application_track": "tir",
@@ -633,17 +633,9 @@ def test_submit_requires_disagreement_reason_on_high_variance(
     app.dependency_overrides[get_current_user] = _override_user(me)
 
     body = dict(_VALID_SUBMIT)
-    # problem: |8.0 − 5.0| = 3.0 → reason required. Every other dimension is
-    # within ±1.0 of the AI row (solution maps to AI score_completeness).
+    # problem: |8.0 − 5.0| = 3.0 → previously a reason was required; now it isn't.
     body.update(score_problem=8.0, score_solution=7.0, score_tech=6.0,
                 score_founders=8.0, score_commitment=7.0)
-    r = client.post("/reviewer/reviews", json=body)
-    assert r.status_code == 422, r.text
-    detail = r.json()["detail"]
-    assert detail["code"] == "disagreement_reason_required"
-    assert "problem" in detail["dimensions"]
-
-    body["disagree_with_ai"] = {"problem": "AI missed the pilot data"}
     r = client.post("/reviewer/reviews", json=body)
     assert r.status_code == 201, r.text
 
@@ -1212,12 +1204,12 @@ def test_patch_rejects_invalid_flags(client, monkeypatch, _clear_overrides):
     assert r.json()["detail"]["code"] == "flags_invalid"
 
 
-def test_patch_submitted_review_enforces_disagreement_gate(
+def test_patch_submitted_review_no_disagreement_gate(
     client, monkeypatch, _clear_overrides,
 ):
-    """Editing an already-submitted review must re-run the spec §4.7
-    disagreement gate.  A score change that crosses the >1.0 variance
-    threshold without a reason must 422; providing the reason must 200."""
+    """Disagreement gate removed: editing a submitted review with a score
+    change that crosses the >1.0 variance threshold now succeeds (200) even
+    without a reason."""
     me = "rev-a"
     _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
     _install_db(monkeypatch, {
@@ -1245,18 +1237,8 @@ def test_patch_submitted_review_enforces_disagreement_gate(
     })
     app.dependency_overrides[get_current_user] = _override_user(me)
 
-    # Without disagree_with_ai → 422 disagreement_reason_required
+    # High-variance score change without a reason now succeeds (gate removed).
     r = client.patch("/reviewer/reviews/rev1", json={"score_problem": 9.0})
-    assert r.status_code == 422, r.text
-    detail = r.json()["detail"]
-    assert detail["code"] == "disagreement_reason_required"
-    assert "problem" in detail["dimensions"]
-
-    # With the required reason → 200
-    r = client.patch(
-        "/reviewer/reviews/rev1",
-        json={"score_problem": 9.0, "disagree_with_ai": {"problem": "pilot data missed by AI"}},
-    )
     assert r.status_code == 200, r.text
 
 
@@ -1299,12 +1281,11 @@ def test_patch_draft_review_skips_submit_gates(
 # ─── New hardening tests ────────────────────────────────────────────────
 
 
-def test_submit_disagreement_gate_on_commit_dimension(
+def test_submit_high_variance_commit_dimension_no_gate(
     client, monkeypatch, _clear_overrides,
 ):
-    """'commit' is the client-facing short key for score_commitment.
-    Variance >1.0 on commitment requires disagree_with_ai['commit']; providing
-    it clears the gate."""
+    """Disagreement gate removed: high variance on the commitment dimension
+    submits successfully without a disagree_with_ai reason."""
     me = "rev-a"
     _seed_one_assignment(monkeypatch, me, ai_screening=[
         {"application_id": "app1", "application_track": "tir",
@@ -1315,21 +1296,11 @@ def test_submit_disagreement_gate_on_commit_dimension(
     app.dependency_overrides[get_current_user] = _override_user(me)
 
     body = dict(_VALID_SUBMIT)
-    # commitment: |8.0 − 5.0| = 3.0 → reason required; all others within ±1.0
+    # commitment: |8.0 − 5.0| = 3.0 → previously required a reason; now succeeds.
     body.update(
         score_problem=7.0, score_solution=7.0, score_tech=7.0,
         score_founders=7.0, score_commitment=8.0,
     )
-
-    # Without reason → 422, "commit" in dimensions
-    r = client.post("/reviewer/reviews", json=body)
-    assert r.status_code == 422, r.text
-    detail = r.json()["detail"]
-    assert detail["code"] == "disagreement_reason_required"
-    assert "commit" in detail["dimensions"]
-
-    # With reason under the 'commit' key → 201
-    body["disagree_with_ai"] = {"commit": "AI undervalued commitment"}
     r = client.post("/reviewer/reviews", json=body)
     assert r.status_code == 201, r.text
 

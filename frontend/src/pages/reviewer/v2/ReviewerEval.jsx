@@ -41,7 +41,6 @@ import {
 } from "./ui.jsx";
 
 const MAX_FLAGS = 8;
-const HIGH_VARIANCE = 1.0;
 
 // ── Loader ─────────────────────────────────────────────────────────────
 export default function ReviewerEval({ track, appId, onBack, onOpen }) {
@@ -271,7 +270,10 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   const [reco, setReco] = useState(initial.recommendation);
   const [notes, setNotes] = useState(initial.notes);
   const [flags, setFlags] = useState(initial.flags);
-  const [disagreements, setDisagreements] = useState(initial.disagreements);
+  // Disagreement reasons are no longer collected in the UI (the backend no
+  // longer requires them). The state is retained as a constant `{}`-style value
+  // so the eval→payload/patch mapping keeps emitting `disagree_with_ai`.
+  const [disagreements] = useState(initial.disagreements);
   const [reviewId, setReviewId] = useState(initial.reviewId);
   const [submitted, setSubmitted] = useState(initial.status === "submitted");
   const [reopened, setReopened] = useState(false);
@@ -301,8 +303,6 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   const editable = !lockedSubmitted && !expired;
 
   const setScore = (k) => (v) => setScores((prev) => ({ ...prev, [k]: v }));
-  const setDisagreement = (k) => (e) =>
-    setDisagreements((prev) => ({ ...prev, [k]: e.target.value }));
   const overall = weightedOverall(scores);
 
   const addFlag = () => {
@@ -312,16 +312,6 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     setFlagInput("");
   };
   const removeFlag = (i) => setFlags((prev) => prev.filter((_, j) => j !== i));
-
-  // Dimensions where |reviewer − AI| > 1.0 (need a written reason on submit).
-  const highVarianceDims = useMemo(() => {
-    if (!aiBlock) return [];
-    return DIM_KEYS.filter((k) => {
-      const av = aiBlock[k];
-      const rv = scores[k];
-      return typeof av === "number" && typeof rv === "number" && Math.abs(rv - av) > HIGH_VARIANCE;
-    });
-  }, [aiBlock, scores]);
 
   const currentEval = { scores, recommendation: reco, notes, flags, disagreements };
 
@@ -407,19 +397,13 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   const validateForSubmit = () => {
     const errs = { notes: false, dimensions: [] };
     if (!notes.trim()) errs.notes = true;
-    for (const k of highVarianceDims) {
-      if (!(disagreements[k] || "").trim()) errs.dimensions.push(k);
-    }
     setFieldErrors(errs);
-    return !errs.notes && errs.dimensions.length === 0;
+    return !errs.notes;
   };
 
   const applyServerError = (err) => {
     if (err?.code === "notes_required") {
       setFieldErrors((p) => ({ ...p, notes: true }));
-    } else if (err?.code === "disagreement_reason_required") {
-      const dims = (err.details && err.details.dimensions) || [];
-      setFieldErrors((p) => ({ ...p, dimensions: dims }));
     } else if (err?.status === 423 || err?.code === "review_locked") {
       // Edit window closed server-side — lock the UI.
       setExpiresAt((cur) => cur || new Date(Date.now() - 1000).toISOString());
@@ -546,18 +530,8 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
                 </button>
                 <button
                   className="os-btn"
-                  disabled={
-                    !editable ||
-                    !notes.trim() ||
-                    highVarianceDims.some((k) => !(disagreements[k] || "").trim())
-                  }
-                  title={
-                    !notes.trim()
-                      ? "Add notes to submit"
-                      : highVarianceDims.some((k) => !(disagreements[k] || "").trim())
-                        ? "Explain dimensions where your score differs from AI by more than 1.0"
-                        : ""
-                  }
+                  disabled={!editable || !notes.trim()}
+                  title={!notes.trim() ? "Add notes to submit" : ""}
                   onClick={submitEval}
                 >
                   {submitted ? "Re-submit evaluation →" : "Submit evaluation →"}
@@ -683,42 +657,17 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               <button className="os-btn sm ghost" onClick={() => setShowRubric(true)}>Open rubric →</button>
             </div>
 
-            {DIM_KEYS.map((k) => {
-              const isHigh = highVarianceDims.includes(k);
-              const needsReason = isHigh && fieldErrors.dimensions.includes(k);
-              return (
-                <div key={k} style={{ marginBottom: 16 }}>
-                  <Slider
-                    label={CRIT_LABELS[k]}
-                    kind={k}
-                    value={scores[k]}
-                    onChange={setScore(k)}
-                    disabled={!editable}
-                  />
-                  {isHigh && (
-                    <div style={{ marginTop: 6 }}>
-                      <input
-                        className="os-input"
-                        style={{
-                          width: "100%",
-                          fontSize: 12,
-                          borderColor: needsReason ? "var(--bad)" : undefined,
-                        }}
-                        placeholder={`Your score differs from AI by >1 — explain why (${CRIT_LABELS[k]})`}
-                        value={disagreements[k] || ""}
-                        onChange={setDisagreement(k)}
-                        disabled={!editable}
-                      />
-                      {needsReason && (
-                        <div className="os-text-xs" style={{ color: "var(--bad)", marginTop: 3 }}>
-                          A reason is required when your score differs from AI by more than 1.0.
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {DIM_KEYS.map((k) => (
+              <div key={k} style={{ marginBottom: 16 }}>
+                <Slider
+                  label={CRIT_LABELS[k]}
+                  kind={k}
+                  value={scores[k]}
+                  onChange={setScore(k)}
+                  disabled={!editable}
+                />
+              </div>
+            ))}
 
             <hr className="os-divider" />
 
