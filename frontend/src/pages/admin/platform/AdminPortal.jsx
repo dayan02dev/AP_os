@@ -19,6 +19,7 @@ import "../../../styles/admin-portal.css";
 import { ScreenStub } from "./screens/ScreenStub";
 import { AdminDashboard } from "./screens/AdminDashboard";
 import { AdminPipeline } from "./screens/AdminPipeline";
+import { AdminDetail } from "./screens/AdminDetail";
 
 function initialsFor(email) {
   const local = (email || '').split('@')[0] || '';
@@ -365,6 +366,7 @@ function AdminTabBar({ page, setPage, decisionMode }) {
 function AdminApp() {
   const [page, setPage] = React.useState('dashboard');
   const [selectedStartupId, setSelectedStartupId] = React.useState(null);
+  const [selectedTrack, setSelectedTrack] = React.useState(null);
   const [backPage, setBackPage] = React.useState('pipeline');
   const [decisionMode, setDecisionMode] = React.useState('reviewer');
 
@@ -396,8 +398,9 @@ function AdminApp() {
     }
   }, []);
 
-  const goDetail = (id, fromPage = 'pipeline') => {
+  const goDetail = (id, track, fromPage = 'pipeline') => {
     setSelectedStartupId(id);
+    setSelectedTrack(track || null);
     setBackPage(fromPage);
     setPage('detail');
   };
@@ -440,7 +443,14 @@ function AdminApp() {
             {page === 'dashboard'   && <AdminDashboard go={setPage} decisionMode={decisionMode} />}
             {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} />}
             {page === 'detail'      && (
-              <ScreenStub name="Application Detail" />
+              <AdminDetail
+                startupId={selectedStartupId}
+                track={selectedTrack}
+                onBack={() => setPage(backPage)}
+                onPrev={currentIdx > 0 ? onPrev : null}
+                onNext={currentIdx < startups.length - 1 ? onNext : null}
+                decisionMode={decisionMode}
+              />
             )}
             {page === 'reviewers'   && <ScreenStub name="Reviewers" />}
             {page === 'roles'       && <ScreenStub name="User Roles" />}

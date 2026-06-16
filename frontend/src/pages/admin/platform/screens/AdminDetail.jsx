@@ -1,0 +1,745 @@
+// AdminDetail — A-2 Application Detail (Task 10 faithful port).
+//
+// Receives { startupId, track, onBack, onPrev, onNext, decisionMode }.
+// On mount / startupId change → loadDetail(track, startupId) via useAdminData.
+//
+// Writes:
+//   • Admin decision — adminPlatformApi.decide(track, id, { decision, rationale })
+//     where decision = BUTTON_TO_DECISION[buttonLabel].
+//     After success → onBack().
+//   • Reviewer assignment — leadershipApi.assignReviewers / unassignReviewer
+//     (same call shapes as AdminApplicationDetail.jsx).
+//
+// Jury Scorecard + TIR Signal Profile are wrapped with <PreviewBadge/> and
+// only rendered when decisionMode === 'jury'.
+//
+// IMPORTANT: Do NOT read window.OS_DATA.STARTUPS. All data comes from loadDetail.
+// Jury helpers use seeded math against s.id only — no OS_DATA reads.
+
+import React, { useState, useEffect, useCallback, useReducer, useMemo } from "react";
+import { loadDetail } from "../../../../hooks/useAdminData";
+import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
+import { leadershipApi } from "../../../../lib/leadershipApi";
+import { BUTTON_TO_DECISION } from "../../../../lib/adminDataAdapter";
+import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
+import {
+  fieldBullets, isFactField, getThreeReviewers,
+  calculateWeightedReviewerAverage, getReviewerWeight, revInitials,
+} from "../helpers/adminHelpers";
+import { ScoreBar, Chip, FlagDot, RadarOverlay } from "../shell/osAtoms";
+import { ComparativeReviewModel } from "./ComparativeReviewModel";
+import { FullApplicationView } from "./FullApplicationView";
+
+// ── Criteria metadata (mirrors prototype CRIT_LABELS / METRICS) ─────────────
+const METRICS = [
+  { key: 'problem',  label: 'Problem Statement Impact and Importance' },
+  { key: 'solution', label: 'Completeness, Depth of Solution' },
+  { key: 'tech',     label: 'Technical Depth' },
+  { key: 'founders', label: 'Professional Profile of Founder' },
+  { key: 'commit',   label: 'Commitment to be fully available' },
+];
+
+// ── Seeded jury helpers (read s.id only, NOT window.OS_DATA) ─────────────────
+function getJuryMetricScore(scores, key, startupId) {
+  let val = scores ? scores[key] : null;
+  if (val == null || val < 5) {
+    const seed = (startupId || '').charCodeAt((startupId || '').length - 1) + key.charCodeAt(0) + 12;
+    val = 5.0 + (seed % 45) * 0.1;
+  }
+  return parseFloat(val.toFixed(1));
+}
+
+function getJuryReco(scores, jId, startupId) {
+  if (scores && scores.reco) return scores.reco;
+  const seed = (startupId || '').charCodeAt((startupId || '').length - 1) + (jId || '').charCodeAt((jId || '').length - 1);
+  const recos = ['yes', 'maybe', 'interview', 'no'];
+  return recos[seed % recos.length];
+}
+
+function getJuryMetricComment(jId, metricKey, startupId) {
+  const comments = {
+    problem: [
+      "Highly lucrative market size with strong, immediate customer pain points.",
+      "Demonstrates clear expansion path and high customer lifetime value.",
+      "Massive addressable market with high growth potential in the target sector.",
+      "Addresses a critical market gap with a highly scalable business model.",
+    ],
+    solution: [
+      "Completeness of execution is top-notch; solves the user flow end-to-end.",
+      "Very thoughtful solution design with a highly intuitive user interface.",
+      "Demonstrates excellent integration capabilities and operational efficiency.",
+      "Deep understanding of technical requirements and edge cases.",
+    ],
+    tech: [
+      "Strong proprietary algorithms and technical moats to fend off copycats.",
+      "Good defensibility with early IP generation and deep tech integration.",
+      "Hard-to-replicate hardware-software stack with solid first-mover advantage.",
+      "Deep technical barriers to entry and strong patent potential.",
+    ],
+    founders: [
+      "Aligned perfectly with the core cohort strategy and technical mandates.",
+      "Excellent match for our cohort network, resources, and technical support.",
+      "Team displays high coachability and matches our program goals precisely.",
+      "Perfect incubation fit; can leverage our strategic partner ecosystem.",
+    ],
+    commit: [
+      "Full-time commitment verified; founders are completely dedicated.",
+      "High availability and willingness to pivot core competencies as needed.",
+      "Demonstrated intense dedication during the preliminary validation phases.",
+      "Strong long-term dedication to building a lasting venture.",
+    ],
+  };
+  const arr = comments[metricKey] || ["Good performance and solid metrics."];
+  const seed =
+    (startupId || '').charCodeAt((startupId || '').length - 1) +
+    (jId || '').charCodeAt((jId || '').length - 1) +
+    metricKey.charCodeAt(0);
+  return arr[seed % arr.length];
+}
+
+function getJuryAvgFromSeeds(st) {
+  // No window.OS_DATA.JURY — use 2 seeded placeholder jury members
+  const list = [{ id: 'j0', name: 'Jury A' }, { id: 'j1', name: 'Jury B' }];
+  let sum = 0;
+  list.forEach((j) => {
+    sum += getJuryMetricScore(st.jury, 'problem', st.id);
+    sum += getJuryMetricScore(st.jury, 'solution', st.id);
+    sum += getJuryMetricScore(st.jury, 'tech', st.id);
+    sum += getJuryMetricScore(st.jury, 'founders', st.id);
+    sum += getJuryMetricScore(st.jury, 'commit', st.id);
+  });
+  return sum / (list.length * 5);
+}
+
+function getTIRSignalScore(st, key) {
+  if (st.tirSignals && st.tirSignals[key] != null) return st.tirSignals[key];
+  const seed =
+    (st.id || '').charCodeAt((st.id || '').length - 1) +
+    key.charCodeAt(0) +
+    key.charCodeAt(key.length - 1);
+  return parseFloat((6.0 + (seed % 36) * 0.1).toFixed(1));
+}
+
+function getTIRSignalOverall(st) {
+  const sum = METRICS.reduce((acc, m) => acc + getTIRSignalScore(st, m.key), 0);
+  return parseFloat((sum / METRICS.length).toFixed(2));
+}
+
+// ── Reviewer assignment card (reused from AdminApplicationDetail.jsx) ─────────
+function shortId(uid) { return (uid || '').slice(0, 8) || '—'; }
+
+function ReviewerAssignmentCard({ id, track, assignments, onReload, setBanner }) {
+  const [reviewerInput, setReviewerInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [unassigning, setUnassigning] = useState(null);
+
+  const assignedIds = useMemo(
+    () => new Set((assignments || []).map((a) => a?.reviewer_user_id)),
+    [assignments],
+  );
+
+  const handleAssign = useCallback(async () => {
+    const rid = reviewerInput.trim();
+    if (!rid || busy) return;
+    setBusy(true);
+    try {
+      const resp = await leadershipApi.assignReviewers(id, track, { reviewer_user_ids: [rid] });
+      const result = (resp?.results || [])[0];
+      const st = result?.status;
+      if (st === 'created') {
+        setBanner({ kind: 'ok', text: `Reviewer ${shortId(rid)} assigned.` });
+      } else if (st === 'already_assigned') {
+        setBanner({ kind: 'error', text: 'That reviewer is already assigned.' });
+      } else if (st === 'not_a_reviewer') {
+        setBanner({ kind: 'error', text: 'That user is not a reviewer.' });
+      } else {
+        setBanner({ kind: 'ok', text: 'Assignment processed.' });
+      }
+      setReviewerInput('');
+      await onReload();
+    } catch (err) {
+      const code = err?.details?.code || err?.code;
+      if (err?.status === 403 || code === 'missing_capability') {
+        setBanner({
+          kind: 'error',
+          text: "You don't have permission to assign reviewers (assign_reviewers capability required).",
+        });
+      } else {
+        setBanner({
+          kind: 'error',
+          text: err?.details?.message || err?.message || 'Failed to assign reviewer.',
+        });
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [reviewerInput, busy, id, track, onReload, setBanner]);
+
+  const handleUnassign = useCallback(async (a) => {
+    if (!a?.reviewer_user_id || unassigning) return;
+    if (!window.confirm(`Remove reviewer ${shortId(a.reviewer_user_id)} from this application?`)) return;
+    setUnassigning(a.reviewer_user_id);
+    try {
+      await leadershipApi.unassignReviewer(id, track, a.reviewer_user_id);
+      setBanner({ kind: 'ok', text: `Reviewer ${shortId(a.reviewer_user_id)} unassigned.` });
+      await onReload();
+    } catch (err) {
+      const code = err?.details?.code || err?.code;
+      if (code === 'review_already_submitted') {
+        setBanner({
+          kind: 'error',
+          text: "This reviewer has already submitted a review and can't be unassigned in Phase 1.",
+        });
+      } else if (err?.status === 403 || code === 'missing_capability') {
+        setBanner({
+          kind: 'error',
+          text: "You don't have permission to unassign reviewers (assign_reviewers capability required).",
+        });
+      } else {
+        setBanner({
+          kind: 'error',
+          text: err?.details?.message || err?.message || 'Failed to unassign reviewer.',
+        });
+      }
+    } finally {
+      setUnassigning(null);
+    }
+  }, [unassigning, id, track, onReload, setBanner]);
+
+  return (
+    <div className="os-card">
+      <div className="os-card-title os-mb-sm">Reviewer Assignment</div>
+      {(!assignments || assignments.length === 0) ? (
+        <p className="os-text-dim os-text-sm">No reviewers assigned yet.</p>
+      ) : (
+        <ul style={{ listStyle: 'none', margin: '0 0 12px', padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {assignments.map((a) => (
+            <li key={a?.id || `${a?.reviewer_user_id}-${a?.assigned_at}`}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <span style={{ fontSize: 13, color: 'var(--ink)', display: 'flex', flexDirection: 'column' }}>
+                Reviewer · {shortId(a?.reviewer_user_id)}
+                <span style={{ fontSize: 11, color: 'var(--ink-dim)', textTransform: 'capitalize' }}>{a?.state || 'pending'}</span>
+              </span>
+              <button
+                type="button"
+                className="os-btn ghost sm"
+                disabled={unassigning === a?.reviewer_user_id}
+                onClick={() => handleUnassign(a)}
+              >
+                {unassigning === a?.reviewer_user_id ? 'Unassigning…' : 'Unassign'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          className="os-input"
+          type="text"
+          placeholder="Reviewer user-id"
+          value={reviewerInput}
+          onChange={(e) => setReviewerInput(e.target.value)}
+          disabled={busy}
+          style={{ flex: 1 }}
+        />
+        <button
+          type="button"
+          className="os-btn sm"
+          disabled={busy || !reviewerInput.trim()}
+          onClick={handleAssign}
+        >
+          {busy ? 'Assigning…' : 'Assign'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decisionMode }) {
+  const [s, setS] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const [secOpen, setSecOpen] = useState({});
+  const [viewApp, setViewApp] = useState(false);
+
+  // Decision panel
+  const [decision, setDecision] = useState(null);   // 'approve' | 'hold' | 'reject' | 'waitlist'
+  const [rationale, setRationale] = useState('');
+  const [decisionBusy, setDecisionBusy] = useState(false);
+  const [decisionError, setDecisionError] = useState(null);
+
+  const [banner, setBanner] = useState(null);
+  const [, forceRefresh] = useReducer(x => x + 1, 0);
+
+  const doLoad = useCallback(async () => {
+    if (!startupId || !track) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const d = await loadDetail(track, startupId);
+      setS(d);
+      // Pre-fill decision from existing adminDecision
+      const ad = (d.adminDecision || '').toLowerCase();
+      if (ad === 'approved') setDecision('approve');
+      else if (ad === 'hold') setDecision('hold');
+      else if (ad === 'rejected') setDecision('reject');
+      else if (ad === 'waitlisted') setDecision('waitlist');
+      else setDecision(null);
+      setRationale(d.adminRationale || '');
+    } catch (e) {
+      setError(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [startupId, track]);
+
+  useEffect(() => { doLoad(); }, [doLoad]);
+
+  const onApplyDecision = async () => {
+    if (!decision || !s) return;
+    const apiDecision = BUTTON_TO_DECISION[decision];
+    if (!apiDecision) return;
+
+    // Validate rationale requirement
+    if (['hold', 'reject', 'waitlist'].includes(decision) && !rationale.trim()) {
+      setDecisionError(`A rationale is required to ${decision} this application.`);
+      return;
+    }
+
+    setDecisionBusy(true);
+    setDecisionError(null);
+    try {
+      await adminPlatformApi.decide(track, s.id, {
+        decision: apiDecision,
+        rationale: rationale.trim() || undefined,
+      });
+      setBanner({ kind: 'ok', text: `Decision recorded: ${apiDecision}.` });
+      onBack();
+    } catch (err) {
+      const code = err?.details?.code || err?.code;
+      if (code === 'illegal_transition') {
+        const allowed = err?.details?.allowed || [];
+        const hint = allowed.length ? ` Allowed: ${allowed.join(', ')}.` : '';
+        setDecisionError(`That decision isn't allowed from the current status.${hint}`);
+      } else if (code === 'rationale_required') {
+        setDecisionError(err?.details?.message || 'A rationale is required for that decision.');
+      } else if (err?.status === 403 || code === 'missing_capability') {
+        setDecisionError("You don't have permission to record decisions.");
+      } else {
+        setDecisionError(err?.details?.message || err?.message || 'Failed to record decision.');
+      }
+    } finally {
+      setDecisionBusy(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
+        <span className="os-text-dim">Loading application…</span>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="os-banner" style={{ margin: 24, padding: '16px 20px', background: '#fdecec', border: '1px solid #f3c2c4', borderRadius: 4 }}>
+        <div style={{ fontWeight: 600, marginBottom: 6, color: '#b3262b' }}>Failed to load application</div>
+        <div style={{ fontSize: 13, color: '#b3262b' }}>{error?.message || 'Unknown error'}</div>
+        <button className="os-btn sm ghost" style={{ marginTop: 10 }} onClick={doLoad}>Retry</button>
+      </div>
+    );
+  }
+  if (!s) return null;
+
+  const isUnderInterview = s.chip === 'JURY REVIEW';
+  const aiData = s.ai || {};
+
+  // ── Reviewer overall (seeded if no real data)
+  const revOverall = s.rev ? calculateWeightedReviewerAverage(s, 'overall') : 0;
+  const jOverall = s.jury ? getJuryAvgFromSeeds(s) : 0;
+  const combinedOverall = revOverall > 0 && jOverall > 0
+    ? (revOverall + jOverall) / 2
+    : revOverall > 0 ? revOverall : jOverall;
+
+  if (viewApp) {
+    return <FullApplicationView s={s} onBack={() => setViewApp(false)} />;
+  }
+
+  return (
+    <div>
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div className="lp-section-head">
+        <div>
+          <div className="lp-breadcrumb">
+            <a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}
+              style={{ color: '#6f6f78', textDecoration: 'none' }}>Applications</a>
+            <span style={{ margin: '0 8px', color: '#c8c8d0' }}>/</span>
+            <span style={{ color: '#8a8a92' }}>{s.name}</span>
+          </div>
+          <span className="lp-section-eyebrow" style={{ marginTop: 12 }}>APPLICATION DETAIL</span>
+          <h2 className="lp-section-title">
+            {s.name}
+            <span className="lp-muted"> · admin review</span>
+            {isUnderInterview && (
+              <span style={{
+                marginLeft: 12, fontSize: 10.5, fontWeight: 700,
+                letterSpacing: '0.06em', textTransform: 'uppercase',
+                background: '#fff8e6', border: '1px solid #f6d98a', color: '#9a6206',
+                borderRadius: 999, padding: '3px 11px',
+                display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle',
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#9a6206', flexShrink: 0 }} />
+                Interview requested
+              </span>
+            )}
+          </h2>
+          <div className="lp-section-sub">
+            {(s.founders || []).join(' · ')} · {s.domain} · {s.stage} · Submitted {s.sub}
+          </div>
+        </div>
+        <div className="lp-section-actions">
+          <div className="os-row gap-sm">
+            {onPrev && <button className="os-btn ghost sm" onClick={onPrev}>← Prev application</button>}
+            {onNext && <button className="os-btn ghost sm" onClick={onNext}>Next application →</button>}
+          </div>
+          <div className="os-row gap-sm">
+            <button className="os-btn secondary" onClick={onBack}>← Back to applications</button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Banner ──────────────────────────────────────────────────────────── */}
+      {banner && (
+        <div className={`os-banner${banner.kind === 'error' ? ' danger' : ''}`}
+          style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 4, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: banner.kind === 'error' ? '#fdecec' : '#e9f6ef', border: `1px solid ${banner.kind === 'error' ? '#f3c2c4' : '#b7ddc8'}`, color: banner.kind === 'error' ? '#b3262b' : '#1d6b45' }}>
+          <span>{banner.text}</span>
+          <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, lineHeight: 1, color: 'inherit' }}
+            onClick={() => setBanner(null)} aria-label="Dismiss">×</button>
+        </div>
+      )}
+
+      {/* ── Two-column layout ────────────────────────────────────────────────── */}
+      <div className="os-grid-evaluation">
+        {/* LEFT — application & score summaries */}
+        <div className="os-stack">
+          {/* Application Details Card */}
+          <div className="os-card">
+            <div className="os-card-head">
+              <div className="os-card-title">Application · {s.name}</div>
+              <div className="os-row gap-sm">
+                <Chip>{s.domain}</Chip>
+                <Chip>{s.stage}</Chip>
+                {s.trl && s.trl !== '—' && <Chip>TRL {s.trl}</Chip>}
+              </div>
+            </div>
+            <div className="os-stack">
+              {/* AI summary */}
+              {s.aiSummary && (
+                <div className="ps-ai-summary">
+                  <div className="ps-ai-label">AI summary</div>
+                  <p className="ps-ai-text">{s.aiSummary}</p>
+                </div>
+              )}
+
+              {/* Problem & solution — collapsible bullet sections */}
+              {s.reviews && s.reviews.length > 0 && (
+                <div>
+                  <div className="ps-group-label">Reviewer Notes</div>
+                  <div className="ps-sections">
+                    {s.reviews.map((rv, i) => {
+                      const open = secOpen[`rev-${i}`] !== false;
+                      return (
+                        <div className={"ps-sec" + (open ? " is-open" : "")} key={i}>
+                          <button className="ps-sec-head" aria-expanded={open}
+                            onClick={() => setSecOpen(prev => ({ ...prev, [`rev-${i}`]: !open }))}>
+                            <span className="ps-sec-chev">{open ? '▾' : '▸'}</span>
+                            <span className="ps-sec-label">Reviewer {i + 1} · {rv.reco || '—'}</span>
+                            <span className="ps-sec-hint">{open ? '' : (rv.overall ? rv.overall.toFixed(1) : '—')}</span>
+                          </button>
+                          {open && rv.notes && (
+                            <ul className="ps-bullets"><li>{rv.notes}</li></ul>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <hr className="os-divider" />
+
+              <button className="os-btn secondary os-w-100" onClick={() => setViewApp(true)}>
+                View full application →
+              </button>
+            </div>
+          </div>
+
+          {/* Comparative review model (seeded reviewer data) */}
+          {s.rev && <ComparativeReviewModel startup={s} />}
+
+          {/* Jury Scorecard + TIR Signal Profile — jury mode only, PreviewBadge'd */}
+          {decisionMode === 'jury' && (() => {
+            const assigned = [
+              { id: 'j0', name: 'Jury Member A', org: '' },
+              { id: 'j1', name: 'Jury Member B', org: '' },
+            ];
+
+            const jMetrics = [
+              { key: 'problem', short: 'Problem statement' },
+              { key: 'solution', short: 'Solution depth' },
+              { key: 'tech', short: 'Technical depth' },
+              { key: 'founders', short: 'Founder profile' },
+              { key: 'commit', short: 'Commitment' },
+            ];
+            const recoLabel = {
+              yes: 'Approve', approve: 'Approve',
+              no: 'Pass', pass: 'Pass', reject: 'Pass',
+              maybe: 'Hold', waitlist: 'Hold',
+              interview: 'Interview',
+            };
+
+            return (
+              <>
+                {/* Jury Scorecard */}
+                <div className="os-card" style={{ marginTop: 24, padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                  <PreviewBadge />
+                  {isUnderInterview && (
+                    <div className="os-banner amber" style={{ borderRadius: 2 }}>
+                      <div>
+                        <div className="os-banner-title" style={{ color: '#9a6206' }}>Interview requested</div>
+                        <div className="os-banner-text" style={{ fontSize: 13 }}>This application is under interview review process.</div>
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <span className="cem-kicker">&sect; Jury Evaluation</span>
+                    <h3 className="cem-title">Final Jury Panel</h3>
+                  </div>
+                  <div className="rv-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+                    {assigned.map((j, ji) => {
+                      const scores = s.jury || {};
+                      const avg = jMetrics.reduce((sum, m) => sum + getJuryMetricScore(scores, m.key, s.id), 0) / jMetrics.length;
+                      const initials = j.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+                      const jReco = getJuryReco(scores, j.id, s.id).toLowerCase();
+                      const recoTone = (jReco === 'yes' || jReco === 'approve') ? 'green'
+                        : (jReco === 'no' || jReco === 'pass' || jReco === 'reject') ? 'red'
+                        : (jReco === 'interview') ? 'blue' : 'amber';
+                      const badgeLabel = recoLabel[jReco] || jReco;
+                      const juryNote = (scores && scores.notes) || (
+                        (jReco === 'yes' || jReco === 'approve') ? 'Strong overall candidate — recommend advancing to the cohort.'
+                        : (jReco === 'interview') ? 'Promising profile; recommend an interview to confirm execution capability.'
+                        : (jReco === 'no' || jReco === 'pass' || jReco === 'reject') ? 'Not convinced this is the right fit for the cohort at this stage.'
+                        : 'Solid potential; a few areas need further validation before a firm decision.'
+                      );
+
+                      return (
+                        <div key={j.id} className="rv-card">
+                          <div className="rv-card-head">
+                            <div className="rv-card-id">
+                              <span className="os-avatar" style={{ width: 38, height: 38, fontSize: 15, flexShrink: 0, background: 'var(--accent-soft)', color: 'var(--artblue)' }}>{initials}</span>
+                              <div style={{ minWidth: 0 }}>
+                                <div className="rv-card-name">{j.name}</div>
+                                <div className="rv-card-role">Panel evaluation</div>
+                              </div>
+                            </div>
+                            <span className={`os-chip ${recoTone}`} style={{ flexShrink: 0 }}>{(badgeLabel || '').toUpperCase()}</span>
+                          </div>
+
+                          <div className="rv-overall">
+                            <span className="rv-overall-label">Overall rating</span>
+                            <span className="rv-overall-num">{avg > 0 ? avg.toFixed(1) : '—'}</span>
+                          </div>
+
+                          <div className="rv-scores">
+                            {jMetrics.map(m => {
+                              const val = getJuryMetricScore(scores, m.key, s.id);
+                              const comment = getJuryMetricComment(j.id, m.key, s.id);
+                              return (
+                                <div key={m.key} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                  <div className="rv-score">
+                                    <span className="rv-score-label">{m.short}</span>
+                                    <span className="rv-bar"><span className="rv-bar-fill" style={{ width: Math.max(0, Math.min(100, (val || 0) * 10)) + '%' }} /></span>
+                                    <span className="rv-score-num">{val != null ? val.toFixed(1) : '—'}</span>
+                                  </div>
+                                  {comment && <p className="rv-note-text" style={{ fontSize: 12.5, lineHeight: 1.55, margin: 0 }}>"{comment}"</p>}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <div className="rv-note">
+                            <span className="rv-block-label">Jury note</span>
+                            <p className="rv-note-text">{juryNote}</p>
+                          </div>
+
+                          <div className="rv-flags">
+                            <span className="rv-block-label">Flags raised (0)</span>
+                            <span className="rv-flags-empty">No flags raised.</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* TIR Signal Profile Card */}
+                <div className="os-card" style={{ borderLeft: '4px solid #1f0a8a', marginTop: 16 }}>
+                  <PreviewBadge />
+                  <div className="os-card-title os-mb-sm" style={{ color: '#1f0a8a' }}>TIR Signal Profile</div>
+                  <div className="os-stack gap-sm">
+                    {METRICS.map(m => {
+                      const tirVal = getTIRSignalScore(s, m.key);
+                      return (
+                        <div key={m.key}>
+                          <div className="os-row between os-text-sm">
+                            <span className="os-text-soft" style={{ fontSize: 12.5 }}>{m.label}</span>
+                            <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{tirVal.toFixed(1)}</span>
+                          </div>
+                          <div style={{ height: 6, background: '#eef0f4', borderRadius: 999, overflow: 'hidden', marginTop: 5 }}>
+                            <div style={{ width: (tirVal * 10) + '%', height: '100%', background: '#1f0a8a', borderRadius: 999 }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <hr className="os-divider" style={{ margin: '8px 0' }} />
+                    <div className="os-row between">
+                      <span className="os-text-xs os-text-dim os-uppercase" style={{ color: '#1f0a8a' }}>TIR Overall</span>
+                      <span className="os-num-big" style={{ fontSize: 24, fontFamily: 'var(--font-sans)', fontWeight: 800, color: '#1f0a8a' }}>
+                        {getTIRSignalOverall(s).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+
+        {/* RIGHT — Averages, Flags, Reviewer Assignment, Decision */}
+        <div className="os-stack">
+          {/* Reviewer Scores Card */}
+          <div className="os-card">
+            <div className="os-card-title os-mb-sm">Reviewer Scores</div>
+            <div className="os-stack gap-sm">
+              {METRICS.map(m => {
+                const revVal = s.rev ? calculateWeightedReviewerAverage(s, m.key) : 0;
+                return (
+                  <div key={m.key}>
+                    <div className="os-row between os-text-sm">
+                      <span className="os-text-soft">{m.label}</span>
+                      <span className="os-mono font-bold" style={{ fontWeight: 600 }}>
+                        {revVal > 0 ? revVal.toFixed(1) : '—'}
+                      </span>
+                    </div>
+                    <div className="os-scorebar-track" style={{ marginTop: 4 }}>
+                      <div className="os-scorebar-fill" style={{ width: (revVal * 10) + '%', background: `var(--cat-${m.key})` }} />
+                    </div>
+                  </div>
+                );
+              })}
+              <hr className="os-divider" style={{ margin: '8px 0' }} />
+              <div className="os-stack gap-xs">
+                <div className="os-row between os-text-sm">
+                  <span className="os-text-soft">Reviewer Overall</span>
+                  <span className="os-mono font-bold">{revOverall > 0 ? revOverall.toFixed(2) : '—'}</span>
+                </div>
+                {decisionMode === 'jury' && (
+                  <div className="os-row between os-text-sm">
+                    <span className="os-text-soft">Jury Overall</span>
+                    <span className="os-mono font-bold">{jOverall > 0 ? jOverall.toFixed(2) : '—'}</span>
+                  </div>
+                )}
+                <hr className="os-divider" style={{ margin: '4px 0', borderStyle: 'dashed' }} />
+                <div className="os-row between">
+                  <span className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 700, color: 'var(--accent)' }}>Combined Overall</span>
+                  <span className="os-num-big" style={{ fontSize: 26, fontFamily: 'var(--font-sans)', fontWeight: 800, color: 'var(--accent)' }}>
+                    {combinedOverall > 0 ? combinedOverall.toFixed(2) : '—'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Flags raised card */}
+          <div className="os-card">
+            <div className="os-card-title os-mb-sm">Flags Raised</div>
+            {s.flags && s.flags.length ? s.flags.map((f, i) => (
+              <div key={i} className="os-row gap-sm os-mb-sm">
+                <span className="os-chip red" style={{ background: '#fff0f0', color: '#d23b40', border: '1px solid #ffe4e4' }}>⚐</span>
+                <span className="os-text-sm" style={{ color: '#4a4a52' }}>{f}</span>
+              </div>
+            )) : <div className="os-text-dim os-text-sm">No flags raised on this application.</div>}
+          </div>
+
+          {/* Reviewer Assignment */}
+          <ReviewerAssignmentCard
+            id={s.id}
+            track={track}
+            assignments={(s.assignedReviewers || []).map(rid => ({ reviewer_user_id: rid, state: 'assigned' }))}
+            onReload={doLoad}
+            setBanner={setBanner}
+          />
+
+          {/* Admin Decision Card */}
+          <div className="os-card">
+            <div className="os-text-xs os-text-dim os-uppercase os-mb-sm">DECIDE</div>
+            <div className="os-reco-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+              {[
+                { id: 'approve', label: 'Approve', activeStyle: { background: '#3213b7', color: '#fff', borderColor: '#3213b7' } },
+                { id: 'hold',    label: 'Hold',    activeStyle: {} },
+                { id: 'reject',  label: 'Reject',  activeStyle: {} },
+                { id: 'waitlist', label: 'Waitlist', activeStyle: {} },
+              ].map(btn => (
+                <button
+                  key={btn.id}
+                  className={`os-reco-btn${decision === btn.id ? ` active ${btn.id === 'approve' ? 'yes' : btn.id === 'reject' ? 'no' : 'maybe'}` : ''}`}
+                  style={decision === btn.id ? btn.activeStyle : {}}
+                  disabled={decisionBusy}
+                  onClick={() => { setDecision(btn.id); setDecisionError(null); }}
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="os-mt-sm" style={{ fontSize: 12, color: '#6f6f78', fontStyle: 'italic' }}>
+              {decisionMode === 'jury'
+                ? 'Approval will invite for cohort onboarding'
+                : 'Approval will invite to psychometry'}
+            </div>
+
+            <textarea
+              className="os-input os-w-100 os-mt"
+              rows={3}
+              style={{ fontSize: 13.5 }}
+              placeholder={
+                decision && ['hold', 'reject', 'waitlist'].includes(decision)
+                  ? 'Rationale (required for hold / reject / waitlist)…'
+                  : 'Rationale (optional for approve)…'
+              }
+              value={rationale}
+              onChange={e => { setRationale(e.target.value); setDecisionError(null); }}
+              disabled={decisionBusy}
+            />
+
+            {decisionError && (
+              <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 4, fontSize: 12.5, background: '#fdecec', border: '1px solid #f3c2c4', color: '#b3262b' }}
+                role="alert">{decisionError}</div>
+            )}
+
+            <button
+              className="os-btn os-w-100 os-mt"
+              style={{ background: '#3213b7', color: '#fff', fontWeight: 600 }}
+              disabled={decisionBusy || !decision}
+              onClick={onApplyDecision}
+            >
+              {decisionBusy ? 'Recording…' : 'Apply decision'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

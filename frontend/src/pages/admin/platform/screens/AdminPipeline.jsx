@@ -1005,7 +1005,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
               <tr
                 key={s.id}
                 style={{ cursor: 'pointer', opacity: isHidden ? 0.45 : 1 }}
-                onClick={() => goDetail && goDetail(s.id)}
+                onClick={() => goDetail && goDetail(s.id, s.track)}
               >
                 <td onClick={e => e.stopPropagation()} style={{ width: 40 }}>
                   <input
