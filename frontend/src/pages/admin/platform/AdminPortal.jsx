@@ -13,10 +13,22 @@
 // prototype CSS does not leak into other surfaces.
 
 import React from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../../hooks/useAuth.jsx";
 import "../../../styles/admin-portal.css";
 import { ScreenStub } from "./screens/ScreenStub";
 
-function AdminTopbar({ page, decisionMode }) {
+function initialsFor(email) {
+  const local = (email || '').split('@')[0] || '';
+  return local.slice(0, 2).toUpperCase() || '??';
+}
+
+function AdminTopbar({ page, decisionMode, setPage }) {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const userEmail = user?.email || '';
+  const userInitials = initialsFor(userEmail);
+
   const crumbMap = {
     dashboard:'DASHBOARD', pipeline:'APPLICATIONS', detail:'APPLICATION DETAIL',
     reviewers: decisionMode === 'jury' ? 'JURY PANEL' : 'REVIEWERS',
@@ -54,7 +66,7 @@ function AdminTopbar({ page, decisionMode }) {
 
   return (
     <div className="lp-topbar">
-      <button className="lp-home-btn" onClick={() => { window.location.reload(); }}>← HOME</button>
+      <button className="lp-home-btn" onClick={() => { setPage('dashboard'); }}>← HOME</button>
       <div className="lp-brand">
         <img className="lp-brand-combined" src="assets/artpark-iisc-combined.webp" alt="ARTPARK · AI & Robotics Technology Park @ IISc" />
       </div>
@@ -100,8 +112,8 @@ function AdminTopbar({ page, decisionMode }) {
             setMenuOpen(!menuOpen);
           }}
         >
-          <div className="os-avatar" style={{width:24,height:24,fontSize:10,flexShrink:0,background:'#3213b7',color:'#fff'}}>TB</div>
-          <span style={{fontSize: 13, fontWeight: 500}}>tanvi@artpark.in</span>
+          <div className="os-avatar" style={{width:24,height:24,fontSize:10,flexShrink:0,background:'#3213b7',color:'#fff'}}>{userInitials}</div>
+          <span style={{fontSize: 13, fontWeight: 500}}>{userEmail}</span>
           <span className="caret">▾</span>
 
           {menuOpen && (
@@ -158,12 +170,12 @@ function AdminTopbar({ page, decisionMode }) {
                 }}
                 className="dropdown-hover-item"
                 onMouseEnter={(e) => {
-                  e.target.style.background = 'var(--bg-soft)';
-                  e.target.style.color = 'var(--ink)';
+                  e.currentTarget.style.background = 'var(--bg-soft)';
+                  e.currentTarget.style.color = 'var(--ink)';
                 }}
                 onMouseLeave={(e) => {
-                  e.target.style.background = 'transparent';
-                  e.target.style.color = 'var(--ink-soft)';
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = 'var(--ink-soft)';
                 }}
               >
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--line-strong)', flexShrink: 0 }} />
@@ -172,7 +184,7 @@ function AdminTopbar({ page, decisionMode }) {
             </div>
           )}
         </div>
-        <button className="lp-signout" onClick={() => { if (window.confirm('Sign out of the Admin portal?')) window.location.reload(); }}>SIGN OUT ↗</button>
+        <button className="lp-signout" onClick={async () => { if (window.confirm('Sign out of the Admin portal?')) { await logout(); navigate('/apply/signin'); } }}>SIGN OUT ↗</button>
       </div>
 
       {settingsOpen && (
@@ -405,7 +417,7 @@ function AdminApp() {
   return (
     <div className="adm-portal">
       <div className="os-shell">
-        <AdminTopbar page={page} decisionMode={decisionMode} />
+        <AdminTopbar page={page} decisionMode={decisionMode} setPage={setPage} />
         <div className="lp-layout">
           {!isDetail && (
             <AdminCohortHeader
