@@ -20,6 +20,7 @@ import { ScreenStub } from "./screens/ScreenStub";
 import { AdminDashboard } from "./screens/AdminDashboard";
 import { AdminPipeline } from "./screens/AdminPipeline";
 import { AdminDetail } from "./screens/AdminDetail";
+import AdminGate1 from "./screens/AdminGate1";
 
 function initialsFor(email) {
   const local = (email || '').split('@')[0] || '';
@@ -454,7 +455,7 @@ function AdminApp() {
             )}
             {page === 'reviewers'   && <ScreenStub name="Reviewers" />}
             {page === 'roles'       && <ScreenStub name="User Roles" />}
-            {page === 'gate1'       && (decisionMode === 'jury' ? <ScreenStub name="Gate 2 Final" /> : <ScreenStub name="Admin Review" />)}
+            {page === 'gate1'       && (decisionMode === 'jury' ? <ScreenStub name="Gate 2 Final" /> : <AdminGate1 goDetail={goDetail} />)}
             {page === 'psychometry' && <ScreenStub name="Psychometry" />}
             {page === 'jury'        && <ScreenStub name="Jury Mgmt" />}
             {page === 'gate2'       && <ScreenStub name="Gate 2 Final" />}

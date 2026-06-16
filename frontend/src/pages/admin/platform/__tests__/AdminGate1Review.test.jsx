@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import React from "react";
 
 import {
   canSubmitDecision,
@@ -6,7 +8,46 @@ import {
   buildBulkItems,
   partitionByCutoff,
   summarizeBulkResults,
-} from "../AdminGate1Review.jsx";
+} from "../screens/AdminGate1.jsx";
+
+// ── Smoke test: AdminGate1 mounts and shows the variant tabs ────────────────
+vi.mock("../../../../hooks/useAdminData", () => ({
+  useAdminData: () => ({ data: { startups: [], total: 0 }, loading: false, error: null, reload: vi.fn() }),
+}));
+vi.mock("../../../../lib/adminPlatformApi", () => ({
+  adminPlatformApi: { decide: vi.fn(), bulkDecide: vi.fn(), getPipeline: vi.fn() },
+}));
+vi.mock("../shell/osAtoms", () => ({
+  PageHead: ({ eyebrow, title }) => <div>{eyebrow} {title}</div>,
+  Chip: ({ children }) => <span>{children}</span>,
+  FlagDot: () => null,
+}));
+vi.mock("../screens/ComparativeReviewModel", () => ({
+  ComparativeReviewModel: () => null,
+}));
+vi.mock("../ui.jsx", () => ({
+  LoadingState: ({ label }) => <div>{label}</div>,
+  ErrorState:   ({ error }) => <div>{String(error)}</div>,
+  EmptyState:   ({ label }) => <div>{label}</div>,
+}));
+
+// Default import
+import AdminGate1 from "../screens/AdminGate1.jsx";
+
+describe("AdminGate1 smoke", () => {
+  it("renders the 4 variant tabs", () => {
+    render(<AdminGate1 goDetail={() => {}} />);
+    expect(screen.getByText(/A · Status/i)).toBeTruthy();
+    expect(screen.getByText(/B · Cutoff slider/i)).toBeTruthy();
+    expect(screen.getByText(/C · Batch decision/i)).toBeTruthy();
+    expect(screen.getByText(/D · My history/i)).toBeTruthy();
+  });
+
+  it("shows empty state when no evaluated apps", () => {
+    render(<AdminGate1 goDetail={() => {}} />);
+    expect(screen.getByText(/No evaluated applications/i)).toBeTruthy();
+  });
+});
 
 describe("canSubmitDecision — rationale gate", () => {
   it("requires a chosen decision", () => {
