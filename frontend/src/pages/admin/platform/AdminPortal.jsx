@@ -168,7 +168,8 @@ function AdminTopbar({ page, decisionMode, setPage }) {
                 <span style={{ color: 'var(--artblue)', marginLeft: 'auto', fontWeight: 700 }}>✓</span>
               </div>
               <a
-                href="../Reviewer-Portal/reviewer-portal.html"
+                href="/reviewer"
+                onClick={(e) => { e.preventDefault(); navigate('/reviewer'); }}
                 style={{
                   padding: '8px 12px',
                   fontSize: 13,
