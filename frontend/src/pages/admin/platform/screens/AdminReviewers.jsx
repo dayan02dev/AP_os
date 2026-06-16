@@ -1,0 +1,699 @@
+// AdminReviewers — A-5 Reviewer Roster / A-6 Jury Panel (Task 12)
+//
+// Faithful port of prototype AdminReviewers from admin-2.jsx.
+//
+// reviewer-mode (decisionMode !== 'jury'):
+//   • Roster table rows ← useAdminData("reviewers") → data.reviewers
+//   • Sortable columns: name, domain, progress, consistency, weight, lastActivity
+//   • Per-row "Manage" drawer: edit weight, domains, batch assignments
+//     → patchReviewer(id, { weight, domains }) on save, then reload()
+//   • Rebalance button → rebalance({}) + result banner + reload()
+//   • Invite reviewer modal → adminApi.createUser({ email, full_name, roles, send_invite })
+//     Shows temp_password / invite_url on success
+//
+// jury-mode (decisionMode === 'jury'):
+//   • PreviewBadge at the top (no backend)
+//   • Local mock JURY data (seeded from prototype)
+//   • Random Allotment: local no-op (mock only)
+//   • Invite Member modal: local no-op (mock only)
+
+import React, { useState, useMemo } from "react";
+
+import { useAdminData } from "../../../../hooks/useAdminData";
+import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
+import { adminApi } from "../../../../lib/adminApi";
+import { generateBasicPassword } from "../helpers/adminHelpers";
+import { PageHead } from "../shell/osAtoms";
+import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
+
+// ─── Mock jury data (prototype-seeded) ──────────────────────────────────────
+
+const MOCK_JURY = [
+  { id: 'j1', name: 'Anand Mahindra',       org: 'M&M Group',  domain: 'Strategic Partner', startups: [], progress: '0 / 0', consistency: 0.95, weight: 1.0, last: '2h ago', batches: [] },
+  { id: 'j2', name: 'Kiran Mazumdar-Shaw',  org: 'Biocon',     domain: 'Strategic Partner', startups: [], progress: '0 / 0', consistency: 0.95, weight: 1.0, last: '2h ago', batches: [] },
+  { id: 'j3', name: 'Nandan Nilekani',      org: 'Infosys',    domain: 'Strategic Partner', startups: [], progress: '0 / 0', consistency: 0.95, weight: 1.0, last: '2h ago', batches: [] },
+  { id: 'j4', name: 'Falguni Nayar',        org: 'Nykaa',      domain: 'Strategic Partner', startups: [], progress: '0 / 0', consistency: 0.95, weight: 1.0, last: '2h ago', batches: [] },
+];
+
+// ─── Rebalance banner ────────────────────────────────────────────────────────
+
+function RebalanceBanner({ result, onDismiss }) {
+  if (!result) return null;
+  return (
+    <div
+      style={{
+        background: 'var(--ok-soft, #cfe5df)',
+        border: '1px solid var(--ok, #2a8f5a)',
+        borderRadius: 4,
+        padding: '10px 16px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        marginBottom: 16,
+      }}
+    >
+      <span style={{ fontSize: 13, color: 'var(--ok, #2a8f5a)', fontWeight: 600 }}>
+        Rebalance complete —{' '}
+        {typeof result.assigned === 'number' ? result.assigned : '?'} assignments across{' '}
+        {typeof result.reviewers === 'number' ? result.reviewers : '?'} reviewers.
+      </span>
+      <button className="os-btn sm ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={onDismiss}>
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
+// ─── Manage / Edit drawer ────────────────────────────────────────────────────
+// Weight + domains + inline batch chip editor (reviewer-mode only).
+
+function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
+  const [weight, setWeight] = useState(typeof reviewer.weight === 'number' ? reviewer.weight : 1.0);
+  const [domains, setDomains] = useState(
+    Array.isArray(reviewer.domains) ? reviewer.domains.join(', ') : (reviewer.domain || '')
+  );
+  const [batches, setBatches] = useState(
+    Array.isArray(reviewer.batches) ? [...reviewer.batches] :
+    (reviewer.batch && reviewer.batch !== 'Unassigned' ? [reviewer.batch] : [])
+  );
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setErr(null);
+    try {
+      const domainsArr = domains.split(',').map(d => d.trim()).filter(Boolean);
+      await adminPlatformApi.patchReviewer(reviewer.id, {
+        weight: parseFloat(weight) || 1.0,
+        domains: domainsArr,
+      });
+      onSaved();
+    } catch (e) {
+      setErr(e?.message || 'Save failed');
+      setSaving(false);
+    }
+  };
+
+  const removeBatch = (b) => setBatches(prev => prev.filter(x => x !== b));
+  const addBatch = (b) => { if (b && !batches.includes(b)) setBatches(prev => [...prev, b]); };
+
+  return (
+    <div
+      className="os-drawer-backdrop"
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(36,36,36,0.4)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', justifyContent: 'flex-end', animation: 'osDrawerFadeIn 0.2s ease-out' }}
+    >
+      <div
+        className="os-drawer"
+        onClick={e => e.stopPropagation()}
+        style={{ width: 680, maxWidth: '90vw', height: '100%', background: 'var(--bg-paper)', borderLeft: '1px solid var(--line-strong)', boxShadow: '-10px 0 40px rgba(36,36,36,0.15)', display: 'flex', flexDirection: 'column', animation: 'osDrawerSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}
+      >
+        <div className="os-drawer-head" style={{ padding: '20px 24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div className="os-drawer-title" style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>Manage Applications</div>
+            <div className="os-drawer-subtitle" style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 4 }}>
+              {isJury ? 'Jury Member' : 'Reviewer'}: <strong>{reviewer.name}</strong> &middot; {reviewer.org || reviewer.domain}
+            </div>
+          </div>
+          <button className="os-btn sm ghost" onClick={onClose} style={{ padding: '2px 8px', fontSize: 18 }}>&times;</button>
+        </div>
+
+        <div className="os-drawer-body" style={{ padding: 24, flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Weight */}
+          <div>
+            <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Weight</label>
+            <input
+              type="number"
+              step="0.5"
+              min="0.5"
+              max="5.0"
+              className="os-input"
+              style={{ width: '100%', fontSize: 14 }}
+              value={weight}
+              onChange={e => setWeight(e.target.value)}
+            />
+            <div style={{ fontSize: 11, color: 'var(--ink-dim)', marginTop: 4 }}>Multiplier applied to this reviewer's scores. Default is 1.0.</div>
+          </div>
+
+          {/* Domains */}
+          <div>
+            <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Domains (comma-separated)</label>
+            <input
+              type="text"
+              className="os-input"
+              style={{ width: '100%', fontSize: 14 }}
+              placeholder="e.g. Robotics, AI, CleanTech"
+              value={domains}
+              onChange={e => setDomains(e.target.value)}
+            />
+          </div>
+
+          {/* Assigned batches — reviewer mode only */}
+          {!isJury && (
+            <div>
+              <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 8 }}>Assigned Batches:</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                {batches.length > 0 ? batches.map(b => (
+                  <span key={b} className="os-chip" style={{ background: 'var(--bg-soft)', border: '1px solid var(--line)', fontWeight: 600, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    {b}
+                    <span
+                      style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 11, color: '#FF5A5F', marginLeft: 2 }}
+                      onClick={() => removeBatch(b)}
+                    >
+                      &times;
+                    </span>
+                  </span>
+                )) : <span className="os-text-soft" style={{ fontSize: 13 }}>None</span>}
+                <select
+                  className="os-select sm"
+                  style={{ padding: '0 4px', fontSize: 11, height: 26, width: 40, minWidth: 40 }}
+                  value=""
+                  onChange={e => { if (e.target.value) addBatch(e.target.value); }}
+                >
+                  <option value="" disabled>+</option>
+                  {allBatches.filter(b => !batches.includes(b)).map(b => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {err && (
+            <div style={{ color: 'var(--bad)', fontSize: 13, fontWeight: 600, padding: '8px 12px', background: 'var(--bad-soft)', borderRadius: 4 }}>
+              {err}
+            </div>
+          )}
+        </div>
+
+        <div className="os-drawer-foot" style={{ padding: '16px 24px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end', gap: 12, background: 'var(--bg-soft)' }}>
+          <button className="os-btn secondary" onClick={onClose} disabled={saving}>Close</button>
+          {!isJury && (
+            <button
+              className="os-btn"
+              style={{ background: 'var(--accent)', color: '#fff' }}
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Invite modal ────────────────────────────────────────────────────────────
+
+function InviteModal({ allBatches, isJury, invitePassword, onClose, onInvited }) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [invDomain, setInvDomain] = useState('');
+  const [invBatch, setInvBatch] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+  const [result, setResult] = useState(null);
+
+  const handleInvite = async () => {
+    if (!name.trim() || !email.trim()) { setErr('Name and email are required.'); return; }
+    setSaving(true);
+    setErr(null);
+    try {
+      if (isJury) {
+        // jury-mode: local no-op
+        setResult({ local: true, name: name.trim(), email: email.trim() });
+        onInvited();
+        return;
+      }
+      const res = await adminApi.createUser({
+        email: email.trim(),
+        full_name: name.trim(),
+        roles: ['reviewer'],
+        send_invite: true,
+      });
+      setResult(res);
+      onInvited();
+    } catch (e) {
+      setErr(e?.message || 'Invite failed.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="os-modal-backdrop"
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(36,36,36,0.5)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      <div
+        className="os-modal"
+        onClick={e => e.stopPropagation()}
+        style={{ maxWidth: 440, background: 'var(--bg-paper)', border: '1px solid var(--line-strong)', borderRadius: 4, boxShadow: '0 20px 60px rgba(36,36,36,0.18)' }}
+      >
+        <div className="os-modal-head" style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontWeight: 600, fontSize: 16, color: 'var(--ink)' }}>Invite Member</div>
+          <button className="os-btn sm ghost" onClick={onClose} style={{ padding: '2px 8px', fontSize: 18 }}>&times;</button>
+        </div>
+
+        <div className="os-modal-body os-stack gap-md" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {result ? (
+            <div>
+              <div style={{ color: 'var(--ok)', fontWeight: 600, fontSize: 14, marginBottom: 12 }}>
+                {isJury ? 'Jury member added (preview only).' : 'Reviewer invited successfully.'}
+              </div>
+              {result.temp_password && (
+                <div style={{ background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: 4, padding: '10px 14px', fontFamily: 'var(--font-mono, monospace)', fontSize: 13, color: 'var(--ink)' }}>
+                  Temp password: <strong>{result.temp_password}</strong>
+                </div>
+              )}
+              {result.invite_url && (
+                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', wordBreak: 'break-all' }}>
+                  Invite URL: {result.invite_url}
+                </div>
+              )}
+              <button className="os-btn" style={{ marginTop: 20, width: '100%' }} onClick={onClose}>Done</button>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>Full Name</label>
+                <input type="text" className="os-input os-w-100" placeholder="e.g. Vikram Sundar" value={name} onChange={e => setName(e.target.value)} />
+              </div>
+              <div>
+                <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>Email Address</label>
+                <input type="email" className="os-input os-w-100" placeholder="name@example.in" value={email} onChange={e => setEmail(e.target.value)} />
+              </div>
+              <div>
+                <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>Expertise / Domains</label>
+                <input type="text" className="os-input os-w-100" placeholder="e.g. Robotics, AI, CleanTech" value={invDomain} onChange={e => setInvDomain(e.target.value)} />
+              </div>
+              <div>
+                <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>Initial Batch Assignment</label>
+                <select className="os-select os-w-100" value={invBatch} onChange={e => setInvBatch(e.target.value)}>
+                  <option value="">None (Unassigned)</option>
+                  {allBatches.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>Temporary Password</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type="text"
+                    className="os-input os-w-100 os-mono"
+                    style={{ fontSize: 13, background: 'var(--bg-soft)', fontWeight: 600 }}
+                    value={invitePassword}
+                    readOnly
+                  />
+                  <button
+                    className="os-btn secondary sm"
+                    type="button"
+                    onClick={() => { navigator.clipboard?.writeText(invitePassword); }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              {err && (
+                <div style={{ color: 'var(--bad)', fontSize: 13, fontWeight: 600, padding: '8px 12px', background: 'var(--bad-soft)', borderRadius: 4 }}>
+                  {err}
+                </div>
+              )}
+
+              <div className="os-modal-foot" style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 4 }}>
+                <button className="os-btn secondary" onClick={onClose} disabled={saving}>Cancel</button>
+                <button
+                  className="os-btn"
+                  style={{ background: '#3213b7', color: '#fff' }}
+                  onClick={handleInvite}
+                  disabled={saving}
+                >
+                  {saving ? 'Inviting…' : 'Send Invite'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ──────────────────────────────────────────────────────────
+
+export function AdminReviewers({ decisionMode }) {
+  const isJury = decisionMode === 'jury';
+
+  // reviewer-mode: live data; jury-mode: mock
+  const { data, loading, error, reload } = useAdminData('reviewers');
+  const liveReviewers = data?.reviewers ?? [];
+
+  // jury uses local mock (no backend)
+  const [juryList] = useState(() => MOCK_JURY.map(j => ({ ...j })));
+
+  const R = isJury ? juryList : liveReviewers;
+
+  // Sorting
+  const [sortCol, setSortCol] = useState(null);
+  const [sortAsc, setSortAsc] = useState(true);
+
+  const handleSort = (col) => {
+    if (sortCol === col) setSortAsc(a => !a);
+    else { setSortCol(col); setSortAsc(true); }
+  };
+
+  const renderHeader = (label, colKey, isNum = false) => {
+    const isSorted = sortCol === colKey;
+    return (
+      <th
+        className={isNum ? 'num' : ''}
+        onClick={() => handleSort(colKey)}
+        style={{ cursor: 'pointer', userSelect: 'none' }}
+      >
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: isNum ? 'flex-end' : 'flex-start', width: '100%' }}>
+          {label}
+          {isSorted ? (sortAsc ? ' ▲' : ' ▼') : ''}
+        </span>
+      </th>
+    );
+  };
+
+  const sortedReviewers = useMemo(() => {
+    if (!sortCol) return R;
+    return [...R].sort((a, b) => {
+      let valA, valB;
+      if (sortCol === 'name') { valA = a.name || ''; valB = b.name || ''; }
+      else if (sortCol === 'domain') { valA = a.domain || ''; valB = b.domain || ''; }
+      else if (sortCol === 'progress') {
+        const parseProg = (p) => { if (!p) return 0; const [num, den] = String(p).split('/').map(x => parseInt(x.trim()) || 0); return den > 0 ? num / den : 0; };
+        valA = parseProg(a.progress); valB = parseProg(b.progress);
+      }
+      else if (sortCol === 'consistency') { valA = a.consistency || 0; valB = b.consistency || 0; }
+      else if (sortCol === 'weight') { valA = a.weight || 1.0; valB = b.weight || 1.0; }
+      else if (sortCol === 'lastActivity') { valA = a.last || ''; valB = b.last || ''; }
+      else { valA = ''; valB = ''; }
+      if (valA < valB) return sortAsc ? -1 : 1;
+      if (valA > valB) return sortAsc ? 1 : -1;
+      return 0;
+    });
+  }, [R, sortCol, sortAsc]);
+
+  // Batches (for drawer / invite selector)
+  const [batchData] = useState(null);
+  const allBatches = useMemo(() => {
+    const base = ['Batch A', 'Batch B', 'Batch C', 'Batch D', 'Batch E'];
+    const fromReviewers = liveReviewers.flatMap(r => Array.isArray(r.batches) ? r.batches : (r.batch && r.batch !== 'Unassigned' ? [r.batch] : []));
+    return Array.from(new Set([...base, ...fromReviewers])).sort();
+  }, [liveReviewers]);
+
+  // Mutation state — reviewer mode
+  const [manageTarget, setManageTarget] = useState(null);
+  const [showInvite, setShowInvite] = useState(false);
+  const [invitePassword] = useState(() => generateBasicPassword());
+  const [rebalancing, setRebalancing] = useState(false);
+  const [rebalanceResult, setRebalanceResult] = useState(null);
+  const [rebalanceErr, setRebalanceErr] = useState(null);
+
+  const handleRebalance = async () => {
+    setRebalancing(true);
+    setRebalanceErr(null);
+    setRebalanceResult(null);
+    try {
+      const res = await adminPlatformApi.rebalance({});
+      setRebalanceResult(res);
+      reload();
+    } catch (e) {
+      setRebalanceErr(e?.message || 'Rebalance failed.');
+    } finally {
+      setRebalancing(false);
+    }
+  };
+
+  // Drawer animation styles (injected once)
+  const drawerStyles = `
+    @keyframes osDrawerFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes osDrawerSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+  `;
+
+  // ── Jury mode ────────────────────────────────────────────────────────────
+  if (isJury) {
+    return (
+      <div>
+        <style dangerouslySetInnerHTML={{ __html: drawerStyles }} />
+        <PreviewBadge />
+        <PageHead
+          eyebrow="A-6 · JURY PANEL"
+          title="Jury <em>roster</em>"
+          sub="Assignments, progress, and alignment calibration."
+          actions={[
+            <button key="inv" className="os-btn ghost" onClick={() => setShowInvite(true)}>Invite member</button>,
+            <button key="reb" className="os-btn" onClick={() => window.alert('Random allotment — distributes shortlisted applications across active jury members.')}>Random Allotment</button>,
+          ]}
+        />
+
+        <table className="os-table">
+          <thead>
+            <tr>
+              {renderHeader('Jury Member', 'name')}
+              {renderHeader('Organization', 'domain')}
+              {renderHeader('Progress', 'progress')}
+              {renderHeader('Consistency', 'consistency')}
+              {renderHeader('Weight / Primary', 'weight')}
+              {renderHeader('Last activity', 'lastActivity')}
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedReviewers.map(r => (
+              <tr key={r.id}>
+                <td>
+                  <div className="startup">{r.name}<small>Jury Member</small></div>
+                </td>
+                <td className="os-text-soft">{r.org || r.domain}</td>
+                <td>
+                  <div className="os-row gap-sm">
+                    <div className="os-scorebar-track" style={{ width: 90 }}>
+                      <div className="os-scorebar-fill" style={{ width: (() => { const p = String(r.progress || '0 / 0').split('/'); const n = parseInt(p[0]) || 0; const d = parseInt(p[1]) || 1; return Math.min(100, Math.max(0, (n / d) * 100)); })() + '%', background: 'var(--ink)' }} />
+                    </div>
+                    <span className="os-mono os-text-sm">{r.progress || '0 / 0'}</span>
+                  </div>
+                </td>
+                <td>
+                  {r.consistency != null ? (
+                    <span className={'os-chip ' + (r.consistency >= 0.9 ? 'green' : r.consistency >= 0.8 ? 'amber' : 'red')}>
+                      {(r.consistency * 100).toFixed(0)}%
+                    </span>
+                  ) : <span className="os-text-soft">—</span>}
+                </td>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{(r.weight || 1.0).toFixed(1)}</span>
+                    {r.weight > 1.0 && <span className="os-chip purple" style={{ fontSize: 9, padding: '1px 5px', fontWeight: 700 }}>PRIMARY</span>}
+                  </div>
+                </td>
+                <td className="os-mono os-text-sm os-text-soft">{r.last || '—'}</td>
+                <td>
+                  <button className="os-btn sm secondary" onClick={() => setManageTarget(r)}>Manage</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {manageTarget && (
+          <ManageDrawer
+            reviewer={manageTarget}
+            allBatches={allBatches}
+            isJury={true}
+            onClose={() => setManageTarget(null)}
+            onSaved={() => setManageTarget(null)}
+          />
+        )}
+        {showInvite && (
+          <InviteModal
+            allBatches={allBatches}
+            isJury={true}
+            invitePassword={invitePassword}
+            onClose={() => setShowInvite(false)}
+            onInvited={() => setShowInvite(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // ── Reviewer mode (live) ──────────────────────────────────────────────────
+  return (
+    <div>
+      <style dangerouslySetInnerHTML={{ __html: drawerStyles }} />
+
+      <PageHead
+        eyebrow="A-5 · REVIEWERS"
+        title="Reviewer <em>roster</em>"
+        sub="Assignments, progress, consistency calibration."
+        actions={[
+          <button key="inv" className="os-btn ghost" onClick={() => setShowInvite(true)}>Invite member</button>,
+          <button key="reb" className="os-btn" onClick={handleRebalance} disabled={rebalancing}>
+            {rebalancing ? 'Rebalancing…' : 'Rebalance batches'}
+          </button>,
+        ]}
+      />
+
+      {rebalanceResult && (
+        <RebalanceBanner result={rebalanceResult} onDismiss={() => setRebalanceResult(null)} />
+      )}
+      {rebalanceErr && (
+        <div style={{ color: 'var(--bad)', fontSize: 13, fontWeight: 600, padding: '8px 12px', background: 'var(--bad-soft)', borderRadius: 4, marginBottom: 16 }}>
+          {rebalanceErr}
+        </div>
+      )}
+
+      {loading && (
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--ink-soft)' }}>Loading reviewers…</div>
+      )}
+      {!loading && error && (
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--bad)' }}>
+          {error?.message || 'Failed to load reviewers.'}
+          <button className="os-btn sm ghost" style={{ marginLeft: 12 }} onClick={reload}>Retry</button>
+        </div>
+      )}
+      {!loading && !error && liveReviewers.length === 0 && (
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--ink-soft)', border: '1px dashed var(--line)', borderRadius: 4, marginTop: 16 }}>
+          No reviewers yet. Invite one to get started.
+        </div>
+      )}
+
+      {!loading && !error && liveReviewers.length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="os-table">
+            <thead>
+              <tr>
+                {renderHeader('Reviewer', 'name')}
+                {renderHeader('Domain', 'domain')}
+                <th>Applications Assigned</th>
+                {renderHeader('Progress', 'progress')}
+                {renderHeader('Consistency', 'consistency')}
+                {renderHeader('Weight / Primary', 'weight')}
+                {renderHeader('Last activity', 'lastActivity')}
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedReviewers.map(r => {
+                const rBatches = Array.isArray(r.batches) ? r.batches : (r.batch && r.batch !== 'Unassigned' ? [r.batch] : []);
+                const progressStr = r.progress || '0 / 0';
+                const pParts = progressStr.split('/');
+                const pNum = parseInt(pParts[0]) || 0;
+                const pDen = parseInt(pParts[1]) || 1;
+                const pct = Math.min(100, Math.max(0, (pNum / pDen) * 100));
+                const cons = r.consistency;
+                const consColor = cons >= 0.9 ? 'green' : cons >= 0.8 ? 'amber' : 'red';
+
+                return (
+                  <tr key={r.id}>
+                    {/* Reviewer */}
+                    <td>
+                      <div className="startup">
+                        {r.name || '—'}
+                        <small>External · paid per review</small>
+                      </div>
+                    </td>
+
+                    {/* Domain */}
+                    <td className="os-text-soft">{r.domain || '—'}</td>
+
+                    {/* Applications Assigned */}
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink)' }}>
+                          {rBatches.length > 0 ? rBatches.join(', ') : 'No assignments'}
+                        </div>
+                        {rBatches.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                            {rBatches.map(b => (
+                              <span key={b} className="os-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px', fontSize: 11 }}>
+                                {b}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Progress */}
+                    <td>
+                      <div className="os-row gap-sm">
+                        <div className="os-scorebar-track" style={{ width: 90 }}>
+                          <div className="os-scorebar-fill" style={{ width: pct + '%', background: 'var(--ink)' }} />
+                        </div>
+                        <span className="os-mono os-text-sm">{progressStr}</span>
+                      </div>
+                    </td>
+
+                    {/* Consistency */}
+                    <td>
+                      {cons != null ? (
+                        <span className={'os-chip ' + consColor}>
+                          {(cons * 100).toFixed(0)}%
+                        </span>
+                      ) : (
+                        <span className="os-text-soft">—</span>
+                      )}
+                    </td>
+
+                    {/* Weight */}
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {typeof r.weight === 'number' ? r.weight.toFixed(1) : '1.0'}
+                        </span>
+                        {r.weight > 1.0 && (
+                          <span className="os-chip purple" style={{ fontSize: 9, padding: '1px 5px', fontWeight: 700 }}>PRIMARY</span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Last activity */}
+                    <td className="os-mono os-text-sm os-text-soft">{r.last || '—'}</td>
+
+                    {/* Actions */}
+                    <td>
+                      <button className="os-btn sm secondary" onClick={() => setManageTarget(r)}>Manage</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Manage drawer */}
+      {manageTarget && (
+        <ManageDrawer
+          reviewer={manageTarget}
+          allBatches={allBatches}
+          isJury={false}
+          onClose={() => setManageTarget(null)}
+          onSaved={() => { setManageTarget(null); reload(); }}
+        />
+      )}
+
+      {/* Invite modal */}
+      {showInvite && (
+        <InviteModal
+          allBatches={allBatches}
+          isJury={false}
+          invitePassword={invitePassword}
+          onClose={() => setShowInvite(false)}
+          onInvited={() => { setShowInvite(false); reload(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+export default AdminReviewers;

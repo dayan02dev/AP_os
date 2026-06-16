@@ -21,6 +21,7 @@ import { AdminDashboard } from "./screens/AdminDashboard";
 import { AdminPipeline } from "./screens/AdminPipeline";
 import { AdminDetail } from "./screens/AdminDetail";
 import AdminGate1 from "./screens/AdminGate1";
+import { AdminReviewers } from "./screens/AdminReviewers";
 
 function initialsFor(email) {
   const local = (email || '').split('@')[0] || '';
@@ -453,7 +454,7 @@ function AdminApp() {
                 decisionMode={decisionMode}
               />
             )}
-            {page === 'reviewers'   && <ScreenStub name="Reviewers" />}
+            {page === 'reviewers'   && <AdminReviewers decisionMode={decisionMode} />}
             {page === 'roles'       && <ScreenStub name="User Roles" />}
             {page === 'gate1'       && (decisionMode === 'jury' ? <ScreenStub name="Gate 2 Final" /> : <AdminGate1 goDetail={goDetail} />)}
             {page === 'psychometry' && <ScreenStub name="Psychometry" />}
