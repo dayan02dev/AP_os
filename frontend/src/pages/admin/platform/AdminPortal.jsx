@@ -23,6 +23,7 @@ import { AdminDetail } from "./screens/AdminDetail";
 import AdminGate1 from "./screens/AdminGate1";
 import { AdminReviewers } from "./screens/AdminReviewers";
 import { AdminAnalytics } from "./screens/AdminAnalytics";
+import { AdminAudit } from "./screens/AdminAudit";
 
 function initialsFor(email) {
   const local = (email || '').split('@')[0] || '';
@@ -349,6 +350,9 @@ function AdminTabBar({ page, setPage, decisionMode }) {
       sub: decisionMode === 'jury' ? 'CONSOLIDATED DECISIONS' : 'PENDING DECISIONS',
       badge: decisionMode === 'jury' ? null : '12'
     },
+    // extension: surface built Audit/Analytics screens the prototype left unreachable
+    { id:'audit',     label:'Audit',     sub:'EVENT TRAIL',   badge:null },
+    { id:'analytics', label:'Analytics', sub:'CALIBRATION',   badge:null },
   ];
 
   return (
@@ -461,7 +465,7 @@ function AdminApp() {
             {page === 'psychometry' && <ScreenStub name="Psychometry" />}
             {page === 'jury'        && <ScreenStub name="Jury Mgmt" />}
             {page === 'gate2'       && <ScreenStub name="Gate 2 Final" />}
-            {page === 'audit'       && <ScreenStub name="Audit Log" />}
+            {page === 'audit'       && <AdminAudit />}
             {page === 'analytics'   && <AdminAnalytics />}
           </div>
         </div>

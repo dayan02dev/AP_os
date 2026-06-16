@@ -1,23 +1,25 @@
-// AdminAuditLog — A-8 Audit Log (Task 20)
+// AdminAudit — A-7 Audit Log
 //
-// Immutable, filterable trail of every state-changing action. Reads
-// GET /admin/platform/audit-log (adminPlatformApi.getAuditLog) with server-side
-// filters held in component state; re-fetches whenever a filter changes.
+// Faithful port of prototype AdminAudit (admin-2.jsx:2040) with live data.
+// Replaces static mock rows with entries from useAdminData("audit", params).
 //
-//   Response: { entries: [{ ts, actor, action, target, detail }] }
+// Filter approach reused from the old AdminAuditLog.jsx:
+//   - actor/action (text inputs), from/to (date pickers) held in component state
+//   - toQuery() maps state → API params, dropping empty values
+//   - params object passed to useAdminData — the hook keys on JSON.stringify(params)
+//     so changing any filter triggers a re-fetch automatically
+//   - CSV download re-issues the same query with format:"csv" and triggers a
+//     client-side anchor download (UTF-8 BOM included)
 //
-// "Download CSV" re-issues the same query with format:"csv" — the backend
-// returns text/csv, which lib/api.js surfaces as a plain string (non-JSON
-// content type). We wrap that text in a Blob and trigger a client-side
-// download via an anchor.
-//
-// Every field access is guarded — any of ts/actor/action/target/detail can be
-// null and must render "—", never crash.
+// Prototype markup preserved verbatim:
+//   os-filterbar / os-select / os-card / os-audit / os-audit-row / aud-action
+//   PageHead eyebrow "A-7 · AUDIT LOG", title, sub, actions array
 
 import { useState } from "react";
-
-import { adminPlatformApi } from "../../../lib/adminPlatformApi.js";
-import { useAsync, LoadingState, ErrorState, EmptyState } from "./ui.jsx";
+import { useAdminData } from "../../../../hooks/useAdminData";
+import { PageHead } from "../shell/osAtoms";
+import { LoadingState, ErrorState, EmptyState } from "../ui.jsx";
+import { adminPlatformApi } from "../../../../lib/adminPlatformApi.js";
 
 const EMPTY_FILTERS = { actor: "", action: "", from: "", to: "" };
 
@@ -54,16 +56,11 @@ function triggerDownload(text, filename) {
   URL.revokeObjectURL(url);
 }
 
-export default function AdminAuditLog() {
+export function AdminAudit() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
-  const queryKey = JSON.stringify(toQuery(filters));
+  const params = toQuery(filters);
 
-  const { data, loading, error, reload } = useAsync(
-    () => adminPlatformApi.getAuditLog(toQuery(filters)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [queryKey],
-  );
-
+  const { data, loading, error, reload } = useAdminData("audit", params);
   const entries = data?.entries ?? [];
 
   const [downloading, setDownloading] = useState(false);
@@ -78,7 +75,7 @@ export default function AdminAuditLog() {
     setDlError(null);
     try {
       const csv = await adminPlatformApi.getAuditLog({
-        ...toQuery(filters),
+        ...params,
         format: "csv",
       });
       triggerDownload(
@@ -93,26 +90,24 @@ export default function AdminAuditLog() {
   };
 
   return (
-    <div className="dash-scroll">
+    <div>
       <style>{AUDIT_CSS}</style>
 
-      {/* Header + CSV export */}
-      <div className="pl-head">
-        <div>
-          <div className="dash-section-tag">A-8 · AUDIT LOG</div>
-          <div className="dash-card-title">Cohort audit trail</div>
-          <div className="os-text-soft os-text-sm" style={{ marginTop: 2 }}>
-            Every state-changing action. Immutable. Downloadable for compliance.
-          </div>
-        </div>
-        <button
-          className="os-btn ghost"
-          onClick={downloadCsv}
-          disabled={downloading}
-        >
-          {downloading ? "Preparing…" : "Download CSV ↓"}
-        </button>
-      </div>
+      <PageHead
+        eyebrow="A-7 · AUDIT LOG"
+        title='Cohort <em>audit trail</em>'
+        sub="Every state-changing action. Immutable. Downloadable for compliance."
+        actions={[
+          <button
+            key="dl"
+            className="os-btn ghost"
+            onClick={downloadCsv}
+            disabled={downloading}
+          >
+            {downloading ? "Preparing…" : "Download CSV"}
+          </button>,
+        ]}
+      />
 
       {dlError && (
         <div className="pl-note is-error">
@@ -127,11 +122,8 @@ export default function AdminAuditLog() {
         </div>
       )}
 
-      {/* Filters */}
-      <div
-        className="os-filterbar"
-        style={{ borderRadius: 4, border: "1px solid var(--line)" }}
-      >
+      {/* Filters — prototype uses selects; we use text+date inputs for server-side filtering */}
+      <div className="os-filterbar">
         <span className="label">Actor</span>
         <input
           className="os-input"
@@ -144,7 +136,7 @@ export default function AdminAuditLog() {
         <span className="label">Action</span>
         <input
           className="os-input"
-          placeholder="e.g. gate1_decide"
+          placeholder="e.g. GATE_1_DECIDE"
           value={filters.action}
           onChange={(e) => setFilter({ action: e.target.value })}
           style={{ minWidth: 160 }}
@@ -181,50 +173,56 @@ export default function AdminAuditLog() {
       ) : entries.length === 0 ? (
         <EmptyState label="No audit entries match these filters." />
       ) : (
-        <div className="pl-table-wrap">
-          <table className="os-table">
-            <thead>
-              <tr>
-                <th style={{ minWidth: 160 }}>Timestamp</th>
-                <th>Actor</th>
-                <th>Action</th>
-                <th>Target</th>
-                <th>Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e, i) => (
-                <tr key={`${e?.ts ?? ""}-${i}`}>
-                  <td className="os-mono os-text-xs os-text-soft">
-                    {e?.ts ?? "—"}
-                  </td>
-                  <td className="os-text-sm">{e?.actor ?? "—"}</td>
-                  <td>
-                    {e?.action ? (
-                      <span className="aud-action">{e.action}</span>
-                    ) : (
-                      <span className="os-text-soft">—</span>
-                    )}
-                  </td>
-                  <td className="os-text-soft os-text-sm">
-                    {e?.target ?? "—"}
-                  </td>
-                  <td className="os-text-sm">{e?.detail ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="os-card" style={{ borderTop: "none" }}>
+          <div className="os-audit">
+            <div
+              className="os-audit-row"
+              style={{
+                fontWeight: 600,
+                color: "var(--ink-dim)",
+                textTransform: "uppercase",
+                fontSize: 10,
+                letterSpacing: "0.14em",
+              }}
+            >
+              <span>Timestamp</span>
+              <span>Actor</span>
+              <span>Action / Description</span>
+            </div>
+            {entries.map((e, i) => (
+              <div key={`${e?.ts ?? ""}-${i}`} className="os-audit-row">
+                <span className="ts">{e?.ts ?? "—"}</span>
+                <span className="act">{e?.actor ?? "—"}</span>
+                <span>
+                  {e?.action ? (
+                    <b className="aud-action" style={{ marginRight: 8 }}>
+                      {e.action}
+                    </b>
+                  ) : null}
+                  {e?.target ? (
+                    <span className="desc">{e.target}</span>
+                  ) : null}
+                  {e?.detail ? (
+                    <span className="desc">{e?.target ? " · " : ""}{e.detail}</span>
+                  ) : null}
+                  {!e?.action && !e?.target && !e?.detail ? (
+                    <span className="os-text-soft">—</span>
+                  ) : null}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// Reuses pl-head / pl-table-wrap / pl-note / pl-clear from AdminPipeline's
-// scoped styles where present; defines only the action-pill accent here.
+export default AdminAudit;
+
+// Scoped styles — reuses pl-* utilities shared with AdminPipeline/AdminAnalytics;
+// adds aud-action pill and os-audit grid layout
 const AUDIT_CSS = `
-.adm-portal .pl-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
-.adm-portal .pl-table-wrap { border:1px solid var(--line); border-radius:4px; overflow:auto; }
 .adm-portal .pl-clear {
   background:none; border:none; cursor:pointer; padding:0 4px;
   font-family:var(--font-sans); font-size:13px; font-weight:600; color:#d23b40;
