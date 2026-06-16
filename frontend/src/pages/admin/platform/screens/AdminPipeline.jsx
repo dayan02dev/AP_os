@@ -24,7 +24,7 @@ import { useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import { Chip } from "../ui.jsx";
-import { buildPipelineCsv } from "../AdminPipeline.jsx";
+import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
 
 // ─── Status/Chip helpers (mirrors prototype) ───────────────────────────────
 
