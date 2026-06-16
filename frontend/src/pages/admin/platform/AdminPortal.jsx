@@ -18,6 +18,7 @@ import { useAuth } from "../../../hooks/useAuth.jsx";
 import "../../../styles/admin-portal.css";
 import { ScreenStub } from "./screens/ScreenStub";
 import { AdminDashboard } from "./screens/AdminDashboard";
+import { AdminPipeline } from "./screens/AdminPipeline";
 
 function initialsFor(email) {
   const local = (email || '').split('@')[0] || '';
@@ -437,7 +438,7 @@ function AdminApp() {
           )}
           <div className="lp-tab-content">
             {page === 'dashboard'   && <AdminDashboard go={setPage} decisionMode={decisionMode} />}
-            {page === 'pipeline'    && <ScreenStub name="Applications" />}
+            {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} />}
             {page === 'detail'      && (
               <ScreenStub name="Application Detail" />
             )}

@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import React from "react";
 
 import { buildPipelineCsv } from "../AdminPipeline.jsx";
+
+// ─── Pure helper: buildPipelineCsv ──────────────────────────────────────────
 
 describe("buildPipelineCsv", () => {
   it("emits a header row even with no data", () => {
@@ -48,5 +52,106 @@ describe("buildPipelineCsv", () => {
     ]);
     const [, row] = csv.split("\r\n");
     expect(row).toContain('"Foo, ""Bar"""');
+  });
+});
+
+// ─── Smoke test: AdminPipeline screen component ─────────────────────────────
+
+// Mock useAdminData to return a realistic startup row + batches.
+vi.mock("../../../../hooks/useAdminData", () => ({
+  useAdminData: vi.fn((kind) => {
+    if (kind === "pipeline") {
+      return {
+        data: {
+          startups: [
+            {
+              id: "abc123",
+              applicationId: "TIR-00001",
+              track: "tir",
+              name: "TestStartup",
+              founders: ["Jane Doe"],
+              domain: "Healthcare / MedTech",
+              stage: "Prototype",
+              ai: { overall: 7.5 },
+              rev: undefined,
+              chip: "SHORTLISTED",
+              hidden: false,
+              archived: false,
+              batch: "Batch A",
+              sub: "2026-05-01",
+            },
+          ],
+          total: 1,
+        },
+        loading: false,
+        error: null,
+        reload: vi.fn(),
+      };
+    }
+    // batches kind
+    return {
+      data: { batches: [{ id: "b1", name: "Batch A", phase: "" }] },
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    };
+  }),
+}));
+
+vi.mock("../../../../lib/adminPlatformApi", () => ({
+  adminPlatformApi: {
+    bulkDecide: vi.fn().mockResolvedValue({ results: [] }),
+    patchMeta: vi.fn().mockResolvedValue({}),
+    assignBatch: vi.fn().mockResolvedValue({}),
+    createBatch: vi.fn().mockResolvedValue({ id: "b2" }),
+    renameBatch: vi.fn().mockResolvedValue({}),
+  },
+}));
+
+vi.mock("../../../../components/admin/PreviewBadge", () => ({
+  PreviewBadge: () => React.createElement("span", { "data-testid": "preview-badge" }, "Preview"),
+}));
+
+// ui.jsx Chip component mock
+vi.mock("../ui.jsx", () => ({
+  Chip: ({ children }) => React.createElement("span", { "data-testid": "chip" }, children),
+}));
+
+import { AdminPipeline } from "../screens/AdminPipeline.jsx";
+
+describe("AdminPipeline screen (smoke)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders a row for the mocked startup", () => {
+    render(
+      React.createElement(AdminPipeline, {
+        goDetail: vi.fn(),
+        decisionMode: "reviewer",
+      }),
+    );
+    expect(screen.getByText("TestStartup")).toBeTruthy();
+    expect(screen.getByText("Jane Doe")).toBeTruthy();
+  });
+
+  it("shows the pipeline section tag", () => {
+    render(
+      React.createElement(AdminPipeline, {
+        goDetail: vi.fn(),
+        decisionMode: "reviewer",
+      }),
+    );
+    expect(screen.getByText(/A-2 · PIPELINE/)).toBeTruthy();
+  });
+
+  it("in jury mode renders PreviewBadge for the jury assignment column", () => {
+    render(
+      React.createElement(AdminPipeline, {
+        goDetail: vi.fn(),
+        decisionMode: "jury",
+      }),
+    );
+    expect(screen.getAllByTestId("preview-badge").length).toBeGreaterThan(0);
   });
 });
