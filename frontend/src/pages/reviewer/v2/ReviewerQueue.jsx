@@ -206,12 +206,12 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
                 <td>
                   {s.ai && s.ai.overall != null ? (
                     <div className="lp-score-bar">
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--ink)", flexShrink: 0, whiteSpace: "nowrap" }}>
+                        {Number(s.ai.overall).toFixed(1)}
+                      </span>
                       <div className="lp-score-bar-track">
                         <div className="lp-score-bar-fill" style={{ width: (s.ai.overall / 10) * 100 + "%" }} />
                       </div>
-                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>
-                        {Number(s.ai.overall).toFixed(1)}
-                      </span>
                     </div>
                   ) : (
                     <span style={{ color: "var(--ink-dim)" }}>—</span>
