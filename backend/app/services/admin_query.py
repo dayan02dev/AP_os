@@ -410,6 +410,8 @@ def fetch_roster() -> dict[str, Any]:
         return {"reviewers": []}
     id_set = set(reviewer_ids)
 
+    id_list = list(id_set)
+
     def _fetch(table: str) -> list[dict]:
         try:
             return (sb.table(table).select("*").execute().data) or []
@@ -417,16 +419,28 @@ def fetch_roster() -> dict[str, Any]:
             log.warning("roster: fetch failed", extra={"table": table, "err": str(exc)})
             return []
 
-    profiles = {p["id"]: p for p in _fetch("profiles") if p.get("id") in id_set}
+    def _fetch_in(table: str, col: str) -> list[dict]:
+        # Filter by the (few) reviewer ids instead of select-all. A bare
+        # select("*") is capped at PostgREST's 1000-row default, which silently
+        # dropped some reviewers' profiles/assignments once the user table grew
+        # past 1000 rows — making the roster fall back to showing raw user-ids.
+        if not id_list:
+            return []
+        try:
+            return (sb.table(table).select("*").in_(col, id_list).execute().data) or []
+        except Exception as exc:
+            log.warning("roster: fetch_in failed", extra={"table": table, "err": str(exc)})
+            return []
+
+    profiles = {p["id"]: p for p in _fetch_in("profiles", "id")}
     rp_rows = {
         p["reviewer_user_id"]: p
-        for p in _fetch("reviewer_profiles")
-        if p.get("reviewer_user_id") in id_set
+        for p in _fetch_in("reviewer_profiles", "reviewer_user_id")
     }
 
     # Assignments grouped per reviewer.
     assignments_by_rev: dict[str, list[dict]] = {rid: [] for rid in reviewer_ids}
-    for a in _fetch("reviewer_assignments"):
+    for a in _fetch_in("reviewer_assignments", "reviewer_user_id"):
         rid = a.get("reviewer_user_id")
         if rid in id_set:
             assignments_by_rev[rid].append(a)
@@ -434,7 +448,7 @@ def fetch_roster() -> dict[str, Any]:
     # Reviews grouped per reviewer (submitted only matter for consistency).
     reviews_by_rev: dict[str, list[dict]] = {rid: [] for rid in reviewer_ids}
     reviewed_keys: set[tuple[str, str]] = set()
-    for r in _fetch("reviews"):
+    for r in _fetch_in("reviews", "reviewer_user_id"):
         rid = r.get("reviewer_user_id")
         if rid in id_set:
             reviews_by_rev[rid].append(r)
