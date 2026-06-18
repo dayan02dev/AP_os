@@ -14,6 +14,7 @@ Mirrors application.py but for the SIP track:
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, datetime
 from typing import Any, Literal
 
@@ -25,6 +26,7 @@ _MAX_PHONE = 30
 _MAX_EMAIL = 320
 _MAX_ORG = 300
 _MAX_URL = 1000
+_MAX_PROFILE_URL = 500   # mirrors TIR ApplicationUpdate (see application.py)
 _MAX_LONG_TEXT = 5000
 _MAX_SECTION = 50
 _MAX_FOUNDERS = 12
@@ -97,6 +99,11 @@ class SipApplicationUpdate(BaseModel):
     basic_email: str | None = Field(default=None, max_length=_MAX_EMAIL)
     basic_org: str | None = Field(default=None, max_length=_MAX_ORG)
     basic_degree: DegreeValue | None = None
+    # Founder profile links + resume (mirrors TIR; columns added in migration 025).
+    # No DB format CHECK — validation lives in the API/UI layer.
+    resume_file_id: uuid.UUID | None = None
+    linkedin_url: str | None = Field(default=None, max_length=_MAX_PROFILE_URL)
+    github_url: str | None = Field(default=None, max_length=_MAX_PROFILE_URL)
     # Co-founder collaboration (mirrors TIR; columns added in migration 021).
     basic_has_team: HasTeamValue | None = None
     basic_teammates: list[dict[str, Any]] | None = Field(

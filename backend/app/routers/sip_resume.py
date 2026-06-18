@@ -270,7 +270,7 @@ async def apply_parsed_to_application(current_user: dict = Depends(get_current_u
 
     parsed_res = (
         admin.table("sip_resume_uploads")
-        .select("parsed_data, parse_status")
+        .select("id, parsed_data, parse_status")
         .eq("user_id", user_id)
         .eq("parse_status", "completed")
         .order("created_at", desc=True)
@@ -283,6 +283,7 @@ async def apply_parsed_to_application(current_user: dict = Depends(get_current_u
             status_code=404,
             detail="No completed resume parse found. Upload a resume first.",
         )
+    resume_file_id = rows[0]["id"]
     parsed: dict[str, Any] = rows[0]["parsed_data"]
 
     applied: list[str] = []
@@ -332,6 +333,12 @@ async def apply_parsed_to_application(current_user: dict = Depends(get_current_u
                 applied.append(f"sip_applications.{dest}")
             else:
                 skipped.append(f"sip_applications.{dest}")
+        # Always link the latest CV — don't gate on whether other fields were
+        # filled. The sip_applications.resume_file_id column (migration 025)
+        # mirrors TIR so a SIP applicant's uploaded resume id is persisted.
+        if app_row.get("resume_file_id") != resume_file_id:
+            app_patch["resume_file_id"] = resume_file_id
+            applied.append("sip_applications.resume_file_id")
         if app_patch:
             admin.table("sip_applications").update(app_patch).eq(
                 "id", app_row["id"]

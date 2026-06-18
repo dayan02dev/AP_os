@@ -192,6 +192,22 @@ const SECTIONS_SIP = [
         ],
         required: true,
       },
+      {
+        id: "linkedinUrl",
+        kind: "short",
+        prompt: "Your LinkedIn URL?",
+        help: "Optional. If provided, use a linkedin.com URL.",
+        placeholder: "https://linkedin.com/in/yourname",
+        optional: true,
+      },
+      {
+        id: "githubUrl",
+        kind: "short",
+        prompt: "Your GitHub URL?",
+        help: "Optional. If provided, use a github.com URL.",
+        placeholder: "https://github.com/yourname",
+        optional: true,
+      },
     ],
   },
   {

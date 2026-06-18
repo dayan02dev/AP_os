@@ -17,6 +17,10 @@ export const QUESTION_TO_COLUMN_SIP = Object.freeze({
   incubatorAssociation: "basic_incubator_association",
   incubatorDetails: "basic_incubator_details",
   hearAbout: "basic_hear_about",
+  // Identity & links (added 2026-06-18 — see migration 025, mirrors TIR)
+  linkedinUrl:    "linkedin_url",
+  githubUrl:      "github_url",
+  resumeFileId:   "resume_file_id",
 
   // ── Section · Basic · SIP-specific gates ──
   sipIncorporated: "sip_incorporated",

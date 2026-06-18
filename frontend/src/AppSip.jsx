@@ -605,9 +605,10 @@ export default function AppSip() {
   };
 
   const handleSubmit = async () => {
-    // NOTE: no resume_file_id pre-flight check — SIP applications don't carry
-    // that column (migration 019 added it to TIR only). The SIP submit
-    // validator on the backend handles SIP-specific mandatories.
+    // NOTE: no resume_file_id pre-flight check — migration 025 added the
+    // column to sip_applications (persisted by apply-to-application), but the
+    // resume is not a hard submit gate for SIP. The SIP submit validator on
+    // the backend handles SIP-specific mandatories.
     try {
       const result = await submit();
       pushToast({ kind: "info", message: "Submitted. Good luck!" });
