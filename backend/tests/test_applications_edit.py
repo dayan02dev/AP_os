@@ -1,4 +1,16 @@
+import copy
+from datetime import UTC, datetime
+from uuid import uuid4
+
+import pytest
+from app.deps import get_current_user
+from app.main import app as fastapi_app
 from app.models.application import ApplicationRead
+from app.routers import applications as apps_mod
+from app.services import edit_window
+
+USER = "00000000-0000-0000-0000-0000000000aa"
+APP_ID = "22222222-2222-2222-2222-222222222222"
 
 
 def _row():
@@ -17,20 +29,6 @@ def test_read_model_has_edit_fields_defaulting_off():
     read = ApplicationRead.model_validate(_row())
     assert read.editable is False
     assert read.edit_deadline is None
-
-
-import copy
-from datetime import UTC, datetime
-from uuid import uuid4
-
-import pytest
-from app.deps import get_current_user
-from app.main import app as fastapi_app
-from app.routers import applications as apps_mod
-from app.services import edit_window
-
-USER = "00000000-0000-0000-0000-0000000000aa"
-APP_ID = "22222222-2222-2222-2222-222222222222"
 
 
 @pytest.fixture(autouse=True)
@@ -70,6 +68,7 @@ def test_edit_in_window_saves_flags_and_rescreens(client, submitted_db):
     assert submitted_db["row"]["edited_after_submit"] is True
     assert submitted_db["row"]["last_edited_at"] is not None
     assert submitted_db["published"] == [(APP_ID, "tir")]
+    assert submitted_db["audited"][0]["action"] == "application.edited_after_submit"
 
 
 def test_edit_after_deadline_is_403(client, submitted_db, monkeypatch):

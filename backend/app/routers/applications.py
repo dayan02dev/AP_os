@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, status
@@ -627,7 +627,7 @@ async def edit_submitted_application(
     try:
         row = _fetch_application_by_id(application_id)
     except Exception:
-        log.exception("applications.edit fetch failed", extra={"request_id": req_id})
+        log.exception("applications.edit fetch failed", extra={"request_id": req_id, "user_id": user_id})
         return _error(status.HTTP_500_INTERNAL_SERVER_ERROR, "fetch_failed",
                       f"Could not load application (ref {req_id}).")
 
@@ -641,12 +641,12 @@ async def edit_submitted_application(
                       "The edit window for this track has closed.")
 
     patch_dict["edited_after_submit"] = True
-    patch_dict["last_edited_at"] = datetime.now(tz=None).astimezone().isoformat()
+    patch_dict["last_edited_at"] = datetime.now(timezone.utc).isoformat()
 
     try:
         updated = _update_application(application_id, patch_dict)
     except Exception:
-        log.exception("applications.edit update failed", extra={"request_id": req_id})
+        log.exception("applications.edit update failed", extra={"request_id": req_id, "user_id": user_id})
         return _error(status.HTTP_500_INTERNAL_SERVER_ERROR, "update_failed",
                       f"Could not save changes (ref {req_id}).")
 
