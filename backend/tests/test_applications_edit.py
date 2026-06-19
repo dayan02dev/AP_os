@@ -94,3 +94,10 @@ def test_edit_draft_status_is_409(client, submitted_db):
 def test_edit_invalid_value_is_422(client, submitted_db):
     res = client.patch(f"/applications/{APP_ID}", json={"basic_has_team": "Maybe?"})
     assert res.status_code == 422
+
+
+def test_edit_declaration_false_returns_422(client, submitted_db):
+    """PATCHing declaration_truthful=False on a submitted in-window app must return 422."""
+    res = client.patch(f"/applications/{APP_ID}", json={"declaration_truthful": False})
+    assert res.status_code == 422
+    assert res.json()["error"]["code"] == "declaration_required"

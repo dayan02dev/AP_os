@@ -97,3 +97,10 @@ def test_edit_invalid_value_is_422(client, submitted_db):
     # "Not yet — we're still pre-incorporation"; anything else is invalid.
     res = client.patch(f"/sip-applications/{APP_ID}", json={"sip_incorporated": "maybe"})
     assert res.status_code == 422
+
+
+def test_edit_declaration_false_returns_422(client, submitted_db):
+    """PATCHing declaration_truthful=False on a submitted in-window SIP app must return 422."""
+    res = client.patch(f"/sip-applications/{APP_ID}", json={"declaration_truthful": False})
+    assert res.status_code == 422
+    assert res.json()["error"]["code"] == "declaration_required"

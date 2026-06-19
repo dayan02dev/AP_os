@@ -83,6 +83,15 @@ LONG_TEXT_MIN_WORDS: dict[str, int] = {}
 _PHONE_RE = re.compile(r"^\+?[\d][\d\s\-\(\)]{5,19}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# Declaration fields that must remain True on a submitted SIP application.
+# Attempting to PATCH any of these to a non-true value after submission
+# is rejected with 422 declaration_required before the DB write.
+_MANDATORY_DECLARATIONS: tuple[str, ...] = (
+    "declaration_truthful",
+    "declaration_terms",
+    "declaration_ref_checks",
+)
+
 
 # ─── Per-user rate-limit dependencies ────────────────────────────────
 
@@ -436,6 +445,14 @@ async def edit_submitted_application(
     if not is_edit_open("sip"):
         return _error(status.HTTP_403_FORBIDDEN, "edit_window_closed",
                       "The edit window for this track has closed.")
+
+    # Guard: mandatory declarations (truthful, terms, ref-checks) must remain
+    # True after submission. Silently un-ticking a legal affirmation post-submit
+    # could falsify the applicant's record; reject any attempt to do so.
+    for _d in _MANDATORY_DECLARATIONS:
+        if _d in patch_dict and patch_dict[_d] is not True:
+            return _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "declaration_required",
+                          "Mandatory declarations cannot be unset on a submitted application.")
 
     patch_dict["edited_after_submit"] = True
     patch_dict["last_edited_at"] = datetime.now(timezone.utc).isoformat()

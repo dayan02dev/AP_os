@@ -285,18 +285,24 @@ function formatDeadline(iso) {
   }
 }
 
-// File-upload question kinds that route to DRAFT-only backend endpoints
-// (/applications/me/evidence-files, /applications/me/milestone-files, and the
-// SIP equivalents). Those endpoints reject submitted applications, so editing
-// a file field on a submitted app always fails. Suppress the Edit affordance
-// for these kinds until dedicated submitted-app file-replace endpoints exist.
-const FILE_EDIT_KINDS = new Set([
+// Question kinds for which the Edit affordance is suppressed in the submission view.
+// Two categories:
+//   1. File-upload kinds — routed to DRAFT-only backend endpoints
+//      (/applications/me/evidence-files, /applications/me/milestone-files, and the
+//      SIP equivalents). Those endpoints reject submitted applications, so editing
+//      a file field on a submitted app always fails. Suppress until dedicated
+//      submitted-app file-replace endpoints exist.
+//   2. "declarations" — legal affirmations (truthful, ref-checks, terms). Once
+//      ticked and submitted these must not be silently un-ticked post-submit;
+//      the backend also enforces this with a 422 guard.
+const NON_EDITABLE_KINDS = new Set([
   "files",           // TIR evidence files  → /applications/me/evidence-files
   "milestoneFiles",  // TIR + SIP milestone → /applications/me/milestone-files  &  /sip-applications/me/milestone-files
   "sipPitchDeck",    // SIP pitch deck      → /sip-applications/me/evidence-files?kind=pitch-deck
   "sipCapTableFile", // SIP cap table file  → /sip-applications/me/evidence-files?kind=cap-table
   "sipPatents",      // SIP patents         → /sip-applications/me/evidence-files?kind=patents
   "sipTractionFiles",// SIP traction        → /sip-applications/me/evidence-files?kind=traction
+  "declarations",    // Legal affirmations  — must not be un-ticked after submit
 ]);
 
 // Inline per-field edit component for the submission view.
@@ -552,7 +558,7 @@ function SubmissionView({ answers, submission, onBack, onDownload, questionPromp
                   <EditableAnswer
                     question={q}
                     value={answers[q.id]}
-                    editable={isEditable && !progress.isTerminal && typeof onSave === "function" && !FILE_EDIT_KINDS.has(q.kind)}
+                    editable={isEditable && !progress.isTerminal && typeof onSave === "function" && !NON_EDITABLE_KINDS.has(q.kind)}
                     track={track}
                     onSave={async (qid, v) => {
                       await onSave(submission.id, qid, v);
