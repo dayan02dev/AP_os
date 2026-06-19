@@ -203,6 +203,12 @@ class ApplicationRead(ApplicationUpdate):
     created_at: datetime
     updated_at: datetime
 
+    # Edit-after-submit (computed by the route, not DB columns).
+    editable: bool = False
+    edit_deadline: datetime | None = None
+    edited_after_submit: bool = False
+    last_edited_at: datetime | None = None
+
 
 # ─── Submission / completion helpers ─────────────────────────────────
 
