@@ -44,6 +44,7 @@ from ..models.application import (
     SubmissionResult,
 )
 from ..services import sqs_publisher
+from ..services.edit_window import edit_deadline_for, is_edit_open
 from ..supabase_client import get_admin_client
 from ..utils.rate_limit import (
     check_rate,
@@ -357,6 +358,27 @@ def _fetch_submitted_applications(user_id: str) -> list[dict[str, Any]]:
     return res.data or []
 
 
+def _fetch_application_by_id(application_id: str) -> dict[str, Any] | None:
+    """Fetch a single application row by its id (any status)."""
+    res = (
+        get_admin_client()
+        .table("tir_applications")
+        .select("*")
+        .eq("id", application_id)
+        .limit(1)
+        .execute()
+    )
+    rows = res.data or []
+    return rows[0] if rows else None
+
+
+_EDITABLE_STATUSES = {"submitted", "under_review"}
+
+
+def _is_editable(row: dict[str, Any]) -> bool:
+    return row.get("status") in _EDITABLE_STATUSES and is_edit_open("tir")
+
+
 def _create_draft(user_id: str) -> dict[str, Any]:
     res = (
         get_admin_client()
@@ -566,6 +588,78 @@ async def patch_application(
     return ApplicationRead.model_validate(updated)
 
 
+@router.patch(
+    "/{application_id}",
+    response_model=ApplicationRead,
+    dependencies=[Depends(_rl_patch)],
+)
+async def edit_submitted_application(
+    application_id: str,
+    request: Request,
+    body: dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    """Edit a *submitted* application in-place during the edit window.
+
+    Guards: owner-only (404 otherwise), status in {submitted, under_review}
+    (409 not_editable), and now < TIR edit deadline (403 edit_window_closed).
+    Saving stamps edited_after_submit + last_edited_at and re-queues AI screening.
+    """
+    req_id = _new_request_id()
+    user_id = current_user["user_id"]
+
+    if not isinstance(body, dict):
+        return _error(status.HTTP_400_BAD_REQUEST, "invalid_body", "Request body must be a JSON object.")
+
+    body = {k: v for k, v in body.items() if k in WRITABLE_FIELDS}
+    if not body:
+        return _error(status.HTTP_400_BAD_REQUEST, "empty_patch", "No writable fields in request body.")
+
+    try:
+        patch_model = ApplicationUpdate(**body)
+    except ValidationError as exc:
+        return _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error",
+                      "One or more fields failed validation.", errors=exc.errors())
+    patch_dict = patch_model.model_dump(exclude_unset=True)
+    if not patch_dict:
+        return _error(status.HTTP_400_BAD_REQUEST, "empty_patch", "At least one writable field is required.")
+
+    try:
+        row = _fetch_application_by_id(application_id)
+    except Exception:
+        log.exception("applications.edit fetch failed", extra={"request_id": req_id})
+        return _error(status.HTTP_500_INTERNAL_SERVER_ERROR, "fetch_failed",
+                      f"Could not load application (ref {req_id}).")
+
+    if row is None or row.get("user_id") != user_id:
+        return _error(status.HTTP_404_NOT_FOUND, "not_found", "Application not found.")
+    if row.get("status") not in _EDITABLE_STATUSES:
+        return _error(status.HTTP_409_CONFLICT, "not_editable",
+                      f"Application is {row.get('status')} and cannot be edited.")
+    if not is_edit_open("tir"):
+        return _error(status.HTTP_403_FORBIDDEN, "edit_window_closed",
+                      "The edit window for this track has closed.")
+
+    patch_dict["edited_after_submit"] = True
+    patch_dict["last_edited_at"] = datetime.now(tz=None).astimezone().isoformat()
+
+    try:
+        updated = _update_application(application_id, patch_dict)
+    except Exception:
+        log.exception("applications.edit update failed", extra={"request_id": req_id})
+        return _error(status.HTTP_500_INTERNAL_SERVER_ERROR, "update_failed",
+                      f"Could not save changes (ref {req_id}).")
+
+    sqs_publisher.publish(application_id, "tir")
+    _audit(user_id=user_id, action="application.edited_after_submit",
+           metadata={"fields": sorted(patch_dict.keys())}, request=request)
+
+    read = ApplicationRead.model_validate(updated)
+    read.editable = _is_editable(updated)
+    read.edit_deadline = edit_deadline_for("tir")
+    return read
+
+
 @router.post(
     "/me/submit",
     response_model=SubmissionResult,
@@ -759,7 +853,13 @@ async def list_submitted_applications(current_user: dict = Depends(get_current_u
             "fetch_failed",
             "Could not load past applications.",
         )
-    return [ApplicationRead.model_validate(r) for r in rows]
+    out = []
+    for r in rows:
+        read = ApplicationRead.model_validate(r)
+        read.editable = _is_editable(r)
+        read.edit_deadline = edit_deadline_for("tir")
+        out.append(read)
+    return out
 
 
 @router.get(

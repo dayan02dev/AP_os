@@ -17,3 +17,81 @@ def test_read_model_has_edit_fields_defaulting_off():
     read = ApplicationRead.model_validate(_row())
     assert read.editable is False
     assert read.edit_deadline is None
+
+
+import copy
+from datetime import UTC, datetime
+from uuid import uuid4
+
+import pytest
+from app.deps import get_current_user
+from app.main import app as fastapi_app
+from app.routers import applications as apps_mod
+from app.services import edit_window
+
+USER = "00000000-0000-0000-0000-0000000000aa"
+APP_ID = "22222222-2222-2222-2222-222222222222"
+
+
+@pytest.fixture(autouse=True)
+def _auth():
+    fastapi_app.dependency_overrides[get_current_user] = lambda: {"user_id": USER, "email": "a@b.com"}
+    yield
+    fastapi_app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def submitted_db(monkeypatch):
+    state = {"row": {
+        "id": APP_ID, "user_id": USER, "status": "submitted", "completion_pct": 100,
+        "submitted_at": "2026-06-04T00:00:00+00:00", "created_at": "2026-06-04T00:00:00+00:00",
+        "updated_at": "2026-06-04T00:00:00+00:00", "basic_full_name": "Old Name",
+    }, "published": [], "audited": []}
+
+    def fake_by_id(app_id):
+        return copy.deepcopy(state["row"]) if app_id == state["row"]["id"] else None
+
+    def fake_update(app_id, patch):
+        state["row"].update(patch)
+        return copy.deepcopy(state["row"])
+
+    monkeypatch.setattr(apps_mod, "_fetch_application_by_id", fake_by_id)
+    monkeypatch.setattr(apps_mod, "_update_application", fake_update)
+    monkeypatch.setattr(apps_mod, "_audit", lambda **k: state["audited"].append(k))
+    monkeypatch.setattr(apps_mod.sqs_publisher, "publish", lambda i, t: state["published"].append((i, t)))
+    monkeypatch.setattr(edit_window.settings, "edit_deadline_tir", "2099-01-01T00:00:00+05:30")
+    return state
+
+
+def test_edit_in_window_saves_flags_and_rescreens(client, submitted_db):
+    res = client.patch(f"/applications/{APP_ID}", json={"basic_full_name": "New Name"})
+    assert res.status_code == 200
+    assert submitted_db["row"]["basic_full_name"] == "New Name"
+    assert submitted_db["row"]["edited_after_submit"] is True
+    assert submitted_db["row"]["last_edited_at"] is not None
+    assert submitted_db["published"] == [(APP_ID, "tir")]
+
+
+def test_edit_after_deadline_is_403(client, submitted_db, monkeypatch):
+    monkeypatch.setattr(edit_window.settings, "edit_deadline_tir", "2000-01-01T00:00:00+05:30")
+    res = client.patch(f"/applications/{APP_ID}", json={"basic_full_name": "X"})
+    assert res.status_code == 403
+    assert res.json()["error"]["code"] == "edit_window_closed"
+
+
+def test_edit_wrong_owner_is_404(client, submitted_db, monkeypatch):
+    submitted_db["row"]["user_id"] = "99999999-9999-9999-9999-999999999999"
+    res = client.patch(f"/applications/{APP_ID}", json={"basic_full_name": "X"})
+    assert res.status_code == 404
+
+
+def test_edit_draft_status_is_409(client, submitted_db):
+    submitted_db["row"]["status"] = "draft"
+    res = client.patch(f"/applications/{APP_ID}", json={"basic_full_name": "X"})
+    assert res.status_code == 409
+    assert res.json()["error"]["code"] == "not_editable"
+
+
+def test_edit_invalid_value_is_422(client, submitted_db):
+    res = client.patch(f"/applications/{APP_ID}", json={"basic_has_team": "Maybe?"})
+    assert res.status_code == 422
