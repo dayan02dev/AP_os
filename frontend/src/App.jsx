@@ -162,6 +162,7 @@ export default function App() {
     completion,
     submittedApps,
     startNew,
+    saveSubmittedField,
   } = useApplication();
 
   // Sign-out has to flush the debounced autosave first. Without this, a
@@ -1027,12 +1028,15 @@ export default function App() {
                     : Date.now(),
                   currentMilestone: target.current_milestone || "submitted",
                   answers: targetAnswers,
+                  editable: target.editable ?? false,
+                  edit_deadline: target.edit_deadline ?? null,
                 }}
                 onBack={() => {
                   setViewingApp(null);
                   navigate("/apply");
                 }}
                 questionPrompts={QUESTION_PROMPTS}
+                onSave={saveSubmittedField}
               />
             );
           })()}

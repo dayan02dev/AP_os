@@ -193,6 +193,7 @@ export default function AppSip() {
     completion,
     submittedApps,
     startNew,
+    saveSubmittedField,
   } = useSipApplication();
   const resume = useSipResume();
   const { push: pushToast } = useToast();
@@ -983,6 +984,8 @@ export default function AppSip() {
                       : Date.now(),
                     currentMilestone: target.current_milestone || "submitted",
                     answers: targetAnswers,
+                    editable: target.editable ?? false,
+                    edit_deadline: target.edit_deadline ?? null,
                   }}
                   onBack={() => {
                     setViewingApp(null);
@@ -991,6 +994,7 @@ export default function AppSip() {
                   onDownload={() => downloadSipResponses(targetAnswers, target)}
                   questionPrompts={QUESTION_PROMPTS_SIP}
                   track="sip"
+                  onSave={saveSubmittedField}
                 />
               );
             })()}

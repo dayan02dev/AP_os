@@ -2987,6 +2987,56 @@ kbd {
 }
 .eir-sub-field-value.is-empty { color: var(--ink-dim); font-style: italic; }
 
+/* ── Inline per-field edit (Task 9) ──────────────────────────────────────── */
+/* Wrapper that holds the read-only value + optional Edit button side-by-side */
+.eir-sub-field-value-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.eir-sub-field-value-wrap.is-editing {
+  gap: 10px;
+}
+/* Edit button: compact, monospaced, sits below the read-only value */
+.eir-os-edit-btn {
+  align-self: flex-start;
+  padding: 4px 10px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius, 2px);
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.eir-os-edit-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* Wrapper for the live wizard input when editing */
+.eir-os-edit-input-wrap {
+  width: 100%;
+}
+/* Inline error below the input */
+.eir-os-edit-err {
+  font-size: 12px;
+  color: var(--accent);
+  font-family: var(--font-mono, monospace);
+  margin: 0;
+}
+/* Save / Cancel action row */
+.eir-os-edit-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.eir-os-edit-save,
+.eir-os-edit-cancel {
+  padding: 6px 16px;
+  font-size: 13px;
+}
+
 /* icons sit inline with button text — tighter than the default ⏎-key gap */
 .eir-sub .eir-q-actions .eir-btn { gap: 8px; }
 .eir-btn svg { flex-shrink: 0; }

@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 
 import { MILESTONES, getSubmissionProgress, getStatusLabel } from "./auth_upload.jsx";
+import { QuestionInput } from "./inputs.jsx";
+import { SipQuestionInput } from "./inputs_sip.jsx";
 import { SECTIONS } from "./questions.jsx";
 import { SECTIONS_SIP } from "./questions_sip.jsx";
 import { ArrowLeft, Download } from "./components/icons.jsx";
@@ -202,7 +204,7 @@ function CelebrationScreen({ message, onContinue }) {
   );
 }
 
-function DoneScreen({ answers, onRestart, submission, onBack, onDownload, questionPrompts, track = "tir" }) {
+function DoneScreen({ answers, onRestart, submission, onBack, onDownload, questionPrompts, track = "tir", onSave }) {
   const name = (answers?.fullName || "").split(" ")[0] || "there";
   const isPast = !!submission;
   // Track-aware cycle label so the SIP wizard doesn't read "TIR.2026" on its
@@ -219,6 +221,7 @@ function DoneScreen({ answers, onRestart, submission, onBack, onDownload, questi
         questionPrompts={questionPrompts}
         track={track}
         cycleLabel={cycleLabel}
+        onSave={onSave}
       />
     );
   }
@@ -272,6 +275,94 @@ function DoneScreen({ answers, onRestart, submission, onBack, onDownload, questi
   );
 }
 
+// Format an ISO edit_deadline string to a short human-readable date like "25 Jun".
+function formatDeadline(iso) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  } catch {
+    return "";
+  }
+}
+
+// Inline per-field edit component for the submission view.
+// When `editable` is true, shows an Edit button next to each read-only value.
+// Clicking it swaps the value for the wizard input matching `question.kind`,
+// with Save / Cancel. Save calls `onSave(questionId, value)`.
+// When `editable` is false, renders the read-only value unchanged.
+function EditableAnswer({ question, value, editable, onSave, track }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const InputComponent = track === "sip" ? SipQuestionInput : QuestionInput;
+  const displayValue = formatAnswerValue(value);
+
+  if (!editing) {
+    return (
+      <div className={`eir-sub-field-value-wrap ${editable ? "is-editable" : ""}`}>
+        <div className={`eir-sub-field-value ${displayValue === null ? "is-empty" : ""}`}>
+          {displayValue === null ? "Not provided" : displayValue}
+        </div>
+        {editable && (
+          <button
+            type="button"
+            className="eir-os-edit-btn eir-mono"
+            onClick={() => { setDraft(value); setErr(null); setEditing(true); }}
+          >
+            Edit
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // Editing mode — render the same input the wizard uses for this question kind.
+  return (
+    <div className="eir-sub-field-value-wrap is-editing">
+      <div className="eir-os-edit-input-wrap">
+        <InputComponent
+          q={question}
+          value={draft}
+          onChange={setDraft}
+          autoFocus
+        />
+      </div>
+      {err && <p className="eir-os-edit-err eir-mono">{err}</p>}
+      <div className="eir-os-edit-actions">
+        <button
+          type="button"
+          className="eir-btn eir-btn-primary eir-os-edit-save"
+          disabled={saving}
+          onClick={async () => {
+            setSaving(true);
+            setErr(null);
+            try {
+              await onSave(question.id, draft);
+              setEditing(false);
+            } catch {
+              setErr("Couldn't save — check the value and try again.");
+            } finally {
+              setSaving(false);
+            }
+          }}
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          className="eir-btn eir-btn-ghost eir-os-edit-cancel"
+          disabled={saving}
+          onClick={() => { setEditing(false); setErr(null); }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Short tab labels keyed by section id — the wizard's own section.label is the
 // long question prompt, too verbose for a tab strip. Falls back to section.label.
 const SECTION_TAB_LABELS = {
@@ -286,7 +377,9 @@ const SECTION_TAB_LABELS = {
 // Read-only "Your submission." view — summary card + tabbed sections.
 // Mirrors the founder-dashboard reference layout while keeping the wizard
 // theme tokens (colors / fonts) intact.
-function SubmissionView({ answers, submission, onBack, onDownload, questionPrompts, track, cycleLabel }) {
+// When submission.editable is true, each answer row gets an Edit button
+// that swaps the read-only value for the wizard's matching input component.
+function SubmissionView({ answers, submission, onBack, onDownload, questionPrompts, track, cycleLabel, onSave }) {
   const sections = track === "sip" ? SECTIONS_SIP : SECTIONS;
   const [activeTab, setActiveTab] = useState(0);
   const tabRefs = useRef([]);
@@ -330,10 +423,19 @@ function SubmissionView({ answers, submission, onBack, onDownload, questionPromp
   const sectionsDone = totalSections;
   const pct = 100;
 
+  const isEditable = !!(submission?.editable);
+  const editDeadline = submission?.edit_deadline || null;
+
   const lede = progress.isTerminal
     ? "This application reached a final outcome. Here's everything you submitted."
-    : "Your answers are locked while under review.";
-  const lockNote = progress.isTerminal ? statusLabel : "Locked for review";
+    : isEditable
+      ? "You can still edit individual answers before the window closes."
+      : "Your answers are locked while under review.";
+  const lockNote = progress.isTerminal
+    ? statusLabel
+    : isEditable
+      ? `Editable until ${formatDeadline(editDeadline)}`
+      : "Locked for review";
 
   const active = resolvedSections[activeTab] || resolvedSections[0];
   const feedback = submission?.feedback;
@@ -421,7 +523,6 @@ function SubmissionView({ answers, submission, onBack, onDownload, questionPromp
                   : q.prompt) ||
                 (questionPrompts && questionPrompts[q.id]) ||
                 q.id;
-              const value = formatAnswerValue(answers[q.id]);
               const num = `${parseInt(active.section.index, 10)}.${qi + 1}`;
               return (
                 <div className="eir-sub-field" key={q.id}>
@@ -429,9 +530,17 @@ function SubmissionView({ answers, submission, onBack, onDownload, questionPromp
                     <span className="eir-mono eir-sub-field-num">{num}</span>
                     {label}
                   </div>
-                  <div className={`eir-sub-field-value ${value === null ? "is-empty" : ""}`}>
-                    {value === null ? "Not provided" : value}
-                  </div>
+                  <EditableAnswer
+                    question={q}
+                    value={answers[q.id]}
+                    editable={isEditable && !progress.isTerminal && typeof onSave === "function"}
+                    track={track}
+                    onSave={async (qid, v) => {
+                      if (typeof onSave === "function") {
+                        await onSave(submission.id, qid, v);
+                      }
+                    }}
+                  />
                 </div>
               );
             })}
