@@ -211,6 +211,12 @@ export const api = {
   patch: (path, body, opts = {}) => apiCall(path, { ...opts, method: "PATCH", body }),
   del: (path, opts = {}) => apiCall(path, { ...opts, method: "DELETE" }),
 
+  // Edit a SUBMITTED application by id (edit-after-submit window).
+  editSubmitted(track, id, patch) {
+    const base = track === "sip" ? "/sip-applications" : "/applications";
+    return api.patch(`${base}/${id}`, patch);
+  },
+
   // ── SIP application-template uploads ──────────────────────────────────────
   uploadSipTemplate: async (file, { signal, timeoutMs = UPLOAD_TIMEOUT_MS } = {}) => {
     const formData = new FormData();
