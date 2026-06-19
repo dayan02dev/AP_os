@@ -264,6 +264,13 @@ export function ApplicationProvider({ children }) {
     }
   }, []);
 
+  const saveSubmittedField = useCallback(async (appId, questionId, value) => {
+    const patch = expandForPatch({ [questionId]: value });
+    const updated = await api.editSubmitted("tir", appId, patch);
+    setSubmittedApps((prev) => prev.map((a) => (a.id === appId ? updated : a)));
+    return updated;
+  }, []);
+
   const fetchCompletion = useCallback(async () => {
     try {
       const c = await api.get("/applications/me/completion");
@@ -301,6 +308,7 @@ export function ApplicationProvider({ children }) {
     startNew,
     refreshSubmitted,
     fetchCompletion,
+    saveSubmittedField,
     refetch: async () => {
       try {
         const r = await api.get("/applications/me");
