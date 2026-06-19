@@ -1,6 +1,6 @@
 // Welcome, section intro, celebration, done screens + progress bar
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 
 import { MILESTONES, getSubmissionProgress, getStatusLabel } from "./auth_upload.jsx";
 import { QuestionInput } from "./inputs.jsx";
@@ -285,6 +285,20 @@ function formatDeadline(iso) {
   }
 }
 
+// File-upload question kinds that route to DRAFT-only backend endpoints
+// (/applications/me/evidence-files, /applications/me/milestone-files, and the
+// SIP equivalents). Those endpoints reject submitted applications, so editing
+// a file field on a submitted app always fails. Suppress the Edit affordance
+// for these kinds until dedicated submitted-app file-replace endpoints exist.
+const FILE_EDIT_KINDS = new Set([
+  "files",           // TIR evidence files  → /applications/me/evidence-files
+  "milestoneFiles",  // TIR + SIP milestone → /applications/me/milestone-files  &  /sip-applications/me/milestone-files
+  "sipPitchDeck",    // SIP pitch deck      → /sip-applications/me/evidence-files?kind=pitch-deck
+  "sipCapTableFile", // SIP cap table file  → /sip-applications/me/evidence-files?kind=cap-table
+  "sipPatents",      // SIP patents         → /sip-applications/me/evidence-files?kind=patents
+  "sipTractionFiles",// SIP traction        → /sip-applications/me/evidence-files?kind=traction
+]);
+
 // Inline per-field edit component for the submission view.
 // When `editable` is true, shows an Edit button next to each read-only value.
 // Clicking it swaps the value for the wizard input matching `question.kind`,
@@ -293,11 +307,15 @@ function formatDeadline(iso) {
 function EditableAnswer({ question, value, editable, onSave, track }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  const [committed, setCommitted] = useState(value);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
 
+  // Keep draft and committed in sync when the parent re-renders with a new value.
+  useEffect(() => { setDraft(value); setCommitted(value); }, [value]);
+
   const InputComponent = track === "sip" ? SipQuestionInput : QuestionInput;
-  const displayValue = formatAnswerValue(value);
+  const displayValue = formatAnswerValue(committed);
 
   if (!editing) {
     return (
@@ -309,7 +327,7 @@ function EditableAnswer({ question, value, editable, onSave, track }) {
           <button
             type="button"
             className="eir-os-edit-btn eir-mono"
-            onClick={() => { setDraft(value); setErr(null); setEditing(true); }}
+            onClick={() => { setDraft(committed); setErr(null); setEditing(true); }}
           >
             Edit
           </button>
@@ -340,6 +358,7 @@ function EditableAnswer({ question, value, editable, onSave, track }) {
             setErr(null);
             try {
               await onSave(question.id, draft);
+              setCommitted(draft);
               setEditing(false);
             } catch {
               setErr("Couldn't save — check the value and try again.");
@@ -533,12 +552,10 @@ function SubmissionView({ answers, submission, onBack, onDownload, questionPromp
                   <EditableAnswer
                     question={q}
                     value={answers[q.id]}
-                    editable={isEditable && !progress.isTerminal && typeof onSave === "function"}
+                    editable={isEditable && !progress.isTerminal && typeof onSave === "function" && !FILE_EDIT_KINDS.has(q.kind)}
                     track={track}
                     onSave={async (qid, v) => {
-                      if (typeof onSave === "function") {
-                        await onSave(submission.id, qid, v);
-                      }
+                      await onSave(submission.id, qid, v);
                     }}
                   />
                 </div>
