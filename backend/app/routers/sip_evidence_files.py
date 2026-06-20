@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from ..deps import get_current_user, require_track
+from ..services import submitted_edit
 from ..supabase_client import get_admin_client
 from ..utils.rate_limit import per_user_rate_limit
 
@@ -147,6 +148,7 @@ async def upload_evidence_file(
     kind: _KindLiteral = Query(..., description="One of: pitch-deck, cap-table, traction, patents"),
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
+    application_id: str | None = Query(None),
 ):
     user_id = current_user["user_id"]
     req_id = _new_request_id()
@@ -165,13 +167,22 @@ async def upload_evidence_file(
         return _error(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "too_large",
                       f"File exceeds {mb} MiB for {kind!r}.")
 
-    app_row = _fetch_draft_application(user_id)
-    if not app_row:
-        return _error(status.HTTP_404_NOT_FOUND, "application_missing",
-                      "No SIP application found. Start the wizard first.")
-    if app_row["status"] != "draft":
-        return _error(status.HTTP_409_CONFLICT, "application_locked",
-                      "Application is already submitted.")
+    if application_id:
+        try:
+            app_row = submitted_edit.load_editable_app(
+                "sip_applications", application_id, user_id,
+                "id, user_id, status, sip_pitch_deck, sip_cap_table_file, sip_traction_files, sip_patents_files",
+            )
+        except submitted_edit.EditWindowError as e:
+            return _error(e.status_code, e.code, e.message)
+    else:
+        app_row = _fetch_draft_application(user_id)
+        if not app_row:
+            return _error(status.HTTP_404_NOT_FOUND, "application_missing",
+                          "No SIP application found. Start the wizard first.")
+        if app_row["status"] != "draft":
+            return _error(status.HTTP_409_CONFLICT, "application_locked",
+                          "Application is already submitted.")
 
     column = cfg["column"]
 
@@ -223,7 +234,6 @@ async def upload_evidence_file(
         (admin.table("sip_applications")
          .update({column: new_value})
          .eq("id", app_row["id"])
-         .eq("status", "draft")
          .execute())
     except Exception as exc:
         log.error("sip-evidence-files JSONB update failed",
@@ -237,6 +247,8 @@ async def upload_evidence_file(
     log.info("sip-evidence-files upload ok",
              extra={"user_id": user_id, "ref": req_id, "kind": kind,
                     "file_uuid": file_uuid})
+    if application_id:
+        submitted_edit.mark_edited("sip_applications", application_id, "sip")
     return {"ok": True, "kind": kind, "file": entry, "value": new_value}
 
 
@@ -245,6 +257,7 @@ async def delete_evidence_file(
     file_uuid: str,
     kind: _KindLiteral = Query(..., description="Which slot the file lives in"),
     current_user: dict = Depends(get_current_user),
+    application_id: str | None = Query(None),
 ):
     user_id = current_user["user_id"]
     req_id = _new_request_id()
@@ -257,13 +270,22 @@ async def delete_evidence_file(
             return _error(status.HTTP_400_BAD_REQUEST, "bad_file_uuid",
                           "file_uuid must be a UUID (or 'single' for single-file slots).")
 
-    app_row = _fetch_draft_application(user_id)
-    if not app_row:
-        return _error(status.HTTP_404_NOT_FOUND, "application_missing",
-                      "No SIP application found.")
-    if app_row["status"] != "draft":
-        return _error(status.HTTP_409_CONFLICT, "application_locked",
-                      "Application is submitted.")
+    if application_id:
+        try:
+            app_row = submitted_edit.load_editable_app(
+                "sip_applications", application_id, user_id,
+                "id, user_id, status, sip_pitch_deck, sip_cap_table_file, sip_traction_files, sip_patents_files",
+            )
+        except submitted_edit.EditWindowError as e:
+            return _error(e.status_code, e.code, e.message)
+    else:
+        app_row = _fetch_draft_application(user_id)
+        if not app_row:
+            return _error(status.HTTP_404_NOT_FOUND, "application_missing",
+                          "No SIP application found.")
+        if app_row["status"] != "draft":
+            return _error(status.HTTP_409_CONFLICT, "application_locked",
+                          "Application is submitted.")
 
     column = cfg["column"]
     admin = get_admin_client()
@@ -290,7 +312,6 @@ async def delete_evidence_file(
         (admin.table("sip_applications")
          .update({column: new_value})
          .eq("id", app_row["id"])
-         .eq("status", "draft")
          .execute())
     except Exception as exc:
         log.error("sip-evidence-files JSONB delete failed",
@@ -303,6 +324,8 @@ async def delete_evidence_file(
         with contextlib.suppress(Exception):
             admin.storage.from_(_BUCKET).remove([target["path"]])
 
+    if application_id:
+        submitted_edit.mark_edited("sip_applications", application_id, "sip")
     return {"ok": True, "kind": kind, "value": new_value}
 
 
