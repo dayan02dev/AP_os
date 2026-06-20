@@ -47,6 +47,27 @@ import {
   SECTION_ORDER_SIP,
   collapseFromRowSip,
 } from "./lib/fieldMap-sip.js";
+
+// Map backend `status` (state machine in services/state_machine.py) onto
+// the dashboard's 6-stage milestone model. Mirrors the same table in
+// App.jsx so a leadership status flip drives the dashboard for both
+// tracks identically.
+const STATUS_TO_MILESTONE = {
+  submitted:        "submitted",
+  ai_screening:     "submitted",
+  screening_failed: "submitted",
+  under_review:     "under_review",
+  evaluated:        "under_review",
+  shortlisted:      "profile",
+  interview:        "interview",
+  offered:          "onboarding",
+  onboarded:        "onboarding",
+  rejected:         "under_review",
+  waitlisted:       "under_review",
+  withdrawn:        "submitted",
+};
+const milestoneFromRow = (r) =>
+  r.current_milestone || STATUS_TO_MILESTONE[r.status] || "submitted";
 import { SipTemplateScreen } from "./components/SipTemplateScreen.jsx";
 
 // SIP violet palette — overrides the TIR blue --accent + --accent-soft
@@ -172,6 +193,7 @@ export default function AppSip() {
     completion,
     submittedApps,
     startNew,
+    saveSubmittedField,
   } = useSipApplication();
   const resume = useSipResume();
   const { push: pushToast } = useToast();
@@ -331,7 +353,10 @@ export default function AppSip() {
       setPhase(hasAny ? PHASES.SECTION_INTRO : PHASES.UPLOAD);
       return;
     }
-    setPhase(hasAny ? PHASES.RETURNING : PHASES.UPLOAD);
+    // Authed users always land on the dashboard (RETURNING). Its
+    // "Not started" view shows the TIR + SIP track picker, so an
+    // empty-draft account no longer skips straight to CV upload.
+    setPhase(PHASES.RETURNING);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user, application, locked]);
 
@@ -745,7 +770,7 @@ export default function AppSip() {
                     : Date.now(),
                   cycle: r.cycle || "VIP.2026",
                   projectTitle: r.solution_describe?.slice(0, 80) || "",
-                  currentMilestone: r.current_milestone || "submitted",
+                  currentMilestone: milestoneFromRow(r),
                   feedback: r.reviewer_feedback || null,
                   answers: collapseFromRowSip(r),
                 }));
@@ -759,7 +784,7 @@ export default function AppSip() {
                       : Date.now(),
                     cycle: r.cycle || "TIR.2026",
                     projectTitle: r.solution_describe?.slice(0, 80) || "",
-                    currentMilestone: r.current_milestone || "submitted",
+                    currentMilestone: milestoneFromRow(r),
                     feedback: r.reviewer_feedback || null,
                     // TIR rows can't be opened from SIP DoneScreen.
                     answers: {},
@@ -959,6 +984,8 @@ export default function AppSip() {
                       : Date.now(),
                     currentMilestone: target.current_milestone || "submitted",
                     answers: targetAnswers,
+                    editable: target.editable ?? false,
+                    edit_deadline: target.edit_deadline ?? null,
                   }}
                   onBack={() => {
                     setViewingApp(null);
@@ -967,6 +994,7 @@ export default function AppSip() {
                   onDownload={() => downloadSipResponses(targetAnswers, target)}
                   questionPrompts={QUESTION_PROMPTS_SIP}
                   track="sip"
+                  onSave={saveSubmittedField}
                 />
               );
             })()}
@@ -1217,7 +1245,7 @@ function Header({ user, onLogout, onProfile, phase, onHome }) {
   const navigate = useNavigate();
   const onProfilePage = phase === "profile";
   const homeHref = user ? "/apply-sip" : "/";
-  const homeLabel = user ? "my application" : "home";
+  const homeLabel = "home";
   const onHomeClick = (e) => {
     if (!user) return;
     e.preventDefault();

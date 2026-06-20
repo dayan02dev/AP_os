@@ -229,6 +229,13 @@ export function SipApplicationProvider({ children }) {
     }
   }, []);
 
+  const saveSubmittedField = useCallback(async (appId, questionId, value) => {
+    const patch = expandForPatchSip({ [questionId]: value });
+    const updated = await api.editSubmitted("sip", appId, patch);
+    setSubmittedApps((prev) => prev.map((a) => (a.id === appId ? updated : a)));
+    return updated;
+  }, []);
+
   useEffect(
     () => () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -252,6 +259,7 @@ export function SipApplicationProvider({ children }) {
     flushNow,
     submit,
     startNew,
+    saveSubmittedField,
     refetch: async () => {
       try {
         const r = await api.get("/sip-applications/me");

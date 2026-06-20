@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { validateEmail, isPasswordValid, EmailInput, PasswordInput } from "./validators.jsx";
 import { useTemplate } from "./hooks/useTemplate.js";
 import { setMyTrack } from "./lib/auth.js";
+import { formatRefId } from "./lib/refId.js";
 
 // Static template URL with a cache-bust query string. Bump the `v=` value
 // whenever the .docx in /public/templates/ changes so old browser cache
@@ -171,12 +172,15 @@ function AuthScreen({ onAuthed, warmCopy }) {
 // Shown after login when there's something to resume or review
 // Canonical milestone pipeline — used for both seed data and live submissions
 // Each milestone has a key, label, short description, and approximate timing hint
+// Canonical 6-stage milestone pipeline. Order matters — the pipeline UI
+// renders these in sequence and "reached" is computed as index <= current.
 const MILESTONES = [
-  { key: "submitted", label: "Application submitted", desc: "We've received your application and it's in the queue." },
-  { key: "under_review", label: "Under review", desc: "Our cohort committee is reading and discussing." },
-  { key: "shortlisted", label: "Shortlisted", desc: "You've been selected for the interview round." },
-  { key: "interview", label: "Interview scheduled", desc: "Panel interview with ARTPARK faculty + industry leads." },
-  { key: "decision", label: "Final decision", desc: "Outcome communicated and onboarding logistics sent." },
+  { key: "submitted",    label: "Application",      short: "Application",      desc: "Form submitted and in the queue." },
+  { key: "under_review", label: "Under review",     short: "Under review",     desc: "Cohort committee reading and discussing." },
+  { key: "profile",      label: "Profile building", short: "Profile building", desc: "Psychometry + references requested from you." },
+  { key: "jury",         label: "Jury evaluation",  short: "Jury evaluation",  desc: "Independent jury reviews shortlisted profiles." },
+  { key: "interview",    label: "Interviews",       short: "Interviews",       desc: "Panel interview with ARTPARK + industry leads." },
+  { key: "onboarding",   label: "Final onboarding", short: "Onboarding",       desc: "Outcome communicated and onboarding logistics sent." },
 ];
 
 // Terminal states that don't fit the linear pipeline
@@ -215,277 +219,714 @@ function getStatusLabel(sub) {
   return MILESTONES[p.currentIdx]?.label || "Submitted";
 }
 
-// Shown after login. Three tabs: start new / continue draft / past applications.
-function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, pastSubmissions, onResume, onViewPast, onStartNew, warmCopy, track = "tir" }) {
-  // Always default to the "Start new" tab on login. Founders can still
-  // click into "Continue existing" or "Past applications" if they want.
-  // Previously this defaulted to "continue" when hasDraft was true, but
-  // that buried the new-application affordance and surprised users who
-  // signed in expecting to start fresh.
-  const [tab, setTab] = useAS("start");
-  const navigate = useNavigate();
-  const cycleLabel = track === "sip" ? "VIP.2026" : "TIR.2026";
+// Sidebar links for the "Cohort" group. In dev these resolve to the
+// static HTML pages in /public; in prod the vercel.json rewrites map them
+// to clean URLs (/, /tir, /sip). Opening in a new tab matches the
+// standalone HTML design where these are sibling marketing pages.
+// Rich dashboard shown when the applicant has a SUBMITTED application
+// in the current cycle. Renders:
+//   - "2026 Innovation Application" card with overall progress bar
+//   - Left column: APPLICATION INFORMATION + project title + expandable
+//     summary blocks (What you're building, Why this matters, Team &
+//     background, Stage & evidence) + "View full application →"
+//   - Right column: APPLICATION PROGRESS pipeline (all 6 stages, with the
+//     current one highlighted). CURRENT STATUS / Start-psychometry block
+//     is intentionally NOT rendered — that appears later in the flow
+//     (once shortlisted), and showing it pre-shortlist sets the wrong
+//     expectation. Per-stage task cards are also withheld for the same
+//     reason: a freshly-submitted applicant should not see the
+//     psychometry / references tasks.
+// Stages at which the CURRENT STATUS box (and matching per-stage CTA)
+// becomes relevant. Pre-`profile` is just "we're reading it" — no action
+// for the applicant — so we suppress the box entirely to keep the
+// dashboard quiet.
+const ACTIVE_STAGES = ["profile", "jury", "interview", "onboarding"];
 
-  // Flip profiles.track on the server BEFORE navigating into the wizard.
-  // SIP RLS (migration 011) gates every read/write on sip_applications
-  // and SIP storage behind profiles.track='sip'; without this flip a
-  // user with track='tir' who picks SIP can't draft, and vice versa.
-  //
-  // We deliberately don't await-then-block: if the PATCH fails (network
-  // blip, transient 5xx) we proceed anyway. The downstream wizard will
-  // fail-loud on the next save with a 403/empty result, which is more
-  // surfaceable than a silent click that goes nowhere. The error is
-  // logged for debugging.
-  const pickTrackThen = async (chosen, navTarget) => {
+// Per-stage CTA shown on the statbox. Click handler is a no-op stub for
+// now (action wiring happens once the corresponding flows exist).
+const STAGE_CTAS = {
+  profile:    { label: "Start psychometry →",   handler: "psychometry" },
+  jury:       null,
+  interview:  { label: "View interview details →", handler: "interview" },
+  onboarding: { label: "Open onboarding pack →",   handler: "onboarding" },
+};
+
+// Per-stage task cards shown inside the expanded current pipeline step.
+// Only the `profile` stage is fully wired for now (the others have empty
+// arrays — the dashboard simply omits the section).
+const STAGE_TASKS = {
+  profile: [
+    { kind: "due", due: "12 May", title: "Korn Ferry Psychometry",
+      meta: "~50 min · single attempt · proctored",
+      action: "Begin", priority: true },
+    { kind: "due", due: "15 May", title: "Submit 2 references",
+      meta: "Academic + industry · we email them directly",
+      action: "Add" },
+    { kind: "upcoming", title: "Pitch interview (if shortlisted)",
+      meta: "Scheduled in week of 25 May" },
+  ],
+  jury: [],
+  interview: [],
+  onboarding: [],
+};
+
+function SubmittedDashboard({ sub, displayName, onViewFull, justSubmitted, track = "tir" }) {
+  const [open, setOpen] = useAS(null);
+  const toggle = (id) => setOpen(open === id ? null : id);
+
+  const progress = getSubmissionProgress(sub);
+  const statusLabel = getStatusLabel(sub);
+  const MS = MILESTONES;
+  const completionPct = progress.isTerminal
+    ? 100
+    : Math.round(((progress.currentIdx + 1) / MS.length) * 100);
+
+  // The applicant has been "accepted into the next round" when their
+  // current_milestone reaches `profile` (or anything downstream). This is
+  // the trigger to show the statbox + per-stage task cards. Backend devs
+  // flip this column to move an applicant forward.
+  const currentKey = sub.currentMilestone || MS[progress.currentIdx]?.key;
+  const isActiveStage = ACTIVE_STAGES.includes(currentKey);
+  const stageCta = STAGE_CTAS[currentKey] || null;
+  const stageTasks = STAGE_TASKS[currentKey] || [];
+
+  // Status pill tone (drives the colour of the CURRENT STATUS chip).
+  const toneClass = progress.isTerminal
+    ? `eir-ret-status-${progress.outcomeKey}`
+    : `eir-ret-status-${currentKey}`;
+
+  const A = sub.answers || {};
+  const idTag = formatRefId(sub.id, track);
+  const projectTitle =
+    sub.projectTitle ||
+    (A.solutionDescribe || A.problemDescribe || "").slice(0, 80) ||
+    "Your application";
+  const submittedDate = new Date(sub.ts || sub.submittedAt || Date.now())
+    .toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+  const lastUpdate = new Date(sub.lastUpdate || sub.ts || Date.now())
+    .toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+
+  // The four expandable summary blocks. Each pulls from the collapsed
+  // answers object the parent (App.jsx) passes in — falls back to a
+  // generic placeholder when the field is empty (e.g. SIP cross-track
+  // rows where answers={}).
+  const summaryBlocks = [
+    {
+      id: "what",
+      label: "What you're building",
+      value: A.solutionDescribe || A.problemDescribe || "Details available in the full application.",
+    },
+    {
+      id: "why",
+      label: "Why this matters",
+      value: A.problemImportance || A.importance || "Details available in the full application.",
+    },
+    {
+      id: "team",
+      label: "Team & background",
+      value: [A.fullName, A.org].filter(Boolean).join(" · ") || "Details available in the full application.",
+    },
+    {
+      id: "trl",
+      label: "Stage & evidence",
+      value: A.stage || "Details available in the full application.",
+    },
+  ];
+
+  return (
+    <div className="eir-os-view">
+      <header className="eir-os-view-head">
+        <div className="eir-mono eir-dim eir-os-crumb">Dashboard</div>
+        <h1 className="eir-os-view-title">
+          {justSubmitted
+            ? <>Application submitted, <em>{displayName}</em></>
+            : <>Welcome back, <em>{displayName}</em></>}
+        </h1>
+        <p className="eir-os-view-sub">
+          {justSubmitted
+            ? <>Thank you — we have received your application. Our team reads every one and will be in touch by the agreed deadline.</>
+            : <>Your 2026 application is being evaluated. Below: where you stand and what we know so far.</>}
+        </p>
+      </header>
+
+      {justSubmitted && (
+        <div className="eir-dash-justsub" role="status">
+          <div className="eir-dash-justsub-mark">✓</div>
+          <div className="eir-dash-justsub-body">
+            <div className="eir-mono eir-dash-justsub-eyebrow">Submitted just now</div>
+            <div className="eir-dash-justsub-text">
+              Reference <strong>{idTag}</strong> — you will get an email confirmation shortly.
+            </div>
+          </div>
+        </div>
+      )}
+
+      <section className="eir-dash-app2026">
+        <header className="eir-dash-app2026-head">
+          <div>
+            <div className="eir-mono eir-dim eir-dash-app2026-eyebrow">Current application</div>
+            <h2 className="eir-dash-app2026-title">2026 Innovation Application</h2>
+          </div>
+          <div className="eir-dash-app2026-pct">
+            <span className="eir-dash-app2026-pct-val">{completionPct}%</span>
+            <span className="eir-mono eir-dim eir-dash-app2026-pct-label">through review</span>
+          </div>
+        </header>
+        <div className="eir-dash-app2026-bar">
+          <div className="eir-dash-app2026-bar-fill" style={{ width: `${completionPct}%` }} />
+        </div>
+        <div className="eir-mono eir-dim eir-dash-app2026-bar-meta">
+          {progress.isTerminal
+            ? <>Process complete — outcome communicated.</>
+            : <>Stage {progress.currentIdx + 1} of {MS.length} · {MS[progress.currentIdx]?.label}</>}
+        </div>
+
+        <div className="eir-dash-app2026-grid">
+          {/* LEFT — application information */}
+          <div className="eir-dash-app2026-left">
+            <header className="eir-dash-card-head">
+              <span className="eir-mono eir-dash-card-eyebrow">Application information</span>
+              <span className="eir-mono eir-dim eir-dash-app-id">{idTag}</span>
+            </header>
+            <h3 className="eir-dash-app-title">{projectTitle}</h3>
+            <div className="eir-dash-app-meta">
+              <div>
+                <div className="eir-mono eir-dim eir-dash-app-meta-label">Stage</div>
+                <div className="eir-dash-app-meta-val">{statusLabel}</div>
+              </div>
+              <div>
+                <div className="eir-mono eir-dim eir-dash-app-meta-label">Submitted</div>
+                <div className="eir-dash-app-meta-val">{submittedDate}</div>
+              </div>
+            </div>
+
+            <ul className="eir-dash-app-blocks">
+              {summaryBlocks.map((b) => (
+                <li
+                  key={b.id}
+                  className={`eir-dash-app-block ${open === b.id ? "is-open" : ""}`}
+                >
+                  <button
+                    type="button"
+                    className="eir-dash-app-block-head"
+                    onClick={() => toggle(b.id)}
+                    aria-expanded={open === b.id}
+                  >
+                    <span className="eir-mono eir-dim eir-dash-app-block-label">{b.label}</span>
+                    <span className="eir-mono eir-dim eir-dash-app-block-toggle">
+                      {open === b.id ? "−" : "+"}
+                    </span>
+                  </button>
+                  <div className="eir-dash-app-block-body">{b.value}</div>
+                </li>
+              ))}
+            </ul>
+
+            <div className="eir-dash-app-actions">
+              <button
+                type="button"
+                className="eir-dash-btn"
+                onClick={() => onViewFull(sub)}
+              >
+                View full application →
+              </button>
+            </div>
+          </div>
+
+          {/* RIGHT — APPLICATION PROGRESS, plus a conditional CURRENT STATUS
+              box that surfaces once the applicant has been moved past
+              `under_review` (backend sets current_milestone = 'profile'
+              or later). Pre-profile the box is suppressed so the dashboard
+              stays quiet while reviewers are still reading. */}
+          <div className="eir-dash-app2026-right">
+            {isActiveStage && (
+              <div className="eir-dash-statbox">
+                <div className="eir-mono eir-dash-card-eyebrow">Current status</div>
+                <div className={`eir-dash-statbox-val eir-ret-status ${toneClass}`}>
+                  {statusLabel}
+                </div>
+                <div className="eir-mono eir-dim eir-dash-statbox-meta">
+                  Last update {lastUpdate}
+                </div>
+                {stageCta && (
+                  <button
+                    type="button"
+                    className="eir-dash-statbox-cta"
+                    onClick={() => onViewFull(sub)}
+                  >
+                    {stageCta.label}
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="eir-dash-pipebox">
+              <header className="eir-dash-card-head">
+                <span className="eir-mono eir-dash-card-eyebrow">Application progress</span>
+                <span className="eir-mono eir-dim">{progress.currentIdx + 1} / {MS.length}</span>
+              </header>
+              <ol className="eir-dash-pipeline">
+                {MS.map((m, mi) => {
+                  const reached = mi < progress.currentIdx;
+                  const isCurrent = !progress.isTerminal && mi === progress.currentIdx;
+                  const cls = isCurrent ? "is-current" : reached ? "is-reached" : "is-upcoming";
+                  return (
+                    <li key={m.key} className={`eir-dash-pipe-step ${cls}`}>
+                      <span className="eir-dash-pipe-node">
+                        <span className="eir-dash-pipe-dot" />
+                        {mi < MS.length - 1 && <span className="eir-dash-pipe-line" />}
+                      </span>
+                      <div>
+                        <div className="eir-dash-pipe-label">
+                          <span className="eir-mono eir-dash-pipe-num">{String(mi + 1).padStart(2, "0")}</span>
+                          <span>{m.short}</span>
+                        </div>
+                        {isCurrent && (
+                          <div className="eir-dash-pipe-desc">{m.desc}</div>
+                        )}
+                        {/* Task cards (Korn Ferry / references / pitch) only
+                            appear inside the CURRENT stage and only when
+                            that stage has tasks defined — today, only
+                            `profile`. Other stages render the bare label. */}
+                        {isCurrent && stageTasks.length > 0 && (
+                          <ul className="eir-dash-upnext-list">
+                            {stageTasks.map((t, i) => (
+                              <li
+                                key={i}
+                                className={`eir-dash-task ${t.priority ? "is-priority" : ""} ${t.kind === "upcoming" ? "is-upcoming" : ""}`}
+                              >
+                                <div>
+                                  {t.kind === "due" && (
+                                    <span className="eir-mono eir-dash-task-due">DUE {t.due}</span>
+                                  )}
+                                  {t.kind === "upcoming" && (
+                                    <span className="eir-mono eir-dim eir-dash-task-upcoming">UPCOMING</span>
+                                  )}
+                                  {t.kind === "info" && (
+                                    <span className="eir-mono eir-dim eir-dash-task-info">INFO</span>
+                                  )}
+                                </div>
+                                <div>
+                                  <div className="eir-dash-task-title">{t.title}</div>
+                                  <div className="eir-mono eir-dim eir-dash-task-meta">{t.meta}</div>
+                                </div>
+                                {t.action && (
+                                  <button type="button" className="eir-dash-task-action">
+                                    {t.action}
+                                  </button>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {sub.feedback && (
+        <section className="eir-dash-feedback">
+          <div className="eir-mono eir-dim eir-dash-feedback-label">↳ reviewer note</div>
+          <p className="eir-dash-feedback-body">{sub.feedback}</p>
+        </section>
+      )}
+    </div>
+  );
+}
+
+const COHORT_LINKS = {
+  programs: { href: "/programs.html", label: "Programs" },
+  tir:      { href: "/marketing.html", label: "TIR overview" },
+  sip:      { href: "/sip-marketing.html", label: "VIP overview" },
+};
+
+// Sidebar — Application + Cohort nav groups. Shared by Current / Past views.
+function OsSidebar({ view, onView, hasDraft, draftPct, pastCount }) {
+  return (
+    <aside className="eir-os-side">
+      <nav className="eir-os-side-group">
+        <div className="eir-mono eir-os-side-title">Application</div>
+        <button
+          type="button"
+          className={`eir-os-nav ${view === "current" ? "is-on" : ""}`}
+          onClick={() => onView("current")}
+        >
+          <span className="eir-os-nav-label">Current</span>
+          {hasDraft && (
+            <span className="eir-mono eir-os-nav-pct">{draftPct}%</span>
+          )}
+        </button>
+        <button
+          type="button"
+          className={`eir-os-nav ${view === "past" ? "is-on" : ""}`}
+          onClick={() => onView("past")}
+        >
+          <span className="eir-os-nav-label">Past applications</span>
+          {pastCount > 0 && (
+            <span className="eir-mono eir-os-nav-badge">{pastCount}</span>
+          )}
+        </button>
+      </nav>
+
+      <nav className="eir-os-side-group">
+        <div className="eir-mono eir-os-side-title">Cohort</div>
+        <a
+          className="eir-os-nav eir-os-nav-link"
+          href={COHORT_LINKS.programs.href}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <span className="eir-mono eir-os-nav-num">↗</span>
+          <span className="eir-os-nav-label">{COHORT_LINKS.programs.label}</span>
+        </a>
+        <a
+          className="eir-os-nav eir-os-nav-link"
+          href={COHORT_LINKS.tir.href}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <span className="eir-mono eir-os-nav-num">↗</span>
+          <span className="eir-os-nav-label">{COHORT_LINKS.tir.label}</span>
+        </a>
+        <a
+          className="eir-os-nav eir-os-nav-link"
+          href={COHORT_LINKS.sip.href}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <span className="eir-mono eir-os-nav-num">↗</span>
+          <span className="eir-os-nav-label">{COHORT_LINKS.sip.label}</span>
+        </a>
+      </nav>
+
+      <div className="eir-os-side-foot">
+        <div className="eir-mono eir-dim">↳ data encrypted at rest</div>
+        <div className="eir-mono eir-dim">↳ progress autosaves</div>
+      </div>
+    </aside>
+  );
+}
+
+// Right-pane content when "Current" tab is selected. Three states:
+//   draft in progress → banner + Continue / Review cards
+//   no draft, no submitted current-cycle → track-picker cards
+//   submitted to current cycle → fall back to draft view (rich dashboard
+//     port is out of scope for this MVP; the existing /apply/submitted
+//     receipt is reachable via the Past list).
+function CurrentPane({
+  displayName, hasDraft, draftPct, currentSub, onResume, onStartNew,
+  onGoPast, onViewFull, pastCount, track, justSubmitted,
+}) {
+  const navigate = useNavigate();
+
+  // State: a submission already exists in the current cycle. Takes priority
+  // over the draft and not-started views — once you have submitted, the
+  // dashboard is the right landing.
+  if (currentSub) {
+    return (
+      <SubmittedDashboard
+        sub={currentSub}
+        displayName={displayName}
+        onViewFull={onViewFull}
+        justSubmitted={justSubmitted}
+        track={track}
+      />
+    );
+  }
+
+  // State A — draft in progress
+  if (hasDraft) {
+    return (
+      <div className="eir-os-view">
+        <header className="eir-os-view-head">
+          <div className="eir-mono eir-dim eir-os-crumb">Current · Draft</div>
+          <h1 className="eir-os-view-title">Welcome back, <em>{displayName}</em></h1>
+          <p className="eir-os-view-sub">
+            Your 2026 application is <strong>{draftPct}% complete</strong>. Pick up exactly where you stopped — every answer is saved.
+          </p>
+        </header>
+
+        <div className="eir-os-banner eir-os-banner-draft">
+          <div className="eir-os-banner-body">
+            <div className="eir-mono eir-os-banner-eyebrow">in progress</div>
+            <div className="eir-os-banner-title">{draftPct}% through your application</div>
+            <div className="eir-os-banner-bar">
+              <div className="eir-os-banner-bar-fill" style={{ width: `${draftPct}%` }} />
+            </div>
+          </div>
+          <div className="eir-os-banner-actions">
+            <button className="eir-os-cta eir-os-cta-primary" onClick={onResume}>
+              Resume →
+            </button>
+          </div>
+        </div>
+
+        <div className="eir-os-card-row">
+          <button className="eir-os-card eir-os-card-clickable" onClick={onResume}>
+            <div className="eir-mono eir-os-card-eyebrow">option · resume</div>
+            <div className="eir-os-card-title">Continue where you left off</div>
+            <p className="eir-os-card-blurb">Jump back into the form at your next unanswered question.</p>
+            <div className="eir-mono eir-os-card-arrow">→</div>
+          </button>
+          <button className="eir-os-card eir-os-card-clickable" onClick={onResume}>
+            <div className="eir-mono eir-os-card-eyebrow">option · review</div>
+            <div className="eir-os-card-title">Review what you have so far</div>
+            <p className="eir-os-card-blurb">Walk through your answers section-by-section, no edits forced.</p>
+            <div className="eir-mono eir-os-card-arrow">→</div>
+          </button>
+        </div>
+
+        {pastCount > 0 && (
+          <button className="eir-os-footnote" onClick={onGoPast}>
+            <span className="eir-mono">↳</span>
+            <span>You have <strong>{pastCount}</strong> past {pastCount === 1 ? "application" : "applications"} — view history</span>
+            <span className="eir-mono eir-dim">→</span>
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // State B — not started. Show the TIR + VIP track picker.
+  const pickTrack = async (chosen) => {
     try {
       await setMyTrack(chosen);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn("[chooser] setMyTrack failed; proceeding anyway", err);
     }
-    if (typeof navTarget === "function") navTarget();
-    else navigate(navTarget);
+    if (chosen === track) {
+      onStartNew();
+    } else {
+      navigate(chosen === "tir" ? "/apply?direct=1" : "/apply-sip?direct=1");
+    }
   };
 
-  // Display name only comes from the current draft's basic_full_name —
-  // either CV-parsed or hand-typed in the wizard. We intentionally do
-  // NOT fall back to profiles.full_name: that field can hold a stale
-  // CV name from a previous account or test session, leading to
-  // confusing greetings like "Good to see you, Sanjay" when the actual
-  // user is manager@... before they've uploaded anything. Email
-  // local-part is the safe fallback — title-cased so "rohanss24" reads
-  // "Rohanss24".
+  return (
+    <div className="eir-os-view">
+      <header className="eir-os-view-head">
+        <div className="eir-mono eir-dim eir-os-crumb">Current · Not started</div>
+        <h1 className="eir-os-view-title">Welcome back, <em>{displayName}</em></h1>
+        <p className="eir-os-view-sub">
+          You have not started a 2026 application yet. Pick the track that fits where you are — your CV auto-fills the basics either way. Estimated time ~60–90 min.
+        </p>
+      </header>
+
+      <div className="eir-os-track-grid">
+        <button className="eir-os-track-card" data-track="tir" onClick={() => pickTrack("tir")}>
+          <div className="eir-os-track-head">
+            <span className="eir-mono eir-os-track-eyebrow">begin · tir.2026</span>
+            <span className="eir-os-track-arrow">→</span>
+          </div>
+          <div className="eir-os-track-title">Technology Innovator in Residence</div>
+          <p className="eir-os-track-blurb">
+            For pre-incorporation researchers translating <em>lab-proven</em> work toward a defensible technology angle. TRL 3 and up.
+          </p>
+          <div className="eir-mono eir-dim eir-os-track-meta">↳ closes 22 may · ~60–90 min</div>
+        </button>
+
+        <button className="eir-os-track-card" data-track="sip" onClick={() => pickTrack("sip")}>
+          <div className="eir-os-track-head">
+            <span className="eir-mono eir-os-track-eyebrow">begin · vip.2026</span>
+            <span className="eir-os-track-arrow">→</span>
+          </div>
+          <div className="eir-os-track-title">Venture Incubation Programme</div>
+          <p className="eir-os-track-blurb">
+            For incorporated Pvt Ltd ventures with a working prototype (TRL 4+) and early customer signal.
+          </p>
+          <div className="eir-mono eir-dim eir-os-track-meta">↳ closes 31 may · ~60–90 min</div>
+        </button>
+      </div>
+
+      <div className="eir-os-note">
+        <span className="eir-os-note-mark eir-mono">!</span>
+        <span>
+          You can <em>explore</em> both tracks, but only <strong>one application</strong> can be submitted per applicant — pick the track that fits where you are today.
+        </span>
+      </div>
+
+      {pastCount > 0 && (
+        <button className="eir-os-footnote" onClick={onGoPast}>
+          <span className="eir-mono">↳</span>
+          <span>You have <strong>{pastCount}</strong> past {pastCount === 1 ? "application" : "applications"} — view history</span>
+          <span className="eir-mono eir-dim">→</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Right-pane content when "Past applications" tab is selected.
+function PastPane({ displayName, pastSubmissions, onViewPast, onGoCurrent }) {
+  if (pastSubmissions.length === 0) {
+    return (
+      <div className="eir-os-view">
+        <header className="eir-os-view-head">
+          <div className="eir-mono eir-dim eir-os-crumb">Past applications</div>
+          <h1 className="eir-os-view-title">Nothing in your history yet, <em>{displayName}</em></h1>
+          <p className="eir-os-view-sub">
+            Once you submit an application, every cycle stays here with live status, reviewer notes, and final outcomes.
+          </p>
+        </header>
+
+        <div className="eir-os-empty">
+          <div className="eir-os-empty-icon eir-mono">∅</div>
+          <p className="eir-os-empty-title">No past submissions</p>
+          <p className="eir-os-empty-sub">
+            When you submit your 2026 application, it will move here after the cycle closes.
+          </p>
+          <button className="eir-os-cta eir-os-cta-ghost" onClick={onGoCurrent}>
+            ← back to current
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="eir-os-view">
+      <header className="eir-os-view-head">
+        <div className="eir-mono eir-dim eir-os-crumb">Past applications</div>
+        <h1 className="eir-os-view-title">Your application history, <em>{displayName}</em></h1>
+        <p className="eir-os-view-sub">
+          {pastSubmissions.length} previous {pastSubmissions.length === 1 ? "submission" : "submissions"} — status, outcomes, and reviewer notes below.
+        </p>
+      </header>
+
+      <div className="eir-os-past-list">
+        {pastSubmissions.map((s, i) => {
+          const progress = getSubmissionProgress(s);
+          const statusLabel = getStatusLabel(s);
+          const toneClass = progress.isTerminal
+            ? `eir-ret-status-${progress.outcomeKey}`
+            : `eir-ret-status-${(s.currentMilestone || "submitted")}`;
+          const ref = formatRefId(
+            s.id,
+            (s.cycle || "").toUpperCase().includes("VIP") ? "sip" : "tir",
+          );
+          return (
+            <button key={i} className="eir-os-past-card" onClick={() => onViewPast(s)}>
+              <div className="eir-os-past-head">
+                <div className="eir-os-past-head-left">
+                  <span className="eir-mono eir-os-past-id">{ref}</span>
+                  <span className="eir-mono eir-dim">·</span>
+                  <span className="eir-mono eir-dim eir-os-past-cycle">{s.cycle || "TIR cohort"}</span>
+                </div>
+                <span className={`eir-ret-status eir-mono ${toneClass}`}>
+                  {statusLabel.toUpperCase()}
+                </span>
+              </div>
+
+              <div className="eir-os-past-title">
+                {s.projectTitle || (s.answers?.problemStatement || "").slice(0, 90) || "Your application"}
+                {!s.projectTitle && (s.answers?.problemStatement || "").length > 90 ? "…" : ""}
+              </div>
+
+              <div className="eir-ret-pipeline eir-os-past-pipeline">
+                {MILESTONES.map((m, mi) => {
+                  const reached = mi <= progress.currentIdx;
+                  const isCurrent = !progress.isTerminal && mi === progress.currentIdx;
+                  return (
+                    <Fragment key={m.key}>
+                      <span
+                        className={`eir-ret-pipe-dot ${reached ? "is-reached" : ""} ${isCurrent ? "is-current" : ""} ${progress.isTerminal && mi === progress.currentIdx ? "is-terminal" : ""}`}
+                        title={m.label}
+                      />
+                      {mi < MILESTONES.length - 1 && (
+                        <span className={`eir-ret-pipe-line ${mi < progress.currentIdx ? "is-reached" : ""}`} />
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </div>
+
+              <div className="eir-mono eir-dim eir-os-past-meta">
+                ↳ submitted {new Date(s.ts).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}
+                {s.feedback ? <> · reviewer note attached</> : null}
+              </div>
+
+              {s.feedback && (
+                <div className="eir-os-past-feedback">
+                  <span className="eir-mono eir-os-past-feedback-label">reviewer note</span>
+                  <p className="eir-os-past-feedback-body">{s.feedback}</p>
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Shown after login. Sidebar shell with two views: Current / Past applications.
+function ReturningChoiceScreen({ user, applicantName, hasDraft, draftProgress, pastSubmissions, onResume, onViewPast, onStartNew, warmCopy: _warmCopy, track = "tir", justSubmitted = false }) {
+  const [view, setView] = useAS("current");
+  const draftPct = Math.round((draftProgress || 0) * 100);
+
+  // Past lists every submitted application — we no longer filter by cycle
+  // or track. The most-recent submission also drives the Current dashboard,
+  // so the same row can appear in both views (Current = active tracker,
+  // Past = historical record).
+  const matchesTrack = (s) => {
+    const c = (s?.cycle || "").toUpperCase();
+    if (track === "sip") return c.includes("VIP") || c.includes("SIP");
+    return c.includes("TIR");
+  };
+  // Pick the latest submission for this track as the dashboard's currentSub.
+  // pastSubmissions is already sorted newest-first by App.jsx / AppSip.jsx.
+  const currentSub = (pastSubmissions || []).find(matchesTrack);
+  const trulyPast = pastSubmissions || [];
+
+  // Display name from the draft (CV-parsed or typed in the wizard);
+  // never from profiles.full_name (that field can be a stale CV name
+  // from an earlier session). Fallback is the email local-part,
+  // title-cased so "rohanss24" reads "Rohanss24".
   const displayName =
     applicantName?.trim() ||
     ((email) => email?.split("@")[0]?.replace(/^./, (c) => c.toUpperCase()))(user.email);
 
   return (
-    <div className="eir-screen eir-returning">
-      <div className="eir-coord eir-mono">
-        <span>ARTPARK / {cycleLabel}</span>
-        <span>signed in · {user.email}</span>
-      </div>
-      <div className="eir-auth-body">
-        <div className="eir-welcome-label eir-mono">
-          <span className="eir-dot-live" /> welcome back
-        </div>
-        <h1 className="eir-welcome-title">
-          {warmCopy ? <>Good to see you, <em>{displayName}</em>.</> : "What would you like to do?"}
-        </h1>
+    <div className="eir-screen eir-os-shell">
+      <div className="eir-os-body">
+        <OsSidebar
+          view={view}
+          onView={setView}
+          hasDraft={hasDraft && !currentSub}
+          draftPct={draftPct}
+          pastCount={trulyPast.length}
+        />
 
-        {/* Three-tab nav */}
-        <div className="eir-tabs-nav" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "start"}
-            className={`eir-tabs-item ${tab === "start" ? "is-on" : ""}`}
-            onClick={() => setTab("start")}
-          >
-            <span className="eir-mono eir-tabs-num">01</span>
-            <span className="eir-tabs-label">Start new</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "continue"}
-            disabled={!hasDraft}
-            className={`eir-tabs-item ${tab === "continue" ? "is-on" : ""} ${!hasDraft ? "is-disabled" : ""}`}
-            onClick={() => hasDraft && setTab("continue")}
-          >
-            <span className="eir-mono eir-tabs-num">02</span>
-            <span className="eir-tabs-label">Continue existing</span>
-            {hasDraft && <span className="eir-tabs-badge eir-mono">{Math.round((draftProgress || 0) * 100)}%</span>}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "past"}
-            className={`eir-tabs-item ${tab === "past" ? "is-on" : ""}`}
-            onClick={() => setTab("past")}
-          >
-            <span className="eir-mono eir-tabs-num">03</span>
-            <span className="eir-tabs-label">Past applications</span>
-            {pastSubmissions.length > 0 && <span className="eir-tabs-badge eir-mono">{pastSubmissions.length}</span>}
-          </button>
-        </div>
-
-        {/* Tab panels */}
-        <div className="eir-tabs-panels">
-
-          {tab === "start" && (
-            <div className="eir-tabs-panel" role="tabpanel">
-              <div className="eir-tabs-panel-head">
-                <h2 className="eir-tabs-panel-title">Begin a 2026 TIR or VIP application</h2>
-                <p className="eir-tabs-panel-sub">
-                  Pick the track that fits where you are. Your CV auto-fills the basics either way — est. 60–90 minutes.
-                  {hasDraft && " Starting new will clear your current in-progress draft."}
-                </p>
-              </div>
-              <div className="eir-ret-tracks">
-                {/* TIR card. If the user is on /apply (track==="tir") clicking
-                    starts the wizard in place; otherwise it navigates to
-                    /apply, where TirAppGate decides whether to render the
-                    wizard or the track-mismatch screen based on the
-                    backend's wrong_track signal. */}
-                <button
-                  className="eir-ret-track eir-ret-track-tir"
-                  onClick={() =>
-                    pickTrackThen(
-                      "tir",
-                      track === "tir" ? onStartNew : "/apply?direct=1",
-                    )
-                  }
-                >
-                  <div className="eir-ret-track-head">
-                    <span className="eir-mono eir-ret-track-eyebrow">begin · tir.2026</span>
-                    <span className="eir-ret-track-arrow eir-mono">→</span>
-                  </div>
-                  <div className="eir-ret-track-title">Technology Innovator in Residence</div>
-                  <p className="eir-ret-track-body">
-                    For pre-incorporation researchers translating <em>lab-proven</em> work toward a defensible technology angle. TRL 3 and up.
-                  </p>
-                  <div className="eir-mono eir-dim eir-ret-track-meta">
-                    ↳ closes 22 may · ~60–90 min
-                  </div>
-                </button>
-
-                {/* SIP card. Symmetric: if on /apply-sip (track==="sip") it
-                    starts the SIP wizard in place; otherwise it navigates
-                    to /apply-sip, where SipAppRoute renders the wizard or
-                    the mismatch screen depending on profiles.track. */}
-                <button
-                  className="eir-ret-track eir-ret-track-sip"
-                  onClick={() =>
-                    pickTrackThen(
-                      "sip",
-                      track === "sip" ? onStartNew : "/apply-sip?direct=1",
-                    )
-                  }
-                >
-                  <div className="eir-ret-track-head">
-                    <span className="eir-mono eir-ret-track-eyebrow">begin · vip.2026</span>
-                    <span className="eir-ret-track-arrow eir-mono">→</span>
-                  </div>
-                  <div className="eir-ret-track-title">Venture Incubation Programme</div>
-                  <p className="eir-ret-track-body">
-                    For incorporated Pvt Ltd ventures with a working prototype (TRL 4+) and early customer signal.
-                  </p>
-                  <div className="eir-mono eir-dim eir-ret-track-meta">
-                    ↳ closes 31 may · ~60–90 min
-                  </div>
-                </button>
-              </div>
-              <div className="eir-ret-tracks-note eir-mono">
-                <span className="eir-ret-tracks-note-mark">!</span>
-                <span>
-                  You can <em>explore</em> both tracks, but only{" "}
-                  <strong>one application</strong> can be submitted per applicant — pick the track that fits where you are today.
-                </span>
-              </div>
-            </div>
+        <main className="eir-os-pane">
+          {view === "current" && (
+            <CurrentPane
+              displayName={displayName}
+              hasDraft={hasDraft && !currentSub}
+              draftPct={draftPct}
+              currentSub={currentSub}
+              onResume={onResume}
+              onStartNew={onStartNew}
+              onGoPast={() => setView("past")}
+              onViewFull={onViewPast}
+              pastCount={trulyPast.length}
+              track={track}
+              justSubmitted={justSubmitted}
+            />
           )}
-
-          {tab === "continue" && hasDraft && (
-            <div className="eir-tabs-panel" role="tabpanel">
-              <div className="eir-tabs-panel-head">
-                <h2 className="eir-tabs-panel-title">Continue where you left off</h2>
-                <p className="eir-tabs-panel-sub">
-                  You have an application in progress. Pick up exactly where you stopped.
-                </p>
-              </div>
-              <div className="eir-ret-list">
-                <button className="eir-ret-card eir-ret-card-primary" onClick={onResume}>
-                  <div className="eir-ret-card-head">
-                    <span className="eir-mono eir-ret-card-eyebrow">in progress</span>
-                    <span className="eir-mono eir-ret-card-pct">{Math.round((draftProgress || 0) * 100)}%</span>
-                  </div>
-                  <div className="eir-ret-card-title">Resume draft</div>
-                  <div className="eir-ret-card-bar"><div className="eir-ret-card-bar-fill" style={{ width: `${Math.round((draftProgress || 0) * 100)}%` }} /></div>
-                  <div className="eir-mono eir-dim eir-ret-card-meta">↳ continue from your last answered question</div>
-                </button>
-              </div>
-            </div>
+          {view === "past" && (
+            <PastPane
+              displayName={displayName}
+              pastSubmissions={trulyPast}
+              onViewPast={onViewPast}
+              onGoCurrent={() => setView("current")}
+            />
           )}
-
-          {tab === "past" && (
-            <div className="eir-tabs-panel" role="tabpanel">
-              <div className="eir-tabs-panel-head">
-                <h2 className="eir-tabs-panel-title">Past applications</h2>
-                <p className="eir-tabs-panel-sub">
-                  Review previously-submitted applications, track milestone progress, and read reviewer feedback.
-                </p>
-              </div>
-
-              {pastSubmissions.length === 0 ? (
-                <div className="eir-tabs-empty">
-                  <div className="eir-tabs-empty-icon eir-mono">∅</div>
-                  <p className="eir-tabs-empty-title">No submissions yet</p>
-                  <p className="eir-tabs-empty-sub">
-                    Once you submit an application, it'll appear here with live status updates and any reviewer feedback.
-                  </p>
-                </div>
-              ) : (
-                <div className="eir-ret-list">
-                  {pastSubmissions.map((s, i) => {
-                    const progress = getSubmissionProgress(s);
-                    const statusLabel = getStatusLabel(s);
-                    const toneClass = progress.isTerminal
-                      ? `eir-ret-status-${progress.outcomeKey}`
-                      : `eir-ret-status-${(s.currentMilestone || "submitted")}`;
-                    return (
-                      <button key={i} className="eir-ret-card eir-ret-card-past" onClick={() => onViewPast(s)}>
-                        <div className="eir-ret-card-head">
-                          <div className="eir-ret-card-head-left">
-                            <span className="eir-mono eir-ret-card-eyebrow">#{s.id}</span>
-                            <span className="eir-mono eir-ret-card-cycle-sep">·</span>
-                            <span className="eir-mono eir-dim eir-ret-card-cycle">{s.cycle || "TIR cohort"}</span>
-                          </div>
-                          <span className={`eir-ret-status eir-mono ${toneClass}`}>
-                            {statusLabel.toUpperCase()}
-                          </span>
-                        </div>
-                        <div className="eir-ret-card-title">{s.projectTitle || s.answers?.problemStatement?.slice(0, 80) || "Your application"}{s.projectTitle ? "" : (s.answers?.problemStatement?.length > 80 ? "…" : "")}</div>
-
-                        {/* Mini milestone pipeline */}
-                        <div className="eir-ret-pipeline">
-                          {MILESTONES.map((m, mi) => {
-                            const reached = progress.isTerminal
-                              ? mi <= progress.currentIdx
-                              : mi <= progress.currentIdx;
-                            const isCurrent = !progress.isTerminal && mi === progress.currentIdx;
-                            return (
-                              <Fragment key={m.key}>
-                                <span
-                                  className={`eir-ret-pipe-dot ${reached ? "is-reached" : ""} ${isCurrent ? "is-current" : ""} ${progress.isTerminal && mi === progress.currentIdx ? "is-terminal" : ""}`}
-                                  title={m.label}
-                                />
-                                {mi < MILESTONES.length - 1 && (
-                                  <span className={`eir-ret-pipe-line ${mi < progress.currentIdx ? "is-reached" : ""}`} />
-                                )}
-                              </Fragment>
-                            );
-                          })}
-                        </div>
-
-                        <div className="eir-mono eir-dim eir-ret-card-meta">
-                          ↳ submitted {new Date(s.ts).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}
-                          {s.feedback && <> · feedback available</>}
-                          {s.lastUpdate && <> · updated {new Date(s.lastUpdate).toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</>}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-        </div>
-
-        <div className="eir-welcome-foot eir-mono eir-dim">
-          ↳ your data is encrypted at rest · progress saves automatically
-        </div>
+        </main>
       </div>
     </div>
   );

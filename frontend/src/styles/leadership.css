@@ -126,7 +126,7 @@
 .lp-metric-split-bar { height: 5px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 1px; overflow: hidden; }
 .lp-metric-split-bar-fill { display: block; height: 100%; background: var(--ink); }
 .lp-metric-split-row:first-child .lp-metric-split-bar-fill { background: var(--accent); }
-.lp-metric-split-row:nth-child(2) .lp-metric-split-bar-fill { background: #c84a1a; }
+.lp-metric-split-row:nth-child(2) .lp-metric-split-bar-fill { background: var(--coral); }
 .lp-metric-split-n { font-size: 12px; font-weight: 600; color: var(--ink); text-align: right; }
 
 /* Main 2-column grid for cards */
