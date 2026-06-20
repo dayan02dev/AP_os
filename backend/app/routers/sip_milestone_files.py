@@ -15,10 +15,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from ..deps import get_current_user, require_track
+from ..services import submitted_edit
 from ..supabase_client import get_admin_client
 from ..utils.rate_limit import per_user_rate_limit
 
@@ -85,6 +86,7 @@ async def upload_milestone_file(
     request: Request,
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
+    application_id: str | None = Query(None),
 ):
     user_id = current_user["user_id"]
     req_id = _new_request_id()
@@ -101,13 +103,22 @@ async def upload_milestone_file(
         return _error(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "too_large",
                       f"File exceeds {_MAX_BYTES // (1024 * 1024)} MiB.")
 
-    app_row = _fetch_draft_application(user_id)
-    if not app_row:
-        return _error(status.HTTP_404_NOT_FOUND, "application_missing",
-                      "No SIP application found. Start the wizard first.")
-    if app_row["status"] != "draft":
-        return _error(status.HTTP_409_CONFLICT, "application_locked",
-                      "Application is already submitted.")
+    if application_id:
+        try:
+            app_row = submitted_edit.load_editable_app(
+                "sip_applications", application_id, user_id,
+                "id, user_id, status, execution_milestone_files",
+            )
+        except submitted_edit.EditWindowError as e:
+            return _error(e.status_code, e.code, e.message)
+    else:
+        app_row = _fetch_draft_application(user_id)
+        if not app_row:
+            return _error(status.HTTP_404_NOT_FOUND, "application_missing",
+                          "No SIP application found. Start the wizard first.")
+        if app_row["status"] != "draft":
+            return _error(status.HTTP_409_CONFLICT, "application_locked",
+                          "Application is already submitted.")
 
     existing = list(app_row.get("execution_milestone_files") or [])
     if len(existing) >= _MAX_FILES_PER_APP:
@@ -145,7 +156,6 @@ async def upload_milestone_file(
         (admin.table("sip_applications")
          .update({"execution_milestone_files": new_list})
          .eq("id", app_row["id"])
-         .eq("status", "draft")
          .execute())
     except Exception as exc:
         log.error("sip-milestone-files JSONB update failed",
@@ -157,6 +167,8 @@ async def upload_milestone_file(
 
     log.info("sip-milestone-files upload ok",
              extra={"user_id": user_id, "ref": req_id, "file_uuid": file_uuid})
+    if application_id:
+        submitted_edit.mark_edited("sip_applications", application_id, "sip")
     return {"ok": True, "file": entry, "files": new_list}
 
 
@@ -164,6 +176,7 @@ async def upload_milestone_file(
 async def delete_milestone_file(
     file_uuid: str,
     current_user: dict = Depends(get_current_user),
+    application_id: str | None = Query(None),
 ):
     user_id = current_user["user_id"]
     req_id = _new_request_id()
@@ -174,13 +187,22 @@ async def delete_milestone_file(
         return _error(status.HTTP_400_BAD_REQUEST, "bad_file_uuid",
                       "file_uuid must be a UUID.")
 
-    app_row = _fetch_draft_application(user_id)
-    if not app_row:
-        return _error(status.HTTP_404_NOT_FOUND, "application_missing",
-                      "No SIP application found.")
-    if app_row["status"] != "draft":
-        return _error(status.HTTP_409_CONFLICT, "application_locked",
-                      "Application is submitted.")
+    if application_id:
+        try:
+            app_row = submitted_edit.load_editable_app(
+                "sip_applications", application_id, user_id,
+                "id, user_id, status, execution_milestone_files",
+            )
+        except submitted_edit.EditWindowError as e:
+            return _error(e.status_code, e.code, e.message)
+    else:
+        app_row = _fetch_draft_application(user_id)
+        if not app_row:
+            return _error(status.HTTP_404_NOT_FOUND, "application_missing",
+                          "No SIP application found.")
+        if app_row["status"] != "draft":
+            return _error(status.HTTP_409_CONFLICT, "application_locked",
+                          "Application is submitted.")
 
     existing = list(app_row.get("execution_milestone_files") or [])
     target = next((e for e in existing if e.get("file_uuid") == file_uuid), None)
@@ -195,7 +217,6 @@ async def delete_milestone_file(
         (admin.table("sip_applications")
          .update({"execution_milestone_files": new_list})
          .eq("id", app_row["id"])
-         .eq("status", "draft")
          .execute())
     except Exception as exc:
         log.error("sip-milestone-files JSONB delete failed",
@@ -206,6 +227,8 @@ async def delete_milestone_file(
     with contextlib.suppress(Exception):
         admin.storage.from_(_BUCKET).remove([target["path"]])
 
+    if application_id:
+        submitted_edit.mark_edited("sip_applications", application_id, "sip")
     return {"ok": True, "files": new_list}
 
 
