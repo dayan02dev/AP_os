@@ -295,14 +295,17 @@ function formatDeadline(iso) {
 //   2. "declarations" — legal affirmations (truthful, ref-checks, terms). Once
 //      ticked and submitted these must not be silently un-ticked post-submit;
 //      the backend also enforces this with a 422 guard.
-const NON_EDITABLE_KINDS = new Set([
+const NON_EDITABLE_KINDS = new Set(["declarations"]); // legal affirmations stay locked post-submit
+
+// File kinds that upload/delete directly via the backend (no PATCH needed).
+// Editing these shows the file input + a "Done" button to close; there is no Save step.
+const FILE_KINDS = new Set([
   "files",           // TIR evidence files  → /applications/me/evidence-files
   "milestoneFiles",  // TIR + SIP milestone → /applications/me/milestone-files  &  /sip-applications/me/milestone-files
   "sipPitchDeck",    // SIP pitch deck      → /sip-applications/me/evidence-files?kind=pitch-deck
   "sipCapTableFile", // SIP cap table file  → /sip-applications/me/evidence-files?kind=cap-table
   "sipPatents",      // SIP patents         → /sip-applications/me/evidence-files?kind=patents
   "sipTractionFiles",// SIP traction        → /sip-applications/me/evidence-files?kind=traction
-  "declarations",    // Legal affirmations  — must not be un-ticked after submit
 ]);
 
 // Inline per-field edit component for the submission view.
@@ -310,7 +313,7 @@ const NON_EDITABLE_KINDS = new Set([
 // Clicking it swaps the value for the wizard input matching `question.kind`,
 // with Save / Cancel. Save calls `onSave(questionId, value)`.
 // When `editable` is false, renders the read-only value unchanged.
-function EditableAnswer({ question, value, editable, onSave, track }) {
+function EditableAnswer({ question, value, editable, onSave, track, applicationId }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [committed, setCommitted] = useState(value);
@@ -342,7 +345,29 @@ function EditableAnswer({ question, value, editable, onSave, track }) {
     );
   }
 
-  // Editing mode — render the same input the wizard uses for this question kind.
+  // File kinds upload/delete directly via the backend — no Save/PATCH needed.
+  // Just render the file input and a Done button to close the editor.
+  if (FILE_KINDS.has(question.kind)) {
+    return (
+      <div className="eir-sub-field-value-wrap is-editing">
+        <div className="eir-os-edit-input-wrap">
+          <InputComponent
+            q={question}
+            value={committed}
+            onChange={(v) => setCommitted(v)}
+            applicationId={applicationId}
+            autoFocus
+          />
+        </div>
+        <div className="eir-os-edit-actions">
+          <button type="button" className="eir-btn eir-os-edit-cancel"
+            onClick={() => setEditing(false)}>Done</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Editing mode for text/choice kinds — edit a draft then Save via onSave (PATCH).
   return (
     <div className="eir-sub-field-value-wrap is-editing">
       <div className="eir-os-edit-input-wrap">
@@ -560,6 +585,7 @@ function SubmissionView({ answers, submission, onBack, onDownload, questionPromp
                     value={answers[q.id]}
                     editable={isEditable && !progress.isTerminal && typeof onSave === "function" && !NON_EDITABLE_KINDS.has(q.kind)}
                     track={track}
+                    applicationId={submission?.id}
                     onSave={async (qid, v) => {
                       await onSave(submission.id, qid, v);
                     }}
