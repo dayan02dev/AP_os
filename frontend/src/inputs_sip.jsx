@@ -264,7 +264,7 @@ function DpiitInput({ q, value, onChange }) {
 // the file metadata in the corresponding sip_pitch_deck / sip_cap_table_file
 // JSONB column (single object, not an array).
 
-function SingleEvidenceInput({ q, value, onChange, kind }) {
+function SingleEvidenceInput({ q, value, onChange, kind, applicationId }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -280,11 +280,12 @@ function SingleEvidenceInput({ q, value, onChange, kind }) {
     }
     setErr(null);
     setBusy(true);
+    const extra = applicationId ? `&application_id=${encodeURIComponent(applicationId)}` : "";
     try {
       const fd = new FormData();
       fd.append("file", f);
       const result = await apiCall(
-        `/sip-applications/me/evidence-files?kind=${encodeURIComponent(kind)}`,
+        `/sip-applications/me/evidence-files?kind=${encodeURIComponent(kind)}${extra}`,
         { method: "POST", body: fd, timeoutMs: 60_000 },
       );
       // Backend returns { ok, kind, file, value }. `value` is the new
@@ -317,9 +318,10 @@ function SingleEvidenceInput({ q, value, onChange, kind }) {
     if (!file?.file_uuid || busy) return;
     setBusy(true);
     setErr(null);
+    const extra = applicationId ? `&application_id=${encodeURIComponent(applicationId)}` : "";
     try {
       const result = await apiCall(
-        `/sip-applications/me/evidence-files/${encodeURIComponent(file.file_uuid)}?kind=${encodeURIComponent(kind)}`,
+        `/sip-applications/me/evidence-files/${encodeURIComponent(file.file_uuid)}?kind=${encodeURIComponent(kind)}${extra}`,
         { method: "DELETE" },
       );
       const colMap = {
@@ -434,7 +436,7 @@ function SingleEvidenceInput({ q, value, onChange, kind }) {
 // Multi-file evidence slot (patents / traction).
 // Stored in sip_patents_files / sip_traction_files JSONB array columns.
 
-function MultiEvidenceInput({ q, value, onChange, kind }) {
+function MultiEvidenceInput({ q, value, onChange, kind, applicationId }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [busyFor, setBusyFor] = useState(null);
@@ -467,6 +469,7 @@ function MultiEvidenceInput({ q, value, onChange, kind }) {
     if (busy) return;
     const list = Array.from(incoming || []).slice(0, remaining);
     if (list.length === 0) return;
+    const extra = applicationId ? `&application_id=${encodeURIComponent(applicationId)}` : "";
     let latest = files;
     for (const f of list) {
       if (f.size > maxBytes) {
@@ -479,7 +482,7 @@ function MultiEvidenceInput({ q, value, onChange, kind }) {
         const fd = new FormData();
         fd.append("file", f);
         const result = await apiCall(
-          `/sip-applications/me/evidence-files?kind=${encodeURIComponent(kind)}`,
+          `/sip-applications/me/evidence-files?kind=${encodeURIComponent(kind)}${extra}`,
           { method: "POST", body: fd, timeoutMs: 60_000 },
         );
         latest = pickList(result, latest);
@@ -511,9 +514,10 @@ function MultiEvidenceInput({ q, value, onChange, kind }) {
     setErr(null);
     setBusy(true);
     setBusyFor(file_uuid);
+    const extra = applicationId ? `&application_id=${encodeURIComponent(applicationId)}` : "";
     try {
       const result = await apiCall(
-        `/sip-applications/me/evidence-files/${encodeURIComponent(file_uuid)}?kind=${encodeURIComponent(kind)}`,
+        `/sip-applications/me/evidence-files/${encodeURIComponent(file_uuid)}?kind=${encodeURIComponent(kind)}${extra}`,
         { method: "DELETE" },
       );
       onChange(pickList(result, files.filter((f) => f.file_uuid !== file_uuid)));
@@ -635,7 +639,7 @@ function MultiEvidenceInput({ q, value, onChange, kind }) {
 // ─────────────────────────────────────────────────────────────
 // Milestone files — same backend semantics as TIR but at /sip-applications/*
 
-function SipMilestoneFilesInput({ q, value, onChange }) {
+function SipMilestoneFilesInput({ q, value, onChange, applicationId }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -652,6 +656,7 @@ function SipMilestoneFilesInput({ q, value, onChange }) {
     if (busy) return;
     const incoming = Array.from(fileList || []).slice(0, remaining);
     if (incoming.length === 0) return;
+    const q_param = applicationId ? `?application_id=${encodeURIComponent(applicationId)}` : "";
     let latest = files;
     for (const f of incoming) {
       if (f.size > maxBytes) {
@@ -664,7 +669,7 @@ function SipMilestoneFilesInput({ q, value, onChange }) {
         const fd = new FormData();
         fd.append("file", f);
         const result = await apiCall(
-          "/sip-applications/me/milestone-files",
+          `/sip-applications/me/milestone-files${q_param}`,
           { method: "POST", body: fd, timeoutMs: 60_000 },
         );
         latest = result.files || result.execution_milestone_files || latest;
@@ -696,9 +701,10 @@ function SipMilestoneFilesInput({ q, value, onChange }) {
     setErr(null);
     setBusy(true);
     setBusyFor(file_uuid);
+    const q_param = applicationId ? `?application_id=${encodeURIComponent(applicationId)}` : "";
     try {
       const result = await apiCall(
-        `/sip-applications/me/milestone-files/${encodeURIComponent(file_uuid)}`,
+        `/sip-applications/me/milestone-files/${encodeURIComponent(file_uuid)}${q_param}`,
         { method: "DELETE" },
       );
       onChange(result.files || result.execution_milestone_files || []);

@@ -254,7 +254,7 @@ function MultiInput({ q, value, onChange }) {
 //
 // Files go straight to the private 'evidence-files' bucket via the
 // backend; admins can sign URLs against it later from the dashboard.
-function EvidenceFilesInput({ q, value, onChange }) {
+function EvidenceFilesInput({ q, value, onChange, applicationId }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -276,6 +276,7 @@ function EvidenceFilesInput({ q, value, onChange }) {
     const incoming = Array.from(fileList || []).slice(0, remaining);
     if (incoming.length === 0) return;
 
+    const q_param = applicationId ? `?application_id=${encodeURIComponent(applicationId)}` : "";
     let latest = files;
     for (const f of incoming) {
       if (f.size > maxBytes) {
@@ -287,7 +288,7 @@ function EvidenceFilesInput({ q, value, onChange }) {
       try {
         const fd = new FormData();
         fd.append("file", f);
-        const result = await apiCall("/applications/me/evidence-files", {
+        const result = await apiCall(`/applications/me/evidence-files${q_param}`, {
           method: "POST",
           body: fd,
           timeoutMs: 60_000,
@@ -317,9 +318,10 @@ function EvidenceFilesInput({ q, value, onChange }) {
     setErr(null);
     setBusy(true);
     setBusyFor(file_uuid);
+    const q_param = applicationId ? `?application_id=${encodeURIComponent(applicationId)}` : "";
     try {
       const result = await apiCall(
-        `/applications/me/evidence-files/${encodeURIComponent(file_uuid)}`,
+        `/applications/me/evidence-files/${encodeURIComponent(file_uuid)}${q_param}`,
         { method: "DELETE" },
       );
       onChange(result.files || []);
@@ -418,7 +420,7 @@ function EvidenceFilesInput({ q, value, onChange }) {
 // Files go straight to the private 'milestone-files' bucket via the backend
 // (multipart upload). No signed-URL dance — for ~3 files × 5 MiB it's
 // simpler and the bucket is RLS-locked anyway.
-function MilestoneFilesInput({ q, value, onChange }) {
+function MilestoneFilesInput({ q, value, onChange, applicationId }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -436,6 +438,7 @@ function MilestoneFilesInput({ q, value, onChange }) {
     const incoming = Array.from(fileList || []).slice(0, remaining);
     if (incoming.length === 0) return;
 
+    const q_param = applicationId ? `?application_id=${encodeURIComponent(applicationId)}` : "";
     let latest = files;
     for (const f of incoming) {
       if (f.size > maxBytes) {
@@ -447,7 +450,7 @@ function MilestoneFilesInput({ q, value, onChange }) {
       try {
         const fd = new FormData();
         fd.append("file", f);
-        const result = await apiCall("/applications/me/milestone-files", {
+        const result = await apiCall(`/applications/me/milestone-files${q_param}`, {
           method: "POST",
           body: fd,
           timeoutMs: 60_000,
@@ -477,9 +480,10 @@ function MilestoneFilesInput({ q, value, onChange }) {
     setErr(null);
     setBusy(true);
     setBusyFor(file_uuid);
+    const q_param = applicationId ? `?application_id=${encodeURIComponent(applicationId)}` : "";
     try {
       const result = await apiCall(
-        `/applications/me/milestone-files/${encodeURIComponent(file_uuid)}`,
+        `/applications/me/milestone-files/${encodeURIComponent(file_uuid)}${q_param}`,
         { method: "DELETE" },
       );
       onChange(result.files || []);
