@@ -71,6 +71,56 @@ def test_request_otp_valid_email(client, mock_supabase):
     assert call_args["options"]["should_create_user"] is True
 
 
+# ─── TIR intake close → block new-account creation via signup ──────
+
+def test_request_otp_tir_closed_blocks_new_account(client, mock_supabase, monkeypatch):
+    """When TIR intake is closed, a track=tir signup must not create a new
+    account: should_create_user flips to False (existing users still sign in,
+    since that flag never blocks an account that already exists)."""
+    anon, _admin = mock_supabase
+    anon.auth.sign_in_with_otp.return_value = MagicMock()
+    monkeypatch.setattr(auth_mod.settings, "tir_submissions_closed", True)
+
+    res = client.post(
+        "/auth/request-otp", json={"email": "new@example.com", "track": "tir"}
+    )
+
+    assert res.status_code == 200  # neutral response, no enumeration
+    call_args = anon.auth.sign_in_with_otp.call_args[0][0]
+    assert call_args["options"]["should_create_user"] is False
+    assert call_args["options"]["data"] == {"track": "tir"}
+
+
+def test_request_otp_tir_closed_leaves_sip_open(client, mock_supabase, monkeypatch):
+    """SIP/VIP signups still create accounts while TIR is closed."""
+    anon, _admin = mock_supabase
+    anon.auth.sign_in_with_otp.return_value = MagicMock()
+    monkeypatch.setattr(auth_mod.settings, "tir_submissions_closed", True)
+
+    res = client.post(
+        "/auth/request-otp", json={"email": "sip@example.com", "track": "sip"}
+    )
+
+    assert res.status_code == 200
+    call_args = anon.auth.sign_in_with_otp.call_args[0][0]
+    assert call_args["options"]["should_create_user"] is True
+
+
+def test_request_otp_tir_open_creates_account(client, mock_supabase, monkeypatch):
+    """Flag off (default) → track=tir signup creates accounts as before."""
+    anon, _admin = mock_supabase
+    anon.auth.sign_in_with_otp.return_value = MagicMock()
+    monkeypatch.setattr(auth_mod.settings, "tir_submissions_closed", False)
+
+    res = client.post(
+        "/auth/request-otp", json={"email": "tir@example.com", "track": "tir"}
+    )
+
+    assert res.status_code == 200
+    call_args = anon.auth.sign_in_with_otp.call_args[0][0]
+    assert call_args["options"]["should_create_user"] is True
+
+
 def test_request_otp_invalid_email(client):
     """Malformed email → 422 (pydantic EmailStr rejects)."""
     res = client.post("/auth/request-otp", json={"email": "not-an-email"})

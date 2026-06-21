@@ -88,6 +88,11 @@ body {
 }
 .btn-primary { background: var(--artblue); color: #fff; }
 .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(50,19,182,0.25); }
+/* TIR intake closed — disabled CTA state */
+.btn-disabled { background: #e6e6ea; color: #6b6b78; cursor: not-allowed; pointer-events: none; }
+.btn-disabled:hover { transform: none; box-shadow: none; }
+.cta-returning { display: inline-flex; align-items: center; gap: 6px; margin-left: 14px; font-size: 13px; color: var(--artblue); text-decoration: none; font-weight: 600; }
+.cta-returning:hover { text-decoration: underline; }
 .btn-primary .arrow { transition: transform 200ms; }
 .nav-right .btn { padding: 9px 16px; font-size: 13px; gap: 6px; letter-spacing: 0.02em; border-radius: 999px; }
 .nav-right .btn .arrow { font-size: 13px; }
@@ -635,10 +640,9 @@ details.faq .ans {
           <span class="nav-returning-cta">Sign in →</span>
         </span>
       </a>
-      <a href="/apply/signup?track=tir" class="btn btn-primary">
-        <span>Apply now</span>
-        <span class="arrow">→</span>
-      </a>
+      <span class="btn btn-primary btn-disabled" aria-disabled="true" title="TIR applications are closed">
+        <span>Applications closed</span>
+      </span>
     </nav>
   </div>
 </header>
@@ -647,7 +651,7 @@ details.faq .ans {
   <div class="hero-photo-bg"></div>
   <div class="hero-inner">
     <div>
-      <span class="eyebrow"><span class="dot"></span>TIR 2026 · Applications open Apr 27</span>
+      <span class="eyebrow"><span class="dot"></span>TIR 2026 · Applications closed</span>
       <h1>
         From <span class="hl">laboratory-proven</span> research and innovation to <span class="blue">step-change products.</span>
       </h1>
@@ -655,16 +659,16 @@ details.faq .ans {
         The <strong>Technology Innovators in Residence</strong> program at ARTPARK supports exceptional technologists translating deep research in AI, robotics, novel materials, sensors, and cyber-physical systems into commercial ventures — with up to <strong>₹1 Cr/yr</strong> in milestone-linked funding and a home at IISc Bangalore.
       </p>
       <div class="hero-ctas">
-        <a href="/apply/signup?track=tir" class="btn btn-primary">
-          <span>Apply now</span>
-          <span class="arrow">→</span>
-        </a>
+        <span class="btn btn-primary btn-disabled" aria-disabled="true" title="TIR applications are closed">
+          <span>Applications closed</span>
+        </span>
         <a href="#program" class="btn btn-ghost">Learn more</a>
+        <a href="/apply/signin" class="cta-returning" title="Resume or view an existing application">Already applied? Sign in →</a>
       </div>
       <div class="hero-deadline">
         <div class="hero-deadline-item">
-          <div class="label">Applications close</div>
-          <div class="val">24 May 2026</div>
+          <div class="label">Applications</div>
+          <div class="val">Closed</div>
         </div>
         <div class="hero-deadline-item">
           <div class="label">Residency begins</div>
@@ -773,7 +777,7 @@ details.faq .ans {
         <div class="tl-node">01</div>
         <div class="tl-date">Apr 27 — May 24</div>
         <h4 class="tl-title">Application window</h4>
-        <p class="tl-body">Submit your written application. Closes 24 May 2026, 5pm IST.</p>
+        <p class="tl-body">Submit your written application. Applications are now closed.</p>
       </div>
       <div class="tl-step">
         <div class="tl-node">02</div>
@@ -932,11 +936,11 @@ details.faq .ans {
 <section class="final-cta">
   <div class="final-cta-inner">
     <h2>Ready to translate research into <em>reality</em>?</h2>
-    <p>Applications for TIR 2026 close on 24 May, 5pm IST. Your CV auto-fills ~30% of the form — takes about 60–90 minutes.</p>
-    <a href="/apply/signup?track=tir" class="btn btn-light">
-      <span>Start your application</span>
-      <span class="arrow">→</span>
-    </a>
+    <p>Applications for TIR 2026 are now closed. Already started? Sign in to view your application.</p>
+    <span class="btn btn-light btn-disabled" aria-disabled="true" title="TIR applications are closed">
+      <span>Applications closed</span>
+    </span>
+    <a href="/apply/signin" class="cta-returning" style="color:#fff;margin-left:0;margin-top:14px;display:block;">Already applied? Sign in →</a>
   </div>
 </section>
 

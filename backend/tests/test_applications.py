@@ -353,3 +353,75 @@ def test_completion_reports_missing(client, db):
     assert 0 < body["completion_pct"] < 100
     assert "declaration_truthful" in body["missing_required_fields"]
     assert body["current_section"] == "basic"
+
+
+# ─── TIR INTAKE CLOSE (TIR_SUBMISSIONS_CLOSED) ─────────────────────
+#
+# When the flag is on, NO new TIR application may be started or submitted.
+# Existing rows are untouched: applicants who already have a draft/submission
+# keep full read + edit access. SIP/VIP lives in a separate router and is not
+# exercised here.
+
+@pytest.fixture
+def tir_closed(monkeypatch):
+    """Turn the TIR intake-close flag on for the duration of a test."""
+    monkeypatch.setattr(apps_mod.settings, "tir_submissions_closed", True)
+    yield
+
+
+def test_closed_get_no_row_blocks_new_draft(client, db, tir_closed):
+    """A brand-new TIR applicant (no row) is refused — no draft is created."""
+    assert TEST_USER_ID not in db.rows
+    res = client.get("/applications/me")
+    assert res.status_code == 403, res.text
+    assert res.json()["error"]["code"] == "tir_submissions_closed"
+    assert TEST_USER_ID not in db.rows  # no draft auto-created
+
+
+def test_closed_get_existing_row_still_works(client, db, tir_closed):
+    """An existing applicant keeps read access while intake is closed."""
+    existing = _fresh_draft_row({"completion_pct": 42, "basic_full_name": "Aisha"})
+    db.rows[TEST_USER_ID] = existing
+    res = client.get("/applications/me")
+    assert res.status_code == 200, res.text
+    assert res.json()["id"] == existing["id"]
+
+
+def test_closed_patch_no_row_blocks_new_draft(client, db, tir_closed):
+    res = client.patch("/applications/me", json={"basic_full_name": "Newcomer"})
+    assert res.status_code == 403, res.text
+    assert res.json()["error"]["code"] == "tir_submissions_closed"
+    assert TEST_USER_ID not in db.rows
+
+
+def test_closed_patch_existing_draft_still_editable(client, db, tir_closed):
+    """Existing drafts remain editable while intake is closed."""
+    db.rows[TEST_USER_ID] = _fresh_draft_row()
+    res = client.patch("/applications/me", json={"basic_full_name": "Edited"})
+    assert res.status_code == 200, res.text
+    assert db.rows[TEST_USER_ID]["basic_full_name"] == "Edited"
+
+
+def test_closed_submit_blocked(client, db, tir_closed):
+    """Even a complete existing draft cannot be submitted once closed."""
+    db.rows[TEST_USER_ID] = _build_submittable_row()
+    res = client.post("/applications/me/submit")
+    assert res.status_code == 403, res.text
+    assert res.json()["error"]["code"] == "tir_submissions_closed"
+    # Status NOT flipped — still a draft.
+    assert db.rows[TEST_USER_ID]["status"] == "draft"
+
+
+def test_closed_completion_no_row_blocked(client, db, tir_closed):
+    res = client.get("/applications/me/completion")
+    assert res.status_code == 403, res.text
+    assert res.json()["error"]["code"] == "tir_submissions_closed"
+    assert TEST_USER_ID not in db.rows
+
+
+def test_open_flag_default_creates_draft(client, db):
+    """Regression: with the flag off (default) the normal flow is unchanged."""
+    assert apps_mod.settings.tir_submissions_closed is False
+    res = client.get("/applications/me")
+    assert res.status_code == 200
+    assert TEST_USER_ID in db.rows

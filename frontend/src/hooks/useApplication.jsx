@@ -39,6 +39,9 @@ export function ApplicationProvider({ children }) {
   // TIR wizard. Surfaced so the route can render the dedicated
   // mismatch screen.
   const [wrongTrack, setWrongTrack] = useState(false);
+  // TIR intake closed (backend 403 code "tir_submissions_closed"): a new
+  // applicant can't start a TIR application. Existing rows load normally.
+  const [tirClosed, setTirClosed] = useState(false);
   const [savingState, setSavingState] = useState("idle");
   const [completion, setCompletion] = useState({
     completion_pct: 0,
@@ -59,6 +62,7 @@ export function ApplicationProvider({ children }) {
       setRow(null);
       setSubmittedApps([]);
       setWrongTrack(false);
+      setTirClosed(false);
       setCompletion({ completion_pct: 0, missing_required_fields: [], current_section: null });
       return undefined;
     }
@@ -66,6 +70,7 @@ export function ApplicationProvider({ children }) {
     setLoading(true);
     setError(null);
     setWrongTrack(false);
+    setTirClosed(false);
     async function load() {
       try {
         const [r, past] = await Promise.all([
@@ -84,6 +89,12 @@ export function ApplicationProvider({ children }) {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 403 && err.code === "wrong_track") {
           setWrongTrack(true);
+        } else if (
+          err instanceof ApiError &&
+          err.status === 403 &&
+          err.code === "tir_submissions_closed"
+        ) {
+          setTirClosed(true);
         } else {
           setError(err);
         }
@@ -302,6 +313,7 @@ export function ApplicationProvider({ children }) {
     completion,
     submittedApps,
     wrongTrack,
+    tirClosed,
     save,
     flushNow,
     submit,

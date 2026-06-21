@@ -36,6 +36,7 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import HttpUrl, TypeAdapter, ValidationError
 
+from ..config import settings
 from ..deps import get_current_user, require_track
 from ..models.application import (
     ApplicationRead,
@@ -388,6 +389,18 @@ def _is_editable(row: dict[str, Any]) -> bool:
     return row.get("status") in _EDITABLE_STATUSES and is_edit_open("tir")
 
 
+# TIR intake-close gate. When settings.tir_submissions_closed is true, no NEW
+# TIR application may be started or submitted. Existing rows are untouched, so
+# applicants who already have a draft/submission keep full access. SIP/VIP is a
+# separate router and is unaffected.
+_TIR_CLOSED_CODE = "tir_submissions_closed"
+_TIR_CLOSED_MSG = "TIR applications are closed; new applications are no longer accepted."
+
+
+def _tir_closed_response() -> JSONResponse:
+    return _error(status.HTTP_403_FORBIDDEN, _TIR_CLOSED_CODE, _TIR_CLOSED_MSG)
+
+
 def _create_draft(user_id: str) -> dict[str, Any]:
     res = (
         get_admin_client()
@@ -476,6 +489,8 @@ async def get_application(current_user: dict = Depends(get_current_user)):
     try:
         row = _fetch_application(user_id)
         if row is None:
+            if settings.tir_submissions_closed:
+                return _tir_closed_response()
             row = _create_draft(user_id)
     except Exception:
         log.exception("applications.get failed", extra={"request_id": req_id, "user_id": user_id})
@@ -554,7 +569,11 @@ async def patch_application(
 
     # Fetch current row — enforce 'draft' status.
     try:
-        current_row = _fetch_application(user_id) or _create_draft(user_id)
+        current_row = _fetch_application(user_id)
+        if current_row is None:
+            if settings.tir_submissions_closed:
+                return _tir_closed_response()
+            current_row = _create_draft(user_id)
     except Exception:
         log.exception("applications.patch fetch failed",
                       extra={"request_id": req_id, "user_id": user_id})
@@ -694,6 +713,11 @@ async def submit_application(
     """
     req_id = _new_request_id()
     user_id = current_user["user_id"]
+
+    # TIR intake closed → reject all submissions (incl. existing drafts) before
+    # touching rate budget or the DB.
+    if settings.tir_submissions_closed:
+        return _tir_closed_response()
 
     # Check-only — raises 429 if over quota without consuming a slot.
     check_rate("applications-submit", user_id, _SUBMIT_MAX, _SUBMIT_WINDOW_S)
@@ -887,7 +911,11 @@ async def list_submitted_applications(current_user: dict = Depends(get_current_u
 async def get_completion(current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
     try:
-        row = _fetch_application(user_id) or _create_draft(user_id)
+        row = _fetch_application(user_id)
+        if row is None:
+            if settings.tir_submissions_closed:
+                return _tir_closed_response()
+            row = _create_draft(user_id)
     except Exception:
         log.exception("applications.completion fetch failed", extra={"user_id": user_id})
         return _error(

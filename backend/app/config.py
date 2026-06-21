@@ -124,6 +124,17 @@ class Settings(BaseSettings):
     edit_deadline_tir: str = "2026-06-25T23:59:59+05:30"
     edit_deadline_sip: str = "2026-07-05T23:59:59+05:30"
 
+    # ── TIR intake close (reversible toggle) ────────────────────
+    # When true, the TIR track is CLOSED to new intake:
+    #   • new TIR account creation via the signup path (request-otp track=tir),
+    #   • new TIR draft creation, and
+    #   • TIR submission
+    # are all blocked. Existing TIR applicants keep sign-in / view / edit-window
+    # access (this flag never touches existing rows or existing auth users), and
+    # the SIP/VIP track is entirely unaffected (separate code paths). Flip via
+    # the TIR_SUBMISSIONS_CLOSED env var — no code change to reopen.
+    tir_submissions_closed: bool = False
+
     # ─── Normalisers ────────────────────────────────────────────
     @field_validator("env")
     @classmethod

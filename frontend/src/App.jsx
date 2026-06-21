@@ -163,6 +163,7 @@ export default function App() {
     submittedApps,
     startNew,
     saveSubmittedField,
+    tirClosed,
   } = useApplication();
 
   // Sign-out has to flush the debounced autosave first. Without this, a
@@ -760,6 +761,13 @@ export default function App() {
   const estMin = Math.max(1, Math.round((totalQ - stepIdx) * 0.9));
   const warmCopy = config.tone === "warm";
 
+  // TIR intake is closed (backend 403). A new applicant can't start a TIR
+  // application; show a terminal closed screen instead of the wizard. Existing
+  // applicants load a row and never reach this branch.
+  if (user && tirClosed) {
+    return <TirClosedScreen onSignOut={logout} />;
+  }
+
   return (
     <div className={`eir-root eir-theme-${config.theme}`}>
       <div className="eir-bg" />
@@ -1155,6 +1163,37 @@ function LoadingScreen() {
     <div className="eir-screen">
       <div className="eir-welcome-body">
         <p className="eir-mono eir-dim">loading your application…</p>
+      </div>
+    </div>
+  );
+}
+
+function TirClosedScreen({ onSignOut }) {
+  return (
+    <div className="eir-root eir-theme-default">
+      <div className="eir-bg" />
+      <div className="eir-frame">
+        <main className="eir-main">
+          <div className="eir-screen">
+            <div className="eir-welcome-body" style={{ textAlign: "center", maxWidth: 520, margin: "0 auto" }}>
+              <p className="eir-mono eir-dim">TIR · 2026</p>
+              <h1 style={{ marginTop: 12 }}>TIR applications are closed</h1>
+              <p style={{ marginTop: 12, lineHeight: 1.6 }}>
+                We're no longer accepting new TIR applications. If you already
+                submitted, you can still sign in to view your application during
+                the edit window.
+              </p>
+              <div style={{ marginTop: 24, display: "flex", gap: 12, justifyContent: "center" }}>
+                <a className="eir-btn" href="/apply/signin">Sign in</a>
+                {onSignOut && (
+                  <button className="eir-btn eir-btn-ghost" type="button" onClick={onSignOut}>
+                    Sign out
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </main>
       </div>
     </div>
   );

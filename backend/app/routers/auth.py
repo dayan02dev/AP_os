@@ -32,6 +32,7 @@ import uuid
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 
+from ..config import settings
 from ..deps import get_current_user
 from ..models.auth import (
     OTPRequest,
@@ -144,6 +145,12 @@ async def request_otp(payload: OTPRequest, request: Request):
     options: dict = {"should_create_user": True}
     if payload.track:
         options["data"] = {"track": payload.track}
+        # TIR intake closed → do not create NEW accounts via the TIR signup
+        # path. `should_create_user: False` only blocks brand-new emails;
+        # existing TIR applicants still receive their OTP and sign in. SIP/VIP
+        # is unaffected. Flip via the TIR_SUBMISSIONS_CLOSED env var.
+        if payload.track == "tir" and settings.tir_submissions_closed:
+            options["should_create_user"] = False
     try:
         anon = get_anon_client()
         anon.auth.sign_in_with_otp({"email": email, "options": options})
