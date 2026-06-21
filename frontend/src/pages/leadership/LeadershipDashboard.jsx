@@ -15,6 +15,7 @@ import { useAuth } from "../../hooks/useAuth.jsx";
 import { leadershipApi } from "../../lib/leadershipApi.js";
 import { fmtRelative } from "../../lib/timeFmt.js";
 import AppDrawer from "./components/AppDrawer.jsx";
+import PortalSwitcher from "../../components/PortalSwitcher.jsx";
 import { bucketFor } from "./components/statusBuckets.js";
 import "../../styles/admin.css";
 import "../../styles/leadership.css";
@@ -211,6 +212,8 @@ export default function LeadershipDashboard() {
 
   const [openRow, setOpenRow] = useState(null);
   const [exporting, setExporting] = useState(false);
+  // Bumped after a gate-1 decision (e.g. reject) to refetch stats + the list.
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   // ── Initial fetch ──
   useEffect(() => {
@@ -250,7 +253,7 @@ export default function LeadershipDashboard() {
         setIndustryTotal(0);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [refreshNonce]);
 
   // ── Search debounce — strip "TIR-"/"SIP-" prefix so pasted IDs hit
   //   the backend's display_seq.eq match.
@@ -289,7 +292,7 @@ export default function LeadershipDashboard() {
         setAppsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [industry, statusFilter, trackFilter, scoreBucket, search, offset]);
+  }, [industry, statusFilter, trackFilter, scoreBucket, search, offset, refreshNonce]);
 
   const filterAndShow = useCallback(
     (setter) => (val) => {
@@ -463,44 +466,7 @@ export default function LeadershipDashboard() {
           </a>
         )}
 
-        {showRoleSwitch && (
-          <div className="lp-topbar-user-wrap">
-            <button
-              type="button"
-              className="applicant-btn"
-              onClick={() => setRoleMenu((m) => !m)}
-              aria-haspopup="menu"
-              aria-expanded={roleMenu}
-              aria-label="Switch role"
-            >
-              Switch role <span className="caret" style={{ marginLeft: 4 }}>▾</span>
-            </button>
-            {roleMenu && (
-              <>
-                <div className="lp-menu-backdrop" onClick={() => setRoleMenu(false)} />
-                <div className="lp-role-menu" role="menu">
-                  <div className="lp-role-menu-head">Switch role</div>
-                  <button role="menuitem" className="lp-role-item is-active" disabled>
-                    <span className="lp-role-dot" />
-                    <span>Leadership</span>
-                    <span className="lp-role-check">✓</span>
-                  </button>
-                  {otherPortals.map((p) => (
-                    <button
-                      key={p.key}
-                      role="menuitem"
-                      className="lp-role-item"
-                      onClick={() => switchPortal(p)}
-                    >
-                      <span className="lp-role-dot" />
-                      <span>{p.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
+        <PortalSwitcher current="leadership" />
 
         <button
           type="button"
@@ -526,18 +492,8 @@ export default function LeadershipDashboard() {
               ARTPARK / OS · Leadership Panel
             </span>
             <h1 className="lp-head-title">
-              TIR + SIP cohort <em>2026</em>
+              TIR + VIP cohort <em>2026</em>
             </h1>
-            <span
-              style={{
-                fontFamily: "var(--font-body)",
-                fontSize: 13,
-                color: "var(--ink-dim)",
-                letterSpacing: "0.02em",
-              }}
-            >
-              applications open · closes 22 May 2026 · live snapshot at {snapshotAt}
-            </span>
           </div>
           <div className="lp-head-r">
             <button
@@ -1165,6 +1121,7 @@ export default function LeadershipDashboard() {
             row={openRow}
             statusLabelById={statusLabelById}
             onClose={() => setOpenRow(null)}
+            onDecided={() => { setOpenRow(null); setRefreshNonce((n) => n + 1); }}
           />
         )}
       </main>

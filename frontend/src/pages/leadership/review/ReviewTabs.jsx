@@ -29,14 +29,6 @@ export default function ReviewTabs({ tab, onChange }) {
   return (
     <nav className="review-tabs" aria-label="Application sections">
       <Btn id="application" label="Application" />
-      <Disabled
-        label="Assessment"
-        title="Reviewer scoring view ships in Phase 1.5."
-      />
-      <Disabled
-        label="Evidence & Files"
-        title="Evidence renders inline under each section. A dedicated tab arrives in Phase 2."
-      />
       <Btn id="reviews" label="Reviews" />
       <Disabled
         label="Discussion"

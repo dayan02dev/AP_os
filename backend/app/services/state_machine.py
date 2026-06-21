@@ -30,20 +30,26 @@ log = logging.getLogger(__name__)
 
 # Per spec §4.8 — keys are *current* statuses; values are the set of
 # statuses leadership is permitted to set via the writes router.
+#
+# Reject is reachable from every active (non-terminal) status: leadership/admin
+# can directly reject an application at any point in the pipeline — including
+# while it is still under review — without first walking it to `evaluated`.
+# The only states that cannot be rejected are the terminal ones (onboarded,
+# rejected, withdrawn).
 LEGAL_TRANSITIONS: dict[str, frozenset[str]] = {
-    "submitted":        frozenset({"withdrawn"}),
-    "ai_screening":     frozenset({"withdrawn"}),
-    "screening_failed": frozenset({"withdrawn"}),
-    "under_review":     frozenset({"evaluated", "withdrawn"}),
+    "submitted":        frozenset({"rejected", "withdrawn"}),
+    "ai_screening":     frozenset({"rejected", "withdrawn"}),
+    "screening_failed": frozenset({"rejected", "withdrawn"}),
+    "under_review":     frozenset({"evaluated", "rejected", "withdrawn"}),
     "evaluated":        frozenset({"shortlisted", "on_hold", "rejected", "waitlisted", "withdrawn"}),
     "on_hold":          frozenset({"evaluated", "shortlisted", "rejected", "waitlisted", "withdrawn"}),
-    "shortlisted":      frozenset({"jury_review", "withdrawn"}),
-    "jury_review":      frozenset({"withdrawn"}),
-    "interview":        frozenset({"withdrawn"}),
-    "offered":          frozenset({"withdrawn"}),
+    "shortlisted":      frozenset({"jury_review", "rejected", "withdrawn"}),
+    "jury_review":      frozenset({"rejected", "withdrawn"}),
+    "interview":        frozenset({"rejected", "withdrawn"}),
+    "offered":          frozenset({"rejected", "withdrawn"}),
     "onboarded":        frozenset({"withdrawn"}),
     "rejected":         frozenset({"withdrawn"}),
-    "waitlisted":       frozenset({"withdrawn"}),
+    "waitlisted":       frozenset({"rejected", "withdrawn"}),
     "withdrawn":        frozenset(),
 }
 

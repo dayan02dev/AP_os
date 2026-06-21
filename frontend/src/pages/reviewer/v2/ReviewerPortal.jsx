@@ -14,6 +14,7 @@ import { useAuth } from "../../../hooks/useAuth.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
 import { COHORT_LABEL, initialsOf } from "./ui.jsx";
+import PortalSwitcher from "../../../components/PortalSwitcher.jsx";
 
 import ReviewerDashboard from "./ReviewerDashboard.jsx";
 import ReviewerQueue from "./ReviewerQueue.jsx";
@@ -33,20 +34,6 @@ function ReviewerTopbar({ tab }) {
 
   const initials = initialsOf(user?.full_name, user?.email);
   const email = user?.email || "reviewer@artpark.in";
-
-  const [roleMenu, setRoleMenu] = useState(false);
-  const roles = user?.roles || [];
-  const ROLES = [
-    { key: "reviewer", label: "Reviewer", to: "/reviewer" },
-    { key: "leadership", label: "Leadership", to: "/leadership" },
-    { key: "admin", label: "Admin", to: "/admin" },
-  ].filter((r) => r.key === "reviewer" || roles.includes(r.key));
-
-  const switchRole = (r) => {
-    setRoleMenu(false);
-    if (r.key === "reviewer") return;
-    navigate(r.to);
-  };
 
   const signOut = async () => {
     await logout();
@@ -73,43 +60,16 @@ function ReviewerTopbar({ tab }) {
       </div>
 
       <div className="lp-topbar-right">
-        <div className="lp-topbar-user-wrap">
-          <button
-            className="lp-topbar-user"
-            onClick={() => setRoleMenu((m) => !m)}
-            aria-haspopup="menu"
-            aria-expanded={roleMenu}
+        <div className="lp-topbar-user" style={{ cursor: "default" }}>
+          <div
+            className="os-avatar"
+            style={{ width: 28, height: 28, fontSize: 11, flexShrink: 0, background: "#3213b7", color: "#fff" }}
           >
-            <div
-              className="os-avatar"
-              style={{ width: 28, height: 28, fontSize: 11, flexShrink: 0, background: "#3213b7", color: "#fff" }}
-            >
-              {initials}
-            </div>
-            <span>{email}</span>
-            <span className="caret">▾</span>
-          </button>
-          {roleMenu && ROLES.length > 1 && (
-            <>
-              <div className="lp-menu-backdrop" onClick={() => setRoleMenu(false)} />
-              <div className="lp-role-menu" role="menu">
-                <div className="lp-role-menu-head">Switch role</div>
-                {ROLES.map((r) => (
-                  <button
-                    key={r.key}
-                    role="menuitem"
-                    className={"lp-role-item" + (r.key === "reviewer" ? " is-active" : "")}
-                    onClick={() => switchRole(r)}
-                  >
-                    <span className="lp-role-dot" />
-                    <span>{r.label}</span>
-                    {r.key === "reviewer" && <span className="lp-role-check">✓</span>}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+            {initials}
+          </div>
+          <span>{email}</span>
         </div>
+        <PortalSwitcher current="reviewer" />
         <button className="lp-signout" onClick={signOut}>SIGN OUT ↗</button>
       </div>
     </div>
@@ -190,9 +150,6 @@ function ReviewerCohortHeader() {
           <h1 className="lp-cohort-title">
             {COHORT_LABEL.replace(/ 2026$/, "")} <span className="lp-year">2026</span>
           </h1>
-          <div className="lp-cohort-sub">
-            applications closed 22 May 2026 · live snapshot · {snapshotAt}
-          </div>
         </div>
         <div style={{ marginTop: 4 }}>
           <button className="os-btn ghost" onClick={onExport} disabled={exporting}>

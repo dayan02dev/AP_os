@@ -69,6 +69,8 @@ function RebalanceBanner({ result, onDismiss }) {
 // Weight + domains + inline batch chip editor (reviewer-mode only).
 
 function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
+  const [name, setName] = useState(reviewer.name || '');
+  const [email, setEmail] = useState(reviewer.email || '');
   const [weight, setWeight] = useState(typeof reviewer.weight === 'number' ? reviewer.weight : 1.0);
   const [domains, setDomains] = useState(
     Array.isArray(reviewer.domains) ? reviewer.domains.join(', ') : (reviewer.domain || '')
@@ -86,10 +88,15 @@ function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
     setErr(null);
     try {
       const domainsArr = domains.split(',').map(d => d.trim()).filter(Boolean);
-      await adminPlatformApi.patchReviewer(reviewer.id, {
+      const body = {
         weight: parseFloat(weight) || 1.0,
         domains: domainsArr,
-      });
+      };
+      // Identity fields only sent when changed (an email change also re-syncs
+      // the auth login on the backend).
+      if (name.trim() && name.trim() !== (reviewer.name || '')) body.full_name = name.trim();
+      if (email.trim() && email.trim() !== (reviewer.email || '')) body.email = email.trim();
+      await adminPlatformApi.patchReviewer(reviewer.id, body);
       onSaved();
     } catch (e) {
       setErr(e?.message || 'Save failed');
@@ -113,7 +120,7 @@ function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
       >
         <div className="os-drawer-head" style={{ padding: '20px 24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div className="os-drawer-title" style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>Manage Applications</div>
+            <div className="os-drawer-title" style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>{isJury ? 'Manage Applications' : 'Edit reviewer details'}</div>
             <div className="os-drawer-subtitle" style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 4 }}>
               {isJury ? 'Jury Member' : 'Reviewer'}: <strong>{reviewer.name}</strong> &middot; {reviewer.org || reviewer.domain}
             </div>
@@ -122,6 +129,35 @@ function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
         </div>
 
         <div className="os-drawer-body" style={{ padding: 24, flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Identity — name + email (reviewer mode only; jury is mock) */}
+          {!isJury && (
+            <>
+              <div>
+                <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Full Name</label>
+                <input
+                  type="text"
+                  className="os-input"
+                  style={{ width: '100%', fontSize: 14 }}
+                  placeholder="e.g. Rohan Sakpal"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Email Address</label>
+                <input
+                  type="email"
+                  className="os-input"
+                  style={{ width: '100%', fontSize: 14 }}
+                  placeholder="name@artpark.in"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                />
+                <div style={{ fontSize: 11, color: 'var(--ink-dim)', marginTop: 4 }}>Changing the email also updates this reviewer's login.</div>
+              </div>
+            </>
+          )}
+
           {/* Weight */}
           <div>
             <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Weight</label>
@@ -343,6 +379,57 @@ function InviteModal({ allBatches, isJury, invitePassword, onClose, onInvited })
   );
 }
 
+// ─── Edit-reviewer picker ─────────────────────────────────────────────────────
+// Sits beside "Invite member": pick a reviewer, then open the edit drawer.
+
+function EditPicker({ reviewers, onPick, onClose }) {
+  const [sel, setSel] = useState(reviewers[0]?.id || '');
+  return (
+    <div
+      className="os-modal-backdrop"
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(36,36,36,0.5)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      <div
+        className="os-modal"
+        onClick={e => e.stopPropagation()}
+        style={{ maxWidth: 420, width: '90vw', background: 'var(--bg-paper)', border: '1px solid var(--line-strong)', borderRadius: 4, boxShadow: '0 20px 60px rgba(36,36,36,0.18)' }}
+      >
+        <div className="os-modal-head" style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontWeight: 600, fontSize: 16, color: 'var(--ink)' }}>Edit reviewer</div>
+          <button className="os-btn sm ghost" onClick={onClose} style={{ padding: '2px 8px', fontSize: 18 }}>&times;</button>
+        </div>
+        <div className="os-modal-body" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {reviewers.length === 0 ? (
+            <div className="os-text-soft" style={{ fontSize: 13 }}>No reviewers to edit yet.</div>
+          ) : (
+            <>
+              <div>
+                <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Select reviewer</label>
+                <select className="os-select os-w-100" style={{ width: '100%' }} value={sel} onChange={e => setSel(e.target.value)}>
+                  {reviewers.map(r => (
+                    <option key={r.id} value={r.id}>{r.name || r.email || r.id}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="os-modal-foot" style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 4 }}>
+                <button className="os-btn secondary" onClick={onClose}>Cancel</button>
+                <button
+                  className="os-btn"
+                  style={{ background: '#3213b7', color: '#fff' }}
+                  onClick={() => { const r = reviewers.find(x => x.id === sel); if (r) onPick(r); }}
+                >
+                  Edit details
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export function AdminReviewers({ decisionMode }) {
@@ -455,6 +542,7 @@ export function AdminReviewers({ decisionMode }) {
   // Mutation state — reviewer mode
   const [manageTarget, setManageTarget] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
+  const [showEditPicker, setShowEditPicker] = useState(false);
   const [invitePassword] = useState(() => generateBasicPassword());
   const [rebalancing, setRebalancing] = useState(false);
   const [rebalanceResult, setRebalanceResult] = useState(null);
@@ -579,6 +667,7 @@ export function AdminReviewers({ decisionMode }) {
         sub="Assignments, progress, consistency calibration."
         actions={[
           <button key="inv" className="os-btn ghost" onClick={() => setShowInvite(true)}>Invite member</button>,
+          <button key="edit" className="os-btn ghost" onClick={() => setShowEditPicker(true)}>Edit reviewer</button>,
           <button key="reb" className="os-btn" onClick={handleRebalance} disabled={rebalancing}>
             {rebalancing ? 'Rebalancing…' : 'Rebalance batches'}
           </button>,
@@ -771,6 +860,15 @@ export function AdminReviewers({ decisionMode }) {
           invitePassword={invitePassword}
           onClose={() => setShowInvite(false)}
           onInvited={() => { setShowInvite(false); reload(); }}
+        />
+      )}
+
+      {/* Edit-reviewer picker → opens the edit drawer for the chosen reviewer */}
+      {showEditPicker && (
+        <EditPicker
+          reviewers={liveReviewers}
+          onPick={(r) => { setShowEditPicker(false); setManageTarget(r); }}
+          onClose={() => setShowEditPicker(false)}
         />
       )}
     </div>

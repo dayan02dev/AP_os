@@ -60,4 +60,14 @@ export const leadershipApi = {
   // where status ∈ created | already_assigned | not_a_reviewer.
   assignReviewers: (id, track, body) =>
     api.post(`/leadership/applications/${id}/reviewers`, body),
+
+  // Gate-1 decision from the leadership surface. Maps to
+  //   POST /leadership/applications/{id}/decision
+  // (leadership_actions router; capability `decide_application`). Track is
+  // inferred server-side. Body: { decision?: "rejected"|"shortlisted"|
+  // "on_hold"|"waitlisted" (default "rejected"), rationale?: string }.
+  // Reject is legal from any active status, so it works straight from the
+  // dashboard drawer.
+  decide: (id, body) =>
+    api.post(`/leadership/applications/${id}/decision`, body),
 };

@@ -544,6 +544,10 @@ class ReviewerProfileBody(BaseModel):
     weight: float | None = None
     domains: list[str] | None = None
     batch_id: str | None = None
+    # Identity fields live on `profiles` (not reviewer_profiles). Admin can
+    # correct a reviewer's display name / contact email from the roster.
+    full_name: str | None = None
+    email: str | None = None
 
 
 class RebalanceBody(BaseModel):
@@ -569,7 +573,13 @@ async def update_reviewer_profile(
     body: ReviewerProfileBody,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Upsert a reviewer's expertise / weight / batch on reviewer_profiles."""
+    """Edit a reviewer's roster details.
+
+    Splits across two tables: expertise/weight/batch live on
+    ``reviewer_profiles``; the display name + contact email live on
+    ``profiles`` (and, for email, the auth user so login stays consistent).
+    """
+    # reviewer_profiles fields
     fields: dict[str, Any] = {}
     if body.weight is not None:
         fields["weight"] = body.weight
@@ -577,29 +587,59 @@ async def update_reviewer_profile(
         fields["expertise_domains"] = body.domains
     if body.batch_id is not None:
         fields["batch_id"] = body.batch_id
-    if not fields:
+
+    # profiles (identity) fields
+    profile_fields: dict[str, Any] = {}
+    if body.full_name is not None:
+        profile_fields["full_name"] = body.full_name.strip()
+    if body.email is not None:
+        profile_fields["email"] = body.email.strip()
+
+    if not fields and not profile_fields:
         raise HTTPException(
             status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": "no_fields", "message": "Provide at least one field."},
         )
+
     sb = get_admin_client()
-    row = {
-        "reviewer_user_id": user_id,
-        "updated_at": datetime.now(UTC).isoformat(),
-        **fields,
-    }
-    sb.table("reviewer_profiles").upsert(
-        row, on_conflict="reviewer_user_id"
-    ).execute()
+
+    if fields:
+        sb.table("reviewer_profiles").upsert(
+            {
+                "reviewer_user_id": user_id,
+                "updated_at": datetime.now(UTC).isoformat(),
+                **fields,
+            },
+            on_conflict="reviewer_user_id",
+        ).execute()
+
+    if profile_fields:
+        sb.table("profiles").upsert(
+            {"id": user_id, **profile_fields}, on_conflict="id"
+        ).execute()
+        # Keep the auth login email in sync (best-effort — a unique-collision
+        # or auth error must not undo the profile write above).
+        if "email" in profile_fields:
+            try:
+                sb.auth.admin.update_user_by_id(
+                    user_id,
+                    {"email": profile_fields["email"], "email_confirm": True},
+                )
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).warning(
+                    "reviewer email auth-sync failed for %s: %s", user_id, exc
+                )
+
+    after = {**fields, **profile_fields}
     write_audit(
         actor_user_id=user["user_id"],
         actor_role=actor_role_of(user),
         action_type="reviewer_profile_update",
         target_table="reviewer_profiles",
         target_id=user_id,
-        after=fields,
+        after=after,
     )
-    return {"reviewer_user_id": user_id, **fields}
+    return {"reviewer_user_id": user_id, **after}
 
 
 # ─── Task 13: Reviewer-calibration analytics + admin dashboard stats ────────

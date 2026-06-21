@@ -20,14 +20,14 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..deps import get_current_user
 from ..rbac import require_capability
-from ..services import applications_query
+from ..services import applications_query, decisions
 from ..services.audit import write_audit
 from ..supabase_client import get_admin_client
 
@@ -141,6 +141,44 @@ async def assign_reviewers(
         results.append({"reviewer_user_id": rid, "status": "created"})
 
     return {"application_id": application_id, "track": track, "results": results}
+
+
+# ─── Gate-1 decision (reject / shortlist / hold / waitlist) ────────────
+
+
+class LeadershipDecisionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["rejected", "shortlisted", "on_hold", "waitlisted"] = "rejected"
+    rationale: str | None = None
+
+
+@router.post(
+    "/{application_id}/decision",
+    dependencies=[Depends(require_capability("decide_application"))],
+)
+async def decide_application(
+    application_id: str,
+    body: LeadershipDecisionBody,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Record a leadership gate-1 decision (default: reject) and move status.
+
+    Track is server-inferred. Reject is legal from any active status (see
+    state_machine.LEGAL_TRANSITIONS), so leadership can reject an application
+    directly from the dashboard without first walking it to `evaluated`. A
+    rationale is optional from this surface; a default is recorded so the
+    audit trail and admin_decisions row are never blank.
+    """
+    track, _row = _resolve_app(application_id)
+    rationale = (body.rationale or "").strip() or f"{body.decision} by leadership"
+    return decisions.record_decision(
+        track=track,
+        application_id=application_id,
+        decision=body.decision,
+        rationale=rationale,
+        decided_by=user["user_id"],
+        decided_by_role="leadership",
+    )
 
 
 # ─── Reviewer un-assignment ────────────────────────────────────────────

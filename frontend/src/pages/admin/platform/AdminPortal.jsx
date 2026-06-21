@@ -29,6 +29,7 @@ import { AdminJury } from "./screens/AdminJury";
 import { AdminPsychometry } from "./screens/AdminPsychometry";
 import { AdminAIStatus } from "./screens/AdminAIStatus";
 import { AdminRoles } from "./screens/AdminRoles";
+import PortalSwitcher from "../../../components/PortalSwitcher.jsx";
 
 function initialsFor(email) {
   const local = (email || '').split('@')[0] || '';
@@ -80,7 +81,7 @@ function AdminTopbar({ page, decisionMode, setPage }) {
     <div className="lp-topbar">
       <button className="lp-home-btn" onClick={() => { setPage('dashboard'); }}>← HOME</button>
       <div className="lp-brand">
-        <img className="lp-brand-combined" src="assets/artpark-iisc-combined.webp" alt="ARTPARK · AI & Robotics Technology Park @ IISc" />
+        <img className="lp-brand-combined" src="/assets/artpark-iisc-logo.webp" alt="ARTPARK · AI & Robotics Technology Park @ IISc" />
       </div>
       <div className="lp-topbar-crumb">
         <div className="lp-topbar-pill">
@@ -108,7 +109,6 @@ function AdminTopbar({ page, decisionMode, setPage }) {
         <div
           className="lp-topbar-user"
           style={{
-            position: 'relative',
             border: '1px solid var(--line)',
             borderRadius: '20px',
             padding: '4px 12px 4px 6px',
@@ -116,87 +116,13 @@ function AdminTopbar({ page, decisionMode, setPage }) {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            cursor: 'pointer',
             userSelect: 'none'
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            setMenuOpen(!menuOpen);
           }}
         >
           <div className="os-avatar" style={{width:24,height:24,fontSize:10,flexShrink:0,background:'#3213b7',color:'#fff'}}>{userInitials}</div>
           <span style={{fontSize: 13, fontWeight: 500}}>{userEmail}</span>
-          <span className="caret">▾</span>
-
-          {menuOpen && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 8px)',
-                right: 0,
-                background: 'var(--bg-paper)',
-                border: '1px solid var(--line-strong)',
-                borderRadius: '2px',
-                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-                padding: '6px',
-                zIndex: 9999,
-                minWidth: '220px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 2
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div style={{padding: '8px 12px', fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--ink-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--line)', marginBottom: 4}}>
-                Switch Panel
-              </div>
-              <div
-                style={{
-                  padding: '9px 12px',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: 'var(--artblue)',
-                  background: 'var(--bg-soft)',
-                  borderRadius: '6px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 9
-                }}
-              >
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--artblue)', flexShrink: 0 }} />
-                <span>Admin Panel</span>
-                <span style={{ color: 'var(--artblue)', marginLeft: 'auto', fontWeight: 700 }}>✓</span>
-              </div>
-              <a
-                href="/reviewer"
-                onClick={(e) => { e.preventDefault(); navigate('/reviewer'); }}
-                style={{
-                  padding: '8px 12px',
-                  fontSize: 13,
-                  color: 'var(--ink-soft)',
-                  borderRadius: '2px',
-                  textDecoration: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  cursor: 'pointer'
-                }}
-                className="dropdown-hover-item"
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--bg-soft)';
-                  e.currentTarget.style.color = 'var(--ink)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = 'var(--ink-soft)';
-                }}
-              >
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--line-strong)', flexShrink: 0 }} />
-                <span>Reviewer Panel</span>
-              </a>
-            </div>
-          )}
         </div>
+        <PortalSwitcher current="admin" />
         <button className="lp-signout" onClick={async () => { if (window.confirm('Sign out of the Admin portal?')) { await logout(); navigate('/apply/signin'); } }}>SIGN OUT ↗</button>
       </div>
 
@@ -298,9 +224,6 @@ function AdminCohortHeader({ page, setPage, decisionMode, setDecisionMode }) {
       <div className="lp-header-row">
         <div>
           <h1 className="lp-cohort-title">TIR + VIP cohort <span className="lp-year">2026</span></h1>
-          <div className="lp-cohort-sub">
-            Admin control panel
-          </div>
         </div>
         <div style={{marginTop:4,display:'flex',gap:12,alignItems:'center'}}>
           <div className="lp-toggle-control">
