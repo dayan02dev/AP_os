@@ -614,9 +614,11 @@ async def update_reviewer_profile(
         ).execute()
 
     if profile_fields:
-        sb.table("profiles").upsert(
-            {"id": user_id, **profile_fields}, on_conflict="id"
-        ).execute()
+        # UPDATE (not upsert): the reviewer already has a profiles row from
+        # invite time. An upsert's INSERT path validates NOT NULL on `email`
+        # before the ON CONFLICT update kicks in, so a name-only edit (email
+        # omitted) would fail with a not-null violation.
+        sb.table("profiles").update(profile_fields).eq("id", user_id).execute()
         # Keep the auth login email in sync (best-effort — a unique-collision
         # or auth error must not undo the profile write above).
         if "email" in profile_fields:
