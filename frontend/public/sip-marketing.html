@@ -91,6 +91,11 @@ body {
 .btn-primary { background: var(--accent); color: #fff; }
 .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(107,92,255,0.30); }
 .btn-primary .arrow { transition: transform 200ms; }
+/* VIP intake closed — disabled CTA state (mirrors TIR marketing) */
+.btn-disabled { background: #e6e6ea; color: #6b6b78; cursor: not-allowed; pointer-events: none; }
+.btn-disabled:hover { transform: none; box-shadow: none; }
+.cta-returning { display: inline-flex; align-items: center; gap: 6px; margin-left: 14px; font-size: 13px; color: var(--accent); text-decoration: none; font-weight: 600; }
+.cta-returning:hover { text-decoration: underline; }
 .nav-right .btn { padding: 9px 16px; font-size: 13px; gap: 6px; letter-spacing: 0.02em; border-radius: 999px; }
 .nav-right .btn .arrow { font-size: 13px; }
 .nav-right .nav-returning {
@@ -629,10 +634,9 @@ details.faq .ans {
           <span class="nav-returning-cta">Sign in →</span>
         </span>
       </a>
-      <a href="/apply-sip/signup?track=sip" class="btn btn-primary">
-        <span>Apply now</span>
-        <span class="arrow">→</span>
-      </a>
+      <span class="btn btn-primary btn-disabled" aria-disabled="true" title="VIP applications are closed">
+        <span>Applications closed</span>
+      </span>
     </nav>
   </div>
 </header>
@@ -641,7 +645,7 @@ details.faq .ans {
   <div class="hero-photo-bg"></div>
   <div class="hero-inner">
     <div>
-      <span class="eyebrow"><span class="dot"></span>VIP 2026 · Applications open</span>
+      <span class="eyebrow"><span class="dot"></span>VIP 2026 · Applications closed</span>
       <h1>
         Capital and conviction for <span class="hl">deep-tech startups</span> ready to <span class="accent-color">scale.</span>
       </h1>
@@ -649,16 +653,16 @@ details.faq .ans {
         The <strong>Venture Incubation Programme</strong> at ARTPARK invests in incorporated deep-tech startups in AI, robotics, novel materials, sensors, and cyber-physical systems — with up to <strong>₹2 Cr</strong> in direct equity investment, IISc-anchored infrastructure, and a path to follow-on capital.
       </p>
       <div class="hero-ctas">
-        <a href="/apply-sip/signup?track=sip" class="btn btn-primary">
-          <span>Apply now</span>
-          <span class="arrow">→</span>
-        </a>
+        <span class="btn btn-primary btn-disabled" aria-disabled="true" title="VIP applications are closed">
+          <span>Applications closed</span>
+        </span>
         <a href="#program" class="btn btn-ghost">Learn more</a>
+        <a href="/apply/signin?track=sip" class="cta-returning" title="Resume or view an existing application">Already applied? Sign in →</a>
       </div>
       <div class="hero-deadline">
         <div class="hero-deadline-item">
-          <div class="label">Applications close</div>
-          <div class="val">21 June 2026</div>
+          <div class="label">Applications</div>
+          <div class="val">Closed</div>
         </div>
         <div class="hero-deadline-item">
           <div class="label">Cohort begins</div>
@@ -932,9 +936,9 @@ details.faq .ans {
 <section class="final-cta">
   <div class="final-cta-inner">
     <h2>Ready to take your prototype to <em>production</em>?</h2>
-    <p>Applications for VIP 2026 close on 21 June, 5pm IST. Most teams complete the form in 90–120 minutes.</p>
-    <a href="/apply-sip/signup?track=sip" class="btn btn-light">
-      <span>Start your application</span>
+    <p>Applications for VIP 2026 are now closed. If you already submitted, you can sign in to view or edit your application during the edit window.</p>
+    <a href="/apply/signin?track=sip" class="btn btn-light">
+      <span>Sign in</span>
       <span class="arrow">→</span>
     </a>
   </div>
