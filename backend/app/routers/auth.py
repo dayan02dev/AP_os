@@ -145,11 +145,14 @@ async def request_otp(payload: OTPRequest, request: Request):
     options: dict = {"should_create_user": True}
     if payload.track:
         options["data"] = {"track": payload.track}
-        # TIR intake closed → do not create NEW accounts via the TIR signup
-        # path. `should_create_user: False` only blocks brand-new emails;
-        # existing TIR applicants still receive their OTP and sign in. SIP/VIP
-        # is unaffected. Flip via the TIR_SUBMISSIONS_CLOSED env var.
-        if payload.track == "tir" and settings.tir_submissions_closed:
+        # Track intake closed → do not create NEW accounts via that track's
+        # signup path. `should_create_user: False` only blocks brand-new
+        # emails; existing applicants still receive their OTP and sign in.
+        # Each track is gated independently via TIR_SUBMISSIONS_CLOSED /
+        # SIP_SUBMISSIONS_CLOSED.
+        if (payload.track == "tir" and settings.tir_submissions_closed) or (
+            payload.track == "sip" and settings.sip_submissions_closed
+        ):
             options["should_create_user"] = False
     try:
         anon = get_anon_client()

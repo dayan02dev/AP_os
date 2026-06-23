@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from ..config import settings
 from ..deps import get_current_user, require_track
 from ..models.sip_application import (
     SipApplicationRead,
@@ -240,6 +241,18 @@ def _is_editable(row: dict[str, Any]) -> bool:
     return row.get("status") in _EDITABLE_STATUSES and is_edit_open("sip")
 
 
+# SIP/VIP intake-close gate. When settings.sip_submissions_closed is true, no
+# NEW SIP application may be started or submitted. Existing rows are untouched,
+# so applicants who already have a draft/submission keep full access (including
+# the edit-after-submit window). TIR is a separate router and is unaffected.
+_SIP_CLOSED_CODE = "sip_submissions_closed"
+_SIP_CLOSED_MSG = "VIP applications are closed; new applications are no longer accepted."
+
+
+def _sip_closed_response() -> JSONResponse:
+    return _error(status.HTTP_403_FORBIDDEN, _SIP_CLOSED_CODE, _SIP_CLOSED_MSG)
+
+
 def _create_draft(user_id: str) -> dict[str, Any]:
     res = (
         get_admin_client()
@@ -310,6 +323,8 @@ async def get_application(current_user: dict = Depends(get_current_user)):
     try:
         row = _fetch_application(user_id)
         if row is None:
+            if settings.sip_submissions_closed:
+                return _sip_closed_response()
             row = _create_draft(user_id)
     except Exception:
         log.exception("sip_applications.get failed",
@@ -364,7 +379,11 @@ async def patch_application(
                       "At least one writable field is required.")
 
     try:
-        current_row = _fetch_application(user_id) or _create_draft(user_id)
+        current_row = _fetch_application(user_id)
+        if current_row is None:
+            if settings.sip_submissions_closed:
+                return _sip_closed_response()
+            current_row = _create_draft(user_id)
     except Exception:
         log.exception("sip_applications.patch fetch failed",
                       extra={"request_id": req_id, "user_id": user_id})
@@ -483,6 +502,11 @@ async def submit_application(
     req_id = _new_request_id()
     user_id = current_user["user_id"]
 
+    # SIP/VIP intake closed → reject all submissions (incl. existing drafts)
+    # before touching rate budget or the DB.
+    if settings.sip_submissions_closed:
+        return _sip_closed_response()
+
     check_rate("sip-applications-submit", user_id, _SUBMIT_MAX, _SUBMIT_WINDOW_S)
 
     try:
@@ -582,7 +606,11 @@ async def list_submitted_applications(current_user: dict = Depends(get_current_u
 async def get_completion(current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
     try:
-        row = _fetch_application(user_id) or _create_draft(user_id)
+        row = _fetch_application(user_id)
+        if row is None:
+            if settings.sip_submissions_closed:
+                return _sip_closed_response()
+            row = _create_draft(user_id)
     except Exception:
         log.exception("sip_applications.completion fetch failed",
                       extra={"user_id": user_id})

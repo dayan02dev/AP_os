@@ -76,7 +76,8 @@ sam deploy \
     "SesFromEmail=${SES_FROM_EMAIL:-noreply@artpark.info}" \
     "ResendApiKey=${RESEND_API_KEY}" \
     "AwsRegionParam=ap-south-1" \
-    "TirSubmissionsClosed=${TIR_SUBMISSIONS_CLOSED:-false}"
+    "TirSubmissionsClosed=${TIR_SUBMISSIONS_CLOSED:-false}" \
+    "SipSubmissionsClosed=${SIP_SUBMISSIONS_CLOSED:-false}"
 
 echo ""
 echo "✓ Deploy complete. Stack outputs:"

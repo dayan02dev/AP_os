@@ -194,6 +194,7 @@ export default function AppSip() {
     submittedApps,
     startNew,
     saveSubmittedField,
+    sipClosed,
   } = useSipApplication();
   const resume = useSipResume();
   const { push: pushToast } = useToast();
@@ -712,6 +713,13 @@ export default function AppSip() {
   const estMin = Math.max(1, Math.round((totalQ - stepIdx) * 0.9));
   const warmCopy = true;
 
+  // VIP intake is closed (backend 403). A new applicant can't start a VIP
+  // application; show a terminal closed screen instead of the wizard. Existing
+  // applicants load a row and never reach this branch.
+  if (user && sipClosed) {
+    return <SipClosedScreen onSignOut={logout} />;
+  }
+
   return (
     <div className="eir-root track-sip">
       <div className="eir-bg" />
@@ -1102,6 +1110,37 @@ function buildParsedReviewPayload(parsed, user) {
     },
     _order: ["fullName", "email", "phone", "org", "degree"],
   };
+}
+
+function SipClosedScreen({ onSignOut }) {
+  return (
+    <div className="eir-root eir-theme-default">
+      <div className="eir-bg" />
+      <div className="eir-frame">
+        <main className="eir-main">
+          <div className="eir-screen">
+            <div className="eir-welcome-body" style={{ textAlign: "center", maxWidth: 520, margin: "0 auto" }}>
+              <p className="eir-mono eir-dim">VIP · 2026</p>
+              <h1 style={{ marginTop: 12 }}>VIP applications are closed</h1>
+              <p style={{ marginTop: 12, lineHeight: 1.6 }}>
+                We're no longer accepting new VIP applications. If you already
+                submitted, you can still sign in to view your application during
+                the edit window.
+              </p>
+              <div style={{ marginTop: 24, display: "flex", gap: 12, justifyContent: "center" }}>
+                <a className="eir-btn" href="/apply/signin">Sign in</a>
+                {onSignOut && (
+                  <button className="eir-btn eir-btn-ghost" type="button" onClick={onSignOut}>
+                    Sign out
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
 }
 
 function LoadingScreen() {

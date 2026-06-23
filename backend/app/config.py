@@ -135,6 +135,14 @@ class Settings(BaseSettings):
     # the TIR_SUBMISSIONS_CLOSED env var — no code change to reopen.
     tir_submissions_closed: bool = False
 
+    # ── SIP/VIP intake close (reversible toggle) ────────────────
+    # Same semantics as tir_submissions_closed, for the SIP/VIP track: when
+    # true, new SIP account creation (request-otp track=sip), new SIP draft
+    # creation, and SIP submission are all blocked. Existing SIP applicants
+    # keep sign-in / view / edit-window access; the TIR track is unaffected.
+    # Flip via the SIP_SUBMISSIONS_CLOSED env var — no code change to reopen.
+    sip_submissions_closed: bool = False
+
     # ─── Normalisers ────────────────────────────────────────────
     @field_validator("env")
     @classmethod

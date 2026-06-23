@@ -34,6 +34,9 @@ export function SipApplicationProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [wrongTrack, setWrongTrack] = useState(false);
+  // SIP/VIP intake closed (backend 403 code "sip_submissions_closed"): a new
+  // applicant can't start a VIP application. Existing rows load normally.
+  const [sipClosed, setSipClosed] = useState(false);
   const [savingState, setSavingState] = useState("idle");
   const [completion, setCompletion] = useState({
     completion_pct: 0,
@@ -50,6 +53,7 @@ export function SipApplicationProvider({ children }) {
       setRow(null);
       setSubmittedApps([]);
       setWrongTrack(false);
+      setSipClosed(false);
       setCompletion({
         completion_pct: 0,
         missing_required_fields: [],
@@ -61,6 +65,7 @@ export function SipApplicationProvider({ children }) {
     setLoading(true);
     setError(null);
     setWrongTrack(false);
+    setSipClosed(false);
     async function load() {
       try {
         const [r, past] = await Promise.all([
@@ -79,6 +84,12 @@ export function SipApplicationProvider({ children }) {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 403 && err.code === "wrong_track") {
           setWrongTrack(true);
+        } else if (
+          err instanceof ApiError &&
+          err.status === 403 &&
+          err.code === "sip_submissions_closed"
+        ) {
+          setSipClosed(true);
         } else {
           setError(err);
         }
@@ -255,6 +266,7 @@ export function SipApplicationProvider({ children }) {
     completion,
     submittedApps,
     wrongTrack,
+    sipClosed,
     save,
     flushNow,
     submit,

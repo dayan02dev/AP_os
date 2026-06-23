@@ -77,6 +77,14 @@ Parameters:
       "true" closes the TIR track to new intake (no new TIR account creation,
       no new draft, no submission). Existing TIR applicants keep sign-in / view
       / edit-window access; SIP/VIP is unaffected. Reversible — flip and redeploy.
+  SipSubmissionsClosed:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      "true" closes the SIP/VIP track to new intake (no new VIP account
+      creation, no new draft, no submission). Existing VIP applicants keep
+      sign-in / view / edit-window access; TIR is unaffected. Reversible.
 
 # ─── Globals: every function inherits these ──────────────────────────
 # arm64 + python3.11 + 1GB RAM is the sweet spot for FastAPI on Lambda:
@@ -120,6 +128,8 @@ Globals:
         # TIR intake close — "true" blocks new TIR accounts/drafts/submissions.
         # Parameterised so prod can close while staging stays open.
         TIR_SUBMISSIONS_CLOSED: !Ref TirSubmissionsClosed
+        # SIP/VIP intake close — same semantics for the VIP track.
+        SIP_SUBMISSIONS_CLOSED: !Ref SipSubmissionsClosed
 
 Resources:
   # ── Lambda function ─────────────────────────────────────────────
