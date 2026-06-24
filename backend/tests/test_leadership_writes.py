@@ -287,7 +287,8 @@ def test_unassign_reviewer_blocked_when_review_submitted(
         ],
         "sip_applications": [],
         "reviews": [
-            {"id": "rev-row-1", "status": "submitted"},
+            {"id": "rev-row-1", "application_id": app_id, "application_track": "tir",
+             "reviewer_user_id": "rev-1", "submitted_at": "2026-06-01T00:00:00Z"},
         ],
         "reviewer_assignments": [
             {"reviewer_user_id": "rev-1", "state": "completed"},
@@ -301,6 +302,46 @@ def test_unassign_reviewer_blocked_when_review_submitted(
     )
     assert res.status_code == 409
     assert res.json()["detail"]["code"] == "review_already_submitted"
+
+
+def test_unassign_blocked_when_review_submitted(client, monkeypatch, _clear_overrides):
+    """submitted_at set → 409 review_already_submitted (guard checks submitted_at,
+    not the never-written reviews.status)."""
+    _install_db(monkeypatch, {
+        "tir_applications": [{"id": "app-1", "status": "under_review"}],
+        "sip_applications": [],
+        "reviewer_assignments": [{"id": "as-1", "reviewer_user_id": "rev-1",
+            "application_id": "app-1", "application_track": "tir",
+            "declined_at": None, "reassigned_to": None}],
+        "reviews": [{"id": "r-1", "reviewer_user_id": "rev-1", "application_id": "app-1",
+            "application_track": "tir", "submitted_at": "2026-06-01T00:00:00Z"}],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    r = client.delete(
+        "/leadership/applications/app-1/reviewers/rev-1",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "review_already_submitted"
+
+
+def test_unassign_allowed_when_review_is_draft(client, monkeypatch, _clear_overrides):
+    """submitted_at is None (draft review) → delete proceeds (200)."""
+    _install_db(monkeypatch, {
+        "tir_applications": [{"id": "app-1", "status": "under_review"}],
+        "sip_applications": [],
+        "reviewer_assignments": [{"id": "as-1", "reviewer_user_id": "rev-1",
+            "application_id": "app-1", "application_track": "tir",
+            "declined_at": None, "reassigned_to": None}],
+        "reviews": [{"id": "r-1", "reviewer_user_id": "rev-1", "application_id": "app-1",
+            "application_track": "tir", "submitted_at": None}],  # draft
+    })
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    r = client.delete(
+        "/leadership/applications/app-1/reviewers/rev-1",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert r.status_code == 200
 
 
 def test_unassign_reviewer_requires_assign_reviewers_capability(client, _clear_overrides):

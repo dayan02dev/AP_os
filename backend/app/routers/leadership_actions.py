@@ -211,15 +211,20 @@ async def unassign_reviewer(
         rev = (
             get_admin_client()
             .table("reviews")
-            .select("id,status")
+            .select("id,submitted_at,application_id,application_track,reviewer_user_id")
             .eq("application_id", application_id)
             .eq("application_track", track)
             .eq("reviewer_user_id", reviewer_user_id)
-            .eq("status", "submitted")
-            .limit(1)
             .execute()
         )
-        if rev.data:
+        already_submitted = any(
+            row.get("submitted_at")
+            for row in (rev.data or [])
+            if row.get("application_id") == application_id
+            and row.get("application_track") == track
+            and row.get("reviewer_user_id") == reviewer_user_id
+        )
+        if already_submitted:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
