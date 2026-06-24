@@ -25,6 +25,7 @@ import { adminApi } from "../../../../lib/adminApi";
 import { generateBasicPassword } from "../helpers/adminHelpers";
 import { PageHead } from "../shell/osAtoms";
 import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
+import { ManageApplicationsDrawer } from "./ManageApplicationsDrawer";
 
 // ─── Mock jury data (prototype-seeded) ──────────────────────────────────────
 
@@ -541,6 +542,7 @@ export function AdminReviewers({ decisionMode }) {
 
   // Mutation state — reviewer mode
   const [manageTarget, setManageTarget] = useState(null);
+  const [appsTarget, setAppsTarget] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
   const [showEditPicker, setShowEditPicker] = useState(false);
   const [invitePassword] = useState(() => generateBasicPassword());
@@ -831,7 +833,7 @@ export function AdminReviewers({ decisionMode }) {
 
                     {/* Actions */}
                     <td>
-                      <button className="os-btn sm secondary" onClick={() => setManageTarget(r)}>Manage</button>
+                      <button className="os-btn sm secondary" onClick={() => setAppsTarget(r)}>Manage</button>
                     </td>
                   </tr>
                 );
@@ -849,6 +851,15 @@ export function AdminReviewers({ decisionMode }) {
           isJury={false}
           onClose={() => setManageTarget(null)}
           onSaved={() => { setManageTarget(null); reload(); }}
+        />
+      )}
+
+      {/* Manage Applications drawer (per-reviewer assign/remove) */}
+      {appsTarget && (
+        <ManageApplicationsDrawer
+          reviewer={appsTarget}
+          onClose={() => setAppsTarget(null)}
+          onChanged={reload}
         />
       )}
 
