@@ -564,6 +564,15 @@ async def list_reviewers() -> dict[str, Any]:
     return admin_query.fetch_roster()
 
 
+@router.get(
+    "/reviewers/{user_id}/applications",
+    dependencies=[Depends(require_capability("manage_reviewers_roster"))],
+)
+async def list_reviewer_applications(user_id: str) -> dict[str, Any]:
+    """Applications actively assigned to one reviewer (Manage Applications drawer)."""
+    return admin_query.fetch_reviewer_applications(user_id)
+
+
 @router.patch(
     "/reviewers/{user_id}",
     dependencies=[Depends(require_capability("manage_reviewers_roster"))],
