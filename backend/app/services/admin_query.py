@@ -543,6 +543,90 @@ def fetch_roster() -> dict[str, Any]:
     return {"reviewers": out}
 
 
+def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
+    """Applications actively assigned to one reviewer, enriched for the admin
+    "Manage Applications" drawer. Active = declined_at IS NULL AND
+    reassigned_to IS NULL. Returns ``{"applications": [...]}`` with each row:
+    ``{id, track, project, industry, status, batch, reviewStatus, assignment_id}``.
+    ``batch`` is None when the app belongs to no batch (UI → "Random allotment").
+    """
+    sb = get_admin_client()
+    try:
+        rows = (
+            sb.table("reviewer_assignments")
+            .select("*")
+            .eq("reviewer_user_id", user_id)
+            .execute()
+            .data
+        ) or []
+    except Exception as exc:
+        log.warning("reviewer apps: assignments fetch failed", extra={"err": str(exc)})
+        return {"applications": []}
+
+    active = [
+        a for a in rows
+        if a.get("reviewer_user_id") == user_id
+        and a.get("declined_at") is None
+        and a.get("reassigned_to") is None
+    ]
+    pairs = [(a["application_track"], a["application_id"]) for a in active]
+    if not pairs:
+        return {"applications": []}
+
+    project_names = applications_query.fetch_project_names_for(pairs)
+    industries = applications_query.fetch_industry_for_pairs(pairs)
+    batches = _fetch_batches(pairs)
+
+    # App rows (status + project fallback), one query per track.
+    app_rows: dict[tuple[str, str], dict] = {}
+    for track, ids in _by_track(pairs).items():
+        if not ids:
+            continue
+        try:
+            data = (
+                sb.table(applications_query.track_table(track))
+                .select("*").in_("id", ids).execute().data
+            ) or []
+        except Exception:
+            data = []
+        for r in data:
+            app_rows[(track, r["id"])] = r
+
+    # Which of these apps has this reviewer already SUBMITTED a review for?
+    submitted: set[tuple[str, str]] = set()
+    try:
+        for r in (
+            sb.table("reviews").select("*").eq("reviewer_user_id", user_id).execute().data
+        ) or []:
+            if r.get("reviewer_user_id") == user_id and r.get("submitted_at"):
+                submitted.add((r.get("application_track"), r.get("application_id")))
+    except Exception:
+        pass
+
+    out: list[dict[str, Any]] = []
+    for a in active:
+        key = (a["application_track"], a["application_id"])
+        r = app_rows.get(key) or {}
+        project = (
+            project_names.get(key)
+            or stats.derive_project_name(r)
+            or r.get("basic_org")
+            or r.get("basic_full_name")
+        )
+        out.append({
+            "id":            a["application_id"],
+            "track":         a["application_track"],
+            "project":       project,
+            "industry":      (industries.get(key) or {}).get("label"),
+            "status":        r.get("status"),
+            "batch":         (batches.get(key) or {}).get("name"),
+            "reviewStatus":  "submitted" if key in submitted else "pending",
+            "assignment_id": a.get("id"),
+        })
+    out.sort(key=lambda i: (i.get("project") or "").lower())
+    return {"applications": out}
+
+
 # ─── Task 13: Reviewer-calibration analytics ────────────────────────────
 
 

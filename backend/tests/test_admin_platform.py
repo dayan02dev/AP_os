@@ -779,3 +779,45 @@ def test_admin_stats_includes_decision_counts(client, monkeypatch, _clear_overri
     body = r.json()
     assert "decisions" in body
     assert body["decisions"]["shortlisted"] == 1 and body["decisions"]["rejected"] == 1
+
+
+# ─── GET /admin/platform/reviewers/{user_id}/applications ──────────────────
+
+
+def test_reviewer_applications_lists_active_assignments(client, monkeypatch, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    _install_db(monkeypatch, {
+        "user_roles": [{"user_id": "rev-1", "role": "reviewer"}],
+        "reviewer_assignments": [
+            {"id": "as-1", "reviewer_user_id": "rev-1", "application_id": "app-1",
+             "application_track": "tir", "declined_at": None, "reassigned_to": None,
+             "completed_at": None},
+            {"id": "as-2", "reviewer_user_id": "rev-1", "application_id": "app-2",
+             "application_track": "tir", "declined_at": "2026-06-01", "reassigned_to": None,
+             "completed_at": None},  # declined → excluded
+        ],
+        "tir_applications": [
+            {"id": "app-1", "status": "under_review", "basic_org": "Acme",
+             "basic_full_name": "A Founder", "display_seq": 101},
+            {"id": "app-2", "status": "evaluated", "basic_org": "Beta", "display_seq": 102},
+        ],
+        "sip_applications": [],
+        "ai_screening": [{"application_id": "app-1", "application_track": "tir",
+                          "project_name": "Acme Robotics", "industry_category_id": "ind-1"}],
+        "industry_categories": [{"id": "ind-1", "label": "Robotics"}],
+        "reviews": [{"id": "r-1", "reviewer_user_id": "rev-1", "application_id": "app-1",
+                     "application_track": "tir", "submitted_at": None}],
+        "application_batches": [{"application_id": "app-1", "application_track": "tir",
+                                 "batch_id": "b-1"}],
+        "batches": [{"id": "b-1", "name": "Batch A"}],
+    })
+    r = client.get("/admin/platform/reviewers/rev-1/applications")
+    assert r.status_code == 200
+    apps = r.json()["applications"]
+    assert [a["id"] for a in apps] == ["app-1"]          # declined app-2 excluded
+    a = apps[0]
+    assert a["project"] == "Acme Robotics"
+    assert a["industry"] == "Robotics"
+    assert a["status"] == "under_review"
+    assert a["batch"] == "Batch A"
+    assert a["reviewStatus"] == "pending"
