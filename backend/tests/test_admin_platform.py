@@ -470,6 +470,16 @@ def test_batches_requires_capability(client, monkeypatch, _clear_overrides):
     assert client.post("/admin/platform/batches", json={"name":"X"}).status_code == 403
 
 
+def test_reviewer_applications_is_admin_only(client, _clear_overrides):
+    """GET /reviewers/{id}/applications needs manage_reviewers_roster (admin only).
+    A reviewer cannot list another reviewer's apps; leadership (no roster cap) is
+    also refused — access stays scoped to the assigned admin user."""
+    app.dependency_overrides[get_current_user] = _override_user("rev-1", roles=["reviewer"])
+    assert client.get("/admin/platform/reviewers/rev-2/applications").status_code == 403
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+    assert client.get("/admin/platform/reviewers/rev-2/applications").status_code == 403
+
+
 def test_batch_assign_unknown_batch_404(client, monkeypatch, _clear_overrides):
     """POST /batches/bad-id/applications with no batches seeded → 404 batch_not_found."""
     _install_db(monkeypatch, {"batches": [], "application_batches": []})
