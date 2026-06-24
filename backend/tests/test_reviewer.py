@@ -1722,3 +1722,61 @@ def test_rubric_anchor_text_is_locked(client, _clear_overrides):
     commit_dim = dims[4]
     assert commit_dim["key"] == "commit"
     assert commit_dim["anchors"]["4"] == 'Partial commitment, "validating"'
+
+
+# ─── GET /reviewer/queue ──────────────────────────────────────────────────
+
+
+def test_queue_includes_my_score(client, monkeypatch, _clear_overrides):
+    """A submitted review's weighted overall is surfaced on the queue row."""
+    me = "rev-a"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [
+            {"id": "a1", "reviewer_user_id": me, "application_id": "app1",
+             "application_track": "tir", "assigned_at": "2026-05-16T09:00:00Z",
+             "assigned_by": "leader-u", "declined_at": None, "reassigned_to": None,
+             "completed_at": None, "due_at": None},
+        ],
+        "tir_applications": [
+            {"id": "app1", "basic_org": "EdTech Co", "display_seq": 26013,
+             "answers": {}, "submitted_at": "2026-05-15T00:00:00Z"},
+        ],
+        "sip_applications": [],
+        "ai_screening": [],
+        "industry_categories": [],
+        "reviews": [
+            {"id": "r1", "reviewer_user_id": me, "application_id": "app1",
+             "application_track": "tir", "submitted_at": "2026-05-18T00:00:00Z",
+             "locked_at": "2026-05-18T01:00:00Z",
+             "score_problem": 8, "score_solution": 8, "score_tech": 8,
+             "score_founders": 8, "score_commitment": 8},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.get("/reviewer/queue")
+    assert r.status_code == 200, r.text
+    row = r.json()[0]                     # /reviewer/queue returns a bare list
+    assert row["myScore"] == 8.0          # all 5 == 8 → weighted 800/100
+    assert row["reviewStatus"] == "submitted"
+
+
+def test_queue_my_score_none_when_not_started(client, monkeypatch, _clear_overrides):
+    me = "rev-a"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [
+            {"id": "a1", "reviewer_user_id": me, "application_id": "app1",
+             "application_track": "tir", "assigned_at": "2026-05-16T09:00:00Z",
+             "assigned_by": "leader-u", "declined_at": None, "reassigned_to": None,
+             "completed_at": None, "due_at": None},
+        ],
+        "tir_applications": [
+            {"id": "app1", "basic_org": "EdTech Co", "answers": {},
+             "submitted_at": "2026-05-15T00:00:00Z"},
+        ],
+        "sip_applications": [], "ai_screening": [], "industry_categories": [],
+        "reviews": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.get("/reviewer/queue")
+    assert r.status_code == 200, r.text
+    assert r.json()[0]["myScore"] is None
