@@ -35,8 +35,16 @@ vi.mock("../../../../components/admin/PreviewBadge", () => ({
   PreviewBadge: () => <div data-testid="preview-badge">Preview</div>,
 }));
 
+vi.mock("../../../../lib/leadershipApi", () => ({
+  leadershipApi: {
+    assignReviewers: vi.fn().mockResolvedValue({ results: [{ status: "created" }] }),
+    unassignReviewer: vi.fn().mockResolvedValue({ ok: true }),
+  },
+}));
+
 import { useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
+import { leadershipApi } from "../../../../lib/leadershipApi";
 import { AdminReviewers } from "../screens/AdminReviewers";
 
 const SAMPLE_REVIEWERS = [
@@ -73,6 +81,24 @@ const SAMPLE_REVIEWERS = [
     startups: [],
   },
 ];
+
+// kind-aware useAdminData for the Manage Applications drawer
+function mockUseAdminData() {
+  useAdminData.mockImplementation((kind) => {
+    if (kind === "reviewerApplications")
+      return { data: { applications: [
+        { id: "app-1", track: "tir", project: "Saathi Health AI", industry: "MedTech",
+          status: "shortlisted", chip: "SHORTLISTED", batch: "Batch A", reviewStatus: "pending" },
+      ] }, loading: false, error: null, reload: vi.fn() };
+    if (kind === "pipeline")
+      return { data: { startups: [
+        { id: "app-9", track: "tir", name: "Karkhana Robotics", domain: "Robotics", batch: "Unassigned" },
+      ] }, loading: false, error: null, reload: vi.fn() };
+    if (kind === "batches")
+      return { data: { batches: [] }, loading: false, error: null, reload: vi.fn() };
+    return { data: { reviewers: SAMPLE_REVIEWERS }, loading: false, error: null, reload: vi.fn() };
+  });
+}
 
 describe("AdminReviewers (reviewer-mode)", () => {
   beforeEach(() => {
@@ -111,18 +137,33 @@ describe("AdminReviewers (reviewer-mode)", () => {
     expect(screen.getByText(/No reviewers yet/i)).toBeTruthy();
   });
 
-  it("opens manage drawer when Manage is clicked", () => {
-    useAdminData.mockReturnValue({
-      data: { reviewers: SAMPLE_REVIEWERS },
-      loading: false,
-      error: null,
-      reload: vi.fn(),
-    });
+  it("Manage opens the Manage Applications drawer and lists assigned apps", () => {
+    mockUseAdminData();
     render(<AdminReviewers decisionMode="reviewer" />);
-    const manageBtns = screen.getAllByText("Manage");
-    fireEvent.click(manageBtns[0]);
-    // Drawer title should appear
+    fireEvent.click(screen.getAllByText("Manage")[0]);
     expect(screen.getByText("Manage Applications")).toBeTruthy();
+    expect(screen.getByText("Saathi Health AI")).toBeTruthy();
+    expect(screen.getByText(/Assigned Applications \(1\)/)).toBeTruthy();
+  });
+
+  it("Remove calls unassignReviewer", async () => {
+    mockUseAdminData();
+    render(<AdminReviewers decisionMode="reviewer" />);
+    fireEvent.click(screen.getAllByText("Manage")[0]);
+    fireEvent.click(screen.getByText("Remove"));
+    await waitFor(() =>
+      expect(leadershipApi.unassignReviewer).toHaveBeenCalledWith("app-1", "tir", "rev-001"));
+  });
+
+  it("Assign calls assignReviewers", async () => {
+    mockUseAdminData();
+    render(<AdminReviewers decisionMode="reviewer" />);
+    fireEvent.click(screen.getAllByText("Manage")[0]);
+    fireEvent.change(screen.getByLabelText("Application"), { target: { value: "app-9" } });
+    fireEvent.click(screen.getByText("Assign Application"));
+    await waitFor(() =>
+      expect(leadershipApi.assignReviewers).toHaveBeenCalledWith(
+        "app-9", "tir", { reviewer_user_ids: ["rev-001"] }));
   });
 
   it("calls patchReviewer with id and body when Save changes is clicked", async () => {
@@ -134,10 +175,12 @@ describe("AdminReviewers (reviewer-mode)", () => {
       reload,
     });
     render(<AdminReviewers decisionMode="reviewer" />);
-    const manageBtns = screen.getAllByText("Manage");
-    fireEvent.click(manageBtns[0]);
+    // Editing reviewer details is reached via "Edit reviewer" → "Edit details"
+    // (reviewer-mode "Manage" now opens the Manage Applications drawer instead).
+    fireEvent.click(screen.getByText("Edit reviewer"));
+    fireEvent.click(screen.getByText("Edit details"));
 
-    // Save changes button in the drawer
+    // Save changes button in the edit drawer
     const saveBtn = screen.getByText("Save changes");
     fireEvent.click(saveBtn);
 
