@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { adminPlatformApi } from "../lib/adminPlatformApi";
 import {
   adaptPipelineRow, adaptStats, adaptDetail, adaptReviewer,
-  adaptCalibrationRow, adaptAuditEntry, adaptBatch,
+  adaptReviewerApplication, adaptCalibrationRow, adaptAuditEntry, adaptBatch,
 } from "../lib/adminDataAdapter";
 
 const LOADERS = {
@@ -14,6 +14,10 @@ const LOADERS = {
   reviewers: async () => {
     const r = await adminPlatformApi.getReviewers();
     return { reviewers: (r.reviewers || []).map(adaptReviewer) };
+  },
+  reviewerApplications: async ({ userId }) => {
+    const r = await adminPlatformApi.getReviewerApplications(userId);
+    return { applications: (r.applications || []).map(adaptReviewerApplication) };
   },
   audit: async (params) => {
     const r = await adminPlatformApi.getAuditLog(params);

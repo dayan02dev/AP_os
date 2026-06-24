@@ -89,6 +89,17 @@ export const adaptReviewer = (r) => ({
   assigned: r.assigned, completed: r.completed, progress: r.progress || "0 / 0",
   consistency: r.consistency, last: r.lastActivity, startups: [],
 });
+export const adaptReviewerApplication = (a) => ({
+  id: a.id,
+  track: a.track,
+  project: a.project || "—",
+  industry: a.industry || "—",
+  status: a.status,
+  chip: STATUS_TO_CHIP[a.status] || "NEW",
+  batch: a.batch || null,               // null → UI shows "Random allotment"
+  reviewStatus: a.reviewStatus || "pending",
+  assignmentId: a.assignment_id || null,
+});
 export const adaptCalibrationRow = (r) => ({
   id: r.user_id, name: r.name, nReviews: r.n_reviews, avgScore: r.avg_score,
   variance: r.avg_variance_vs_ai,

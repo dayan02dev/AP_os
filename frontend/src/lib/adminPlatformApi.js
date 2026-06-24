@@ -53,6 +53,8 @@ export const adminPlatformApi = {
     api.del(`/admin/platform/batches/${batchId}/reviewers/${reviewerId}`),
 
   getReviewers: () => api.get(`/admin/platform/reviewers`),
+  getReviewerApplications: (userId) =>
+    api.get(`/admin/platform/reviewers/${encodeURIComponent(userId)}/applications`),
   patchReviewer: (id, body) =>
     api.patch(`/admin/platform/reviewers/${id}`, body),
   rebalance: (body) => api.post(`/admin/platform/reviewers/rebalance`, body || {}),
