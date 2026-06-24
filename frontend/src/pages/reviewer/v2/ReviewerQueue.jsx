@@ -174,14 +174,15 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
         <table className="os-table">
           <thead>
             <tr>
-              <th style={{ width: "22%" }}>Project</th>
-              <th style={{ width: "16%" }}>Founder</th>
-              <th style={{ width: "18%" }}>Industry</th>
-              <th style={{ width: "10%" }}>Stage</th>
-              <th style={{ width: "12%" }}>AI Score</th>
-              <th style={{ width: "12%" }}>Status</th>
-              <th style={{ width: "6%" }}>Due</th>
-              <th style={{ width: "9%" }}>ID</th>
+              <th style={{ width: "20%" }}>Project</th>
+              <th style={{ width: "14%" }}>Founder</th>
+              <th style={{ width: "16%" }}>Industry</th>
+              <th style={{ width: "9%" }}>Stage</th>
+              <th style={{ width: "11%" }}>AI Score</th>
+              <th style={{ width: "11%" }}>My Score</th>
+              <th style={{ width: "10%" }}>Status</th>
+              <th style={{ width: "4%" }}>Due</th>
+              <th style={{ width: "5%" }}>ID</th>
             </tr>
           </thead>
           <tbody>
@@ -220,6 +221,20 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
                   )}
                 </td>
                 <td>
+                  {typeof s.myScore === "number" ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ display: "inline-block", width: 48, height: 4, background: "#ececf0", borderRadius: 2, overflow: "hidden", flexShrink: 0 }}>
+                        <span style={{ display: "block", width: Math.max(0, Math.min(100, (s.myScore / 10) * 100)) + "%", height: "100%", background: "#3213b7", borderRadius: 2 }} />
+                      </span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--ink)", flexShrink: 0, whiteSpace: "nowrap" }}>
+                        {Number(s.myScore).toFixed(1)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span style={{ color: "var(--ink-dim)" }}>—</span>
+                  )}
+                </td>
+                <td>
                   {s.reviewStatus === "submitted" && <Chip tone="green">Submitted</Chip>}
                   {s.reviewStatus === "draft" && <Chip tone="amber">Draft</Chip>}
                   {s.reviewStatus === "not-started" && <Chip tone="slate">Not started</Chip>}
@@ -230,21 +245,21 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
             ))}
             {loading && (
               <tr>
-                <td colSpan="8" style={{ padding: "40px 0" }}>
+                <td colSpan="9" style={{ padding: "40px 0" }}>
                   <LoadingState label="Loading your queue…" />
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr>
-                <td colSpan="8" style={{ padding: "40px 0" }}>
+                <td colSpan="9" style={{ padding: "40px 0" }}>
                   <ErrorState error={error} onRetry={reload} />
                 </td>
               </tr>
             )}
             {!loading && !error && filtered.length === 0 && (
               <tr>
-                <td colSpan="8" style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-dim)", fontSize: 13 }}>
+                <td colSpan="9" style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-dim)", fontSize: 13 }}>
                   {allQueue.length === 0 ? "No applications assigned." : "No startups match the current filters."}
                 </td>
               </tr>
