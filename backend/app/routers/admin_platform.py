@@ -291,6 +291,47 @@ async def rename_batch(
     return {"batch_id": batch_id, **fields}
 
 
+@router.delete(
+    "/batches/{batch_id}",
+    dependencies=[Depends(require_capability("manage_batches"))],
+)
+async def delete_batch(
+    batch_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Delete a batch (unlink-only).
+
+    Removes the batch and its `application_batches` links (apps revert to no
+    batch → "Random allotment"), and clears any `reviewer_profiles.batch_id`
+    pointing at it. `reviewer_assignments` and `reviews` are left untouched, so
+    no scored work is orphaned.
+    """
+    sb = get_admin_client()
+    existing = (
+        sb.table("batches").select("id,name").eq("id", batch_id).limit(1).execute().data
+    )
+    if not existing:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "batch_not_found"},
+        )
+    # 1. Unlink applications (revert to no batch / Random allotment).
+    sb.table("application_batches").delete().eq("batch_id", batch_id).execute()
+    # 2. Clear reviewer_profiles.batch_id references (avoid a dangling pointer).
+    sb.table("reviewer_profiles").update({"batch_id": None}).eq("batch_id", batch_id).execute()
+    # 3. Delete the batch row.
+    sb.table("batches").delete().eq("id", batch_id).execute()
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="batch_deleted",
+        target_table="batches",
+        target_id=batch_id,
+        before={"name": existing[0].get("name")},
+    )
+    return {"ok": True, "batch_id": batch_id}
+
+
 @router.post(
     "/batches/{batch_id}/applications",
     dependencies=[Depends(require_capability("manage_batches"))],

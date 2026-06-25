@@ -859,3 +859,43 @@ def test_reviewer_applications_lists_active_assignments(client, monkeypatch, _cl
     assert a["status"] == "under_review"
     assert a["batch"] == "Batch A"
     assert a["reviewStatus"] == "pending"
+
+
+# ─── Task 5: DELETE /admin/platform/batches/{id} ───────────────────────
+
+
+def test_delete_batch_unlinks_apps_keeps_assignments(client, monkeypatch, _clear_overrides):
+    tables = _empty_admin_tables()
+    tables["batches"] = [{"id": "b-1", "name": "Batch A"}]
+    tables["application_batches"] = [
+        {"application_id": "app-1", "application_track": "tir", "batch_id": "b-1"},
+    ]
+    tables["reviewer_profiles"] = [
+        {"reviewer_user_id": "rev-1", "batch_id": "b-1"},
+    ]
+    tables["reviewer_assignments"] = [
+        {"id": "as-1", "reviewer_user_id": "rev-1", "application_id": "app-1",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None},
+    ]
+    fake = _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.delete("/admin/platform/batches/b-1")
+    assert r.status_code == 200, r.text
+    assert fake.tables["batches"] == []                 # batch deleted
+    assert fake.tables["application_batches"] == []      # links removed
+    assert len(fake.tables["reviewer_assignments"]) == 1  # assignments untouched
+    # reviewer_profiles.batch_id cleared (recorded as an update with batch_id=None)
+    assert any(t == "reviewer_profiles" and p.get("batch_id") is None
+               for (t, p, _eqs) in fake.updates)
+
+
+def test_delete_batch_404_unknown(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, _empty_admin_tables())
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.delete("/admin/platform/batches/nope")
+    assert r.status_code == 404
+
+
+def test_delete_batch_requires_manage_batches(client, _clear_overrides):
+    app.dependency_overrides[get_current_user] = _override_user("rev-1", roles=["reviewer"])
+    assert client.delete("/admin/platform/batches/b-1").status_code == 403
