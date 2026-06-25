@@ -22,6 +22,8 @@ vi.mock("../../../../lib/adminPlatformApi", () => ({
     rebalance: vi.fn().mockResolvedValue({ assigned: 10, reviewers: 3 }),
     assignBatchReviewers: vi.fn().mockResolvedValue({ created: 1, reviewers: 1, applications: 5 }),
     unassignBatchReviewer: vi.fn().mockResolvedValue({ removed: 5 }),
+    bulkAssignReviewerApps: vi.fn().mockResolvedValue({ results: [{ status: "created" }] }),
+    bulkRemoveReviewerApps: vi.fn().mockResolvedValue({ results: [{ status: "removed" }] }),
   },
 }));
 
@@ -146,24 +148,25 @@ describe("AdminReviewers (reviewer-mode)", () => {
     expect(screen.getByText(/Assigned Applications \(1\)/)).toBeTruthy();
   });
 
-  it("Remove calls unassignReviewer", async () => {
+  it("Remove calls bulkRemoveReviewerApps", async () => {
     mockUseAdminData();
     render(<AdminReviewers decisionMode="reviewer" />);
     fireEvent.click(screen.getAllByText("Manage")[0]);
     fireEvent.click(screen.getByText("Remove"));
     await waitFor(() =>
-      expect(leadershipApi.unassignReviewer).toHaveBeenCalledWith("app-1", "tir", "rev-001"));
+      expect(adminPlatformApi.bulkRemoveReviewerApps).toHaveBeenCalledWith(
+        "rev-001", [{ application_id: "app-1", track: "tir" }]));
   });
 
-  it("Assign calls assignReviewers", async () => {
+  it("Assign calls bulkAssignReviewerApps", async () => {
     mockUseAdminData();
     render(<AdminReviewers decisionMode="reviewer" />);
     fireEvent.click(screen.getAllByText("Manage")[0]);
-    fireEvent.change(screen.getByLabelText("Application"), { target: { value: "app-9" } });
-    fireEvent.click(screen.getByText("Assign Application"));
+    fireEvent.click(screen.getByLabelText("Assign candidate Karkhana Robotics"));
+    fireEvent.click(screen.getByRole("button", { name: /Assign selected/i }));
     await waitFor(() =>
-      expect(leadershipApi.assignReviewers).toHaveBeenCalledWith(
-        "app-9", "tir", { reviewer_user_ids: ["rev-001"] }));
+      expect(adminPlatformApi.bulkAssignReviewerApps).toHaveBeenCalledWith(
+        "rev-001", [{ application_id: "app-9", track: "tir" }]));
   });
 
   it("calls patchReviewer with id and body when Save changes is clicked", async () => {

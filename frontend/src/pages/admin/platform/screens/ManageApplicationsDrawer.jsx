@@ -1,17 +1,24 @@
 // ManageApplicationsDrawer — admin Reviewer Roster "Manage" drawer.
-// View a reviewer's assigned applications (project/industry/status/batch),
-// assign a new application by search, and remove (unassign) individual apps.
-// Reads:  GET /admin/platform/reviewers/{id}/applications  (useAdminData "reviewerApplications")
-//         GET /admin/platform/applications                 (useAdminData "pipeline", assign picker)
-// Writes: POST/DELETE /leadership/applications/{id}/reviewers (leadershipApi)
+// View a reviewer's assigned applications grouped by batch, bulk-assign new
+// applications (multi-select), and bulk-remove assigned ones (select-all and
+// select-all-in-batch). Already-reviewed apps are reported skipped, never
+// silently orphaned.
+//
+// Reads:  GET /admin/platform/reviewers/{id}/applications (useAdminData "reviewerApplications")
+//         GET /admin/platform/applications               (useAdminData "pipeline", assign picker)
+// Writes: POST /admin/platform/reviewers/{id}/applications        (bulk assign)
+//         POST /admin/platform/reviewers/{id}/applications/remove (bulk remove)
 import React, { useState, useMemo } from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
-import { leadershipApi } from "../../../../lib/leadershipApi";
+import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
+
+const RANDOM = "Random allotment";
 
 export function ManageApplicationsDrawer({ reviewer, onClose, onChanged }) {
   const apps = useAdminData("reviewerApplications", { userId: reviewer.id });
   const pipeline = useAdminData("pipeline", {});
-  const [sel, setSel] = useState("");
+  const [selRemove, setSelRemove] = useState(() => new Set());
+  const [selAssign, setSelAssign] = useState(() => new Set());
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -23,6 +30,22 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged }) {
     ? reviewer.batches.map(b => (typeof b === "string" ? b : b.name))
     : [];
 
+  // Group assigned apps by batch (null → "Random allotment").
+  const groups = useMemo(() => {
+    const m = new Map();
+    for (const a of assigned) {
+      const key = a.batch || RANDOM;
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(a);
+    }
+    return Array.from(m.entries()).sort((x, y) => {
+      if (x[0] === RANDOM) return 1;
+      if (y[0] === RANDOM) return -1;
+      return x[0].localeCompare(y[0]);
+    });
+  }, [assigned]);
+
+  // Candidate apps for assignment (not already assigned), filtered by search.
   const candidates = useMemo(() => {
     const all = (pipeline.data?.startups ?? []).filter(s => !assignedIds.has(s.id));
     const q = search.trim().toLowerCase();
@@ -31,38 +54,89 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged }) {
       `${s.name || ""} ${s.domain || ""}`.toLowerCase().includes(q));
   }, [pipeline.data, assignedIds, search]);
 
+  const assignCount = useMemo(
+    () => candidates.filter(c => selAssign.has(c.id)).length,
+    [candidates, selAssign]);
+
   const reload = () => { apps.reload(); onChanged && onChanged(); };
 
-  const handleAssign = async () => {
-    const app = candidates.find(c => c.id === sel) ||
-      (pipeline.data?.startups ?? []).find(c => c.id === sel);
-    if (!app) return;
+  const toggle = (set, setSet, id) => {
+    const next = new Set(set);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setSet(next);
+  };
+  const allSelected = assigned.length > 0 && assigned.every(a => selRemove.has(a.id));
+  const toggleSelectAll = () =>
+    setSelRemove(allSelected ? new Set() : new Set(assigned.map(a => a.id)));
+  const toggleBatch = (rows) => {
+    const ids = rows.map(r => r.id);
+    const allOn = ids.every(id => selRemove.has(id));
+    const next = new Set(selRemove);
+    ids.forEach(id => (allOn ? next.delete(id) : next.add(id)));
+    setSelRemove(next);
+  };
+
+  const summarize = (results, kind) => {
+    const c = {};
+    for (const r of results || []) c[r.status] = (c[r.status] || 0) + 1;
+    if (kind === "remove") {
+      const parts = [];
+      if (c.removed) parts.push(`removed ${c.removed}`);
+      if (c.skipped_submitted) parts.push(`skipped ${c.skipped_submitted} (already reviewed)`);
+      if (c.not_found) parts.push(`${c.not_found} not found`);
+      return parts.join(", ") || "no changes";
+    }
+    const parts = [];
+    if (c.created) parts.push(`assigned ${c.created}`);
+    if (c.already_assigned) parts.push(`${c.already_assigned} already assigned`);
+    if (c.not_a_reviewer) parts.push("not a reviewer");
+    if (c.invalid_track) parts.push(`${c.invalid_track} invalid`);
+    return parts.join(", ") || "no changes";
+  };
+
+  const handleRemoveSelected = async () => {
+    const items = assigned
+      .filter(a => selRemove.has(a.id))
+      .map(a => ({ application_id: a.id, track: a.track }));
+    if (!items.length) return;
     setBusy(true); setErr(null); setNotice(null);
     try {
-      const res = await leadershipApi.assignReviewers(app.id, app.track, {
-        reviewer_user_ids: [reviewer.id],
-      });
-      const st = res?.results?.[0]?.status;
-      if (st === "already_assigned") setNotice("Already assigned to this reviewer.");
-      setSel(""); setSearch("");
+      const res = await adminPlatformApi.bulkRemoveReviewerApps(reviewer.id, items);
+      setNotice(`Remove: ${summarize(res?.results, "remove")}.`);
+      setSelRemove(new Set());
+      reload();
+    } catch (e) {
+      setErr(e?.details?.message || e?.message || "Remove failed.");
+    } finally { setBusy(false); }
+  };
+
+  const handleAssignSelected = async () => {
+    const items = candidates
+      .filter(c => selAssign.has(c.id))
+      .map(c => ({ application_id: c.id, track: c.track }));
+    if (!items.length) return;
+    setBusy(true); setErr(null); setNotice(null);
+    try {
+      const res = await adminPlatformApi.bulkAssignReviewerApps(reviewer.id, items);
+      setNotice(`Assign: ${summarize(res?.results, "assign")}.`);
+      setSelAssign(new Set());
+      setSearch("");
       reload();
     } catch (e) {
       setErr(e?.details?.message || e?.message || "Assign failed.");
     } finally { setBusy(false); }
   };
 
-  const handleRemove = async (app) => {
+  const handleRemoveSingle = async (a) => {
     setBusy(true); setErr(null); setNotice(null);
     try {
-      await leadershipApi.unassignReviewer(app.id, app.track, reviewer.id);
+      const res = await adminPlatformApi.bulkRemoveReviewerApps(
+        reviewer.id, [{ application_id: a.id, track: a.track }]);
+      setNotice(`Remove: ${summarize(res?.results, "remove")}.`);
+      setSelRemove(prev => { const n = new Set(prev); n.delete(a.id); return n; });
       reload();
     } catch (e) {
-      setErr(
-        e?.details?.message ||
-        (e?.status === 409
-          ? "This reviewer already submitted a review; the assignment can't be revoked."
-          : e?.message || "Remove failed."),
-      );
+      setErr(e?.details?.message || e?.message || "Remove failed.");
     } finally { setBusy(false); }
   };
 
@@ -98,32 +172,45 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged }) {
             )) : <span className="os-text-soft" style={{ fontSize: 13 }}>None</span>}
           </div>
 
-          {/* Assign new application */}
+          {/* Assign new applications (multi-select) */}
           <div style={{ background: "var(--bg-soft)", border: "1px solid var(--line)", borderRadius: 4, padding: 16 }}>
-            <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 8 }}>Assign New Application</div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <select
-                className="os-select"
-                aria-label="Application"
-                style={{ flex: 1, fontSize: 14 }}
-                value={sel}
-                onChange={e => setSel(e.target.value)}
-              >
-                <option value="">Search by name or industry…</option>
-                {candidates.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.domain || "—"}){c.batch && c.batch !== "Unassigned" ? ` · ${c.batch}` : " · Unassigned"}
-                  </option>
-                ))}
-              </select>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+              <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600 }}>Assign New Applications</div>
               <button
                 className="os-btn"
-                style={{ background: "var(--accent)", color: "#fff" }}
-                onClick={handleAssign}
-                disabled={!sel || busy}
+                style={{ background: "var(--accent)", color: "#fff", flexShrink: 0, whiteSpace: "nowrap" }}
+                onClick={handleAssignSelected}
+                disabled={busy || assignCount === 0}
               >
-                Assign Application
+                Assign selected ({assignCount})
               </button>
+            </div>
+            <input
+              className="os-input"
+              aria-label="Search applications to assign"
+              placeholder="Search by name or industry…"
+              style={{ width: "100%", minWidth: 0, fontSize: 14, marginBottom: 8 }}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 4, background: "var(--bg-paper)" }}>
+              {candidates.length === 0 ? (
+                <div className="os-text-soft" style={{ fontSize: 13, padding: 12 }}>No applications to assign.</div>
+              ) : candidates.map(c => (
+                <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderBottom: "1px solid var(--line)", cursor: "pointer", fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    aria-label={`Assign candidate ${c.name}`}
+                    checked={selAssign.has(c.id)}
+                    onChange={() => toggle(selAssign, setSelAssign, c.id)}
+                  />
+                  <span style={{ fontWeight: 600 }}>{c.name}</span>
+                  <span className="os-text-soft">({c.domain || "—"})</span>
+                  <span className="os-text-dim" style={{ marginLeft: "auto" }}>
+                    {c.batch && c.batch !== "Unassigned" ? c.batch : "Unassigned"}
+                  </span>
+                </label>
+              ))}
             </div>
           </div>
 
@@ -134,11 +221,29 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged }) {
             <div style={{ color: "var(--ink-soft)", fontSize: 13, padding: "8px 12px", background: "var(--bg-soft)", borderRadius: 4 }}>{notice}</div>
           )}
 
-          {/* Assigned applications table */}
+          {/* Assigned applications — bulk remove */}
           <div>
-            <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 8 }}>
-              Assigned Applications ({assigned.length})
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }} className="os-text-xs os-text-dim os-uppercase">
+                <input
+                  type="checkbox"
+                  aria-label="Select all applications"
+                  checked={allSelected}
+                  onChange={toggleSelectAll}
+                  disabled={assigned.length === 0}
+                />
+                <span style={{ fontWeight: 600 }}>Assigned Applications ({assigned.length})</span>
+              </label>
+              <button
+                className="os-btn sm"
+                style={{ background: "#FF5A5F", borderColor: "#FF5A5F", color: "#fff", flexShrink: 0, whiteSpace: "nowrap" }}
+                onClick={handleRemoveSelected}
+                disabled={busy || selRemove.size === 0}
+              >
+                Remove selected ({selRemove.size})
+              </button>
             </div>
+
             {apps.loading ? (
               <div className="os-text-soft" style={{ fontSize: 13, padding: 12 }}>Loading…</div>
             ) : apps.error ? (
@@ -148,35 +253,58 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged }) {
             ) : assigned.length === 0 ? (
               <div className="os-text-soft" style={{ fontSize: 13, padding: 12, border: "1px dashed var(--line)", borderRadius: 4 }}>No applications assigned.</div>
             ) : (
-              <table className="os-table">
-                <thead>
-                  <tr><th>Project</th><th>Industry</th><th>Status</th><th>Batch</th><th></th></tr>
-                </thead>
-                <tbody>
-                  {assigned.map(a => (
-                    <tr key={a.id}>
-                      <td><div className="startup">{a.project}</div></td>
-                      <td className="os-text-soft">{a.industry}</td>
-                      <td><span className="os-chip">{a.chip}</span></td>
-                      <td>
-                        {a.batch
-                          ? <span className="os-chip" style={{ background: "var(--bg-soft)", border: "1px solid var(--line)" }}>{a.batch}</span>
-                          : <span className="os-chip purple">Random allotment</span>}
-                      </td>
-                      <td>
-                        <button
-                          className="os-btn sm ghost"
-                          style={{ color: "#FF5A5F" }}
-                          onClick={() => handleRemove(a)}
-                          disabled={busy}
-                        >
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              groups.map(([batchName, rows]) => {
+                const ids = rows.map(r => r.id);
+                const batchAllOn = ids.every(id => selRemove.has(id));
+                return (
+                  <div key={batchName} style={{ marginBottom: 16 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select all in ${batchName}`}
+                        checked={batchAllOn}
+                        onChange={() => toggleBatch(rows)}
+                      />
+                      {batchName === RANDOM
+                        ? <span className="os-chip purple">{RANDOM}</span>
+                        : <span className="os-chip" style={{ background: "var(--bg-soft)", border: "1px solid var(--line)" }}>{batchName}</span>}
+                      <span className="os-text-dim">({rows.length})</span>
+                    </label>
+                    <table className="os-table">
+                      <thead>
+                        <tr><th style={{ width: 32 }}></th><th>Project</th><th>Industry</th><th>Status</th><th></th></tr>
+                      </thead>
+                      <tbody>
+                        {rows.map(a => (
+                          <tr key={a.id}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${a.project}`}
+                                checked={selRemove.has(a.id)}
+                                onChange={() => toggle(selRemove, setSelRemove, a.id)}
+                              />
+                            </td>
+                            <td><div className="startup">{a.project}</div></td>
+                            <td className="os-text-soft">{a.industry}</td>
+                            <td><span className="os-chip">{a.chip}</span></td>
+                            <td style={{ textAlign: "right" }}>
+                              <button
+                                className="os-btn sm ghost"
+                                style={{ color: "#FF5A5F" }}
+                                onClick={() => handleRemoveSingle(a)}
+                                disabled={busy}
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
