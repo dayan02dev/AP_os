@@ -56,6 +56,10 @@ export const adminPlatformApi = {
   getReviewers: () => api.get(`/admin/platform/reviewers`),
   getReviewerApplications: (userId) =>
     api.get(`/admin/platform/reviewers/${encodeURIComponent(userId)}/applications`),
+  bulkAssignReviewerApps: (userId, items) =>
+    api.post(`/admin/platform/reviewers/${encodeURIComponent(userId)}/applications`, { items }),
+  bulkRemoveReviewerApps: (userId, items) =>
+    api.post(`/admin/platform/reviewers/${encodeURIComponent(userId)}/applications/remove`, { items }),
   patchReviewer: (id, body) =>
     api.patch(`/admin/platform/reviewers/${id}`, body),
   rebalance: (body) => api.post(`/admin/platform/reviewers/rebalance`, body || {}),
