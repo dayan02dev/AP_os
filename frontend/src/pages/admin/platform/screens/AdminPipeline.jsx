@@ -506,6 +506,23 @@ export function AdminPipeline({ goDetail, decisionMode }) {
     }
   };
 
+  const deleteBatch = async (name) => {
+    const found = batches.find(b => b.name === name);
+    if (!found) return;
+    if (!window.confirm(
+      `Delete batch "${name}"? Its applications revert to Random allotment; ` +
+      `reviewer assignments and reviews are kept.`
+    )) return;
+    try {
+      await adminPlatformApi.deleteBatch(found.id);
+      if (batchFilter === name) setBatchFilter('all');
+      await reloadBatches();
+      await reload();
+    } catch (e) {
+      setNote({ kind: 'error', text: `Delete failed: ${e?.message || e}` });
+    }
+  };
+
   // ── Render guards ──────────────────────────────────────────────────────────
   if (loading && S.length === 0) {
     return (
@@ -950,6 +967,13 @@ export function AdminPipeline({ goDetail, decisionMode }) {
                         }}
                       >
                         ⋮
+                      </button>
+                      <button
+                        className="lp-filter-btn-dots"
+                        title={`Delete batch ${b}`}
+                        onClick={(e) => { e.stopPropagation(); deleteBatch(b); }}
+                      >
+                        ×
                       </button>
                     </div>
                   ))}
