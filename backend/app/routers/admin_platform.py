@@ -582,7 +582,7 @@ async def update_meta(
 
 class ReviewerProfileBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    weight: float | None = None
+    weight: float | None = Field(default=None, ge=0, le=10)
     domains: list[str] | None = None
     batch_id: str | None = None
     # Identity fields live on `profiles` (not reviewer_profiles). Admin can

@@ -998,3 +998,16 @@ def test_roster_progress_is_work_done_union(client, monkeypatch, _clear_override
     assert rev["completed"] == 2
     assert rev["assigned"] == 6
     assert rev["progress"] == "2 / 6"
+
+
+def test_patch_reviewer_rejects_out_of_range_weight(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, _empty_admin_tables())
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    assert client.patch("/admin/platform/reviewers/rev-1", json={"weight": 11}).status_code == 422
+    assert client.patch("/admin/platform/reviewers/rev-1", json={"weight": -1}).status_code == 422
+
+
+def test_patch_reviewer_accepts_in_range_weight(client, monkeypatch, _clear_overrides):
+    _install_db(monkeypatch, _empty_admin_tables())
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    assert client.patch("/admin/platform/reviewers/rev-1", json={"weight": 7.5}).status_code == 200
