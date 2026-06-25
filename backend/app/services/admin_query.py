@@ -22,6 +22,7 @@ express the cross-table predicates cleanly), see `applications_query.FETCH_CAP`.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from ..supabase_client import get_admin_client
@@ -848,3 +849,97 @@ def fetch_unassigned_apps(track: str | None = None) -> list[dict[str, Any]]:
                 continue
             out.append({"application_id": aid, "application_track": t})
     return out
+
+
+def bulk_assign_reviewer_apps(
+    user_id: str, items: list[dict[str, Any]], assigned_by: str,
+) -> dict[str, Any]:
+    """Assign many applications to one reviewer. Per-item status:
+    created | already_assigned | not_a_reviewer | invalid_track | error.
+    Mirrors leadership_actions.assign_reviewers semantics in bulk.
+    """
+    sb = get_admin_client()
+    if user_id not in _reviewer_user_ids():
+        return {"results": [
+            {"application_id": it.get("application_id"), "track": it.get("track"),
+             "status": "not_a_reviewer"} for it in items
+        ]}
+
+    existing: set[tuple[str, str]] = set()
+    try:
+        for a in (sb.table("reviewer_assignments").select("*")
+                  .eq("reviewer_user_id", user_id).execute().data) or []:
+            if a.get("reviewer_user_id") == user_id:
+                existing.add((a.get("application_id"), a.get("application_track")))
+    except Exception as exc:
+        log.warning("bulk_assign: existing fetch failed", extra={"err": str(exc)})
+
+    now = datetime.now(UTC).isoformat()
+    results: list[dict[str, Any]] = []
+    for it in items:
+        aid = it.get("application_id")
+        track = it.get("track")
+        if track not in ("tir", "sip"):
+            results.append({"application_id": aid, "track": track, "status": "invalid_track"})
+            continue
+        if (aid, track) in existing:
+            results.append({"application_id": aid, "track": track, "status": "already_assigned"})
+            continue
+        try:
+            sb.table("reviewer_assignments").insert({
+                "application_id": aid,
+                "application_track": track,
+                "reviewer_user_id": user_id,
+                "assigned_by": assigned_by,
+                "assigned_at": now,
+                "state": "pending",
+                "due_at": None,
+            }).execute()
+            existing.add((aid, track))
+            results.append({"application_id": aid, "track": track, "status": "created"})
+        except Exception as exc:
+            log.warning("bulk_assign: insert failed",
+                        extra={"application_id": aid, "err": str(exc)})
+            results.append({"application_id": aid, "track": track, "status": "error"})
+    return {"results": results}
+
+
+def bulk_remove_reviewer_apps(
+    user_id: str, items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Unassign many applications from one reviewer. Per-item status:
+    removed | skipped_submitted | not_found | error. Never orphans a submitted
+    review (mirrors leadership_actions.unassign_reviewer's 409 guard, but
+    per-item rather than aborting the whole request).
+    """
+    sb = get_admin_client()
+    submitted: set[tuple[str, str]] = set()
+    try:
+        for r in (sb.table("reviews").select("*")
+                  .eq("reviewer_user_id", user_id).execute().data) or []:
+            if r.get("reviewer_user_id") == user_id and r.get("submitted_at"):
+                submitted.add((r.get("application_id"), r.get("application_track")))
+    except Exception as exc:
+        log.warning("bulk_remove: reviews fetch failed", extra={"err": str(exc)})
+
+    results: list[dict[str, Any]] = []
+    for it in items:
+        aid = it.get("application_id")
+        track = it.get("track")
+        if (aid, track) in submitted:
+            results.append({"application_id": aid, "track": track, "status": "skipped_submitted"})
+            continue
+        try:
+            res = (sb.table("reviewer_assignments").delete()
+                   .eq("application_id", aid)
+                   .eq("application_track", track)
+                   .eq("reviewer_user_id", user_id)
+                   .execute())
+            removed = bool(res.data)
+            results.append({"application_id": aid, "track": track,
+                            "status": "removed" if removed else "not_found"})
+        except Exception as exc:
+            log.warning("bulk_remove: delete failed",
+                        extra={"application_id": aid, "err": str(exc)})
+            results.append({"application_id": aid, "track": track, "status": "error"})
+    return {"results": results}

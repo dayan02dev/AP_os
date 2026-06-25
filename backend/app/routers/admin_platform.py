@@ -614,6 +614,65 @@ async def list_reviewer_applications(user_id: str) -> dict[str, Any]:
     return admin_query.fetch_reviewer_applications(user_id)
 
 
+class _ReviewerAppItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    application_id: str
+    track: Literal["tir", "sip"]
+
+
+class ReviewerAppsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[_ReviewerAppItem] = Field(..., min_length=1, max_length=500)
+
+
+@router.post(
+    "/reviewers/{user_id}/applications",
+    dependencies=[Depends(require_capability("manage_reviewers_roster"))],
+)
+async def bulk_assign_reviewer_applications(
+    user_id: str,
+    body: ReviewerAppsBody,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Bulk-assign applications to one reviewer (Manage Applications drawer)."""
+    res = admin_query.bulk_assign_reviewer_apps(
+        user_id, [i.model_dump() for i in body.items], assigned_by=user["user_id"],
+    )
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="reviewer.bulk_assigned",
+        target_table="reviewer_assignments",
+        target_id=user_id,
+        after={"count": len(body.items)},
+    )
+    return res
+
+
+@router.post(
+    "/reviewers/{user_id}/applications/remove",
+    dependencies=[Depends(require_capability("manage_reviewers_roster"))],
+)
+async def bulk_remove_reviewer_applications(
+    user_id: str,
+    body: ReviewerAppsBody,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Bulk-unassign applications from one reviewer (skips submitted reviews)."""
+    res = admin_query.bulk_remove_reviewer_apps(
+        user_id, [i.model_dump() for i in body.items],
+    )
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="reviewer.bulk_removed",
+        target_table="reviewer_assignments",
+        target_id=user_id,
+        before={"count": len(body.items)},
+    )
+    return res
+
+
 @router.patch(
     "/reviewers/{user_id}",
     dependencies=[Depends(require_capability("manage_reviewers_roster"))],

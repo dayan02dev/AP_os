@@ -899,3 +899,73 @@ def test_delete_batch_404_unknown(client, monkeypatch, _clear_overrides):
 def test_delete_batch_requires_manage_batches(client, _clear_overrides):
     app.dependency_overrides[get_current_user] = _override_user("rev-1", roles=["reviewer"])
     assert client.delete("/admin/platform/batches/b-1").status_code == 403
+
+
+# ─── Task 7: Bulk assign / remove reviewer apps ────────────────────────────
+
+
+def test_bulk_assign_reviewer_apps(client, monkeypatch, _clear_overrides):
+    tables = _empty_admin_tables()
+    tables["user_roles"] = [{"user_id": "rev-1", "role": "reviewer"}]
+    tables["reviewer_assignments"] = [
+        {"id": "as-0", "reviewer_user_id": "rev-1", "application_id": "app-0",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None},
+    ]
+    fake = _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.post("/admin/platform/reviewers/rev-1/applications", json={"items": [
+        {"application_id": "app-1", "track": "tir"},
+        {"application_id": "app-0", "track": "tir"},   # already assigned
+    ]})
+    assert r.status_code == 200, r.text
+    results = {x["application_id"]: x["status"] for x in r.json()["results"]}
+    assert results["app-1"] == "created"
+    assert results["app-0"] == "already_assigned"
+    assert any(t == "reviewer_assignments" and p.get("application_id") == "app-1"
+               for (t, p) in fake.inserts)
+
+
+def test_bulk_assign_marks_non_reviewer(client, monkeypatch, _clear_overrides):
+    tables = _empty_admin_tables()
+    tables["user_roles"] = []           # target holds no reviewer role
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.post("/admin/platform/reviewers/ghost/applications", json={"items": [
+        {"application_id": "app-1", "track": "tir"},
+    ]})
+    assert r.status_code == 200, r.text
+    assert r.json()["results"][0]["status"] == "not_a_reviewer"
+
+
+def test_bulk_remove_skips_submitted(client, monkeypatch, _clear_overrides):
+    tables = _empty_admin_tables()
+    tables["reviewer_assignments"] = [
+        {"id": "as-1", "reviewer_user_id": "rev-1", "application_id": "app-1",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None},
+        {"id": "as-2", "reviewer_user_id": "rev-1", "application_id": "app-2",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None},
+    ]
+    tables["reviews"] = [
+        {"id": "r-2", "reviewer_user_id": "rev-1", "application_id": "app-2",
+         "application_track": "tir", "submitted_at": "2026-06-01T00:00:00Z"},
+    ]
+    fake = _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.post("/admin/platform/reviewers/rev-1/applications/remove", json={"items": [
+        {"application_id": "app-1", "track": "tir"},
+        {"application_id": "app-2", "track": "tir"},   # submitted → skipped
+    ]})
+    assert r.status_code == 200, r.text
+    results = {x["application_id"]: x["status"] for x in r.json()["results"]}
+    assert results["app-1"] == "removed"
+    assert results["app-2"] == "skipped_submitted"
+    remaining = {a["application_id"] for a in fake.tables["reviewer_assignments"]}
+    assert remaining == {"app-2"}
+
+
+def test_bulk_endpoints_admin_only(client, _clear_overrides):
+    body = {"items": [{"application_id": "a", "track": "tir"}]}
+    app.dependency_overrides[get_current_user] = _override_user("rev-x", roles=["reviewer"])
+    assert client.post("/admin/platform/reviewers/rev-1/applications", json=body).status_code == 403
+    app.dependency_overrides[get_current_user] = _override_user("lead-x", roles=["leadership"])
+    assert client.post("/admin/platform/reviewers/rev-1/applications/remove", json=body).status_code == 403
