@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 
 import {
@@ -12,7 +12,8 @@ import {
 
 // ── Smoke test: AdminGate1 mounts and shows the variant tabs ────────────────
 vi.mock("../../../../hooks/useAdminData", () => ({
-  useAdminData: () => ({ data: { startups: [], total: 0 }, loading: false, error: null, reload: vi.fn() }),
+  useAdminData: vi.fn(() => ({ data: { startups: [], total: 0 }, loading: false, error: null, reload: vi.fn() })),
+  loadDetail: vi.fn(),
 }));
 vi.mock("../../../../lib/adminPlatformApi", () => ({
   adminPlatformApi: { decide: vi.fn(), bulkDecide: vi.fn(), getPipeline: vi.fn() },
@@ -23,7 +24,11 @@ vi.mock("../shell/osAtoms", () => ({
   FlagDot: () => null,
 }));
 vi.mock("../screens/ComparativeReviewModel", () => ({
-  ComparativeReviewModel: () => null,
+  ComparativeReviewModel: ({ startup }) => (
+    startup && startup.reviews && startup.reviews.length > 0
+      ? <div>{startup.reviews[0].reviewerName}</div>
+      : <div>No reviewer evaluations submitted yet.</div>
+  ),
 }));
 vi.mock("../ui.jsx", () => ({
   LoadingState: ({ label }) => <div>{label}</div>,
@@ -33,8 +38,16 @@ vi.mock("../ui.jsx", () => ({
 
 // Default import
 import AdminGate1 from "../screens/AdminGate1.jsx";
+import { useAdminData, loadDetail } from "../../../../hooks/useAdminData";
 
 describe("AdminGate1 smoke", () => {
+  beforeEach(() => {
+    useAdminData.mockImplementation(() => ({
+      data: { startups: [], total: 0 }, loading: false, error: null, reload: vi.fn(),
+    }));
+    loadDetail.mockResolvedValue(null);
+  });
+
   it("renders the 4 variant tabs", () => {
     render(<AdminGate1 goDetail={() => {}} />);
     expect(screen.getByText(/A · Status/i)).toBeTruthy();
@@ -46,6 +59,37 @@ describe("AdminGate1 smoke", () => {
   it("shows empty state when no evaluated apps", () => {
     render(<AdminGate1 goDetail={() => {}} />);
     expect(screen.getByText(/No evaluated applications/i)).toBeTruthy();
+  });
+
+  it("hydrates the current app with reviewer evaluations from loadDetail", async () => {
+    useAdminData.mockImplementation((kind, params) => {
+      if (kind === "pipeline" && params?.status === "evaluated")
+        return { data: { startups: [{ id: "app-1", track: "tir", name: "RenewCred", domain: "Climate", stage: "Deployed", ai: { overall: 8.6 } }] }, loading: false, error: null, reload: vi.fn() };
+      return { data: { startups: [] }, loading: false, error: null, reload: vi.fn() };
+    });
+    loadDetail.mockResolvedValue({
+      id: "app-1", track: "tir", name: "RenewCred",
+      reviews: [{ reviewerName: "Ramanpreet", overall: 7.4, recommendation: "yes", problem: 8, solution: 7, tech: 7, founders: 8, commit: 7, strengths: "Strong team", concerns: "", flags: [] }],
+      rev: { overall: 7.4, problem: 8, solution: 7, tech: 7, founders: 8, commit: 7 },
+    });
+    render(<AdminGate1 goDetail={() => {}} />);
+    await waitFor(() => {
+      expect(screen.queryByText("No reviewer evaluations submitted yet.")).toBeNull();
+      expect(screen.getByText(/Ramanpreet/)).toBeTruthy();
+    });
+  });
+
+  it("does not crash or loop when loadDetail returns null", async () => {
+    useAdminData.mockImplementation((kind, params) => {
+      if (kind === "pipeline" && params?.status === "evaluated")
+        return { data: { startups: [{ id: "app-1", track: "tir", name: "RenewCred", domain: "Climate", stage: "Deployed", ai: { overall: 8.6 } }] }, loading: false, error: null, reload: vi.fn() };
+      return { data: { startups: [] }, loading: false, error: null, reload: vi.fn() };
+    });
+    loadDetail.mockResolvedValue(null);
+    render(<AdminGate1 goDetail={() => {}} />);
+    await waitFor(() => expect(loadDetail).toHaveBeenCalled());
+    // falls back to AI score, shows the empty consensus, no crash
+    expect(screen.getByText("No reviewer evaluations submitted yet.")).toBeTruthy();
   });
 });
 

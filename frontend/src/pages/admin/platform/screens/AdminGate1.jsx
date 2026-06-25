@@ -28,9 +28,9 @@
 //   ('APPROVED', 'HOLD', 'REJECTED') internally for UI state; they are
 //   normalised to wire ids before the API call via UPPER_TO_WIRE below.
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 
-import { useAdminData }      from "../../../../hooks/useAdminData";
+import { useAdminData, loadDetail } from "../../../../hooks/useAdminData";
 import { adminPlatformApi }  from "../../../../lib/adminPlatformApi";
 import { BUTTON_TO_DECISION } from "../../../../lib/adminDataAdapter";
 import { PageHead, Chip, FlagDot } from "../shell/osAtoms";
@@ -189,6 +189,17 @@ function GateReviewStack({ items, reload }) {
   const safeIdx = Math.min(idx, Math.max(0, total - 1));
   const s       = items[safeIdx];
 
+  const [detailCache, setDetailCache] = useState({});
+  useEffect(() => {
+    if (!s || !s.id || detailCache[s.id]) return;
+    let alive = true;
+    loadDetail(s.track, s.id)
+      .then(d => { if (alive) setDetailCache(prev => ({ ...prev, [s.id]: d ?? false })); })
+      .catch(e => { console.error("AdminGate1: loadDetail failed", e); });
+    return () => { alive = false; };
+  }, [s?.id, s?.track]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sH = (s && detailCache[s.id]) ? { ...s, ...detailCache[s.id] } : s;
+
   const goto = (next) => {
     setIdx(Math.max(0, Math.min(total - 1, next)));
     setNote(null);
@@ -235,7 +246,7 @@ function GateReviewStack({ items, reload }) {
 
   if (!s) return <EmptyState label="No evaluated applications awaiting a decision." />;
 
-  const scoreVal = revScore(s);
+  const scoreVal = revScore(sH);
 
   return (
     <div>
@@ -286,7 +297,7 @@ function GateReviewStack({ items, reload }) {
           </div>
 
           <div style={{ padding: "0 0 20px 0" }}>
-            <ComparativeReviewModel startup={s} />
+            <ComparativeReviewModel startup={sH} />
           </div>
         </div>
 
@@ -295,10 +306,10 @@ function GateReviewStack({ items, reload }) {
             <div className="os-row between" style={{ alignItems: "center" }}>
               <div>
                 <span className="os-text-xs os-uppercase" style={{ fontWeight: 600, letterSpacing: "0.12em", color: "var(--artblue)" }}>
-                  {s.rev ? "Reviewer Overall" : "AI Score"}
+                  {sH.rev ? "Reviewer Overall" : "AI Score"}
                 </span>
                 <div style={{ fontSize: 11, color: "var(--ink-soft)", marginTop: 2 }}>
-                  {s.rev ? "Weighted reviewer consensus" : "AI screening score (reviewer score unavailable on list)"}
+                  {sH.rev ? "Weighted reviewer consensus" : "AI screening score (reviewer score unavailable on list)"}
                 </div>
               </div>
               <span className="os-num-big" style={{ fontSize: 34, fontFamily: "var(--font-serif)", fontWeight: 400, letterSpacing: "-0.01em", color: "var(--artblue)" }}>
