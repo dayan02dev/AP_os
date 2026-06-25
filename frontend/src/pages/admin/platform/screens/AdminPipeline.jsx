@@ -411,7 +411,6 @@ export function AdminPipeline({ goDetail, decisionMode }) {
   const handleBulkHold = () => runBulkDecision('on_hold', 'Hold', true);
   const handleBulkNextLevel = () => runBulkDecision('shortlisted', 'Send to Next Level', false);
   const handleBulkReject = () => runBulkDecision('rejected', 'Reject', true);
-  const handleBulkToggleHide = () => runBulkMeta({ is_hidden: true }, 'Hide');
   const handleBulkArchive = () => runBulkMeta({ is_archived: true }, 'Archive');
 
   // Assign batch to selected rows
@@ -1237,7 +1236,6 @@ export function AdminPipeline({ goDetail, decisionMode }) {
           <button className="os-floating-btn" disabled={busy} onClick={handleBulkHold}>Hold</button>
           <button className="os-floating-btn primary" disabled={busy} onClick={handleBulkNextLevel}>Send to Next Level</button>
           <button className="os-floating-btn danger-outline" disabled={busy} onClick={handleBulkReject}>Reject</button>
-          <button className="os-floating-btn" disabled={busy} onClick={handleBulkToggleHide}>Hide / Unhide</button>
           <button className="os-floating-btn" disabled={busy} onClick={handleBulkArchive}>Archive</button>
           {decisionMode === 'jury' ? (
             <>

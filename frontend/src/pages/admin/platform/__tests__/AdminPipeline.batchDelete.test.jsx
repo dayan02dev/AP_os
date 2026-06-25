@@ -55,4 +55,9 @@ describe("AdminPipeline batch delete", () => {
       expect(adminPlatformApi.deleteBatch).toHaveBeenCalledWith("b-1");
     });
   });
+
+  it("has no Hide / Unhide bulk button", () => {
+    render(<AdminPipeline decisionMode="default" />);
+    expect(screen.queryByText("Hide / Unhide")).toBeNull();
+  });
 });
