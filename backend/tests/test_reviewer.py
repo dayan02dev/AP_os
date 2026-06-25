@@ -1656,6 +1656,90 @@ def test_history_rows_variance_and_admin_decision(
     assert [row["appId"] for row in body["rows"]] == ["app-1", "app-2", "app-3"]
 
 
+def test_history_returns_submitted_reviews_bulk(client, monkeypatch, _clear_overrides):
+    me = "rev-a"
+    _install_db(monkeypatch, {
+        "reviews": [
+            {"id": "r1", "reviewer_user_id": me, "application_id": "app1",
+             "application_track": "tir", "submitted_at": "2026-05-18T00:00:00Z",
+             "locked_at": "2026-05-18T01:00:00Z", "recommendation": "yes",
+             "score_problem": 8, "score_solution": 8, "score_tech": 8,
+             "score_founders": 8, "score_commitment": 8},
+            {"id": "r2", "reviewer_user_id": me, "application_id": "app2",
+             "application_track": "tir", "submitted_at": None},   # draft → excluded
+        ],
+        "tir_applications": [
+            {"id": "app1", "basic_org": "Acme", "status": "shortlisted",
+             "submitted_at": "2026-05-15T00:00:00Z"},
+            {"id": "app2", "basic_org": "Beta", "submitted_at": "2026-05-15T00:00:00Z"},
+        ],
+        "sip_applications": [],
+        "ai_screening": [
+            {"application_id": "app1", "application_track": "tir",
+             "score_overall": 7.0, "project_name": "Acme Robotics"},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.get("/reviewer/history")
+    assert r.status_code == 200, r.text
+    rows = r.json()["rows"]
+    assert [x["appId"] for x in rows] == ["app1"]    # draft excluded
+    row = rows[0]
+    assert row["name"] == "Acme Robotics"
+    assert row["myScore"] == 8.0
+    assert row["aiScore"] == 7.0
+    assert row["variance"] == 1.0
+    assert row["adminDecision"] == "approved"        # shortlisted → approved
+
+
+def test_history_does_not_500_on_missing_app(client, monkeypatch, _clear_overrides):
+    """A submitted review whose app row can't be resolved still returns 200."""
+    me = "rev-a"
+    _install_db(monkeypatch, {
+        "reviews": [
+            {"id": "r1", "reviewer_user_id": me, "application_id": "ghost",
+             "application_track": "tir", "submitted_at": "2026-05-18T00:00:00Z",
+             "score_problem": 8, "score_solution": 8, "score_tech": 8,
+             "score_founders": 8, "score_commitment": 8},
+        ],
+        "tir_applications": [],          # app missing
+        "sip_applications": [],
+        "ai_screening": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.get("/reviewer/history")
+    assert r.status_code == 200, r.text
+    rows = r.json()["rows"]
+    assert len(rows) == 1
+    assert rows[0]["appId"] == "ghost"
+    assert rows[0]["name"] == "—"        # fallback, no crash
+
+
+def test_completed_reviews_bulk(client, monkeypatch, _clear_overrides):
+    me = "rev-a"
+    _install_db(monkeypatch, {
+        "reviews": [
+            {"id": "r1", "reviewer_user_id": me, "application_id": "app1",
+             "application_track": "tir", "submitted_at": "2026-05-18T00:00:00Z",
+             "locked_at": "2000-01-01T00:00:00Z", "recommendation": "yes",
+             "score_problem": 8, "score_solution": 8, "score_tech": 8,
+             "score_founders": 8, "score_commitment": 8},
+        ],
+        "tir_applications": [
+            {"id": "app1", "basic_org": "Acme", "answers": {"problem": "x"},
+             "submitted_at": "2026-05-15T00:00:00Z"},
+        ],
+        "sip_applications": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+    r = client.get("/reviewer/reviews?mine=true&locked=true")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total"] == 1
+    assert body["reviews"][0]["application_id"] == "app1"
+    assert body["reviews"][0]["score_overall_mine"] == 8.0
+
+
 # ─── GET /reviewer/rubric ──────────────────────────────────────────────
 
 

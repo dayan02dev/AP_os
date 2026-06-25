@@ -355,20 +355,31 @@ def fetch_completed_reviews(
     end = start + page_size
     page_rows = locked_mine[start:end]
 
+    # Bulk-fetch app rows for the page (one query per track) instead of one
+    # query per review.
+    ids_by_track: dict[str, list[str]] = {}
+    for r in page_rows:
+        ids_by_track.setdefault(r["application_track"], []).append(r["application_id"])
+    apps_by_key: dict[tuple, dict] = {}
+    for track, ids in ids_by_track.items():
+        if not ids:
+            continue
+        table = "tir_applications" if track == "tir" else "sip_applications"
+        try:
+            app_rows = (sb.table(table).select("*").in_("id", ids).execute().data) or []
+        except Exception as exc:
+            log.warning("completed_list: app bulk fetch failed",
+                        extra={"track": track, "err": str(exc)})
+            app_rows = []
+        for a in app_rows:
+            if a.get("id") is not None:
+                apps_by_key[(a["id"], track)] = a
+
     out: list[dict] = []
     for r in page_rows:
-        table = "tir_applications" if r["application_track"] == "tir" else "sip_applications"
-        try:
-            app_rows = sb.table(table).select("*").eq("id", r["application_id"]).limit(1).execute().data
-        except Exception as exc:
-            log.warning(
-                "completed_list: app fetch failed",
-                extra={"application_id": r["application_id"], "err": str(exc)},
-            )
+        a = apps_by_key.get((r["application_id"], r["application_track"]))
+        if not a:
             continue
-        if not app_rows:
-            continue
-        a = app_rows[0]
         out.append({
             "review_id": r["id"],
             "application_id": r["application_id"],
@@ -571,7 +582,17 @@ def _admin_decision(app_status: str | None) -> str:
 
 
 def fetch_history(reviewer_user_id: str) -> dict:
-    """Spec §4.5 — every SUBMITTED review by this reviewer, newest first."""
+    """Spec §4.5 — every SUBMITTED review by this reviewer, newest first.
+
+    Bulk-fetches app rows (per track) and ai_screening once, instead of two
+    queries per review (the old N+1 could exceed the Lambda/API-Gateway 29 s
+    ceiling for prolific reviewers and surface as a red error in the UI). The
+    whole body is guarded so any failure degrades to a flagged-empty response
+    rather than a 5xx.
+    """
+    empty = {"stats": {"total": 0, "avgVariance": None,
+                       "consistencyPct": None, "avgMinutes": None},
+             "rows": [], "degraded": False}
     sb = get_admin_client()
     try:
         rows = (sb.table("reviews").select("*")
@@ -579,61 +600,92 @@ def fetch_history(reviewer_user_id: str) -> dict:
     except Exception as exc:
         log.warning("history: reviews fetch failed",
                     extra={"reviewer": reviewer_user_id, "err": str(exc)})
-        return {"stats": {"total": 0, "avgVariance": None,
-                          "consistencyPct": None, "avgMinutes": None}, "rows": []}
+        return {**empty, "degraded": True}
 
-    submitted = [r for r in rows if r.get("submitted_at")]
-    submitted.sort(key=lambda r: r.get("submitted_at") or "", reverse=True)
+    try:
+        submitted = [r for r in rows
+                     if r.get("reviewer_user_id") == reviewer_user_id and r.get("submitted_at")]
+        submitted.sort(key=lambda r: r.get("submitted_at") or "", reverse=True)
 
-    out_rows: list[dict] = []
-    variances: list[float] = []
-    for r in submitted:
-        track = r["application_track"]
-        table = "tir_applications" if track == "tir" else "sip_applications"
-        try:
-            app_rows = (sb.table(table).select("*")
-                        .eq("id", r["application_id"]).limit(1).execute().data) or []
-        except Exception:
-            app_rows = []
-        app_row = app_rows[0] if app_rows else {}
+        # Partition ids by track for one bulk fetch per app table + one for ai.
+        ids_by_track: dict[str, list[str]] = {}
+        all_ids: list[str] = []
+        for r in submitted:
+            track = r.get("application_track")
+            aid = r.get("application_id")
+            if not aid:
+                continue
+            ids_by_track.setdefault(track, []).append(aid)
+            all_ids.append(aid)
 
+        apps_by_key: dict[tuple, dict] = {}
+        for track, ids in ids_by_track.items():
+            if not ids:
+                continue
+            table = "tir_applications" if track == "tir" else "sip_applications"
+            try:
+                app_rows = (sb.table(table).select("*").in_("id", ids).execute().data) or []
+            except Exception as exc:
+                log.warning("history: app bulk fetch failed",
+                            extra={"track": track, "err": str(exc)})
+                app_rows = []
+            for a in app_rows:
+                if a.get("id") is not None:
+                    apps_by_key[(a["id"], track)] = a
+
+        ai_by_key: dict[tuple, dict] = {}
         try:
             ai_rows = (sb.table("ai_screening").select("*")
-                       .eq("application_id", r["application_id"])
-                       .eq("application_track", track).execute().data) or []
-        except Exception:
+                       .in_("application_id", all_ids).execute().data) or []
+        except Exception as exc:
+            log.warning("history: ai bulk fetch failed",
+                        extra={"reviewer": reviewer_user_id, "err": str(exc)})
             ai_rows = []
-        ai_row = ai_rows[0] if ai_rows else None
+        for row in ai_rows:
+            ai_by_key.setdefault(
+                (row.get("application_id"), row.get("application_track")), row)
 
-        my_score = _weighted_overall(r)
-        ai_score = (ai_row or {}).get("score_overall")
-        variance = (round(abs(my_score - ai_score), 1)
-                    if my_score is not None and ai_score is not None else None)
-        if variance is not None:
-            variances.append(variance)
+        out_rows: list[dict] = []
+        variances: list[float] = []
+        for r in submitted:
+            track = r.get("application_track")
+            app_row = apps_by_key.get((r.get("application_id"), track)) or {}
+            ai_row = ai_by_key.get((r.get("application_id"), track))
 
-        out_rows.append({
-            "appId":         r["application_id"],
-            "reviewId":      r["id"],
-            "track":         track,
-            "name":          (ai_row or {}).get("project_name")
-                             or app_row.get("basic_org")
-                             or app_row.get("basic_full_name") or "—",
-            "date":          r.get("submitted_at"),
-            "myScore":       my_score,
-            "aiScore":       ai_score,
-            "variance":      variance,
-            "reco":          r.get("recommendation"),
-            "adminDecision": _admin_decision(app_row.get("status")),
-            "editWindowExpiresAt": r.get("locked_at"),
-        })
+            my_score = _weighted_overall(r)
+            ai_score = (ai_row or {}).get("score_overall")
+            variance = (round(abs(my_score - ai_score), 1)
+                        if my_score is not None and ai_score is not None else None)
+            if variance is not None:
+                variances.append(variance)
 
-    avg_var = round(sum(variances) / len(variances), 2) if variances else None
-    return {
-        "stats": {"total": len(out_rows), "avgVariance": avg_var,
-                  "consistencyPct": None, "avgMinutes": None},
-        "rows": out_rows,
-    }
+            out_rows.append({
+                "appId":         r.get("application_id"),
+                "reviewId":      r.get("id"),
+                "track":         track,
+                "name":          (ai_row or {}).get("project_name")
+                                 or app_row.get("basic_org")
+                                 or app_row.get("basic_full_name") or "—",
+                "date":          r.get("submitted_at"),
+                "myScore":       my_score,
+                "aiScore":       ai_score,
+                "variance":      variance,
+                "reco":          r.get("recommendation"),
+                "adminDecision": _admin_decision(app_row.get("status")),
+                "editWindowExpiresAt": r.get("locked_at"),
+            })
+
+        avg_var = round(sum(variances) / len(variances), 2) if variances else None
+        return {
+            "stats": {"total": len(out_rows), "avgVariance": avg_var,
+                      "consistencyPct": None, "avgMinutes": None},
+            "rows": out_rows,
+            "degraded": False,
+        }
+    except Exception as exc:
+        log.exception("history: assembly failed",
+                      extra={"reviewer": reviewer_user_id, "err": str(exc)})
+        return {**empty, "degraded": True}
 
 
 def fetch_my_review_for_application(
