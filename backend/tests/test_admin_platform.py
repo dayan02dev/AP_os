@@ -969,3 +969,32 @@ def test_bulk_endpoints_admin_only(client, _clear_overrides):
     assert client.post("/admin/platform/reviewers/rev-1/applications", json=body).status_code == 403
     app.dependency_overrides[get_current_user] = _override_user("lead-x", roles=["leadership"])
     assert client.post("/admin/platform/reviewers/rev-1/applications/remove", json=body).status_code == 403
+
+
+def test_roster_progress_is_work_done_union(client, monkeypatch, _clear_overrides):
+    """Progress = reviews done / |active assignments ∪ reviewed apps|.
+    A submitted review for an app the reviewer is NO LONGER assigned to still
+    counts in both numerator and denominator (the unassign churn case)."""
+    tables = _empty_admin_tables()
+    tables["user_roles"] = [{"user_id": "rev-1", "role": "reviewer"}]
+    tables["profiles"] = [{"id": "rev-1", "full_name": "Ramanpreet", "email": "r@x.com"}]
+    tables["reviewer_profiles"] = []
+    tables["reviewer_assignments"] = [
+        {"id": f"as-{c}", "reviewer_user_id": "rev-1", "application_id": f"app-{c}",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None,
+         "completed_at": None} for c in "abcd"
+    ]
+    tables["reviews"] = [
+        {"id": "r-x", "reviewer_user_id": "rev-1", "application_id": "app-x",
+         "application_track": "tir", "submitted_at": "2026-06-20T00:00:00Z"},
+        {"id": "r-y", "reviewer_user_id": "rev-1", "application_id": "app-y",
+         "application_track": "tir", "submitted_at": "2026-06-21T00:00:00Z"},
+    ]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.get("/admin/platform/reviewers")
+    assert r.status_code == 200, r.text
+    rev = r.json()["reviewers"][0]
+    assert rev["completed"] == 2
+    assert rev["assigned"] == 6
+    assert rev["progress"] == "2 / 6"
