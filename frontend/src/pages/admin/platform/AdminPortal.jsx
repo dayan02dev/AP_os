@@ -22,8 +22,6 @@ import { AdminPipeline } from "./screens/AdminPipeline";
 import { AdminDetail } from "./screens/AdminDetail";
 import AdminGate1 from "./screens/AdminGate1";
 import { AdminReviewers } from "./screens/AdminReviewers";
-import { AdminAnalytics } from "./screens/AdminAnalytics";
-import { AdminAudit } from "./screens/AdminAudit";
 import { AdminGate2 } from "./screens/AdminGate2";
 import { AdminJury } from "./screens/AdminJury";
 import { AdminPsychometry } from "./screens/AdminPsychometry";
@@ -271,9 +269,6 @@ function AdminTabBar({ page, setPage, decisionMode, appsBadge, reviewBadge }) {
       sub: decisionMode === 'jury' ? 'CONSOLIDATED DECISIONS' : 'PENDING DECISIONS',
       badge: decisionMode === 'jury' ? null : (reviewBadge == null ? null : String(reviewBadge))
     },
-    // extension: surface built Audit/Analytics screens the prototype left unreachable
-    { id:'audit',     label:'Audit',     sub:'EVENT TRAIL',   badge:null },
-    { id:'analytics', label:'Analytics', sub:'CALIBRATION',   badge:null },
   ];
 
   return (
@@ -397,8 +392,6 @@ function AdminApp() {
             {page === 'aistatus'   && <AdminAIStatus />}
             {page === 'jury'        && <AdminJury />}
             {page === 'gate2'       && <AdminGate2 goDetail={goDetail} />}
-            {page === 'audit'       && <AdminAudit />}
-            {page === 'analytics'   && <AdminAnalytics />}
           </div>
         </div>
       </div>
