@@ -236,6 +236,24 @@ describe("AdminReviewers (reviewer-mode)", () => {
     });
   });
 
+  it("does not render the External·paid sub-label or a Consistency column", () => {
+    useAdminData.mockReturnValue({ data: { reviewers: SAMPLE_REVIEWERS }, loading: false, error: null, reload: vi.fn() });
+    render(<AdminReviewers decisionMode="reviewer" />);
+    expect(screen.queryByText(/paid per review/i)).toBeNull();
+    expect(screen.queryByText("Consistency")).toBeNull();
+  });
+
+  it("weight input is clamped to 0–10 in the edit drawer", () => {
+    useAdminData.mockReturnValue({ data: { reviewers: SAMPLE_REVIEWERS }, loading: false, error: null, reload: vi.fn() });
+    render(<AdminReviewers decisionMode="reviewer" />);
+    fireEvent.click(screen.getByText("Edit reviewer"));
+    fireEvent.click(screen.getByText("Edit details"));
+    const weightInput = document.querySelector('input[type="number"]');
+    expect(weightInput).toBeTruthy();
+    expect(weightInput.getAttribute("min")).toBe("0");
+    expect(weightInput.getAttribute("max")).toBe("10");
+  });
+
   it("calls rebalance when button is clicked", async () => {
     const reload = vi.fn();
     useAdminData.mockReturnValue({

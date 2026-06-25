@@ -90,7 +90,7 @@ function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
     try {
       const domainsArr = domains.split(',').map(d => d.trim()).filter(Boolean);
       const body = {
-        weight: parseFloat(weight) || 1.0,
+        weight: Math.min(10, Math.max(0, parseFloat(weight) || 0)),
         domains: domainsArr,
       };
       // Identity fields only sent when changed (an email change also re-syncs
@@ -164,9 +164,9 @@ function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
             <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Weight</label>
             <input
               type="number"
-              step="0.5"
-              min="0.5"
-              max="5.0"
+              step="0.1"
+              min="0"
+              max="10"
               className="os-input"
               style={{ width: '100%', fontSize: 14 }}
               value={weight}
@@ -593,7 +593,6 @@ export function AdminReviewers({ decisionMode }) {
               {renderHeader('Jury Member', 'name')}
               {renderHeader('Organization', 'domain')}
               {renderHeader('Progress', 'progress')}
-              {renderHeader('Consistency', 'consistency')}
               {renderHeader('Weight / Primary', 'weight')}
               {renderHeader('Last activity', 'lastActivity')}
               <th></th>
@@ -613,13 +612,6 @@ export function AdminReviewers({ decisionMode }) {
                     </div>
                     <span className="os-mono os-text-sm">{r.progress || '0 / 0'}</span>
                   </div>
-                </td>
-                <td>
-                  {r.consistency != null ? (
-                    <span className={'os-chip ' + (r.consistency >= 0.9 ? 'green' : r.consistency >= 0.8 ? 'amber' : 'red')}>
-                      {(r.consistency * 100).toFixed(0)}%
-                    </span>
-                  ) : <span className="os-text-soft">—</span>}
                 </td>
                 <td>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -666,7 +658,7 @@ export function AdminReviewers({ decisionMode }) {
       <PageHead
         eyebrow="A-5 · REVIEWERS"
         title="Reviewer <em>roster</em>"
-        sub="Assignments, progress, consistency calibration."
+        sub="Assignments, progress."
         actions={[
           <button key="inv" className="os-btn ghost" onClick={() => setShowInvite(true)}>Invite member</button>,
           <button key="edit" className="os-btn ghost" onClick={() => setShowEditPicker(true)}>Edit reviewer</button>,
@@ -715,7 +707,6 @@ export function AdminReviewers({ decisionMode }) {
                 {renderHeader('Domain', 'domain')}
                 <th>Applications Assigned</th>
                 {renderHeader('Progress', 'progress')}
-                {renderHeader('Consistency', 'consistency')}
                 {renderHeader('Weight / Primary', 'weight')}
                 {renderHeader('Last activity', 'lastActivity')}
                 <th></th>
@@ -734,16 +725,12 @@ export function AdminReviewers({ decisionMode }) {
                 const pNum = parseInt(pParts[0]) || 0;
                 const pDen = parseInt(pParts[1]) || 1;
                 const pct = Math.min(100, Math.max(0, (pNum / pDen) * 100));
-                const cons = r.consistency;
-                const consColor = cons >= 0.9 ? 'green' : cons >= 0.8 ? 'amber' : 'red';
-
                 return (
                   <tr key={r.id}>
                     {/* Reviewer */}
                     <td>
                       <div className="startup">
                         {r.name || '—'}
-                        <small>External · paid per review</small>
                       </div>
                     </td>
 
@@ -803,17 +790,6 @@ export function AdminReviewers({ decisionMode }) {
                         </div>
                         <span className="os-mono os-text-sm">{progressStr}</span>
                       </div>
-                    </td>
-
-                    {/* Consistency */}
-                    <td>
-                      {cons != null ? (
-                        <span className={'os-chip ' + consColor}>
-                          {(cons * 100).toFixed(0)}%
-                        </span>
-                      ) : (
-                        <span className="os-text-soft">—</span>
-                      )}
                     </td>
 
                     {/* Weight */}
