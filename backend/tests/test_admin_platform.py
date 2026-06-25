@@ -794,6 +794,34 @@ def test_admin_stats_includes_decision_counts(client, monkeypatch, _clear_overri
 # ─── GET /admin/platform/reviewers/{user_id}/applications ──────────────────
 
 
+def test_roster_completed_counts_submitted_reviews_without_completed_at(
+    client, monkeypatch, _clear_overrides,
+):
+    """A submitted review must count toward `completed` even if the assignment's
+    best-effort `completed_at` write never landed."""
+    tables = _empty_admin_tables()
+    tables["user_roles"] = [{"user_id": "rev-1", "role": "reviewer"}]
+    tables["profiles"] = [{"id": "rev-1", "full_name": "Rev One", "email": "r1@x.com"}]
+    tables["reviewer_profiles"] = []
+    tables["reviewer_assignments"] = [
+        {"id": "as-1", "reviewer_user_id": "rev-1", "application_id": "app-1",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None,
+         "completed_at": None},
+    ]
+    tables["reviews"] = [
+        {"id": "r-1", "reviewer_user_id": "rev-1", "application_id": "app-1",
+         "application_track": "tir", "submitted_at": "2026-06-01T00:00:00Z"},
+    ]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.get("/admin/platform/reviewers")
+    assert r.status_code == 200, r.text
+    rev = r.json()["reviewers"][0]
+    assert rev["assigned"] == 1
+    assert rev["completed"] == 1
+    assert rev["progress"] == "1 / 1"
+
+
 def test_reviewer_applications_lists_active_assignments(client, monkeypatch, _clear_overrides):
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
     _install_db(monkeypatch, {

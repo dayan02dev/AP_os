@@ -487,7 +487,19 @@ def fetch_roster() -> dict[str, Any]:
             if a.get("declined_at") is None and a.get("reassigned_to") is None
         ]
         assigned = len(active)
-        completed = len([a for a in active if a.get("completed_at")])
+        # Count an assignment complete if EITHER the best-effort completed_at
+        # stamped OR a submitted review exists for that (app, track). The
+        # completed_at write on submit is best-effort and can diverge.
+        submitted_keys = {
+            (r.get("application_id"), r.get("application_track"))
+            for r in reviews_by_rev[rid]
+            if r.get("submitted_at")
+        }
+        completed = len([
+            a for a in active
+            if a.get("completed_at")
+            or (a.get("application_id"), a.get("application_track")) in submitted_keys
+        ])
 
         # Group this reviewer's active assignments by batch name. Apps with no
         # batch membership are omitted (they still count in `assigned`).
