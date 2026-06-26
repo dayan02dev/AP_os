@@ -67,14 +67,15 @@ export function SipApplicationProvider({ children }) {
     setWrongTrack(false);
     setSipClosed(false);
     async function load() {
+      // Submitted apps must ALWAYS load — never coupled to the draft fetch,
+      // which 403s for submitted-only applicants once intake is closed.
+      const past = await api.get("/sip-applications/me/submitted").catch(() => []);
+      if (cancelled) return;
+      setSubmittedApps(Array.isArray(past) ? past : []);
       try {
-        const [r, past] = await Promise.all([
-          api.get("/sip-applications/me"),
-          api.get("/sip-applications/me/submitted").catch(() => []),
-        ]);
+        const r = await api.get("/sip-applications/me");
         if (cancelled) return;
         setRow(r);
-        setSubmittedApps(Array.isArray(past) ? past : []);
         setCompletion({
           completion_pct: r.completion_pct ?? 0,
           missing_required_fields: [],

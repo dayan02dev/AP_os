@@ -716,7 +716,7 @@ export default function AppSip() {
   // VIP intake is closed (backend 403). A new applicant can't start a VIP
   // application; show a terminal closed screen instead of the wizard. Existing
   // applicants load a row and never reach this branch.
-  if (user && sipClosed) {
+  if (user && sipClosed && (submittedApps?.length ?? 0) === 0) {
     return <SipClosedScreen onSignOut={logout} />;
   }
 
