@@ -2,7 +2,7 @@
 //
 // Layout, left → right:
 //   Back · App ID (mono) · Status chip · AI score chip · spacer
-//   Prev / Next · Export PDF (stub) · Aside toggle · Close
+//   Prev / Next · Export PDF · Aside toggle · Close
 //
 // We do NOT compose this from the existing AdminLayout shell — the brief is
 // explicit that the review page lives in its own top-only chrome, no left
@@ -31,6 +31,8 @@ export default function ReviewHeader({
   hasNext,
   onToggleAside,
   asideCollapsed,
+  onExport,
+  canExport,
 }) {
   const hasScore = typeof scoreOverall === "number" && Number.isFinite(scoreOverall);
   return (
@@ -56,8 +58,9 @@ export default function ReviewHeader({
       <button
         type="button"
         className="h-export"
-        aria-disabled="true"
-        title="PDF export ships in Phase 1.5."
+        onClick={onExport}
+        disabled={!canExport}
+        title={canExport ? "Download the application as a PDF" : "Loading application…"}
       >
         Export PDF
       </button>
