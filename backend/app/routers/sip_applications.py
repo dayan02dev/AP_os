@@ -373,7 +373,7 @@ async def patch_application(
                       "One or more fields failed validation.",
                       errors=exc.errors())
 
-    patch_dict: dict[str, Any] = patch_model.model_dump(exclude_unset=True)
+    patch_dict: dict[str, Any] = patch_model.model_dump(mode="json", exclude_unset=True)
     if not patch_dict:
         return _error(status.HTTP_400_BAD_REQUEST, "empty_patch",
                       "At least one writable field is required.")
@@ -444,7 +444,7 @@ async def edit_submitted_application(
     except ValidationError as exc:
         return _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error",
                       "One or more fields failed validation.", errors=exc.errors())
-    patch_dict = patch_model.model_dump(exclude_unset=True)
+    patch_dict = patch_model.model_dump(mode="json", exclude_unset=True)
     if not patch_dict:
         return _error(status.HTTP_400_BAD_REQUEST, "empty_patch", "At least one writable field is required.")
 

@@ -71,6 +71,25 @@ def test_edit_in_window_saves_flags_and_rescreens(client, submitted_db):
     assert submitted_db["audited"][0]["action"] == "application.edited_after_submit"
 
 
+def test_edit_dpiit_date_serialized_as_json_string(client, submitted_db):
+    """Regression: basic_dpiit_recognition_date (a `date` field) must be dumped
+    to a JSON-safe ISO string before the DB write. It was a datetime.date object
+    → httpx json.dumps → 500, so no SIP applicant could ever save DPIIT='Yes'."""
+    import json
+
+    res = client.patch(f"/sip-applications/{APP_ID}", json={
+        "basic_dpiit_registered": "Yes — we're DPIIT recognised",
+        "basic_dpiit_recognition_number": "DIPP262337",
+        "basic_dpiit_recognition_date": "2026-05-16",
+    })
+    assert res.status_code == 200, res.text
+    stored = submitted_db["row"]["basic_dpiit_recognition_date"]
+    assert isinstance(stored, str), f"date must be a JSON-safe string, got {type(stored).__name__}"
+    assert stored == "2026-05-16"
+    # the real Supabase write json.dumps-es the patch — must not raise.
+    json.dumps(submitted_db["row"])
+
+
 def test_edit_after_deadline_is_403(client, submitted_db, monkeypatch):
     monkeypatch.setattr(edit_window.settings, "edit_deadline_sip", "2000-01-01T00:00:00+05:30")
     res = client.patch(f"/sip-applications/{APP_ID}", json={"basic_full_name": "X"})
