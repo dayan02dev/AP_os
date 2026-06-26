@@ -25,6 +25,7 @@ import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import { Chip } from "../ui.jsx";
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
+import { relabelDisplayId } from "../../../../lib/trackLabel.js";
 
 // ─── Status/Chip helpers (mirrors prototype) ───────────────────────────────
 
@@ -851,7 +852,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
             />
           </div>
           <div className="lp-track-group">
-            {[['all', 'All tracks'], ['tir', 'TIR'], ['sip', 'SIP']].map(([v, label]) => (
+            {[['all', 'All tracks'], ['tir', 'TIR'], ['sip', 'VIP']].map(([v, label]) => (
               <button
                 key={v}
                 className={`lp-track-btn${track === v ? ' active' : ''}`}
@@ -1105,7 +1106,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
                   )}
                 </td>
                 <td>{s.sub}</td>
-                <td className="os-mono os-text-xs">{s.applicationId || s.id}</td>
+                <td className="os-mono os-text-xs">{relabelDisplayId(s.applicationId) || s.id}</td>
               </tr>
             );
           })}

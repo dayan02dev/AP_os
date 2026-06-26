@@ -42,8 +42,8 @@ describe("buildPipelineCsv", () => {
       { track: "sip", id: 42, name: "Beta", ai_score_overall: null },
     ]);
     const [, row] = csv.split("\r\n");
-    // ID falls back to id, score/decision/batch blank, track uppercased to SIP.
-    expect(row).toBe("42,SIP,Beta,,,,,,,,");
+    // ID falls back to id, score/decision/batch blank, track relabeled to VIP.
+    expect(row).toBe("42,VIP,Beta,,,,,,,,");
   });
 
   it("quotes cells that contain commas or quotes", () => {
