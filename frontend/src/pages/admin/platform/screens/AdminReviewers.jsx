@@ -7,7 +7,6 @@
 //   • Sortable columns: name, domain, progress, consistency, weight, lastActivity
 //   • Per-row "Manage" drawer: edit weight, domains, batch assignments
 //     → patchReviewer(id, { weight, domains }) on save, then reload()
-//   • Rebalance button → rebalance({}) + result banner + reload()
 //   • Invite reviewer modal → adminApi.createUser({ email, full_name, roles, send_invite })
 //     Shows temp_password / invite_url on success
 //
@@ -38,33 +37,7 @@ const MOCK_JURY = [
 
 // ─── Rebalance banner ────────────────────────────────────────────────────────
 
-function RebalanceBanner({ result, onDismiss }) {
-  if (!result) return null;
-  return (
-    <div
-      style={{
-        background: 'var(--ok-soft, #cfe5df)',
-        border: '1px solid var(--ok, #2a8f5a)',
-        borderRadius: 4,
-        padding: '10px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 12,
-        marginBottom: 16,
-      }}
-    >
-      <span style={{ fontSize: 13, color: 'var(--ok, #2a8f5a)', fontWeight: 600 }}>
-        Rebalance complete —{' '}
-        {typeof result.assigned === 'number' ? result.assigned : '?'} assignments across{' '}
-        {typeof result.reviewers === 'number' ? result.reviewers : '?'} reviewers.
-      </span>
-      <button className="os-btn sm ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={onDismiss}>
-        Dismiss
-      </button>
-    </div>
-  );
-}
+// (Rebalance banner removed — the Rebalance batches action was retired.)
 
 // ─── Manage / Edit drawer ────────────────────────────────────────────────────
 // Weight + domains + inline batch chip editor (reviewer-mode only).
@@ -546,24 +519,6 @@ export function AdminReviewers({ decisionMode }) {
   const [showInvite, setShowInvite] = useState(false);
   const [showEditPicker, setShowEditPicker] = useState(false);
   const [invitePassword] = useState(() => generateBasicPassword());
-  const [rebalancing, setRebalancing] = useState(false);
-  const [rebalanceResult, setRebalanceResult] = useState(null);
-  const [rebalanceErr, setRebalanceErr] = useState(null);
-
-  const handleRebalance = async () => {
-    setRebalancing(true);
-    setRebalanceErr(null);
-    setRebalanceResult(null);
-    try {
-      const res = await adminPlatformApi.rebalance({});
-      setRebalanceResult(res);
-      reload();
-    } catch (e) {
-      setRebalanceErr(e?.message || 'Rebalance failed.');
-    } finally {
-      setRebalancing(false);
-    }
-  };
 
   // Drawer animation styles (injected once)
   const drawerStyles = `
@@ -662,20 +617,8 @@ export function AdminReviewers({ decisionMode }) {
         actions={[
           <button key="inv" className="os-btn ghost" onClick={() => setShowInvite(true)}>Invite member</button>,
           <button key="edit" className="os-btn ghost" onClick={() => setShowEditPicker(true)}>Edit reviewer</button>,
-          <button key="reb" className="os-btn" onClick={handleRebalance} disabled={rebalancing}>
-            {rebalancing ? 'Rebalancing…' : 'Rebalance batches'}
-          </button>,
         ]}
       />
-
-      {rebalanceResult && (
-        <RebalanceBanner result={rebalanceResult} onDismiss={() => setRebalanceResult(null)} />
-      )}
-      {rebalanceErr && (
-        <div style={{ color: 'var(--bad)', fontSize: 13, fontWeight: 600, padding: '8px 12px', background: 'var(--bad-soft)', borderRadius: 4, marginBottom: 16 }}>
-          {rebalanceErr}
-        </div>
-      )}
       {assignErr && (
         <div style={{ color: 'var(--bad)', fontSize: 13, fontWeight: 600, padding: '8px 12px', background: 'var(--bad-soft)', borderRadius: 4, marginBottom: 16, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           <span>{assignErr}</span>

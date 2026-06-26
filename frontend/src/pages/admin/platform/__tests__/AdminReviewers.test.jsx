@@ -19,7 +19,6 @@ vi.mock("../../../../hooks/useAdminData", () => ({
 vi.mock("../../../../lib/adminPlatformApi", () => ({
   adminPlatformApi: {
     patchReviewer: vi.fn().mockResolvedValue({}),
-    rebalance: vi.fn().mockResolvedValue({ assigned: 10, reviewers: 3 }),
     assignBatchReviewers: vi.fn().mockResolvedValue({ created: 1, reviewers: 1, applications: 5 }),
     unassignBatchReviewer: vi.fn().mockResolvedValue({ removed: 5 }),
     bulkAssignReviewerApps: vi.fn().mockResolvedValue({ results: [{ status: "created" }] }),
@@ -252,22 +251,6 @@ describe("AdminReviewers (reviewer-mode)", () => {
     expect(weightInput).toBeTruthy();
     expect(weightInput.getAttribute("min")).toBe("0");
     expect(weightInput.getAttribute("max")).toBe("10");
-  });
-
-  it("calls rebalance when button is clicked", async () => {
-    const reload = vi.fn();
-    useAdminData.mockReturnValue({
-      data: { reviewers: SAMPLE_REVIEWERS },
-      loading: false,
-      error: null,
-      reload,
-    });
-    render(<AdminReviewers decisionMode="reviewer" />);
-    const rebalanceBtn = screen.getByText("Rebalance batches");
-    fireEvent.click(rebalanceBtn);
-    await waitFor(() => {
-      expect(adminPlatformApi.rebalance).toHaveBeenCalledWith({});
-    });
   });
 });
 
