@@ -369,6 +369,28 @@ Resources:
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
 
+  DailyDigestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub artpark-eir-daily-digest-${EnvName}
+      CodeUri: ../../backend/
+      Handler: workers.daily_digest.handler.lambda_handler
+      Timeout: 60
+      Events:
+        DailyMorning:
+          Type: Schedule
+          Properties:
+            # 02:30 UTC = 08:00 IST, every day
+            Schedule: "cron(30 2 * * ? *)"
+      Policies:
+        - CloudWatchLogsFullAccess
+
+  DailyDigestLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/artpark-eir-daily-digest-${EnvName}
+      RetentionInDays: 30
+
 Outputs:
   ApiUrl:
     Description: Execute-API URL (before custom domain)
