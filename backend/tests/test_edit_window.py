@@ -14,3 +14,10 @@ def test_edit_closed_after_deadline(monkeypatch):
 def test_deadline_per_track(monkeypatch):
     monkeypatch.setattr(edit_window.settings, "edit_deadline_sip", "2030-07-05T23:59:59+05:30")
     assert edit_window.edit_deadline_for("sip").year == 2030
+
+
+def test_tir_edit_deadline_extended_to_match_sip():
+    """TIR edit window extended to the SIP deadline (2026-07-05)."""
+    from app.config import settings
+    assert settings.edit_deadline_tir == "2026-07-05T23:59:59+05:30"
+    assert settings.edit_deadline_tir == settings.edit_deadline_sip

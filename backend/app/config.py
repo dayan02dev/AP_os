@@ -121,7 +121,7 @@ class Settings(BaseSettings):
 
     # Edit-after-submit window deadlines (ISO 8601, IST). After these, a
     # submitted application locks. Configurable so dates change without a deploy.
-    edit_deadline_tir: str = "2026-06-25T23:59:59+05:30"
+    edit_deadline_tir: str = "2026-07-05T23:59:59+05:30"
     edit_deadline_sip: str = "2026-07-05T23:59:59+05:30"
 
     # ── TIR intake close (reversible toggle) ────────────────────
