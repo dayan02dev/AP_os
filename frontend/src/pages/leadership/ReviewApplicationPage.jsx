@@ -23,6 +23,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.jsx";
 import { leadershipApi } from "../../lib/leadershipApi.js";
+import { labelFor } from "../../lib/statusMachine.js";
+import { printWithTitle } from "../../lib/printDocument.js";
 import { schemaFor } from "./applicationSchemas.js";
 import ReviewHeader from "./review/ReviewHeader.jsx";
 import ReviewTabs from "./review/ReviewTabs.jsx";
@@ -95,6 +97,7 @@ export default function ReviewApplicationPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const [tab, setTab] = useState("application");
+  const [pendingPrint, setPendingPrint] = useState(false);
 
   const [asideCollapsed, setAsideCollapsed] = useState(() => readPanelCollapsed());
 
@@ -168,6 +171,33 @@ export default function ReviewApplicationPage() {
     [track, id, application?.submitted_at, application?.created_at],
   );
 
+  const companyName =
+    aiScreening?.project_name ||
+    application?.basic_org_name ||
+    application?.basic_org ||
+    application?.basic_full_name ||
+    "";
+  const scoreOverall = aiScreening?.score_overall;
+  const hasScore =
+    typeof scoreOverall === "number" && Number.isFinite(scoreOverall);
+
+  const handleExportPdf = useCallback(() => {
+    if (!detail) return;
+    if (tab !== "application") setTab("application");
+    setPendingPrint(true);
+  }, [detail, tab]);
+
+  // ─── PDF export: print once the Application tab is mounted ────────────
+  useEffect(() => {
+    if (!pendingPrint || tab !== "application" || !detail) return undefined;
+    const raf = requestAnimationFrame(() => {
+      const title = companyName ? `${appIdentifier} — ${companyName}` : appIdentifier;
+      printWithTitle(title);
+      setPendingPrint(false);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [pendingPrint, tab, detail, appIdentifier, companyName]);
+
   // ─── Handlers ─────────────────────────────────────────────
   // Back always lands at the leadership dashboard, NOT navigate(-1). Reason:
   // every Prev/Next step pushes to history, so navigate(-1) would walk back
@@ -240,6 +270,8 @@ export default function ReviewApplicationPage() {
         hasNext={hasNext}
         onToggleAside={toggleAside}
         asideCollapsed={asideCollapsed}
+        onExport={handleExportPdf}
+        canExport={!!detail}
       />
 
       <div className="review-body" data-aside-collapsed={asideCollapsed ? "true" : "false"}>
@@ -254,6 +286,14 @@ export default function ReviewApplicationPage() {
 
             {!error && detail && (
               <>
+                <div className="review-print-title" aria-hidden="true">
+                  <h1>{appIdentifier}</h1>
+                  {companyName && <p className="rpt-company">{companyName}</p>}
+                  <p className="rpt-meta">
+                    {labelFor(application?.status)} · AI score{" "}
+                    {hasScore ? scoreOverall.toFixed(1) : "—"} / 10
+                  </p>
+                </div>
                 <ReviewTabs tab={tab} onChange={setTab} />
                 {tab === "application" && (
                   <ApplicationTab
