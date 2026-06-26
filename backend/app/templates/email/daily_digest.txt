@@ -1,0 +1,11 @@
+{% extends "base.txt" %}
+{% block content %}Reviewer activity — {{ date_label }}
+
+{{ total_reviews }} review(s) submitted across {{ reviewers|length }} reviewer(s).
+{% for rv in reviewers %}
+{{ rv.reviewer_name }} — {{ rv.count }} review(s):
+{%- for it in rv['items'] %}
+  - {{ it.track_label }} · {{ it.application_id_short }} · {{ it.recommendation }}{% if it.overall is not none %} · {{ it.overall }}/10{% endif %}
+{%- endfor %}
+{% endfor %}— ARTPARK OS
+{% endblock %}

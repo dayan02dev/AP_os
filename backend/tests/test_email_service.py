@@ -276,3 +276,40 @@ def test_frontend_url_strips_trailing_slash_on_origin():
 def test_frontend_url_inserts_leading_slash_if_missing():
     with patch.object(es.settings, "frontend_origin", "https://a.test"):
         assert es.frontend_url("x") == "https://a.test/x"
+
+
+def test_send_reviewer_assigned_batched(configured):
+    from app.services import email_service as es
+    post = MagicMock(return_value=_ok())
+    svc = _svc_with_post(post)
+    svc.send_reviewer_assigned(
+        to="rev@artpark.in",
+        reviewer_name="Rey",
+        apps=[
+            {"applicant_name": "Acme", "track_label": "VIP", "application_id_short": "aae677aa"},
+            {"applicant_name": "Beta", "track_label": "TIR", "application_id_short": "12345678"},
+        ],
+        inbox_url="https://apply.artpark.info/reviewer",
+    )
+    payload = post.call_args.kwargs["json"]
+    assert payload["to"] == ["rev@artpark.in"]
+    assert "2 application" in payload["subject"]
+    assert "Acme" in payload["html"] and "Beta" in payload["html"]
+    assert "VIP" in payload["text"]
+
+def test_send_daily_digest(configured):
+    from app.services import email_service as es
+    post = MagicMock(return_value=_ok())
+    svc = _svc_with_post(post)
+    svc.send_daily_digest(
+        to=["admin@artpark.in"],
+        date_label="25 Jun 2026",
+        total_reviews=3,
+        reviewers=[{"reviewer_name": "Rey", "count": 3, "items": [
+            {"application_id_short": "aae677aa", "track_label": "VIP", "recommendation": "yes", "overall": 8.6},
+        ]}],
+    )
+    payload = post.call_args.kwargs["json"]
+    assert payload["to"] == ["admin@artpark.in"]
+    assert "25 Jun 2026" in payload["subject"] or "25 Jun 2026" in payload["html"]
+    assert "Rey" in payload["html"]

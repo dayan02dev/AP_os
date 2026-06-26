@@ -292,6 +292,47 @@ class EmailService:
             text=text,
         )
 
+    def send_reviewer_assigned(
+        self,
+        *,
+        to: str,
+        reviewer_name: str,
+        apps: list[dict],
+        inbox_url: str,
+    ) -> dict[str, str]:
+        """One batched email: the reviewer has been assigned `apps` to review."""
+        count = len(apps)
+        html, text = self._render_pair(
+            "reviewer_assigned",
+            {"reviewer_name": reviewer_name, "count": count, "apps": apps, "inbox_url": inbox_url},
+        )
+        return self.send_raw(
+            to=[to],
+            subject=f"You've been assigned {count} application{'s' if count != 1 else ''} to review — ARTPARK",
+            html=html,
+            text=text,
+        )
+
+    def send_daily_digest(
+        self,
+        *,
+        to: list[str],
+        date_label: str,
+        total_reviews: int,
+        reviewers: list[dict],
+    ) -> dict[str, str]:
+        """Daily admin digest of reviewer activity for `date_label`."""
+        html, text = self._render_pair(
+            "daily_digest",
+            {"date_label": date_label, "total_reviews": total_reviews, "reviewers": reviewers},
+        )
+        return self.send_raw(
+            to=to,
+            subject=f"Reviewer activity — {date_label} — ARTPARK OS",
+            html=html,
+            text=text,
+        )
+
 
 # ── Copy helpers (module-level so tests can import + diff against them) ─
 

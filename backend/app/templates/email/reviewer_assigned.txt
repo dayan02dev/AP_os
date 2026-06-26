@@ -1,18 +1,15 @@
 {% extends "base.txt" %}
-{% block content %}Hi {{ reviewer_name }} — you have a new application to review.
+{% block content %}Hi {{ reviewer_name }} — you have {{ count }} new application{{ "s" if count != 1 else "" }} to review.
 
-Leadership has assigned you a {{ track_label }} application. Please review it through the reviewer inbox at your earliest convenience.
-
-  Applicant:      {{ applicant_name }}
-  Track:          {{ track_label }}
-  Application ID: {{ application_id_short }}
+You've been assigned the following. Please score through the reviewer inbox at your earliest convenience.
+{% for app in apps %}
+  - {{ app.applicant_name }} — {{ app.track_label }} · ID {{ app.application_id_short }}
+{%- endfor %}
 
 Open reviewer inbox:
   {{ inbox_url }}
 
-The reviewer scoring screen ships shortly after Phase 1. Until then, your inbox shows assigned apps with a stub view — the full scoring UI lands in Phase 1.5.
-
-If you can't take this on (conflict of interest, capacity), reply and we'll reassign.
+If you can't take these on (conflict of interest, capacity), reply and we'll reassign.
 
 — The ARTPARK team
 {% endblock %}
