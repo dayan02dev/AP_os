@@ -33,6 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..deps import get_current_user
 from ..rbac import require_capability
 from ..services import admin_query, decisions
+from ..services.assignment_email import notify_reviewers_assigned
 from ..services.audit import actor_role_of, write_audit
 from ..supabase_client import get_admin_client
 
@@ -447,6 +448,7 @@ async def assign_batch_reviewers(
     ]
     if rows:
         sb.table("reviewer_assignments").insert(rows).execute()
+        notify_reviewers_assigned(sb, rows)
     created = len(rows)
 
     write_audit(
@@ -638,6 +640,10 @@ async def bulk_assign_reviewer_applications(
     res = admin_query.bulk_assign_reviewer_apps(
         user_id, [i.model_dump() for i in body.items], assigned_by=user["user_id"],
     )
+    notify_reviewers_assigned(get_admin_client(), [
+        {"reviewer_user_id": user_id, "application_id": r["application_id"], "application_track": r["track"]}
+        for r in res.get("results", []) if r.get("status") == "created"
+    ])
     write_audit(
         actor_user_id=user["user_id"],
         actor_role=actor_role_of(user),
@@ -840,6 +846,7 @@ async def rebalance_reviewers(
         for i, app_ref in enumerate(apps)
     ]
     sb.table("reviewer_assignments").insert(rows).execute()
+    notify_reviewers_assigned(sb, rows)
     created = len(rows)
 
     write_audit(

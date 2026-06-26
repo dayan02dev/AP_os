@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from ..deps import get_current_user
 from ..rbac import require_capability
 from ..services import applications_query, decisions
+from ..services.assignment_email import notify_reviewers_assigned
 from ..services.audit import write_audit
 from ..supabase_client import get_admin_client
 
@@ -140,6 +141,10 @@ async def assign_reviewers(
         already.add(rid)
         results.append({"reviewer_user_id": rid, "status": "created"})
 
+    notify_reviewers_assigned(sb, [
+        {"reviewer_user_id": r["reviewer_user_id"], "application_id": application_id, "application_track": track}
+        for r in results if r.get("status") == "created"
+    ])
     return {"application_id": application_id, "track": track, "results": results}
 
 
