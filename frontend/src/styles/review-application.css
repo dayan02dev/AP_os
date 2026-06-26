@@ -993,3 +993,44 @@
   margin-top: var(--s-2);
   line-height: 1.55;
 }
+
+/* ─── PDF export (print) ──────────────────────────────────────────────
+   The "Export PDF" button calls window.print(); these rules collapse the
+   on-screen chrome and lay out only the application Q&A + a print-only
+   title block. Every selector is scoped under .review-page so printing any
+   other route is unaffected. */
+
+/* Title block: hidden on screen, shown only when printing. */
+.review-print-title { display: none; }
+
+@media print {
+  @page { size: A4; margin: 14mm; }
+
+  /* Hide the screen chrome. */
+  .review-page .review-header { display: none !important; }
+  .review-page .review-tabs { display: none !important; }
+  /* The AI screening aside is the non-main child of .review-body. */
+  .review-page .review-body > *:not(.review-main) { display: none !important; }
+
+  /* Un-clip the scroll containers so all content flows across pages. */
+  .review-page,
+  .review-page .review-body,
+  .review-page .review-main,
+  .review-page .review-main-inner {
+    display: block !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    max-width: none !important;
+  }
+
+  /* Show the print-only title block + give it light styling. */
+  .review-page .review-print-title { display: block !important; margin-bottom: 8mm; }
+  .review-page .review-print-title h1 { font-size: 16pt; margin: 0 0 2mm; }
+  .review-page .review-print-title .rpt-company { font-size: 12pt; margin: 0 0 1mm; }
+  .review-page .review-print-title .rpt-meta { font-size: 10pt; color: #555; margin: 0; }
+
+  /* Keep a question's box intact across page breaks; preserve borders/chips. */
+  .review-page .q-block { break-inside: avoid; page-break-inside: avoid; }
+  .review-page * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
