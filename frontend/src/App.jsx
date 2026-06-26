@@ -338,8 +338,17 @@ export default function App() {
       setPhase(PHASES.WELCOME);
       return;
     }
-    // Authed but application hasn't finished loading yet.
-    if (!application) return;
+    // No draft row. A submitted-only applicant (e.g. TIR intake is closed, so
+    // GET /me 403s and never yields a draft) must still reach the dashboard to
+    // view/edit their past submissions — otherwise they're stranded on the
+    // welcome screen. Brand-new accounts with nothing submitted fall through
+    // (the closed-screen guard / welcome handles them).
+    if (!application) {
+      if (Array.isArray(submittedApps) && submittedApps.length > 0) {
+        setPhase(PHASES.RETURNING);
+      }
+      return;
+    }
 
     if (locked) {
       setPhase(PHASES.RETURNING);
@@ -365,7 +374,7 @@ export default function App() {
     // CV upload screen, skipping the choose-your-track moment.
     setPhase(PHASES.RETURNING);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user, application, locked]);
+  }, [authLoading, user, application, locked, submittedApps]);
 
   // When the application flips to non-draft status mid-session (another
   // device submitted, or the user did so via another tab), bounce any

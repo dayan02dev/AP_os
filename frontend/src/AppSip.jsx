@@ -336,7 +336,17 @@ export default function AppSip() {
       setPhase(PHASES.WELCOME);
       return;
     }
-    if (!application) return;
+    // No draft row. A submitted-only applicant (e.g. VIP intake is closed, so
+    // GET /me 403s and never yields a draft) must still reach the dashboard to
+    // view/edit their past submissions — otherwise they're stranded on the
+    // welcome screen. Brand-new accounts with nothing submitted fall through
+    // (the closed-screen guard / welcome handles them).
+    if (!application) {
+      if (Array.isArray(submittedApps) && submittedApps.length > 0) {
+        setPhase(PHASES.RETURNING);
+      }
+      return;
+    }
     if (locked) {
       setPhase(PHASES.RETURNING);
       return;
@@ -359,7 +369,7 @@ export default function AppSip() {
     // empty-draft account no longer skips straight to CV upload.
     setPhase(PHASES.RETURNING);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user, application, locked]);
+  }, [authLoading, user, application, locked, submittedApps]);
 
   useEffect(() => {
     if (!locked) return;
