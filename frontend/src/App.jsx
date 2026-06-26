@@ -764,7 +764,7 @@ export default function App() {
   // TIR intake is closed (backend 403). A new applicant can't start a TIR
   // application; show a terminal closed screen instead of the wizard. Existing
   // applicants load a row and never reach this branch.
-  if (user && tirClosed) {
+  if (user && tirClosed && (submittedApps?.length ?? 0) === 0) {
     return <TirClosedScreen onSignOut={logout} />;
   }
 

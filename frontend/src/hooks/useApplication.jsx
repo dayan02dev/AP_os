@@ -72,14 +72,15 @@ export function ApplicationProvider({ children }) {
     setWrongTrack(false);
     setTirClosed(false);
     async function load() {
+      // Submitted apps must ALWAYS load — never coupled to the draft fetch,
+      // which 403s for submitted-only applicants once intake is closed.
+      const past = await api.get("/applications/me/submitted").catch(() => []);
+      if (cancelled) return;
+      setSubmittedApps(Array.isArray(past) ? past : []);
       try {
-        const [r, past] = await Promise.all([
-          api.get("/applications/me"),
-          api.get("/applications/me/submitted").catch(() => []),
-        ]);
+        const r = await api.get("/applications/me");
         if (cancelled) return;
         setRow(r);
-        setSubmittedApps(Array.isArray(past) ? past : []);
         setCompletion({
           completion_pct: r.completion_pct ?? 0,
           missing_required_fields: [],

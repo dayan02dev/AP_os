@@ -55,7 +55,9 @@ describe("useApplication", () => {
       .mockImplementationOnce(() =>
         Promise.resolve(jsonResponse(200, { id: "u1", email: "u@x.com" })),
       )
-      // /applications/me (initial fetch — current draft)
+      // /applications/me/submitted (now fetched first — decoupled from draft)
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(200, [])))
+      // /applications/me (current draft — fetched second)
       .mockImplementationOnce(() =>
         Promise.resolve(
           jsonResponse(200, {
@@ -68,9 +70,7 @@ describe("useApplication", () => {
             updated_at: "2026-04-19T00:00:00Z",
           }),
         ),
-      )
-      // /applications/me/submitted (initial fetch — past submissions)
-      .mockImplementationOnce(() => Promise.resolve(jsonResponse(200, [])));
+      );
 
     const onReady = (app) => {
       appRef.current = app;
@@ -130,6 +130,26 @@ describe("useApplication", () => {
     expect(JSON.parse(patchCall[1].body)).toMatchObject({
       basic_full_name: "Third Name",
     });
+  });
+
+  it("loads submitted apps and sets tirClosed when the draft fetch is intake-closed", async () => {
+    seedAuthedSession();
+    const captured = {};
+    const past = [{ id: "app-1", status: "under_review", submitted_at: "2026-06-15T00:00:00Z" }];
+    globalThis.fetch
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(200, { id: "u1", email: "u@x.com" }))) // /auth/me
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(200, past)))                            // /applications/me/submitted (now first)
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(403, { detail: { code: "tir_submissions_closed", message: "TIR intake closed" } }))); // /applications/me
+    render(
+      <AuthProvider>
+        <ApplicationProvider>
+          <Harness onReady={(a) => { captured.app = a; }} />
+        </ApplicationProvider>
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(captured.app?.tirClosed).toBe(true));
+    expect(captured.app.submittedApps).toHaveLength(1);
+    expect(captured.app.submittedApps[0].id).toBe("app-1");
   });
 
   it("flips locked=true and refetches on 409", async () => {
