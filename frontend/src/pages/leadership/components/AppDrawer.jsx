@@ -6,6 +6,7 @@
 // Footer: a single "Review application" action that opens the full review page.
 
 import { useEffect, useRef, useState } from "react";
+import { trackLabel, relabelDisplayId } from "../../../lib/trackLabel.js";
 import { useNavigate } from "react-router-dom";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
 import { fmtRelative } from "../../../lib/timeFmt.js";
@@ -176,8 +177,8 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
           <div style={{ minWidth: 0, flex: 1 }}>
             <span className="eyebrow">
               {displayId
-                ? `${displayId} · ${(row.track || "").toUpperCase()}`
-                : `${(row.track || "").toUpperCase()} · ${row.id?.slice(0, 8)}`}
+                ? `${relabelDisplayId(displayId)} · ${trackLabel(row.track)}`
+                : `${trackLabel(row.track)} · ${row.id?.slice(0, 8)}`}
             </span>
             <h2 id="drawer-title">
               {projectName || fullName}

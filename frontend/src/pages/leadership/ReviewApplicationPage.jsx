@@ -25,6 +25,7 @@ import { useAuth } from "../../hooks/useAuth.jsx";
 import { leadershipApi } from "../../lib/leadershipApi.js";
 import { labelFor } from "../../lib/statusMachine.js";
 import { printWithTitle } from "../../lib/printDocument.js";
+import { trackLabel } from "../../lib/trackLabel.js";
 import { schemaFor } from "./applicationSchemas.js";
 import ReviewHeader from "./review/ReviewHeader.jsx";
 import ReviewTabs from "./review/ReviewTabs.jsx";
@@ -76,7 +77,7 @@ function writePanelCollapsed(v) {
 }
 
 function composeAppIdentifier(track, id, submittedAt, createdAt) {
-  const prefix = (track || "").toUpperCase();
+  const prefix = trackLabel(track);
   let year = new Date().getFullYear();
   const iso = submittedAt || createdAt;
   if (iso) {

@@ -324,7 +324,7 @@ export const SIP_SCHEMA = [
   {
     section_number: "01",
     section_title: "Basic details",
-    blurb: "Who is applying. SIP is for incorporated Pvt Ltd ventures.",
+    blurb: "Who is applying. VIP is for incorporated Pvt Ltd ventures.",
     questions: [
       {
         number: "01",
@@ -375,7 +375,7 @@ export const SIP_SCHEMA = [
         label:
           "Is your venture incorporated as a Private Limited company in India?",
         help:
-          "SIP is for incorporated companies translating lab-proven research into a product.",
+          "VIP is for incorporated companies translating lab-proven research into a product.",
         type: "choice",
         options: [
           "Yes — Pvt Ltd, registered in India",
@@ -387,7 +387,7 @@ export const SIP_SCHEMA = [
         number: "07",
         key: "sip_trl",
         label: "Where is your core IP / technology today (TRL)?",
-        help: "SIP is calibrated for ventures with a working prototype or beyond.",
+        help: "VIP is calibrated for ventures with a working prototype or beyond.",
         type: "choice",
         options: [
           "TRL 3 or earlier — research stage",

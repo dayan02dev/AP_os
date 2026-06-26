@@ -58,7 +58,7 @@ describe("ReviewApplicationPage export", () => {
     await userEvent.click(btn);
 
     await waitFor(() => expect(printSpy).toHaveBeenCalledTimes(1));
-    expect(document.title).toContain("SIP-2026-aae677aa");
+    expect(document.title).toContain("VIP-2026-aae677aa");
     expect(document.title).toContain("Brain Morph Technologies");
 
     window.dispatchEvent(new Event("afterprint"));

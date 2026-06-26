@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.jsx";
 import { leadershipApi } from "../../lib/leadershipApi.js";
 import { fmtRelative } from "../../lib/timeFmt.js";
+import { trackLabel, relabelDisplayId } from "../../lib/trackLabel.js";
 import AppDrawer from "./components/AppDrawer.jsx";
 import PortalSwitcher from "../../components/PortalSwitcher.jsx";
 import { bucketFor } from "./components/statusBuckets.js";
@@ -128,8 +129,8 @@ function buildApplicationsCsv(rows, statusLabelById) {
   const lines = [header.map(csvCell).join(",")];
   for (const a of rows) {
     lines.push([
-      a.display_id || "",
-      (a.track || "").toUpperCase(),
+      relabelDisplayId(a.display_id),
+      trackLabel(a.track),
       a.project_name || "",
       a.founder?.name || a.basic_full_name || "",
       a.founder?.affiliation || a.basic_org || "",
@@ -259,7 +260,7 @@ export default function LeadershipDashboard() {
   //   the backend's display_seq.eq match.
   useEffect(() => {
     const t = setTimeout(() => {
-      const stripped = searchInput.replace(/^(TIR|SIP)-/i, "");
+      const stripped = searchInput.replace(/^(TIR|SIP|VIP)-/i, "");
       setSearch(stripped);
       setOffset(0);
     }, 300);
@@ -565,7 +566,7 @@ export default function LeadershipDashboard() {
                       <span className="lp-metric-split-n">{tirCount}</span>
                     </div>
                     <div className="lp-metric-split-row">
-                      <span className="lp-metric-split-label">SIP</span>
+                      <span className="lp-metric-split-label">{trackLabel("sip")}</span>
                       <div className="lp-metric-split-bar">
                         <span
                           className="lp-metric-split-bar-fill"
@@ -899,14 +900,14 @@ export default function LeadershipDashboard() {
                 >
                   All tracks
                 </button>
-                {["TIR", "SIP"].map((t) => (
+                {[["tir", "TIR"], ["sip", "VIP"]].map(([value, label]) => (
                   <button
-                    key={t}
+                    key={value}
                     type="button"
-                    className={`chip${trackFilter === t ? " active" : ""}`}
-                    onClick={() => { setTrackFilter(trackFilter === t ? null : t); setOffset(0); }}
+                    className={`chip${trackFilter === value ? " active" : ""}`}
+                    onClick={() => { setTrackFilter(trackFilter === value ? null : value); setOffset(0); }}
                   >
-                    {t}
+                    {label}
                   </button>
                 ))}
               </div>
@@ -1058,7 +1059,7 @@ export default function LeadershipDashboard() {
                           )}
                         </div>
                         <div className="lp-cell-sub">
-                          {a.display_id} · {(a.track || "").toUpperCase()}
+                          {relabelDisplayId(a.display_id)} · {trackLabel(a.track)}
                         </div>
                       </td>
                       <td className="lp-cell-founder">
@@ -1083,7 +1084,7 @@ export default function LeadershipDashboard() {
                         />
                       </td>
                       <td>{fmtRelative(a.submitted_at || a.created_at)}</td>
-                      <td className="lp-id-col">{a.display_id}</td>
+                      <td className="lp-id-col">{relabelDisplayId(a.display_id)}</td>
                     </tr>
                   ))}
                 </tbody>
