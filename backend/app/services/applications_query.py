@@ -89,6 +89,37 @@ def _list_columns_for_track(track: str) -> str:
     return _BASE_LIST_COLUMNS
 
 
+def fetch_app_ids_by_project_name(track: str, needle: str, *, cap: int = 1000) -> list[str]:
+    """Application ids on `track` whose ai_screening.project_name matches `needle`.
+
+    The leadership/admin "Project" column shows `ai_screening.project_name`,
+    so search must cover it — but it lives on a different table. We resolve the
+    matching application ids here so the caller can fold them into its OR
+    filter. Best-effort: returns [] on any error (search degrades to the
+    name/email/org match rather than 500ing).
+    """
+    needle = (needle or "").strip()
+    if not needle:
+        return []
+    try:
+        res = (
+            get_admin_client()
+            .table("ai_screening")
+            .select("application_id")
+            .eq("application_track", track)
+            .ilike("project_name", f"%{needle}%")
+            .limit(cap)
+            .execute()
+        )
+        return [r["application_id"] for r in (res.data or []) if r.get("application_id")]
+    except Exception as exc:
+        log.warning(
+            "applications_query.fetch_app_ids_by_project_name failed",
+            extra={"track": track, "err": str(exc)},
+        )
+        return []
+
+
 def fetch_apps_for_track(
     track: str,
     *,
@@ -132,6 +163,14 @@ def fetch_apps_for_track(
             digits = search.strip().lstrip("-+")
             if digits.isdigit():
                 or_parts.append(f"display_seq.eq.{digits}")
+            # Also match the AI-derived project name (the "Project" column the
+            # user actually sees and searches by). project_name lives on the
+            # ai_screening table, so we pre-resolve matching application ids and
+            # fold them into the OR via `id.in.(…)` — PostgREST parses the
+            # nested parens inside or(...).
+            project_ids = fetch_app_ids_by_project_name(track, search)
+            if project_ids:
+                or_parts.append(f"id.in.({','.join(project_ids)})")
             q = q.or_(",".join(or_parts))
         res = q.execute()
         rows = res.data or []

@@ -318,6 +318,55 @@ def test_enrich_reviewers_never_raises_on_profiles_failure(monkeypatch):
     assert a[0]["reviewer_status"] == "pending"
 
 
+# ─── Unit tier: fetch_app_ids_by_project_name (search-by-project) ────────
+
+
+class _FakeAiQuery:
+    def __init__(self, rows, capture):
+        self._rows = rows
+        self._cap = capture
+    def select(self, *_a, **_k): return self
+    def eq(self, k, v): self._cap.setdefault("eq", {})[k] = v; return self
+    def ilike(self, k, patt): self._cap["ilike"] = (k, patt); return self
+    def limit(self, n): self._cap["limit"] = n; return self
+    def execute(self):
+        class _R: data = self._rows
+        return _R()
+
+
+class _FakeAiClient:
+    def __init__(self, rows, capture):
+        self._rows = rows; self._cap = capture
+    def table(self, name):
+        self._cap["table"] = name
+        return _FakeAiQuery(self._rows, self._cap)
+
+
+def test_fetch_app_ids_by_project_name_matches(monkeypatch):
+    cap = {}
+    rows = [{"application_id": "a1"}, {"application_id": "a2"}, {"application_id": None}]
+    monkeypatch.setattr(applications_query, "get_admin_client", lambda: _FakeAiClient(rows, cap))
+    ids = applications_query.fetch_app_ids_by_project_name("tir", "cognitive")
+    assert ids == ["a1", "a2"]            # drops the null id
+    assert cap["table"] == "ai_screening"
+    assert cap["eq"]["application_track"] == "tir"
+    assert cap["ilike"] == ("project_name", "%cognitive%")
+
+
+def test_fetch_app_ids_by_project_name_blank_needle_returns_empty(monkeypatch):
+    # Must not even hit the DB for an empty needle.
+    def _boom(): raise AssertionError("should not query")
+    monkeypatch.setattr(applications_query, "get_admin_client", _boom)
+    assert applications_query.fetch_app_ids_by_project_name("tir", "   ") == []
+
+
+def test_fetch_app_ids_by_project_name_never_raises(monkeypatch):
+    class _Boom:
+        def table(self, _n): raise RuntimeError("db down")
+    monkeypatch.setattr(applications_query, "get_admin_client", lambda: _Boom())
+    assert applications_query.fetch_app_ids_by_project_name("sip", "x") == []
+
+
 # ─── Unit tier: /stats funnel + score sample shape ──────────────────────
 
 
