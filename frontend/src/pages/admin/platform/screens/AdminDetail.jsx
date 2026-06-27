@@ -25,6 +25,7 @@ import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import { Chip } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import { FullApplicationView } from "./FullApplicationView";
+import { reviewerNameOf, reviewerStatusLabel } from "../../../../lib/reviewerStatus";
 
 // ── Criteria metadata (mirrors prototype CRIT_LABELS / METRICS) ─────────────
 const METRICS = [
@@ -213,8 +214,8 @@ function ReviewerAssignmentCard({ id, track, assignments, onReload, setBanner })
             <li key={a?.id || `${a?.reviewer_user_id}-${a?.assigned_at}`}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
               <span style={{ fontSize: 13, color: 'var(--ink)', display: 'flex', flexDirection: 'column' }}>
-                Reviewer · {shortId(a?.reviewer_user_id)}
-                <span style={{ fontSize: 11, color: 'var(--ink-dim)', textTransform: 'capitalize' }}>{a?.state || 'pending'}</span>
+                Reviewer · {reviewerNameOf(a)}
+                <span style={{ fontSize: 11, color: 'var(--ink-dim)' }}>{reviewerStatusLabel(a)}</span>
               </span>
               <button
                 type="button"
@@ -690,7 +691,11 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
           <ReviewerAssignmentCard
             id={s.id}
             track={track}
-            assignments={(s.assignedReviewers || []).map(rid => ({ reviewer_user_id: rid, state: 'assigned' }))}
+            assignments={
+              (s.reviewerAssignments && s.reviewerAssignments.length)
+                ? s.reviewerAssignments
+                : (s.assignedReviewers || []).map(rid => ({ reviewer_user_id: rid }))
+            }
             onReload={doLoad}
             setBanner={setBanner}
           />

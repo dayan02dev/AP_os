@@ -69,6 +69,7 @@ function adaptOneReview(rv) {
     notes: rv.quick_notes || rv.notes || rv.comment || "",
     flags: Array.isArray(rv.flags) ? rv.flags : [],
     reviewerId: rv.reviewer_user_id || null,
+    reviewerName: rv.reviewer_name || null,
     submittedAt: rv.submitted_at || null,
   };
   for (const [k, v] of Object.entries(REVIEW_CAT)) if (rv[k] != null) out[v] = rv[k];
@@ -136,6 +137,9 @@ export function adaptDetail(d) {
     adminRationale: d.decision?.rationale || "",
     batch: d.batch?.name || "Unassigned",
     assignedReviewers: (d.reviewer_assignments || []).map(a => a.reviewer_user_id),
+    // Full enriched assignment rows (carry reviewer_name + reviewer_status from
+    // the backend) so the detail card can show names + real status, not IDs.
+    reviewerAssignments: Array.isArray(d.reviewer_assignments) ? d.reviewer_assignments : [],
     statusHistory: d.status_history || [],
     hidden: !!d.meta?.is_hidden,
     archived: !!d.meta?.is_archived,

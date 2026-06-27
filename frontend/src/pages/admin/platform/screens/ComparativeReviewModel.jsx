@@ -46,7 +46,7 @@ export function ComparativeReviewModel({ startup, reviewersById = {} }) {
       ) : (
         <div className="rv-grid">
           {reviews.map((rv, i) => {
-            const name = reviewersById?.[rv.reviewerId] || 'Reviewer';
+            const name = rv.reviewerName || reviewersById?.[rv.reviewerId] || 'Reviewer';
             const flags = Array.isArray(rv.flags) ? rv.flags : [];
             const reco = (rv.reco || 'maybe');
             return (

@@ -434,15 +434,6 @@ export default function LeadershipDashboard() {
   return (
     <div className="app-shell">
       <header className="app-header app-header-leadership">
-        <button
-          type="button"
-          className="home-btn"
-          onClick={() => navigate("/")}
-          aria-label="Back to home"
-        >
-          <span className="arrow" style={{ marginLeft: 0, marginRight: 2 }}>←</span> Home
-        </button>
-
         <div className="logos">
           <img
             src="/assets/artpark-iisc-logo.webp"
@@ -837,37 +828,6 @@ export default function LeadershipDashboard() {
               )}
             </div>
 
-            {/* ── Status breakdown (5×2 grid) ── */}
-            <div className="lp-card lp-card-wide" style={{ marginTop: "var(--s-5)" }}>
-              <div className="lp-card-head">
-                <span className="lp-card-section" style={{ color: "var(--ink-dim)", fontSize: 13, letterSpacing: 0.4 }}>
-                  § Status breakdown
-                </span>
-                <h2 className="lp-card-title">Where every application sits right now</h2>
-                <p className="lp-card-blurb">
-                  Click a status to open the Applications tab filtered to it.
-                </p>
-              </div>
-              {statsLoading ? (
-                <div className="lp-loading">Loading status counts…</div>
-              ) : (
-                <div className="lp-status-grid">
-                  {(stats?.status_counts || []).map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      className={`lp-status-cell${statusFilter === s.id ? " is-on" : ""}`}
-                      onClick={() => filterAndShow(setStatusFilter)(statusFilter === s.id ? null : s.id)}
-                    >
-                      <span className={`lp-status-dot lp-status-${bucketFor(s.id)}`} />
-                      <span className="lp-status-cell-label">{s.label}</span>
-                      <span className="lp-status-cell-n">{s.n}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* ── Footer ── */}
             <div className="page-foot">
               <span>ARTPARK / OS · Leadership view</span>
@@ -932,7 +892,9 @@ export default function LeadershipDashboard() {
                 >
                   All
                 </button>
-                {(stats?.status_counts || []).map((s) => (
+                {(stats?.status_counts || [])
+                  .filter((s) => s.id !== "ai_screening")
+                  .map((s) => (
                   <button
                     key={s.id}
                     type="button"

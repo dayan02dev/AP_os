@@ -1,6 +1,12 @@
 // ReviewsTab — per-reviewer cards with category bars + comments + pending
 // assignments below.
 
+import {
+  reviewerNameOf,
+  reviewerStatusLabel,
+  reviewerStatusOf,
+} from "../../../lib/reviewerStatus.js";
+
 const CATEGORY_BARS = [
   { key: "score_problem",    label: "Problem impact" },
   { key: "score_solution",   label: "Completeness & depth" },
@@ -22,10 +28,6 @@ function fmtDate(iso) {
   }
 }
 
-function shortId(uid) {
-  return (uid || "").slice(0, 8) || "—";
-}
-
 export default function ReviewsTab({ reviews, assignments }) {
   const submittedReviews = (reviews || []).filter((r) => r.status === "submitted" || r.submitted_at);
   const totalAssignments = (assignments || []).length;
@@ -38,8 +40,10 @@ export default function ReviewsTab({ reviews, assignments }) {
       ? (overalls.reduce((a, b) => a + b, 0) / overalls.length).toFixed(1)
       : null;
 
+  // Only assignments whose reviewer hasn't submitted yet (derived from
+  // timestamps, not the vestigial `state` column, which never advances).
   const pending = (assignments || []).filter(
-    (a) => a.state === "pending" || a.state === "accepted",
+    (a) => reviewerStatusOf(a) === "pending",
   );
 
   return (
@@ -61,7 +65,7 @@ export default function ReviewsTab({ reviews, assignments }) {
             >
               <header className="review-card-head">
                 <span className="review-card-name">
-                  Reviewer · {shortId(r.reviewer_user_id)}
+                  Reviewer · {reviewerNameOf(r)}
                 </span>
                 <span className="review-card-when">{fmtDate(r.submitted_at)}</span>
               </header>
@@ -98,9 +102,9 @@ export default function ReviewsTab({ reviews, assignments }) {
               key={a.id || `${a.reviewer_user_id}-${a.assigned_at}`}
               className="pending-row"
             >
-              <span>Reviewer · {shortId(a.reviewer_user_id)}</span>
-              <span style={{ textTransform: "capitalize", color: "var(--ink-soft)", fontSize: 13 }}>
-                {a.state || "pending"} · assigned {fmtDate(a.assigned_at)}
+              <span>Reviewer · {reviewerNameOf(a)}</span>
+              <span style={{ color: "var(--ink-soft)", fontSize: 13 }}>
+                {reviewerStatusLabel(a)} · assigned {fmtDate(a.assigned_at)}
               </span>
             </div>
           ))}

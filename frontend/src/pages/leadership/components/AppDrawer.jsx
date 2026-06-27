@@ -11,6 +11,11 @@ import { useNavigate } from "react-router-dom";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
 import { fmtRelative } from "../../../lib/timeFmt.js";
 import { bucketFor } from "./statusBuckets.js";
+import {
+  reviewerNameOf,
+  reviewerStatusDot,
+  reviewerStatusLabel,
+} from "../../../lib/reviewerStatus.js";
 import AISummaryBlock from "./AISummaryBlock.jsx";
 import Collapsible from "./Collapsible.jsx";
 
@@ -269,9 +274,7 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
             ) : (
               <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
                 {assignments.map((a) => {
-                  const dotCls = a.state === "completed" ? "green"
-                    : a.state === "declined" ? "coral"
-                    : a.state === "accepted" ? "green" : "amber";
+                  const dotCls = reviewerStatusDot(a);
                   return (
                     <li
                       key={a.id || `${a.reviewer_user_id}-${a.assigned_at}`}
@@ -286,15 +289,15 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
                     >
                       <div>
                         <strong style={{ fontSize: 14 }}>
-                          {a.reviewer_user_id?.slice(0, 8) || "—"}
+                          {reviewerNameOf(a)}
                         </strong>
                         <div style={{ color: "var(--ink-soft)", fontSize: 12, marginTop: 2 }}>
                           Assigned {fmtDate(a.assigned_at)}
                         </div>
                       </div>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, textTransform: "capitalize" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
                         <span className={`dot ${dotCls}`} />
-                        {a.state || "pending"}
+                        {reviewerStatusLabel(a)}
                       </span>
                     </li>
                   );
@@ -324,7 +327,7 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                       <strong style={{ fontSize: 14 }}>
-                        {r.reviewer_user_id?.slice(0, 8) || "—"}
+                        {reviewerNameOf(r)}
                       </strong>
                       <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>
                         {fmtDate(r.submitted_at)}

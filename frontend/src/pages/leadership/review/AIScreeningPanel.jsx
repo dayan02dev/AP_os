@@ -7,6 +7,11 @@
 
 import { useState } from "react";
 import AISummaryBlock from "../components/AISummaryBlock.jsx";
+import {
+  reviewerNameOf,
+  reviewerStatusDot,
+  reviewerStatusLabel,
+} from "../../../lib/reviewerStatus.js";
 
 const CATEGORY_BARS = [
   { key: "score_problem",    label: "Problem impact" },
@@ -16,17 +21,6 @@ const CATEGORY_BARS = [
   { key: "score_commitment", label: "Commitment" },
   { key: "score_integrity",  label: "Integrity & closure" },
 ];
-
-const STATE_DOT = {
-  pending:   "amber",
-  accepted:  "green",
-  completed: "green",
-  declined:  "coral",
-};
-
-function shortId(uid) {
-  return (uid || "").slice(0, 8) || "—";
-}
 
 function ScoreTab({ aiScreening }) {
   const overall = aiScreening?.score_overall;
@@ -81,17 +75,17 @@ function ReviewersTab({ assignments, onUnassign, unassigning, currentUserId }) {
     <div className="ai-panel-body">
       {assignments.map((a) => {
         const isSelf = a.reviewer_user_id === currentUserId;
-        const dotCls = STATE_DOT[a.state] || "amber";
+        const dotCls = reviewerStatusDot(a);
         return (
           <div
             key={a.id || `${a.reviewer_user_id}-${a.assigned_at}`}
             className="ai-reviewer-row"
           >
             <span>
-              <span className="name">Reviewer · {shortId(a.reviewer_user_id)}</span>
+              <span className="name">Reviewer · {reviewerNameOf(a)}</span>
               <div className="state">
                 <span className={`dot ${dotCls}`} />
-                {a.state || "pending"}
+                {reviewerStatusLabel(a)}
               </div>
             </span>
             <button
