@@ -7,13 +7,15 @@ import {
   reviewerStatusOf,
 } from "../../../lib/reviewerStatus.js";
 
+// Dimension labels mirror the reviewer portal's CRIT_LABELS (the names the
+// reviewer actually scored against). No Integrity row — reviews carry no
+// integrity score, so it was always blank.
 const CATEGORY_BARS = [
-  { key: "score_problem",    label: "Problem impact" },
-  { key: "score_solution",   label: "Completeness & depth" },
-  { key: "score_tech",       label: "Technical depth" },
-  { key: "score_founders",   label: "Behavioural signal" },
-  { key: "score_commitment", label: "Commitment" },
-  { key: "score_integrity",  label: "Integrity & closure" },
+  { key: "score_problem",    label: "Problem Statement Impact and Importance" },
+  { key: "score_solution",   label: "Completeness, Depth of Solution" },
+  { key: "score_tech",       label: "Technical Depth" },
+  { key: "score_founders",   label: "Professional Profile of Founder" },
+  { key: "score_commitment", label: "Commitment to be fully available" },
 ];
 
 function fmtDate(iso) {

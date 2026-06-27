@@ -205,6 +205,9 @@ export default function LeadershipDashboard() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [offset, setOffset] = useState(0);
+  // Applications-tab filter panel (Status / AI score / Industry) collapses
+  // behind a "Filters ▾" toggle, matching the admin pipeline presentation.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const [apps, setApps] = useState([]);
   const [appsTotal, setAppsTotal] = useState(0);
@@ -423,6 +426,11 @@ export default function LeadershipDashboard() {
   const filtersActive = !!(
     industry || statusFilter || trackFilter || scoreBucket !== null || search
   );
+  // Count of applied filters living inside the collapsible panel (Status /
+  // AI score / Industry) — shown as a badge on the "Filters" toggle so it's
+  // discoverable when the panel is closed.
+  const advFilterCount =
+    (statusFilter ? 1 : 0) + (scoreBucket !== null ? 1 : 0) + (industry ? 1 : 0);
 
   // Human-readable snapshot timestamp for the hero subline.
   const snapshotAt = useMemo(() => {
@@ -847,7 +855,7 @@ export default function LeadershipDashboard() {
               <input
                 className="field filter-search"
                 type="search"
-                placeholder="Search by name, email, or org"
+                placeholder="Search by name, email, org, or project"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 aria-label="Search applications"
@@ -877,11 +885,24 @@ export default function LeadershipDashboard() {
                   Clear filters
                 </button>
               )}
+              <button
+                type="button"
+                className={`lp-filters-toggle${filtersOpen ? " is-open" : ""}`}
+                onClick={() => setFiltersOpen((o) => !o)}
+                aria-expanded={filtersOpen}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
+                <span>Filters</span>
+                {advFilterCount > 0 && <span className="lp-filters-count">{advFilterCount}</span>}
+                <span className="lp-filters-caret">{filtersOpen ? "▴" : "▾"}</span>
+              </button>
               <span className="filter-count">
                 {appsLoading ? "…" : `${apps.length} of ${appsTotal}`}
               </span>
             </div>
 
+            {filtersOpen && (
+            <>
             <div className="filter-bar" style={{ marginBottom: "var(--s-5)" }}>
               <span className="eyebrow" style={{ marginRight: "var(--s-3)" }}>Status</span>
               <div className="filter-chips">
@@ -972,6 +993,8 @@ export default function LeadershipDashboard() {
                   ))}
                 </div>
               </div>
+            )}
+            </>
             )}
 
             {appsError && <div className="inline-error">{appsError}</div>}

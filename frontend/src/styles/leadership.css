@@ -849,3 +849,47 @@
   border-bottom: none;
 }
 
+/* ── Applications-tab "Filters" toggle ──────────────────────────────────
+   Collapses the Status / AI-score / Industry rows behind a pill button,
+   mirroring the admin pipeline's "Filters ▾" presentation. Styled to match
+   the leadership .chip / .filter-bar look. */
+.lp-filters-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sharp);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+  white-space: nowrap;
+}
+.lp-filters-toggle:hover { border-color: var(--ink); color: var(--ink); }
+.lp-filters-toggle.is-open {
+  border-color: var(--ink);
+  color: var(--ink);
+  background: var(--bg-soft);
+}
+.lp-filters-toggle svg { opacity: 0.75; }
+.lp-filters-caret { font-size: 10px; color: var(--ink-dim); }
+.lp-filters-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  background: var(--accent, #4338ca);
+  border-radius: 999px;
+}
+
