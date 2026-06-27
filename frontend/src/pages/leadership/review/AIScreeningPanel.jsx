@@ -19,7 +19,8 @@ const CATEGORY_BARS = [
   { key: "score_tech",       label: "Technical depth" },
   { key: "score_founders",   label: "Behavioural signal" },
   { key: "score_commitment", label: "Commitment" },
-  { key: "score_integrity",  label: "Integrity & closure" },
+  // Integrity & closure dropped — ai_screening never carries a score_integrity
+  // value (reserved/unused), so the row was always blank.
 ];
 
 function ScoreTab({ aiScreening }) {
