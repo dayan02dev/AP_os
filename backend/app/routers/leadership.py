@@ -315,6 +315,12 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
     reviewer_assignments = applications_query.fetch_reviewer_assignments_for(
         application_id, track,
     )
+    # Attach reviewer display names + a timestamp-derived status (not the
+    # vestigial `state` column) so the AppDrawer / review-page Reviewers panel
+    # show "Manish S Shetty · Evaluated" instead of "6fd9bcf5 · pending".
+    reviewer_assignments, reviews = applications_query.enrich_reviewers(
+        reviewer_assignments, reviews,
+    )
     status_history = applications_query.fetch_status_history_for(
         application_id, track,
     )

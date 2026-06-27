@@ -522,3 +522,95 @@ def fetch_status_history_for(
             extra={"track": track, "id": application_id, "err": str(exc)},
         )
         return []
+
+
+def enrich_reviewers(
+    reviewer_assignments: list[dict[str, Any]] | None,
+    reviews: list[dict[str, Any]] | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Attach reviewer display names + a timestamp-derived status in place.
+
+    Both `reviewer_assignments` and `reviews` carry only `reviewer_user_id`
+    (a UUID). The detail UIs (leadership AppDrawer, leadership review-page
+    Reviewers panel, admin application detail) want the reviewer's *name* and
+    the *real* assignment status — not the vestigial `state` column, which is
+    inserted as 'pending' and never advanced.
+
+    Mutates and returns the same lists. Best-effort: a profiles-lookup failure
+    leaves `reviewer_name` falling back to the short UUID; it never raises.
+
+    For each assignment we add:
+      - reviewer_name   = full_name | email | uid[:8]
+      - reviewer_email
+      - reviewer_status ∈ {pending, evaluated, declined}, derived from
+        timestamps: declined_at → declined; (completed_at set OR a submitted
+        review exists for that reviewer) → evaluated; else pending.
+    For each review we add reviewer_name + reviewer_email.
+    """
+    reviewer_assignments = reviewer_assignments or []
+    reviews = reviews or []
+
+    ids = {
+        a.get("reviewer_user_id")
+        for a in reviewer_assignments
+        if a.get("reviewer_user_id")
+    } | {
+        r.get("reviewer_user_id")
+        for r in reviews
+        if r.get("reviewer_user_id")
+    }
+
+    # uid -> {full_name, email}; one best-effort bulk fetch.
+    profiles: dict[str, dict[str, Any]] = {}
+    if ids:
+        try:
+            res = (
+                get_admin_client()
+                .table("profiles")
+                .select("id,full_name,email")
+                .in_("id", list(ids))
+                .execute()
+            )
+            for p in res.data or []:
+                profiles[p["id"]] = p
+        except Exception as exc:
+            log.warning(
+                "applications_query.enrich_reviewers profiles fetch failed",
+                extra={"err": str(exc)},
+            )
+
+    def _name(uid: str | None) -> str | None:
+        if not uid:
+            return None
+        prof = profiles.get(uid) or {}
+        return prof.get("full_name") or prof.get("email") or uid[:8]
+
+    def _email(uid: str | None) -> str | None:
+        if not uid:
+            return None
+        return (profiles.get(uid) or {}).get("email")
+
+    # Reviewers who have a *submitted* review on this app (status derivation).
+    submitted_ids = {
+        r.get("reviewer_user_id")
+        for r in reviews
+        if r.get("reviewer_user_id") and r.get("submitted_at")
+    }
+
+    for a in reviewer_assignments:
+        uid = a.get("reviewer_user_id")
+        a["reviewer_name"] = _name(uid)
+        a["reviewer_email"] = _email(uid)
+        if a.get("declined_at"):
+            a["reviewer_status"] = "declined"
+        elif a.get("completed_at") or uid in submitted_ids:
+            a["reviewer_status"] = "evaluated"
+        else:
+            a["reviewer_status"] = "pending"
+
+    for r in reviews:
+        uid = r.get("reviewer_user_id")
+        r["reviewer_name"] = _name(uid)
+        r["reviewer_email"] = _email(uid)
+
+    return reviewer_assignments, reviews

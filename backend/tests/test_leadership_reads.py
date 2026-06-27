@@ -230,6 +230,94 @@ def test_list_columns_contains_expected_fields():
         assert expected in cols, f"LIST_COLUMNS missing {expected!r}"
 
 
+# ─── Unit tier: enrich_reviewers (name + timestamp-derived status) ───────
+
+
+class _FakeProfilesQuery:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def select(self, *_a, **_k):
+        return self
+
+    def in_(self, *_a, **_k):
+        return self
+
+    def execute(self):
+        class _R:
+            data = self._rows
+        return _R()
+
+
+class _FakeProfilesClient:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def table(self, _name):
+        return _FakeProfilesQuery(self._rows)
+
+
+def _stub_profiles(monkeypatch, rows):
+    monkeypatch.setattr(
+        applications_query, "get_admin_client", lambda: _FakeProfilesClient(rows),
+    )
+
+
+def test_enrich_reviewers_resolves_name_and_evaluated_via_completed_at(monkeypatch):
+    _stub_profiles(monkeypatch, [
+        {"id": "uid-1", "full_name": "Manish S Shetty", "email": "manish@x.com"},
+    ])
+    assignments = [{"reviewer_user_id": "uid-1", "completed_at": "2026-06-27T00:00:00Z",
+                    "declined_at": None, "state": "pending"}]
+    reviews = []
+    a, _ = applications_query.enrich_reviewers(assignments, reviews)
+    assert a[0]["reviewer_name"] == "Manish S Shetty"
+    assert a[0]["reviewer_email"] == "manish@x.com"
+    assert a[0]["reviewer_status"] == "evaluated"
+
+
+def test_enrich_reviewers_evaluated_via_submitted_review_without_completed_at(monkeypatch):
+    _stub_profiles(monkeypatch, [
+        {"id": "uid-2", "full_name": None, "email": "rev@x.com"},
+    ])
+    assignments = [{"reviewer_user_id": "uid-2", "completed_at": None,
+                    "declined_at": None, "state": "pending"}]
+    reviews = [{"reviewer_user_id": "uid-2", "submitted_at": "2026-06-27T00:00:00Z"}]
+    a, r = applications_query.enrich_reviewers(assignments, reviews)
+    # full_name missing → email fallback.
+    assert a[0]["reviewer_name"] == "rev@x.com"
+    assert a[0]["reviewer_status"] == "evaluated"
+    assert r[0]["reviewer_name"] == "rev@x.com"
+
+
+def test_enrich_reviewers_pending_and_declined_and_uid_fallback(monkeypatch):
+    # No profile rows → name falls back to short UID; draft review doesn't count.
+    _stub_profiles(monkeypatch, [])
+    assignments = [
+        {"reviewer_user_id": "abcdef12-0000", "completed_at": None,
+         "declined_at": None, "state": "pending"},
+        {"reviewer_user_id": "deadbeef-1111", "completed_at": None,
+         "declined_at": "2026-06-27T00:00:00Z", "state": "pending"},
+    ]
+    reviews = [{"reviewer_user_id": "abcdef12-0000", "submitted_at": None}]
+    a, _ = applications_query.enrich_reviewers(assignments, reviews)
+    assert a[0]["reviewer_name"] == "abcdef12"          # uid[:8] fallback
+    assert a[0]["reviewer_status"] == "pending"          # draft review ≠ evaluated
+    assert a[1]["reviewer_status"] == "declined"
+
+
+def test_enrich_reviewers_never_raises_on_profiles_failure(monkeypatch):
+    class _Boom:
+        def table(self, _n):
+            raise RuntimeError("db down")
+    monkeypatch.setattr(applications_query, "get_admin_client", lambda: _Boom())
+    assignments = [{"reviewer_user_id": "uid-9", "completed_at": None,
+                    "declined_at": None}]
+    a, _ = applications_query.enrich_reviewers(assignments, [])
+    assert a[0]["reviewer_name"] == "uid-9"[:8]
+    assert a[0]["reviewer_status"] == "pending"
+
+
 # ─── Unit tier: /stats funnel + score sample shape ──────────────────────
 
 

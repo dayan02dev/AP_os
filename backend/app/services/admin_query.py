@@ -321,6 +321,12 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
     reviewer_assignments = applications_query.fetch_reviewer_assignments_for(
         application_id, track,
     )
+    # Attach reviewer display names + a timestamp-derived status so the admin
+    # application detail shows the reviewer's name and "Evaluated" instead of
+    # the UUID prefix and a stuck "pending".
+    reviewer_assignments, reviews = applications_query.enrich_reviewers(
+        reviewer_assignments, reviews,
+    )
     status_history = applications_query.fetch_status_history_for(
         application_id, track,
     )
