@@ -89,7 +89,7 @@ async def get_detail(
 
 class DecisionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    decision: Literal["shortlisted", "on_hold", "rejected", "waitlisted"]
+    decision: Literal["shortlisted", "on_hold", "rejected", "waitlisted", "jury_review"]
     rationale: str | None = None
 
 
@@ -127,7 +127,7 @@ class BulkDecisionItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     track: Literal["tir", "sip"]
     application_id: str
-    decision: Literal["shortlisted", "on_hold", "rejected", "waitlisted"]
+    decision: Literal["shortlisted", "on_hold", "rejected", "waitlisted", "jury_review"]
     rationale: str | None = None
 
 

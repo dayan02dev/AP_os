@@ -1,0 +1,10 @@
+{% extends "base.txt" %}
+{% block content %}An update on your application, {{ applicant_name }}.
+
+Thank you for taking the time to apply to ARTPARK. After careful review, we won't be moving your application forward this round.
+
+This was a competitive cycle and the decision was not an easy one. We genuinely appreciate the effort you put into your application and encourage you to apply again in the future.
+
+With appreciation,
+— The ARTPARK team
+{% endblock %}

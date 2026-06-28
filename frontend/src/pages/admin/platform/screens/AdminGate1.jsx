@@ -322,13 +322,12 @@ function GateReviewStack({ items, reload }) {
             <div className="os-card-title os-mb-sm">Decision</div>
             <div className="os-reco-group">
               <button className={"os-reco-btn approve " + (decisions[s.id] === "approve" ? "active" : "")} disabled={busy} onClick={() => decide("approve")}>Approve</button>
-              <button className={"os-reco-btn waitlist " + (decisions[s.id] === "waitlist" ? "active" : "")} disabled={busy} onClick={() => decide("waitlist")}>Waitlist</button>
               <button className={"os-reco-btn reject " + (decisions[s.id] === "reject" ? "active" : "")} disabled={busy} onClick={() => decide("reject")}>Reject</button>
             </div>
             <textarea
               className="os-input os-w-100 os-mt"
               rows="3"
-              placeholder="Decision rationale (required for hold / reject / waitlist)…"
+              placeholder="Decision rationale (required for reject)…"
               value={notes[s.id] || ""}
               onChange={e => setNotes(prev => ({ ...prev, [s.id]: e.target.value }))}
             />

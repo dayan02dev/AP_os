@@ -99,11 +99,11 @@ describe("AdminDashboard screen (screens/)", () => {
     expect(screen.getByText(/Failed to load dashboard/i)).toBeTruthy();
   });
 
-  it("renders status breakdown tiles from statusCounts", () => {
+  it("does not render the status-breakdown card (removed)", () => {
     useAdminData.mockReturnValue({ data: SAMPLE_STATS, loading: false, error: null });
     render(<AdminDashboard go={() => {}} decisionMode="reviewer" />);
-    expect(screen.getByText("Submitted")).toBeTruthy();
-    expect(screen.getByText("Under review")).toBeTruthy();
+    expect(screen.queryByText(/Status breakdown/i)).toBeNull();
+    expect(screen.queryByText(/Where every application sits right now/i)).toBeNull();
   });
 
   it("renders the jury-mode KPI grid when decisionMode=jury", () => {

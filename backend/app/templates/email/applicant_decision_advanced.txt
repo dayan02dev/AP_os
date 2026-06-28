@@ -1,0 +1,11 @@
+{% extends "base.txt" %}
+{% block content %}Good news, {{ applicant_name }} — you're moving forward.
+
+After review, your ARTPARK application has advanced to the next round and will now go before our evaluation jury.
+
+There's nothing you need to do right now — we'll be in touch with the next steps as the jury evaluation progresses.
+
+Thank you for your interest in ARTPARK.
+
+— The ARTPARK team
+{% endblock %}

@@ -77,7 +77,6 @@ function AdminTopbar({ page, decisionMode, setPage }) {
 
   return (
     <div className="lp-topbar">
-      <button className="lp-home-btn" onClick={() => { setPage('dashboard'); }}>← HOME</button>
       <div className="lp-brand">
         <img className="lp-brand-combined" src="/assets/artpark-iisc-logo.webp" alt="ARTPARK · AI & Robotics Technology Park @ IISc" />
       </div>

@@ -53,7 +53,7 @@ function getStatusId(s) {
   if (c === 'IN REVIEW') return 'under-review';
   if (c === 'EVALUATED') return 'evaluated';
   if (c === 'SHORTLISTED') return 'shortlisted';
-  if (c === 'JURY REVIEW') return 'interview';
+  if (c === 'JURY REVIEW') return 'jury_review';
   if (c === 'ACCEPTED') return 'offered';
   if (c === 'REJECTED') return 'not-selected';
   if (c === 'WAITLISTED') return 'waitlisted';
@@ -120,7 +120,7 @@ function downloadCsv(rows) {
       const c = s.chip ? s.chip.toUpperCase() : 'NEW';
       const inv = {
         'NEW': 'submitted', 'PROCESSING': 'ai_screening', 'IN REVIEW': 'under_review',
-        'EVALUATED': 'evaluated', 'SHORTLISTED': 'shortlisted', 'JURY REVIEW': 'interview',
+        'EVALUATED': 'evaluated', 'SHORTLISTED': 'shortlisted', 'JURY REVIEW': 'jury_review',
         'ACCEPTED': 'offered', 'REJECTED': 'rejected', 'WAITLISTED': 'waitlisted',
         'HOLD': 'on_hold', 'WITHDRAWN': 'withdrawn',
       };
@@ -385,34 +385,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
     }
   };
 
-  // Hide/Unhide and Archive → patchMeta per selected row
-  // patchMeta body shape: { is_hidden } or { is_archived }
-  const runBulkMeta = async (patch, label) => {
-    if (busy || selectedRows.length === 0) return;
-    setBusy(true);
-    setNote(null);
-    try {
-      const settled = await Promise.allSettled(
-        selectedRows.map((r) => adminPlatformApi.patchMeta(r.track, r.id, patch)),
-      );
-      const failed = settled.filter((s) => s.status === 'rejected').length;
-      const ok = settled.length - failed;
-      await finishBulk(
-        failed === 0
-          ? { kind: 'ok', text: `${label}: ${ok} updated.` }
-          : { kind: 'error', text: `${label}: ${ok} updated, ${failed} failed.` },
-      );
-    } catch (e) {
-      setNote({ kind: 'error', text: `${label} failed: ${e?.message || e}` });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleBulkHold = () => runBulkDecision('on_hold', 'Hold', true);
-  const handleBulkNextLevel = () => runBulkDecision('shortlisted', 'Send to Next Level', false);
   const handleBulkReject = () => runBulkDecision('rejected', 'Reject', true);
-  const handleBulkArchive = () => runBulkMeta({ is_archived: true }, 'Archive');
 
   // Assign batch to selected rows
   // assignBatch body shape: { items:[{track, application_id}] }
@@ -1234,10 +1207,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
             {selectedIds.length} selected
           </span>
           <div style={{ width: 1, height: 16, background: 'var(--line)' }} />
-          <button className="os-floating-btn" disabled={busy} onClick={handleBulkHold}>Hold</button>
-          <button className="os-floating-btn primary" disabled={busy} onClick={handleBulkNextLevel}>Send to Next Level</button>
           <button className="os-floating-btn danger-outline" disabled={busy} onClick={handleBulkReject}>Reject</button>
-          <button className="os-floating-btn" disabled={busy} onClick={handleBulkArchive}>Archive</button>
           {decisionMode === 'jury' ? (
             <>
               <div style={{ width: 1, height: 16, background: 'var(--line)' }} />

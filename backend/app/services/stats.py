@@ -42,6 +42,7 @@ PHASE_1_STATUSES: list[tuple[str, str]] = [
     ("under_review", "Under review"),
     ("evaluated",    "Evaluated"),
     ("shortlisted",  "Shortlisted"),
+    ("jury_review",  "Jury review"),
     ("interview",    "Interview"),
     ("offered",      "Offered"),
     ("onboarded",    "Onboarded"),
@@ -60,12 +61,12 @@ NON_DRAFT_STATUSES: list[str] = [s for s, _ in PHASE_1_STATUSES]
 FUNNEL_BUCKETS: dict[str, list[str]] = {
     "submitted":  NON_DRAFT_STATUSES,
     "in_review":  ["ai_screening", "under_review"],
-    "advanced":   ["shortlisted", "interview"],
+    "advanced":   ["shortlisted", "interview", "jury_review"],
     "decided":    ["offered", "onboarded"],
 }
 
 # Statuses that mean "advanced past review" for the totals card. Spec §4.8.
-ADVANCED_PAST_REVIEW: list[str] = ["shortlisted", "interview", "offered", "onboarded"]
+ADVANCED_PAST_REVIEW: list[str] = ["shortlisted", "interview", "jury_review", "offered", "onboarded"]
 
 TRACKS: list[str] = ["tir", "sip"]
 

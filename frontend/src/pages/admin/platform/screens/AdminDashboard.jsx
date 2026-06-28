@@ -117,60 +117,6 @@ function ApplicationsByIndustry({ go, industries }) {
   );
 }
 
-// ─── StatusBreakdown ──────────────────────────────────────────────────────────
-// Renders one tile per entry from statusCounts (array of { id, label, n }).
-// Falls back to prototype color palette via STATUS_DOT map.
-const STATUS_DOT = {
-  submitted:    '#b7a06a',
-  'ai-screening': '#3213b7',
-  'under-review': '#3213b7',
-  evaluated:    '#3213b7',
-  shortlisted:  '#2a8f5a',
-  interview:    '#2a8f5a',
-  offered:      '#242424',
-  onboarded:    '#242424',
-  'not-selected': '#242424',
-  waitlisted:   '#242424',
-  withdrawn:    '#242424',
-};
-
-function StatusBreakdown({ go, statusCounts }) {
-  const handleStatusClick = (statusId) => {
-    if (!window.OS_FILTERS) window.OS_FILTERS = {};
-    window.OS_FILTERS.status = statusId;
-    go('pipeline');
-  };
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
-      {statusCounts.map(st => (
-        <div
-          key={st.id}
-          onClick={() => handleStatusClick(st.id)}
-          style={{
-            border: '1px solid var(--line)',
-            borderRadius: '2px',
-            padding: '12px 16px',
-            background: 'var(--bg-paper)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease'
-          }}
-          className="status-breakdown-tile"
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: STATUS_DOT[st.id] || '#8a8a92', display: 'inline-block' }} />
-            <span style={{ fontSize: 13, fontWeight: '500', color: 'var(--ink)', fontFamily: 'var(--font-sans)' }}>{st.label}</span>
-          </div>
-          <span style={{ fontSize: 16, fontWeight: 'bold', fontFamily: 'var(--font-sans)', color: 'var(--ink)' }}>{st.n}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ─── AdminDashboard ───────────────────────────────────────────────────────────
 export function AdminDashboard({ go, decisionMode }) {
   const { data, loading, error } = useAdminData('stats');
@@ -200,7 +146,6 @@ export function AdminDashboard({ go, decisionMode }) {
 
   const totals       = data?.totals       || {};
   const funnel       = data?.funnel       || {};
-  const statusCounts = data?.statusCounts || [];
   const decisions    = data?.decisions    || {};
 
   // ── Reviewer-mode KPI values ──
@@ -343,17 +288,6 @@ export function AdminDashboard({ go, decisionMode }) {
           : <ApplicationsByIndustry go={go} industries={industries} />}
       </div>
 
-      {/* Status breakdown */}
-      <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: 24 }}>
-        <div style={{ marginBottom: 20 }}>
-          <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>§ Status breakdown</span>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0 0', color: 'var(--ink)', fontFamily: 'var(--font-sans)' }}>Where every application sits right now</h2>
-          <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4, fontFamily: 'var(--font-sans)' }}>
-            Click a status to open the Applications tab filtered to it.
-          </div>
-        </div>
-        <StatusBreakdown go={go} statusCounts={statusCounts} />
-      </div>
     </div>
   );
 }

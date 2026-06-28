@@ -313,3 +313,29 @@ def test_send_daily_digest(configured):
     assert payload["to"] == ["admin@artpark.in"]
     assert "25 Jun 2026" in payload["subject"] or "25 Jun 2026" in payload["html"]
     assert "Rey" in payload["html"]
+
+
+def test_send_applicant_decision_advanced_renders_and_sends(monkeypatch):
+    from app.services import email_service as es
+    es.get_email_service.cache_clear()
+    svc = es.get_email_service()
+    captured = {}
+    monkeypatch.setattr(svc, "send_raw",
+        lambda to, subject, html, text, reply_to=None: captured.update(
+            to=to, subject=subject, html=html, text=text) or {"message_id": "x", "status": "sent"})
+    out = svc.send_applicant_decision(to="a@b.com", applicant_name="Ada", outcome="advanced", application_ref="abcd1234")
+    assert out["status"] == "sent"
+    assert captured["to"] == ["a@b.com"]
+    assert "advanced" in captured["text"].lower()
+    assert "Ada" in captured["html"]
+
+
+def test_send_applicant_decision_rejected_uses_decline_copy(monkeypatch):
+    from app.services import email_service as es
+    es.get_email_service.cache_clear()
+    svc = es.get_email_service()
+    captured = {}
+    monkeypatch.setattr(svc, "send_raw",
+        lambda to, subject, html, text, reply_to=None: captured.update(text=text) or {"message_id": "x", "status": "sent"})
+    svc.send_applicant_decision(to="a@b.com", applicant_name="Ada", outcome="rejected")
+    assert "won't be moving" in captured["text"]
