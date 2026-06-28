@@ -668,18 +668,9 @@
 /* ── Topbar ─────────────────────────────────────────────── */
 .rv-portal .lp-topbar {
   display: flex; align-items: center; height: 60px; gap: 20px;
-  padding: 0 28px; border-bottom: 1px solid #e3e3e8;
+  padding: 0 20px; border-bottom: 1px solid #e3e3e8;
   background: #fff; flex-shrink: 0;
 }
-.rv-portal .lp-home-btn {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 9px 17px; background: #fff;
-  border: 1px solid #e3e3e8; border-radius: 6px;
-  font-family: var(--font-display); font-size: 13px; font-weight: 600;
-  letter-spacing: 0.05em; color: #242424; cursor: pointer;
-  flex-shrink: 0; white-space: nowrap; -webkit-font-smoothing: antialiased;
-}
-.rv-portal .lp-home-btn:hover { background: #f6f6f8; border-color: #c8c8d0; }
 .rv-portal .lp-brand {
   display: flex; align-items: center; gap: 9px;
   flex: 0 0 auto;
