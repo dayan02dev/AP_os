@@ -7,6 +7,7 @@ export const STATUS_BUCKET = {
   under_review: "review",
   evaluated:    "review",
   shortlisted:  "advance",
+  jury_review:  "advance",
   interview:    "advance",
   offered:      "decision",
   onboarded:    "decision",
