@@ -81,8 +81,8 @@ def test_legal_transitions_withdrawn_is_terminal():
 
 
 def test_legal_next_states_for_evaluated():
-    # on_hold added in Task 4 (state-machine expansion)
-    assert legal_next_states("evaluated") == ["on_hold", "rejected", "shortlisted", "waitlisted", "withdrawn"]
+    # jury_review added when approve→jury_review path introduced
+    assert legal_next_states("evaluated") == ["jury_review", "on_hold", "rejected", "shortlisted", "waitlisted", "withdrawn"]
 
 
 def test_legal_next_states_for_none_returns_empty():
