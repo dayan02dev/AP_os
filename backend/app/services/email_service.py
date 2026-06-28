@@ -292,6 +292,31 @@ class EmailService:
             text=text,
         )
 
+    def send_applicant_decision(
+        self,
+        *,
+        to: str,
+        applicant_name: str,
+        outcome: str,
+        application_ref: str = "",
+    ) -> dict[str, str]:
+        """Applicant-facing gate-1 decision email.
+
+        outcome="advanced" → moved to jury_review; outcome="rejected" → declined.
+        The rejected copy is deliberately gracious and exposes NO internal rationale.
+        """
+        if outcome == "advanced":
+            template_base = "applicant_decision_advanced"
+            subject = "Your ARTPARK application has advanced to the next round"
+        else:
+            template_base = "applicant_decision_rejected"
+            subject = "An update on your ARTPARK application"
+        html, text = self._render_pair(
+            template_base,
+            {"applicant_name": applicant_name or "there", "application_ref": application_ref},
+        )
+        return self.send_raw([to], subject, html, text)
+
     def send_reviewer_assigned(
         self,
         *,
