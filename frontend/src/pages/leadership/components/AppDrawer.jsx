@@ -40,6 +40,10 @@ function StatusInline({ statusId, label }) {
   );
 }
 
+function titleCase(s) {
+  return s.split(" ").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
+}
+
 function renderProblemSolution(application) {
   if (!application) return null;
   const fields = Object.entries(application).filter(
@@ -56,11 +60,21 @@ function renderProblemSolution(application) {
     );
   }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5, 20px)" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-6, 24px)" }}>
       {fields.map(([k, v]) => (
         <div key={k}>
-          <span className="section-eyebrow">{k.replace(/_/g, " ")}</span>
-          <div style={{ marginTop: "var(--s-2, 8px)", fontSize: 14, lineHeight: 1.6, color: "var(--ink)" }}>
+          <div style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 700,
+            fontSize: 19,
+            lineHeight: 1.2,
+            letterSpacing: "-0.01em",
+            color: "var(--ink)",
+            marginBottom: "var(--s-3, 12px)",
+          }}>
+            {titleCase(k.replace(/_/g, " "))}
+          </div>
+          <div style={{ fontSize: 14, lineHeight: 1.6, color: "var(--ink)" }}>
             <ReadMoreText text={v} />
           </div>
         </div>
