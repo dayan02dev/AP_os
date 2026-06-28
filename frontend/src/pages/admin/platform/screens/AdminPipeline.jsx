@@ -53,7 +53,7 @@ function getStatusId(s) {
   if (c === 'IN REVIEW') return 'under-review';
   if (c === 'EVALUATED') return 'evaluated';
   if (c === 'SHORTLISTED') return 'shortlisted';
-  if (c === 'JURY REVIEW') return 'interview';
+  if (c === 'JURY REVIEW') return 'jury_review';
   if (c === 'ACCEPTED') return 'offered';
   if (c === 'REJECTED') return 'not-selected';
   if (c === 'WAITLISTED') return 'waitlisted';
@@ -120,7 +120,7 @@ function downloadCsv(rows) {
       const c = s.chip ? s.chip.toUpperCase() : 'NEW';
       const inv = {
         'NEW': 'submitted', 'PROCESSING': 'ai_screening', 'IN REVIEW': 'under_review',
-        'EVALUATED': 'evaluated', 'SHORTLISTED': 'shortlisted', 'JURY REVIEW': 'interview',
+        'EVALUATED': 'evaluated', 'SHORTLISTED': 'shortlisted', 'JURY REVIEW': 'jury_review',
         'ACCEPTED': 'offered', 'REJECTED': 'rejected', 'WAITLISTED': 'waitlisted',
         'HOLD': 'on_hold', 'WITHDRAWN': 'withdrawn',
       };
