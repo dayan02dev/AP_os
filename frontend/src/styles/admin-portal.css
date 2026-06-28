@@ -1885,32 +1885,10 @@
   align-items: center;
   height: 60px;
   gap: 20px;
-  padding: 0 28px;
+  padding: 0 20px;
   border-bottom: 1px solid #e3e3e8;
   background: #fff;
   flex-shrink: 0;
-}
-.adm-portal .lp-home-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 17px;
-  background: #fff;
-  border: 1px solid #e3e3e8;
-  border-radius: 2px;
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  color: #3a3a40;
-  cursor: pointer;
-  flex-shrink: 0;
-  white-space: nowrap;
-  -webkit-font-smoothing: antialiased;
-}
-.adm-portal .lp-home-btn:hover {
-  background: #f6f6f8;
-  border-color: #c8c8d0;
 }
 .adm-portal .lp-brand {
   display: flex;
