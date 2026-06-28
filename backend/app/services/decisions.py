@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 from fastapi import HTTPException, status
 
 from ..supabase_client import get_admin_client
-from . import state_machine
+from . import decision_email, state_machine
 from .audit import write_audit
 
 
@@ -81,6 +81,17 @@ def record_decision(*, track, application_id, decision, rationale, decided_by, d
         target_table=table, target_id=application_id,
         after={"decision": decision, "from_status": from_status},
     )
+
+    # 5. Best-effort applicant notification (rejected / jury_review only).
+    #    Swallows its own errors; guard again so a notify bug can't break the decision.
+    if decision in ("rejected", "jury_review"):
+        try:
+            decision_email.notify_applicant_decided(
+                sb, track=track, application_id=application_id, decision=decision,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
     return {
         "application_id": application_id,
         "track": track,
