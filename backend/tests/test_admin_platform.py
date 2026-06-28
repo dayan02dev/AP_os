@@ -1011,3 +1011,20 @@ def test_patch_reviewer_accepts_in_range_weight(client, monkeypatch, _clear_over
     _install_db(monkeypatch, _empty_admin_tables())
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
     assert client.patch("/admin/platform/reviewers/rev-1", json={"weight": 7.5}).status_code == 200
+
+
+def test_decision_accepts_jury_review(client, monkeypatch, _clear_overrides):
+    # decision="jury_review" should return NOT 422 (invalid enum).
+    # App must be in a state from which jury_review is a legal transition.
+    _install_db(monkeypatch, {
+        "tir_applications": [{"id": "APP_EVALUATED", "status": "evaluated"}],
+        "sip_applications": [], "admin_decisions": [], "application_status_log": [],
+    })
+    monkeypatch.setattr("app.services.decisions.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+    r = client.post(
+        "/admin/platform/applications/tir/APP_EVALUATED/decision",
+        json={"decision": "jury_review"},
+    )
+    # 200 (decided) — NOT 422 (invalid enum). Exact body depends on the fake; assert not-422.
+    assert r.status_code != 422, r.text
