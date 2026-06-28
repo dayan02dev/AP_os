@@ -18,6 +18,7 @@ import {
 } from "../../../lib/reviewerStatus.js";
 import AISummaryBlock from "./AISummaryBlock.jsx";
 import Collapsible from "./Collapsible.jsx";
+import ReadMoreText from "./ReadMoreText.jsx";
 
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -55,14 +56,16 @@ function renderProblemSolution(application) {
     );
   }
   return (
-    <dl className="def">
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5, 20px)" }}>
       {fields.map(([k, v]) => (
-        <div key={k} className="def-row" style={{ gridTemplateColumns: "180px 1fr" }}>
-          <dt>{k.replace(/_/g, " ")}</dt>
-          <dd style={{ lineHeight: 1.55 }}>{v}</dd>
+        <div key={k}>
+          <span className="section-eyebrow">{k.replace(/_/g, " ")}</span>
+          <div style={{ marginTop: "var(--s-2, 8px)", fontSize: 14, lineHeight: 1.6, color: "var(--ink)" }}>
+            <ReadMoreText text={v} />
+          </div>
         </div>
       ))}
-    </dl>
+    </div>
   );
 }
 

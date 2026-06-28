@@ -42,8 +42,6 @@ function ReviewerTopbar({ tab }) {
 
   return (
     <div className="lp-topbar">
-      <button className="lp-home-btn" onClick={() => navigate("/reviewer")}>← HOME</button>
-
       <div className="lp-brand">
         <img
           src="/assets/artpark-iisc-logo.webp"
