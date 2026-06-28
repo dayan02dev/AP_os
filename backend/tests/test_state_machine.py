@@ -219,3 +219,14 @@ def test_apply_status_change_on_hold_roundtrip(monkeypatch):
     monkeypatch.setattr(sm, "get_admin_client", lambda: fake2)
     prev2 = sm.apply_status_change("app-1", "tir", to_status="shortlisted", changed_by="u1")
     assert prev2 == "on_hold"
+
+
+def test_jury_review_reachable_from_review_states():
+    # Approve → jury_review must be legal from every realistic pre-jury state.
+    for frm in ("under_review", "evaluated", "on_hold", "shortlisted"):
+        sm.assert_legal_transition(frm, "jury_review")  # must not raise
+
+
+def test_jury_review_can_be_rejected():
+    # Smoke test relies on approve-then-reject of one app.
+    sm.assert_legal_transition("jury_review", "rejected")  # must not raise
