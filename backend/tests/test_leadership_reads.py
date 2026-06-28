@@ -171,8 +171,13 @@ def test_classify_industry_is_case_insensitive():
     assert bucket_id == "robotics"
 
 
-def test_phase_1_statuses_has_eleven_entries():
-    assert len(PHASE_1_STATUSES) == 11
+def test_phase_1_statuses_has_twelve_entries():
+    assert len(PHASE_1_STATUSES) == 12
+
+
+def test_phase_1_statuses_includes_jury_review():
+    ids = [s for s, _ in PHASE_1_STATUSES]
+    assert "jury_review" in ids
 
 
 def test_funnel_buckets_in_review():
@@ -180,7 +185,7 @@ def test_funnel_buckets_in_review():
 
 
 def test_funnel_buckets_advanced():
-    assert FUNNEL_BUCKETS["advanced"] == ["shortlisted", "interview"]
+    assert FUNNEL_BUCKETS["advanced"] == ["shortlisted", "interview", "jury_review"]
 
 
 def test_funnel_buckets_decided():
@@ -188,7 +193,7 @@ def test_funnel_buckets_decided():
 
 
 def test_advanced_past_review_constant():
-    assert ADVANCED_PAST_REVIEW == ["shortlisted", "interview", "offered", "onboarded"]
+    assert ADVANCED_PAST_REVIEW == ["shortlisted", "interview", "jury_review", "offered", "onboarded"]
 
 
 def test_tracks_constant():
