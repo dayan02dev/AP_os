@@ -118,26 +118,7 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reloadKey] = useState(0);
-  const [rejecting, setRejecting] = useState(false);
-  const [rejectErr, setRejectErr] = useState(null);
   const panelRef = useRef(null);
-
-  const handleReject = async () => {
-    const reason = window.prompt(
-      `Reject ${row.name || "this application"}?\n\nOptional reason (leave blank to reject without a note):`,
-    );
-    if (reason === null) return; // cancelled
-    setRejecting(true);
-    setRejectErr(null);
-    try {
-      await leadershipApi.decide(row.id, { decision: "rejected", rationale: reason || undefined });
-      if (onDecided) onDecided();
-      else onClose();
-    } catch (e) {
-      setRejectErr(e?.message || "Reject failed.");
-      setRejecting(false);
-    }
-  };
 
   useEffect(() => {
     if (!row) return undefined;
@@ -423,20 +404,6 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
         </div>
 
         <footer className="drawer-footer">
-          {rejectErr && (
-            <span style={{ color: "var(--bad)", fontSize: 12, marginRight: "auto", alignSelf: "center" }}>
-              {rejectErr}
-            </span>
-          )}
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={handleReject}
-            disabled={rejecting}
-            style={{ color: "var(--bad)", borderColor: "var(--bad)" }}
-          >
-            {rejecting ? "Rejecting…" : "Reject application"}
-          </button>
           <button
             type="button"
             className="btn btn-primary"
