@@ -307,8 +307,8 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
     if (!apiDecision) return;
 
     // Validate rationale requirement
-    if (['hold', 'reject', 'waitlist'].includes(decision) && !rationale.trim()) {
-      setDecisionError(`A rationale is required to ${decision} this application.`);
+    if (decision === 'reject' && !rationale.trim()) {
+      setDecisionError(`A rationale is required to reject this application.`);
       return;
     }
 
@@ -706,9 +706,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
             <div className="os-reco-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
               {[
                 { id: 'approve', label: 'Approve', activeStyle: { background: '#3213b7', color: '#fff', borderColor: '#3213b7' } },
-                { id: 'hold',    label: 'Hold',    activeStyle: {} },
                 { id: 'reject',  label: 'Reject',  activeStyle: {} },
-                { id: 'waitlist', label: 'Waitlist', activeStyle: {} },
               ].map(btn => (
                 <button
                   key={btn.id}
@@ -723,9 +721,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
             </div>
 
             <div className="os-mt-sm" style={{ fontSize: 12, color: '#6f6f78', fontStyle: 'italic' }}>
-              {decisionMode === 'jury'
-                ? 'Approval will invite for cohort onboarding'
-                : 'Approval will invite to psychometry'}
+              Approval advances the application to the jury evaluation round.
             </div>
 
             <textarea
@@ -733,8 +729,8 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
               rows={3}
               style={{ fontSize: 13.5 }}
               placeholder={
-                decision && ['hold', 'reject', 'waitlist'].includes(decision)
-                  ? 'Rationale (required for hold / reject / waitlist)…'
+                decision === 'reject'
+                  ? 'Rationale (required for reject)…'
                   : 'Rationale (optional for approve)…'
               }
               value={rationale}
