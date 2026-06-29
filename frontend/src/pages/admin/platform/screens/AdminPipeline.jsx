@@ -77,7 +77,6 @@ function getChipTone(s) {
 const STATUSES = [
   { id: 'all', label: 'All' },
   { id: 'submitted', label: 'Submitted', color: '#b7a06a' },
-  { id: 'ai-screening', label: 'AI screening', color: '#3213b7' },
   { id: 'under-review', label: 'Under review', color: '#3213b7' },
   { id: 'evaluated', label: 'Evaluated', color: '#3213b7' },
   { id: 'shortlisted', label: 'Shortlisted', color: '#2a8f5a' },

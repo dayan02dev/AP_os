@@ -168,4 +168,15 @@ describe("AdminPipeline screen (smoke)", () => {
     );
     expect(screen.getAllByTestId("preview-badge").length).toBeGreaterThan(0);
   });
+
+  it("STATUS filter no longer offers an 'AI screening' option", () => {
+    render(
+      React.createElement(AdminPipeline, { goDetail: vi.fn(), decisionMode: "reviewer" }),
+    );
+    // Open the collapsible Filters panel.
+    fireEvent.click(screen.getByRole("button", { name: /Filters/i }));
+    expect(screen.queryByText("AI screening")).toBeNull();
+    // Sanity: a sibling status option is still present.
+    expect(screen.getByText("Under review")).toBeTruthy();
+  });
 });
