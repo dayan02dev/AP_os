@@ -90,7 +90,7 @@ vi.mock("../../../../hooks/useAdminData", () => ({
     }
     // batches kind
     return {
-      data: { batches: [{ id: "b1", name: "Batch A", phase: "" }] },
+      data: { batches: [{ id: "b1", name: "Batch A", phase: "" }, { id: "b2", name: "Batch B", phase: "" }] },
       loading: false,
       error: null,
       reload: vi.fn(),
@@ -102,7 +102,7 @@ vi.mock("../../../../lib/adminPlatformApi", () => ({
   adminPlatformApi: {
     bulkDecide: vi.fn().mockResolvedValue({ results: [] }),
     patchMeta: vi.fn().mockResolvedValue({}),
-    assignBatch: vi.fn().mockResolvedValue({}),
+    assignBatch: vi.fn().mockResolvedValue({ assigned: 1, assignments_created: 2, reviewers_notified: 2 }),
     createBatch: vi.fn().mockResolvedValue({ id: "b2" }),
     renameBatch: vi.fn().mockResolvedValue({}),
   },
@@ -167,6 +167,15 @@ describe("AdminPipeline screen (smoke)", () => {
       }),
     );
     expect(screen.getAllByTestId("preview-badge").length).toBeGreaterThan(0);
+  });
+
+  it("shows a 'reviewers notified' note after a per-row batch assign", async () => {
+    render(
+      React.createElement(AdminPipeline, { goDetail: vi.fn(), decisionMode: "reviewer" }),
+    );
+    const select = screen.getByDisplayValue("Batch A");
+    fireEvent.change(select, { target: { value: "Batch B" } });
+    expect(await screen.findByText(/reviewer\(s\) notified/i)).toBeTruthy();
   });
 
   it("STATUS filter no longer offers an 'AI screening' option", () => {
