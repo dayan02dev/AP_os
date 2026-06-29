@@ -1002,6 +1002,50 @@ def test_invalid_role_rejected(staging_admin_token, staging_base_url):
     assert r.json()["detail"]["code"] == "invalid_role"
 
 
+class _RecordingCreateAuth(_FakeCreateAuth):
+    def __init__(self, new_user_id="u-new"):
+        super().__init__(new_user_id)
+        self.invited = False
+        self.created = False
+    def invite_user_by_email(self, email):
+        self.invited = True
+        return super().invite_user_by_email(email)
+    def create_user(self, payload):
+        self.created = True
+        return super().create_user(payload)
+
+
+class _InviteEmailService:
+    def __init__(self):
+        self.reviewer_invite_calls = []
+    def send_reviewer_invite(self, **kwargs):
+        self.reviewer_invite_calls.append(kwargs)
+        return {"message_id": "test", "status": "sent"}
+
+
+def test_reviewer_invite_emails_credentials(client, monkeypatch, _clear_overrides):
+    auth = _RecordingCreateAuth()
+    fake = _FakeAdminClient(rows={"profiles": [], "user_roles": []}, auth=auth)
+    fake_email = _InviteEmailService()
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(admin_users_router, "get_email_service", lambda: fake_email)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users",
+        headers={"Authorization": "Bearer test-token"},
+        json={"email": "rev@x.com", "full_name": "Rev", "roles": ["reviewer"], "send_invite": True},
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert auth.created and not auth.invited           # password path, not magic link
+    assert body["temp_password"]                        # returned so the modal shows the real one
+    assert len(fake_email.reviewer_invite_calls) == 1
+    call = fake_email.reviewer_invite_calls[0]
+    assert call["to"] == "rev@x.com"
+    assert call["temp_password"] == body["temp_password"]
+
+
 @_staging_skip
 def test_non_admin_gets_403(staging_reviewer_token, staging_base_url):
     """A reviewer-only user calling /admin/users gets 403 missing_capability."""

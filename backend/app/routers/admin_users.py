@@ -88,8 +88,10 @@ async def create_user(
     # invitee pick their own password.
     temp_password = secrets.token_urlsafe(16) + "!1Aa"
 
+    is_reviewer_invite = "reviewer" in body.roles
+
     try:
-        if body.send_invite:
+        if body.send_invite and not is_reviewer_invite:
             invite = client.auth.admin.invite_user_by_email(body.email)
             new_user = invite.user
         else:
@@ -137,6 +139,20 @@ async def create_user(
     ]
     client.table("user_roles").insert(rows).execute()
 
+    credentials_emailed = False
+    if is_reviewer_invite and body.send_invite:
+        try:
+            get_email_service().send_reviewer_invite(
+                to=body.email,
+                reviewer_name=body.full_name,
+                login_email=body.email,
+                temp_password=temp_password,
+                inbox_url=frontend_url("/reviewer"),
+            )
+            credentials_emailed = True
+        except Exception:  # noqa: BLE001
+            log.warning("reviewer invite email failed for %s", body.email, exc_info=True)
+
     write_audit(
         actor_user_id=current_user["user_id"],
         actor_role="admin",
@@ -151,8 +167,9 @@ async def create_user(
         "email": body.email,
         "full_name": body.full_name,
         "roles": body.roles,
-        "temp_password": None if body.send_invite else temp_password,
+        "temp_password": temp_password if (is_reviewer_invite or not body.send_invite) else None,
         "invite_sent": body.send_invite,
+        "credentials_emailed": credentials_emailed,
     }
 
 
