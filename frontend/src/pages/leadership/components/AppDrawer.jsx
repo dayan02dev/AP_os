@@ -61,17 +61,17 @@ function renderProblemSolution(application) {
     );
   }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-6, 24px)" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4, 16px)" }}>
       {fields.map(([k, v]) => (
         <div key={k}>
           <div style={{
-            fontFamily: "var(--font-display)",
+            fontFamily: "var(--font-body)",
             fontWeight: 700,
-            fontSize: 19,
-            lineHeight: 1.2,
-            letterSpacing: "-0.01em",
-            color: "var(--ink)",
-            marginBottom: "var(--s-3, 12px)",
+            fontSize: 11,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: "var(--ink-dim)",
+            marginBottom: "var(--s-2, 8px)",
           }}>
             {titleCase(k.replace(/_/g, " "))}
           </div>
@@ -218,18 +218,19 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
         <div className="drawer-body">
           <section className="drawer-section">
             <span className="section-eyebrow">AI score</span>
-            <div style={{ display: "flex", alignItems: "baseline", gap: "var(--s-3)" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "var(--s-2)" }}>
               <strong
                 style={{
                   fontFamily: "var(--font-display)",
-                  fontSize: 44,
+                  fontSize: 34,
                   color: aiScreening?.score_overall != null ? "var(--artblue)" : "var(--ink-dim)",
                   lineHeight: 1,
+                  letterSpacing: "-0.02em",
                 }}
               >
                 {aiScreening?.score_overall != null ? aiScreening.score_overall.toFixed(1) : "—"}
               </strong>
-              <span style={{ color: "var(--ink-dim)", fontSize: 14 }}>
+              <span style={{ color: "var(--ink-dim)", fontSize: 13 }}>
                 / 10 overall
               </span>
             </div>
