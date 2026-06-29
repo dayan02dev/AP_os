@@ -33,6 +33,10 @@ export const reviewerApi = {
   getQueue: () => api.get("/reviewer/queue"),
   getContent: (track, id) =>
     api.get(`/reviewer/applications/${track}/${id}/content`),
+  fileSignedUrl: (track, id, storagePath) =>
+    api.get(
+      `/reviewer/applications/${track}/${id}/files/signed-url?storage_path=${encodeURIComponent(storagePath)}`,
+    ),
   getHistory: () => api.get("/reviewer/history"),
   getRubric: (track) =>
     api.get(`/reviewer/rubric?track=${encodeURIComponent(track)}`),

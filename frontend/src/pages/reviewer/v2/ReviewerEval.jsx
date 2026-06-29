@@ -1,5 +1,5 @@
 // Reviewer evaluation screen — ported from REVIEWER-UI/os/reviewer.jsx
-// (ReviewerEval loader + ReviewerEvalForm + FullApplicationView + RubricModal).
+// (ReviewerEval loader + ReviewerEvalForm + RubricModal).
 //
 // Seam wiring (plan Task 12 rule 2):
 //   * content  ← reviewerApi.getContent(track, appId)
@@ -24,6 +24,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import FullApplication from "../../../components/FullApplication.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
 import {
@@ -96,95 +97,6 @@ export default function ReviewerEval({ track, appId, onBack, onOpen }) {
       onNext={neighbors.next && onOpen ? () => onOpen(neighbors.next.track, neighbors.next.id) : null}
       showNav={neighbors.hasPosition}
     />
-  );
-}
-
-// ── Full application view (founder-form style) ──────────────────────────
-function FullApplicationView({ content, onBack }) {
-  const PURPLE = "#3213b7";
-  const eyebrowMono = { fontFamily: "var(--font-mono)", fontSize: 12, letterSpacing: "0.18em" };
-  const pill = {
-    fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.14em", fontWeight: 600,
-    color: PURPLE, border: "1px solid #ccc2f0", background: "#ece9fb", padding: "4px 11px", borderRadius: 999,
-  };
-  const answerBox = {
-    background: "#fff", border: "1px solid var(--line)", borderRadius: 8,
-    padding: "18px 22px", fontSize: 16, lineHeight: 1.62, color: "var(--ink)",
-  };
-  const sections = (content.sections || []).filter((s) => (s.questions || []).length > 0);
-  const total = String(sections.length).padStart(2, "0");
-
-  return (
-    <div style={{ maxWidth: 840, margin: "0 auto" }}>
-      <div className="os-row between" style={{ marginBottom: 32 }}>
-        <button className="os-btn ghost sm" onClick={onBack}>← Back to review</button>
-        <span className="os-text-dim os-uppercase" style={{ ...eyebrowMono }}>
-          {content.name} · full application
-        </span>
-      </div>
-
-      {sections.map((sec, si) => (
-        <div key={si} style={{ marginBottom: 56 }}>
-          <div className="os-row between" style={{ marginBottom: 18 }}>
-            <span style={eyebrowMono}>
-              <span style={{ background: "#aafcf0", color: "#3213b7", padding: "2px 7px", fontWeight: 700 }}>SECTION</span>
-              <span className="os-text-dim" style={{ marginLeft: 8 }}>{sec.num}</span>
-            </span>
-            <span className="os-text-dim" style={eyebrowMono}>OF {total}</span>
-          </div>
-
-          <div style={{ fontSize: 72, fontWeight: 800, color: PURPLE, lineHeight: 1, fontFamily: "var(--font-display)" }}>
-            {sec.num}
-          </div>
-          <h2 style={{ fontSize: 40, fontWeight: 800, margin: "10px 0 0", letterSpacing: "-0.02em", color: "var(--ink)" }}>
-            {sec.title}
-          </h2>
-
-          <div style={{ marginTop: 24 }}>
-            {sec.questions.map((q, qi) => (
-              <div key={qi} style={{ borderTop: "1px solid var(--line)", padding: "28px 0" }}>
-                <div className="os-row between" style={{ marginBottom: 12 }}>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: PURPLE }}>
-                    {String(qi + 1).padStart(2, "0")} →
-                  </span>
-                </div>
-                <h3 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "-0.01em", lineHeight: 1.3, color: "var(--ink)" }}>
-                  {q.prompt}
-                </h3>
-                <div style={{ marginTop: 16 }}>
-                  <div style={answerBox}>{q.answer}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {(content.attachments || []).length > 0 && (
-        <div style={{ marginBottom: 48 }}>
-          <div className="ps-group-label">Attachments</div>
-          <div className="os-stack gap-sm">
-            {content.attachments.map((a, i) => (
-              <a
-                key={i}
-                href={a.url}
-                target="_blank"
-                rel="noreferrer"
-                className="os-btn secondary"
-                style={{ justifyContent: "space-between" }}
-              >
-                <span>{a.name}</span>
-                <span className="os-chip green">{(a.kind || "file").toUpperCase()} ↗</span>
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div style={{ borderTop: "1px solid var(--line)", paddingTop: 28, marginBottom: 48 }}>
-        <button className="os-btn" onClick={onBack}>← Back to review</button>
-      </div>
-    </div>
   );
 }
 
@@ -448,7 +360,19 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   const reopenForEdit = () => setReopened(true);
 
   if (viewApp) {
-    return <FullApplicationView content={content} onBack={() => setViewApp(false)} />;
+    return (
+      <div>
+        <button className="os-btn ghost sm" style={{ marginBottom: 16 }} onClick={() => setViewApp(false)}>
+          ← Back to evaluation
+        </button>
+        <FullApplication
+          track={content.track}
+          application={content.application}
+          applicationId={content.id}
+          signedUrl={(id, path) => reviewerApi.fileSignedUrl(content.track, id, path)}
+        />
+      </div>
+    );
   }
 
   const longFields = (content.fields || []).filter((f) => Array.isArray(f.bullets));
