@@ -83,3 +83,16 @@ def test_reviewer_reminder_shows_pending_and_completed():
     assert "4" in html                    # completed
     assert "Open reviewer inbox" in html
     assert "#3213b7" in html
+
+
+def test_daily_digest_lists_all_reviewers():
+    html = _render_html("daily_digest", {
+        "date_label": "29 Jun 2026",
+        "reviewers": [
+            {"name": "Udita", "assigned": 6, "completed": 4, "pending": 2},
+            {"name": "Nirav", "assigned": 0, "completed": 0, "pending": 0},
+        ],
+        "total_pending": 2, "total_assigned": 6,
+    })
+    assert "Udita" in html and "Nirav" in html
+    assert "#3213b7" in html

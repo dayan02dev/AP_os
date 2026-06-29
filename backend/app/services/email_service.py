@@ -390,17 +390,19 @@ class EmailService:
         *,
         to: list[str],
         date_label: str,
-        total_reviews: int,
         reviewers: list[dict],
+        total_pending: int,
+        total_assigned: int,
     ) -> dict[str, str]:
-        """Daily admin digest of reviewer activity for `date_label`."""
+        """Daily admin digest: progress for every active reviewer."""
         html, text = self._render_pair(
             "daily_digest",
-            {"date_label": date_label, "total_reviews": total_reviews, "reviewers": reviewers},
+            {"date_label": date_label, "reviewers": reviewers,
+             "total_pending": total_pending, "total_assigned": total_assigned},
         )
         return self.send_raw(
             to=to,
-            subject=f"Reviewer activity — {date_label} — ARTPARK OS",
+            subject=f"Reviewer progress — {date_label} — ARTPARK OS",
             html=html,
             text=text,
         )

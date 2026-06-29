@@ -306,10 +306,9 @@ def test_send_daily_digest(configured):
     svc.send_daily_digest(
         to=["admin@artpark.in"],
         date_label="25 Jun 2026",
-        total_reviews=3,
-        reviewers=[{"reviewer_name": "Rey", "count": 3, "items": [
-            {"application_id_short": "aae677aa", "track_label": "VIP", "recommendation": "yes", "overall": 8.6},
-        ]}],
+        reviewers=[{"name": "Rey", "assigned": 3, "completed": 0, "pending": 3}],
+        total_pending=3,
+        total_assigned=3,
     )
     payload = post.call_args.kwargs["json"]
     assert payload["to"] == ["admin@artpark.in"]
