@@ -21,10 +21,25 @@ import React, { useState, useMemo } from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { adminApi } from "../../../../lib/adminApi";
-import { generateBasicPassword } from "../helpers/adminHelpers";
 import { PageHead } from "../shell/osAtoms";
 import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import { ManageApplicationsDrawer } from "./ManageApplicationsDrawer";
+
+// Guaranteed policy-compliant temp password: >=10 chars with upper, lower,
+// digit, and symbol (mirrors the backend `_password_ok`). The legacy
+// generateBasicPassword() doesn't guarantee a digit, so we use this.
+export function genStrongPassword() {
+  const U = "ABCDEFGHJKLMNPQRSTUVWXYZ", L = "abcdefghijkmnpqrstuvwxyz", D = "23456789", S = "!@#$%*-+";
+  const pick = (s) => s[Math.floor(Math.random() * s.length)];
+  let core = "";
+  const all = U + L + D + S;
+  for (let i = 0; i < 6; i++) core += pick(all);
+  // Ensure one of each class + length >= 10 ("Rv-" prefix + 4 guaranteed + 6 core = 13)
+  return `Rv-${pick(U)}${pick(L)}${pick(D)}${pick(S)}${core}`;
+}
+export function pwValid(pw) {
+  return pw.length >= 10 && /[a-z]/.test(pw) && /[A-Z]/.test(pw) && /\d/.test(pw) && /[^A-Za-z0-9]/.test(pw);
+}
 
 // Render a reviewer's last-activity value: ISO timestamps → absolute IST
 // date + time ("29 Jun 2026, 10:39 AM"); non-ISO strings (the jury mock's
@@ -235,17 +250,22 @@ function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
 
 // ─── Invite modal ────────────────────────────────────────────────────────────
 
-function InviteModal({ allBatches, isJury, invitePassword, onClose, onInvited }) {
+function InviteModal({ allBatches, isJury, onClose, onInvited }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [invDomain, setInvDomain] = useState('');
   const [invBatch, setInvBatch] = useState('');
+  const [password, setPassword] = useState(() => genStrongPassword());
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   const [result, setResult] = useState(null);
 
   const handleInvite = async () => {
     if (!name.trim() || !email.trim()) { setErr('Name and email are required.'); return; }
+    if (!isJury && !pwValid(password)) {
+      setErr('Password must be at least 10 characters and include an uppercase letter, a lowercase letter, a digit, and a symbol.');
+      return;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -260,11 +280,14 @@ function InviteModal({ allBatches, isJury, invitePassword, onClose, onInvited })
         full_name: name.trim(),
         roles: ['reviewer'],
         send_invite: true,
+        temp_password: password,
       });
       setResult(res);
       onInvited();
     } catch (e) {
-      setErr(e?.message || 'Invite failed.');
+      setErr(e?.code === 'weak_password'
+        ? 'Password must be at least 10 characters and include an uppercase letter, a lowercase letter, a digit, and a symbol.'
+        : (e?.message || 'Invite failed.'));
       setSaving(false);
     }
   };
@@ -301,6 +324,9 @@ function InviteModal({ allBatches, isJury, invitePassword, onClose, onInvited })
                   Invite URL: {result.invite_url}
                 </div>
               )}
+              {result.existing_user && (
+                <div className="os-text-xs os-text-dim" style={{ marginTop: 8 }}>This email already had an account — it's now a reviewer (other portal access removed).</div>
+              )}
               <button className="os-btn" style={{ marginTop: 20, width: '100%' }} onClick={onClose}>Done</button>
             </div>
           ) : (
@@ -330,18 +356,26 @@ function InviteModal({ allBatches, isJury, invitePassword, onClose, onInvited })
                   <input
                     type="text"
                     className="os-input os-w-100 os-mono"
-                    style={{ fontSize: 13, background: 'var(--bg-soft)', fontWeight: 600 }}
-                    value={invitePassword}
-                    readOnly
+                    style={{ fontSize: 13, fontWeight: 600 }}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
                   />
                   <button
                     className="os-btn secondary sm"
                     type="button"
-                    onClick={() => { navigator.clipboard?.writeText(invitePassword); }}
+                    onClick={() => { navigator.clipboard?.writeText(password); }}
                   >
                     Copy
                   </button>
+                  <button
+                    className="os-btn ghost sm"
+                    type="button"
+                    onClick={() => setPassword(genStrongPassword())}
+                  >
+                    Regenerate
+                  </button>
                 </div>
+                <div className="os-text-xs os-text-dim" style={{ marginTop: 4 }}>Min 10 chars with an uppercase, lowercase, digit, and symbol.</div>
               </div>
 
               {err && (
@@ -534,7 +568,6 @@ export function AdminReviewers({ decisionMode }) {
   const [appsTarget, setAppsTarget] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
   const [showEditPicker, setShowEditPicker] = useState(false);
-  const [invitePassword] = useState(() => generateBasicPassword());
 
   // Drawer animation styles (injected once)
   const drawerStyles = `
@@ -612,7 +645,6 @@ export function AdminReviewers({ decisionMode }) {
           <InviteModal
             allBatches={allBatches}
             isJury={true}
-            invitePassword={invitePassword}
             onClose={() => setShowInvite(false)}
             onInvited={() => setShowInvite(false)}
           />
@@ -803,7 +835,6 @@ export function AdminReviewers({ decisionMode }) {
         <InviteModal
           allBatches={allBatches}
           isJury={false}
-          invitePassword={invitePassword}
           onClose={() => setShowInvite(false)}
           onInvited={() => { setShowInvite(false); reload(); }}
         />

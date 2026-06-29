@@ -45,8 +45,9 @@ vi.mock("../../../../lib/leadershipApi", () => ({
 
 import { useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
+import { adminApi } from "../../../../lib/adminApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
-import { AdminReviewers } from "../screens/AdminReviewers";
+import { AdminReviewers, genStrongPassword, pwValid } from "../screens/AdminReviewers";
 
 const SAMPLE_REVIEWERS = [
   {
@@ -279,5 +280,62 @@ describe("AdminReviewers (jury-mode)", () => {
     // Jury drawer has only a Close button (no Save changes)
     expect(screen.queryByText("Save changes")).toBeNull();
     expect(adminPlatformApi.patchReviewer).not.toHaveBeenCalled();
+  });
+});
+
+describe("genStrongPassword / pwValid helpers", () => {
+  it("pwValid returns true for genStrongPassword output", () => {
+    for (let i = 0; i < 20; i++) {
+      const pw = genStrongPassword();
+      expect(pwValid(pw)).toBe(true);
+    }
+  });
+
+  it("pwValid returns false for weak passwords", () => {
+    expect(pwValid("weak")).toBe(false);
+    expect(pwValid("alllowercase1!")).toBe(false);   // no uppercase
+    expect(pwValid("ALLUPPERCASE1!")).toBe(false);   // no lowercase
+    expect(pwValid("NoDigitHere!!")).toBe(false);    // no digit
+    expect(pwValid("NoSymbol1A")).toBe(false);       // no symbol
+    expect(pwValid("Sh0rt!")).toBe(false);           // too short
+  });
+});
+
+describe("InviteModal — sends temp_password to createUser", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAdminData.mockImplementation((kind) => {
+      if (kind === "batches") return { data: { batches: [] }, loading: false, error: null, reload: vi.fn() };
+      return { data: { reviewers: SAMPLE_REVIEWERS }, loading: false, error: null, reload: vi.fn() };
+    });
+  });
+
+  it("calls createUser with non-empty temp_password and roles=['reviewer']", async () => {
+    render(<AdminReviewers decisionMode="reviewer" />);
+    // Open the invite modal
+    fireEvent.click(screen.getByText("Invite member"));
+
+    // Fill name and email
+    const inputs = screen.getAllByRole("textbox");
+    const nameInput = inputs.find(i => i.placeholder && /Vikram/i.test(i.placeholder));
+    const emailInput = inputs.find(i => i.placeholder && /example/i.test(i.placeholder));
+    fireEvent.change(nameInput, { target: { value: "Test Reviewer" } });
+    fireEvent.change(emailInput, { target: { value: "test@example.in" } });
+
+    // Submit
+    fireEvent.click(screen.getByText("Send Invite"));
+
+    await waitFor(() => {
+      expect(adminApi.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          temp_password: expect.any(String),
+          roles: ["reviewer"],
+          email: "test@example.in",
+          full_name: "Test Reviewer",
+        })
+      );
+      const call = adminApi.createUser.mock.calls[0][0];
+      expect(call.temp_password.length).toBeGreaterThan(0);
+    });
   });
 });
