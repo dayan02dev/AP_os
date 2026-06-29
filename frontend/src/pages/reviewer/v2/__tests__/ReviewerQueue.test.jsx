@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import ReviewerQueue from "../ReviewerQueue.jsx";
 
 const ROW = {
@@ -49,5 +49,19 @@ describe("ReviewerQueue", () => {
   it("does not render a Due column header", () => {
     render(<ReviewerQueue onOpen={() => {}} queueAsync={queueAsync} />);
     expect(screen.queryByRole("columnheader", { name: /^Due$/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("ReviewerQueue filters toggle", () => {
+  const qa = {
+    data: [{ id: "1", applicationId: "TIR-1", track: "tir", name: "X", founders: [],
+             industry: "EdTech", stage: "Lab demo", ai: { overall: 4 }, reviewStatus: "submitted", due: null }],
+    loading: false, error: null, reload: () => {},
+  };
+  it("hides the Status/Stage/Industry sections until the Filters button is clicked", () => {
+    render(<ReviewerQueue onOpen={() => {}} queueAsync={qa} />);
+    expect(screen.queryByText("STATUS")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/i }));
+    expect(screen.getByText("STATUS")).toBeInTheDocument();
   });
 });

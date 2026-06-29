@@ -20,6 +20,7 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
   const [statusFilter, setStatusFilter] = useState("all");
   const [stageFilter, setStageFilter] = useState("all");
   const [domainFilter, setDomainFilter] = useState(initialDomain);
+  const [showFilters, setShowFilters] = useState(false);
 
   const { data, loading, error, reload } = queueAsync;
   const allQueue = data || [];
@@ -66,6 +67,11 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
 
   const hasFilters =
     search || track !== "all" || statusFilter !== "all" || stageFilter !== "all" || domainFilter !== "all";
+  const activeFilterCount =
+    (track !== "all" ? 1 : 0) +
+    (statusFilter !== "all" ? 1 : 0) +
+    (stageFilter !== "all" ? 1 : 0) +
+    (domainFilter !== "all" ? 1 : 0);
   const clearAll = () => {
     setSearch("");
     setTrack("all");
@@ -94,6 +100,12 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
             ))}
           </div>
           <div style={{ flex: 1 }} />
+          <button
+            className={`lp-filter-btn${showFilters ? " active" : ""}`}
+            onClick={() => setShowFilters((v) => !v)}
+          >
+            Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+          </button>
           {hasFilters && (
             <button className="lp-filter-btn lp-clear-btn" onClick={clearAll}>Clear filters</button>
           )}
@@ -102,66 +114,70 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
           </span>
         </div>
 
-        <div className="lp-filter-section">
-          <span className="lp-filter-label">STATUS</span>
-          <div className="lp-filter-btns">
-            <button className={`lp-filter-btn${statusFilter === "all" ? " active" : ""}`} onClick={() => setStatusFilter("all")}>
-              All
-            </button>
-            {["submitted", "draft", "not-started"].map((st) => (
-              <button
-                key={st}
-                className={`lp-filter-btn${statusFilter === st ? " active" : ""}`}
-                onClick={() => setStatusFilter(st)}
-              >
-                <span
-                  className="sdot"
-                  style={{ background: statusFilter === st ? "rgba(255,255,255,0.8)" : STATUS_DOTS[st] }}
-                />
-                {STATUS_LABELS[st]}
-                <span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{statusCounts[st] || 0}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        {showFilters && (
+          <>
+            <div className="lp-filter-section">
+              <span className="lp-filter-label">STATUS</span>
+              <div className="lp-filter-btns">
+                <button className={`lp-filter-btn${statusFilter === "all" ? " active" : ""}`} onClick={() => setStatusFilter("all")}>
+                  All
+                </button>
+                {["submitted", "draft", "not-started"].map((st) => (
+                  <button
+                    key={st}
+                    className={`lp-filter-btn${statusFilter === st ? " active" : ""}`}
+                    onClick={() => setStatusFilter(st)}
+                  >
+                    <span
+                      className="sdot"
+                      style={{ background: statusFilter === st ? "rgba(255,255,255,0.8)" : STATUS_DOTS[st] }}
+                    />
+                    {STATUS_LABELS[st]}
+                    <span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{statusCounts[st] || 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        <div className="lp-filter-section">
-          <span className="lp-filter-label">STAGE</span>
-          <div className="lp-filter-btns">
-            <button className={`lp-filter-btn${stageFilter === "all" ? " active" : ""}`} onClick={() => setStageFilter("all")}>
-              All
-            </button>
-            {stageRows.map(([st, count]) => (
-              <button
-                key={st}
-                className={`lp-filter-btn${stageFilter === st ? " active" : ""}`}
-                onClick={() => setStageFilter(st)}
-              >
-                {st}
-                <span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{count}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+            <div className="lp-filter-section">
+              <span className="lp-filter-label">STAGE</span>
+              <div className="lp-filter-btns">
+                <button className={`lp-filter-btn${stageFilter === "all" ? " active" : ""}`} onClick={() => setStageFilter("all")}>
+                  All
+                </button>
+                {stageRows.map(([st, count]) => (
+                  <button
+                    key={st}
+                    className={`lp-filter-btn${stageFilter === st ? " active" : ""}`}
+                    onClick={() => setStageFilter(st)}
+                  >
+                    {st}
+                    <span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        <div className="lp-filter-section">
-          <span className="lp-filter-label">INDUSTRY</span>
-          <div className="lp-filter-btns">
-            <button className={`lp-filter-btn${domainFilter === "all" ? " active" : ""}`} onClick={() => setDomainFilter("all")}>
-              All
-            </button>
-            {industryRows.map(([d, count]) => (
-              <button
-                key={d}
-                className={`lp-filter-btn${domainFilter === d ? " active" : ""}`}
-                onClick={() => setDomainFilter(d)}
-              >
-                {d}
-                <span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{count}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+            <div className="lp-filter-section">
+              <span className="lp-filter-label">INDUSTRY</span>
+              <div className="lp-filter-btns">
+                <button className={`lp-filter-btn${domainFilter === "all" ? " active" : ""}`} onClick={() => setDomainFilter("all")}>
+                  All
+                </button>
+                {industryRows.map(([d, count]) => (
+                  <button
+                    key={d}
+                    className={`lp-filter-btn${domainFilter === d ? " active" : ""}`}
+                    onClick={() => setDomainFilter(d)}
+                  >
+                    {d}
+                    <span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="lp-content" style={{ paddingBottom: 80 }}>
