@@ -29,3 +29,15 @@ def test_base_shell_is_artpark_branded_via_existing_template():
     assert "ARTPARK" in html          # wordmark
     assert "artpark.in" in html       # footer
     assert "#f4f1ea" not in html      # old beige shell is gone
+
+
+def test_reviewer_assigned_is_count_only():
+    html = _render_html("reviewer_assigned", {
+        "reviewer_name": "Udita", "count": 6,
+        "apps": [{"applicant_name": "X", "application_id_short": "deadbeef", "track_label": "TIR"}],
+        "inbox_url": "https://apply.artpark.info/reviewer",
+    })
+    assert "6 application" in html                 # the count
+    assert "Open reviewer inbox" in html           # CTA
+    assert "reassign" not in html.lower()          # removed line
+    assert "deadbeef" not in html                  # no per-app ID list

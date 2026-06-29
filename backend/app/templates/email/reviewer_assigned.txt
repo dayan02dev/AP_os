@@ -1,15 +1,9 @@
 {% extends "base.txt" %}
-{% block content %}Hi {{ reviewer_name }} — you have {{ count }} new application{{ "s" if count != 1 else "" }} to review.
+{% block content %}Hello {{ reviewer_name }},
 
-You've been assigned the following. Please score through the reviewer inbox at your earliest convenience.
-{% for app in apps %}
-  - {{ app.applicant_name }} — {{ app.track_label }} · ID {{ app.application_id_short }}
-{%- endfor %}
+{{ count }} application{{ "s" if count != 1 else "" }} {{ "are" if count != 1 else "is" }} waiting for your review. Thank you for lending ARTPARK your time and judgement — you can score them whenever suits you.
 
-Open reviewer inbox:
-  {{ inbox_url }}
+Open your reviewer inbox: {{ inbox_url }}
 
-If you can't take these on (conflict of interest, capacity), reply and we'll reassign.
-
-— The ARTPARK team
-{% endblock %}
+We're grateful to have you on the panel.
+— The ARTPARK team{% endblock %}

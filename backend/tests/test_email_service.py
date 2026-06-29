@@ -294,8 +294,10 @@ def test_send_reviewer_assigned_batched(configured):
     payload = post.call_args.kwargs["json"]
     assert payload["to"] == ["rev@artpark.in"]
     assert "2 application" in payload["subject"]
-    assert "Acme" in payload["html"] and "Beta" in payload["html"]
-    assert "VIP" in payload["text"]
+    assert "2 application" in payload["html"]          # count-only template
+    assert "Open reviewer inbox" in payload["html"]    # CTA present
+    assert "Acme" not in payload["html"]               # no per-app list
+    assert "reassign" not in payload["html"].lower()   # removed line
 
 def test_send_daily_digest(configured):
     from app.services import email_service as es
