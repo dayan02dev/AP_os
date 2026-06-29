@@ -1,8 +1,7 @@
 // Reviewer history — ported from REVIEWER-UI/os/reviewer.jsx ReviewerHistory.
 // Rows come from reviewerApi.getHistory() → { stats, rows }. Each row carries
 // (track, appId) so "✎ Edit" routes to the same eval screen as the queue.
-// Edit is enabled only while the 60-min edit window is still open
-// (editWindowExpiresAt > now) — matches the backend 423 lock.
+// Edit is always available — the backend no longer locks evaluations after 60 min.
 
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
@@ -33,8 +32,6 @@ export default function ReviewerHistory({ onOpenEval }) {
 
   const history = (data && data.rows) || [];
   const recoTone = (r) => (r === "yes" ? "green" : r === "no" ? "red" : "amber");
-  const now = Date.now();
-
   return (
     <div>
       <div className="lp-section-head">
@@ -62,8 +59,6 @@ export default function ReviewerHistory({ onOpenEval }) {
           </thead>
           <tbody>
             {history.map((h, i) => {
-              const expires = h.editWindowExpiresAt ? new Date(h.editWindowExpiresAt).getTime() : 0;
-              const editable = expires > now;
               const adminDec = h.adminDecision || "pending";
               return (
                 <tr key={h.reviewId || i}>
@@ -87,9 +82,8 @@ export default function ReviewerHistory({ onOpenEval }) {
                   <td>
                     <button
                       className="os-btn sm ghost"
-                      disabled={!editable}
-                      title={editable ? "Edit this evaluation" : "Edit window has closed"}
-                      onClick={() => editable && onOpenEval(h.track, h.appId)}
+                      title="Edit this evaluation"
+                      onClick={() => onOpenEval(h.track, h.appId)}
                     >
                       ✎ Edit
                     </button>
