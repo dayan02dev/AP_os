@@ -117,6 +117,7 @@ export function adaptDetail(d) {
   const reviews = Array.isArray(d.reviews) ? d.reviews.filter(r => r.submitted_at) : [];
   return {
     id: d.id,
+    application: d.application || null,
     track: d.track,
     applicationId: d.display_id,
     name: d.project_name,

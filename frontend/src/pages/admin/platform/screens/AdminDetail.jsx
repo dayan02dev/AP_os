@@ -24,7 +24,7 @@ import { BUTTON_TO_DECISION } from "../../../../lib/adminDataAdapter";
 import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import { Chip } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
-import { FullApplicationView } from "./FullApplicationView";
+import FullApplication from "../../../../components/FullApplication";
 import { reviewerNameOf, reviewerStatusLabel } from "../../../../lib/reviewerStatus";
 
 // ── Criteria metadata (mirrors prototype CRIT_LABELS / METRICS) ─────────────
@@ -378,7 +378,19 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
     : revOverall > 0 ? revOverall : jOverall;
 
   if (viewApp) {
-    return <FullApplicationView s={s} onBack={() => setViewApp(false)} />;
+    return (
+      <div>
+        <button className="os-btn ghost sm" style={{ marginBottom: 16 }} onClick={() => setViewApp(false)}>
+          ← Back
+        </button>
+        <FullApplication
+          track={track}
+          application={s.application}
+          applicationId={s.id}
+          signedUrl={(id, path) => leadershipApi.fileSignedUrl(id, path)}
+        />
+      </div>
+    );
   }
 
   return (

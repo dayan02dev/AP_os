@@ -115,6 +115,10 @@ describe("adaptDetail", () => {
     expect(s.ai).toEqual({ overall: null });
     expect(s.rev).toBeUndefined();
   });
+  it("passes the raw application row through as `application`", () => {
+    const d = { id: "a1", track: "tir", application: { problem_describe: "x", status: "submitted" } };
+    expect(adaptDetail(d).application).toEqual({ problem_describe: "x", status: "submitted" });
+  });
 });
 
 import { adaptReviewer, adaptCalibrationRow, adaptAuditEntry, adaptBatch } from "../adminDataAdapter";
