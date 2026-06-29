@@ -362,6 +362,29 @@ class EmailService:
             text=text,
         )
 
+    def send_reviewer_reminder(
+        self,
+        *,
+        to: str,
+        reviewer_name: str,
+        pending_count: int,
+        completed_count: int,
+        inbox_url: str,
+    ) -> dict[str, str]:
+        """Daily reminder of a reviewer's pending applications."""
+        html, text = self._render_pair(
+            "reviewer_reminder",
+            {"reviewer_name": reviewer_name, "pending_count": pending_count,
+             "completed_count": completed_count, "inbox_url": inbox_url},
+        )
+        plural = "s" if pending_count != 1 else ""
+        return self.send_raw(
+            to=[to],
+            subject=f"{pending_count} application{plural} awaiting your review — ARTPARK",
+            html=html,
+            text=text,
+        )
+
     def send_daily_digest(
         self,
         *,

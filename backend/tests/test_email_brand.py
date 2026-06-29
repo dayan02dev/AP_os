@@ -72,3 +72,14 @@ def test_reviewer_invite_carries_credentials():
     assert "Pass-F5FY3U" in html
     assert "Open reviewer inbox" in html
     assert "#3213b7" in html
+
+
+def test_reviewer_reminder_shows_pending_and_completed():
+    html = _render_html("reviewer_reminder", {
+        "reviewer_name": "Udita", "pending_count": 2, "completed_count": 4,
+        "inbox_url": "https://apply.artpark.info/reviewer",
+    })
+    assert "2 application" in html        # pending
+    assert "4" in html                    # completed
+    assert "Open reviewer inbox" in html
+    assert "#3213b7" in html

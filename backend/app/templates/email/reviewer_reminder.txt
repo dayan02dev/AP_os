@@ -1,0 +1,8 @@
+{% extends "base.txt" %}
+{% block content %}You have {{ pending_count }} application{{ "s" if pending_count != 1 else "" }} left to review.
+
+Hello {{ reviewer_name }} — you've completed {{ completed_count }} so far. {{ pending_count }} still pending. Thank you for keeping the panel moving.
+
+Open your reviewer inbox: {{ inbox_url }}
+
+— The ARTPARK team{% endblock %}
