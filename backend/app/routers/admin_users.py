@@ -13,6 +13,7 @@ file — see docs/superpowers/plans/2026-05-13-session-division.md.
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -47,9 +48,22 @@ class CreateUserRequest(BaseModel):
     role_title: str | None = Field(default=None, max_length=200)
     roles: list[str] = Field(..., min_length=1, max_length=6)
     send_invite: bool = Field(default=True)
+    temp_password: str | None = Field(default=None, max_length=128)
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────
+
+
+def _password_ok(pw: str) -> bool:
+    """Conservative match of Supabase's policy: 10+ chars with an uppercase
+    letter, a lowercase letter, a digit, and a symbol. Generated passwords pass."""
+    return bool(
+        len(pw) >= 10
+        and re.search(r"[a-z]", pw)
+        and re.search(r"[A-Z]", pw)
+        and re.search(r"\d", pw)
+        and re.search(r"[^A-Za-z0-9]", pw)
+    )
 
 
 @router.post(
@@ -81,63 +95,125 @@ async def create_user(
             },
         )
 
-    # Supabase's password policy enforces upper+lower+digit+symbol.
-    # token_urlsafe gives upper+lower+digit but no symbol — guarantee
-    # a valid password by appending a fixed symbol+digit+case mix. Only
-    # consumed on the non-invite path; the magic-link path lets the
-    # invitee pick their own password.
-    temp_password = secrets.token_urlsafe(16) + "!1Aa"
+    # Temp password: admin-supplied (validated) or generated. The generated
+    # form always satisfies the policy.
+    if body.temp_password:
+        temp_password = body.temp_password
+        if not _password_ok(temp_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "weak_password",
+                    "message": "Password must be at least 10 characters and include an "
+                               "uppercase letter, a lowercase letter, a digit, and a symbol.",
+                },
+            )
+    else:
+        temp_password = secrets.token_urlsafe(16) + "!1Aa"
 
     is_reviewer_invite = "reviewer" in body.roles
 
+    # Does this email already belong to a user? (service-role read; RLS bypassed)
+    existing_id = None
     try:
-        if body.send_invite and not is_reviewer_invite:
-            invite = client.auth.admin.invite_user_by_email(body.email)
-            new_user = invite.user
-        else:
-            create = client.auth.admin.create_user({
-                "email": body.email,
-                "password": temp_password,
-                "email_confirm": True,
-            })
-            new_user = create.user
-    except Exception as exc:
-        msg = str(exc)
-        if "already" in msg.lower() or "registered" in msg.lower():
+        existing_rows = (
+            client.table("profiles").select("id").eq("email", body.email).limit(1).execute().data
+        ) or []
+        existing_id = existing_rows[0]["id"] if existing_rows else None
+    except Exception:  # noqa: BLE001
+        existing_id = None
+
+    existing_user = False
+
+    if is_reviewer_invite and existing_id:
+        # Existing account → convert to a reviewer. Reset the password (so the
+        # emailed credentials work) and make the user reviewer-only: add
+        # `reviewer`, drop applicant/founder/mentor. `admin`/`leadership` are
+        # preserved so a reviewer invite never strips a staff member's access.
+        existing_user = True
+        new_user_id = existing_id
+        try:
+            client.auth.admin.update_user_by_id(new_user_id, {"password": temp_password})
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc)
+            log.error("reviewer invite: password reset failed",
+                      extra={"email": body.email, "err": msg[:200]})
+            if "password" in msg.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"code": "weak_password", "message": msg[:200]},
+                )
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={"code": "email_exists", "email": body.email},
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"code": "auth_update_failed", "message": msg[:200]},
             )
-        log.error(
-            "admin create_user failed",
-            extra={"email": body.email, "err": msg[:200]},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"code": "auth_create_failed", "message": msg[:200]},
-        )
 
-    new_user_id = new_user.id
+        client.table("profiles").upsert({
+            "id": new_user_id,
+            "email": body.email,
+            "full_name": body.full_name,
+            "phone": body.phone,
+        }).execute()
 
-    # Upsert profile row. handle_new_user trigger may have created an
-    # empty profile; we fill the fields the admin provided. We do NOT
-    # write organization/role_title — see CreateUserRequest comment.
-    client.table("profiles").upsert({
-        "id": new_user_id,
-        "email": body.email,
-        "full_name": body.full_name,
-        "phone": body.phone,
-    }).execute()
-
-    rows = [
-        {
-            "user_id": new_user_id,
-            "role": r,
-            "granted_by": current_user["user_id"],
+        current_roles = {
+            r["role"]
+            for r in (
+                client.table("user_roles").select("role").eq("user_id", new_user_id).execute().data
+                or []
+            )
         }
-        for r in body.roles
-    ]
-    client.table("user_roles").insert(rows).execute()
+        keep = {"reviewer"} | (current_roles & {"admin", "leadership"})
+        for role in current_roles - keep:
+            client.table("user_roles").delete().eq("user_id", new_user_id).eq("role", role).execute()
+        if "reviewer" not in current_roles:
+            client.table("user_roles").insert({
+                "user_id": new_user_id,
+                "role": "reviewer",
+                "granted_by": current_user["user_id"],
+            }).execute()
+        final_roles = sorted(keep)
+    else:
+        try:
+            if body.send_invite and not is_reviewer_invite:
+                invite = client.auth.admin.invite_user_by_email(body.email)
+                new_user = invite.user
+            else:
+                create = client.auth.admin.create_user({
+                    "email": body.email,
+                    "password": temp_password,
+                    "email_confirm": True,
+                })
+                new_user = create.user
+        except Exception as exc:
+            msg = str(exc)
+            if "already" in msg.lower() or "registered" in msg.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"code": "email_exists", "email": body.email},
+                )
+            if "password" in msg.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"code": "weak_password", "message": msg[:200]},
+                )
+            log.error("admin create_user failed", extra={"email": body.email, "err": msg[:200]})
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"code": "auth_create_failed", "message": msg[:200]},
+            )
+
+        new_user_id = new_user.id
+        client.table("profiles").upsert({
+            "id": new_user_id,
+            "email": body.email,
+            "full_name": body.full_name,
+            "phone": body.phone,
+        }).execute()
+        client.table("user_roles").insert([
+            {"user_id": new_user_id, "role": r, "granted_by": current_user["user_id"]}
+            for r in body.roles
+        ]).execute()
+        final_roles = list(body.roles)
 
     credentials_emailed = False
     if is_reviewer_invite and body.send_invite:
@@ -159,17 +235,19 @@ async def create_user(
         action_type="user.created",
         target_table="profiles",
         target_id=new_user_id,
-        after={"email": body.email, "roles": body.roles, "invite_sent": body.send_invite},
+        after={"email": body.email, "roles": final_roles,
+               "invite_sent": body.send_invite, "existing_user": existing_user},
     )
 
     return {
         "id": new_user_id,
         "email": body.email,
         "full_name": body.full_name,
-        "roles": body.roles,
+        "roles": final_roles,
         "temp_password": temp_password if (is_reviewer_invite or not body.send_invite) else None,
         "invite_sent": body.send_invite,
         "credentials_emailed": credentials_emailed,
+        "existing_user": existing_user,
     }
 
 

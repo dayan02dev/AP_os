@@ -943,6 +943,7 @@ def test_create_user_writes_audit(client, monkeypatch, _clear_overrides):
         "email": "new@x.com",
         "roles": ["reviewer"],
         "invite_sent": True,
+        "existing_user": False,
     }
 
 
@@ -1064,3 +1065,91 @@ def test_non_admin_gets_403(staging_reviewer_token, staging_base_url):
     )
     assert r.status_code == 403
     assert r.json()["detail"]["code"] == "missing_capability"
+
+
+class _ConvertAuth(_FakeCreateAuth):
+    def __init__(self, new_user_id="u-new"):
+        super().__init__(new_user_id)
+        self.created = False
+        self.updated = None
+    def create_user(self, payload):
+        self.created = True
+        return super().create_user(payload)
+    def update_user_by_id(self, uid, payload):
+        self.updated = (uid, payload)
+
+
+class _InviteEmailSpy:
+    def __init__(self):
+        self.calls = []
+    def send_reviewer_invite(self, **kwargs):
+        self.calls.append(kwargs); return {"message_id": "t", "status": "sent"}
+
+
+def test_reviewer_invite_new_email_uses_provided_password(client, monkeypatch, _clear_overrides):
+    auth = _ConvertAuth()
+    fake = _FakeAdminClient(rows={"profiles": [], "user_roles": []}, auth=auth)
+    spy = _InviteEmailSpy()
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(admin_users_router, "get_email_service", lambda: spy)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    res = client.post("/admin/users", headers={"Authorization": "Bearer t"},
+        json={"email": "new-rev@x.com", "full_name": "New Rev", "roles": ["reviewer"],
+              "send_invite": True, "temp_password": "GoodPass1!xy"})
+    assert res.status_code == 201, res.text
+    b = res.json()
+    assert auth.created and auth.updated is None
+    assert b["existing_user"] is False
+    assert b["roles"] == ["reviewer"]
+    assert b["temp_password"] == "GoodPass1!xy"
+    assert spy.calls and spy.calls[0]["temp_password"] == "GoodPass1!xy"
+
+
+def test_reviewer_invite_existing_email_converts_to_reviewer(client, monkeypatch, _clear_overrides):
+    auth = _ConvertAuth()
+    fake = _FakeAdminClient(rows={
+        "profiles": [{"id": "u-exist", "email": "old@x.com", "full_name": "Old"}],
+        "user_roles": [{"role": "applicant"}],
+    }, auth=auth)
+    spy = _InviteEmailSpy()
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(admin_users_router, "get_email_service", lambda: spy)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    res = client.post("/admin/users", headers={"Authorization": "Bearer t"},
+        json={"email": "old@x.com", "full_name": "Old", "roles": ["reviewer"],
+              "send_invite": True, "temp_password": "GoodPass1!xy"})
+    assert res.status_code == 201, res.text
+    b = res.json()
+    assert not auth.created
+    assert auth.updated == ("u-exist", {"password": "GoodPass1!xy"})
+    assert b["existing_user"] is True
+    assert b["roles"] == ["reviewer"]
+    assert spy.calls and spy.calls[0]["to"] == "old@x.com"
+
+
+def test_reviewer_invite_existing_admin_role_preserved(client, monkeypatch, _clear_overrides):
+    auth = _ConvertAuth()
+    fake = _FakeAdminClient(rows={
+        "profiles": [{"id": "u-exist", "email": "boss@x.com"}],
+        "user_roles": [{"role": "applicant"}, {"role": "admin"}],
+    }, auth=auth)
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(admin_users_router, "get_email_service", lambda: _InviteEmailSpy())
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    res = client.post("/admin/users", headers={"Authorization": "Bearer t"},
+        json={"email": "boss@x.com", "full_name": "Boss", "roles": ["reviewer"],
+              "send_invite": True, "temp_password": "GoodPass1!xy"})
+    assert res.status_code == 201, res.text
+    assert res.json()["roles"] == ["admin", "reviewer"]
+
+
+def test_invite_rejects_weak_password(client, monkeypatch, _clear_overrides):
+    fake = _FakeAdminClient(rows={"profiles": [], "user_roles": []}, auth=_ConvertAuth())
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(admin_users_router, "get_email_service", lambda: _InviteEmailSpy())
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    res = client.post("/admin/users", headers={"Authorization": "Bearer t"},
+        json={"email": "x@x.com", "full_name": "X", "roles": ["reviewer"],
+              "send_invite": True, "temp_password": "weak"})
+    assert res.status_code == 400
+    assert res.json()["detail"]["code"] == "weak_password"
