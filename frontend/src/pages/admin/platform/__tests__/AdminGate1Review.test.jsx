@@ -48,12 +48,11 @@ describe("AdminGate1 smoke", () => {
     loadDetail.mockResolvedValue(null);
   });
 
-  it("renders the 4 variant tabs", () => {
+  it("renders the 3 variant tabs (Cutoff removed)", () => {
     render(<AdminGate1 goDetail={() => {}} />);
     expect(screen.getByText(/A · Status/i)).toBeTruthy();
-    expect(screen.getByText(/B · Cutoff slider/i)).toBeTruthy();
-    expect(screen.getByText(/C · Batch decision/i)).toBeTruthy();
-    expect(screen.getByText(/D · My history/i)).toBeTruthy();
+    expect(screen.getByText(/B · Batch decision/i)).toBeTruthy();
+    expect(screen.getByText(/C · My history/i)).toBeTruthy();
   });
 
   it("shows empty state when no evaluated apps", () => {

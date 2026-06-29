@@ -40,11 +40,9 @@ import { LoadingState, ErrorState, EmptyState } from "../ui.jsx";
 // ── Decision wiring ────────────────────────────────────────────────────────
 // The prototype's batch/history variants store 'APPROVED' | 'HOLD' | 'REJECTED'
 // as adminDecision.  Map those to wire ids for the API.
-const UPPER_TO_WIRE = {
-  APPROVED:   "shortlisted",
-  HOLD:       "on_hold",
-  REJECTED:   "rejected",
-  WAITLISTED: "waitlisted",
+export const UPPER_TO_WIRE = {
+  APPROVED: "jury_review", // = "advance to jury"; the decision that emails the applicant
+  REJECTED: "rejected",
 };
 
 // Decision ids whose API call requires a non-blank rationale.
@@ -268,7 +266,7 @@ function GateReviewStack({ items, reload }) {
         <div className="os-card soft gate-kpi">
           <span className="gate-kpi-kicker">Live Decisions</span>
           <div style={{ display: "flex", gap: 26, marginTop: 8 }}>
-            {[["Approve", counts.approve, "#2F6F62"], ["Waitlist", counts.waitlist, "#FFB703"], ["Reject", counts.reject, "#FF5A5F"]].map(([label, n, c]) => (
+            {[["Approve", counts.approve, "#2F6F62"], ["Reject", counts.reject, "#FF5A5F"]].map(([label, n, c]) => (
               <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
                 <span style={{ fontFamily: "var(--font-serif)", fontSize: 30, fontWeight: 400, lineHeight: 1, color: "var(--ink)" }}>{n}</span>
                 <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-dim)", display: "inline-flex", alignItems: "center", gap: 5 }}>
@@ -361,141 +359,9 @@ function GateReviewStack({ items, reload }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// VARIANT B · Cutoff slider (prototype: GateReviewCutoff)
-// Score used: s.ai?.overall (same as old AdminGate1Review.jsx CutoffView)
-// ══════════════════════════════════════════════════════════════════════════
-function GateReviewCutoff({ items, reload }) {
-  const [cutoff, setCutoff]     = useState(7.0);
-  const [busy, setBusy]         = useState(false);
-  const [note, setNote]         = useState(null);
-
-  const sorted = useMemo(
-    () => items.slice().sort((a, b) => {
-      const sa = typeof a?.ai?.overall === "number" ? a.ai.overall : -1;
-      const sb = typeof b?.ai?.overall === "number" ? b.ai.overall : -1;
-      return sb - sa;
-    }),
-    [items]
-  );
-
-  const above = sorted.filter(s => (typeof s?.ai?.overall === "number" ? s.ai.overall : -1) >= cutoff);
-  const below = sorted.filter(s => (typeof s?.ai?.overall === "number" ? s.ai.overall : -1) < cutoff);
-
-  const applyCutoff = async () => {
-    if (busy) return;
-    const cutoffRationale = `Below AI cutoff ${cutoff.toFixed(1)}`;
-    // Build bulk items: above → shortlisted (no rationale), below → rejected (cutoff rationale)
-    const items2 = [
-      ...above.map(s => ({ track: s.track, application_id: s.id, decision: "shortlisted" })),
-      ...below.map(s => ({ track: s.track, application_id: s.id, decision: "rejected", rationale: cutoffRationale })),
-    ];
-    if (items2.length === 0) {
-      setNote({ kind: "error", text: "Nothing to apply at this cutoff." });
-      return;
-    }
-    setBusy(true);
-    setNote(null);
-    try {
-      const resp = await adminPlatformApi.bulkDecide({ items: items2 });
-      const results = resp?.results ?? [];
-      const ok = results.filter(x => x?.status === "decided").length;
-      const failures = results.filter(x => x?.status && x.status !== "decided");
-      if (failures.length === 0) {
-        setNote({ kind: "ok", text: `Applied: ${above.length} shortlisted, ${below.length} rejected.` });
-        await reload();
-      } else {
-        const fText = failures.map(f => `${f.application_id} (${f.status})`).join(", ");
-        setNote({ kind: "error", text: `${ok} applied, ${failures.length} failed — ${fText}` });
-        await reload();
-      }
-    } catch (e) {
-      setNote({ kind: "error", text: `Apply failed: ${e?.message || e}` });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (items.length === 0) return <EmptyState label="No evaluated applications awaiting a decision." />;
-
-  return (
-    <div>
-      <Note note={note} onDismiss={() => setNote(null)} />
-      <div className="os-row between os-mb">
-        <div className="os-row gap-sm">
-          <span className="os-chip blue">VARIANT B · CUTOFF</span>
-          <span className="os-text-soft">Set a score cutoff. Override individuals as needed.</span>
-        </div>
-        <button className="os-btn" disabled={busy} onClick={applyCutoff}>
-          Apply: shortlist {above.length}, reject {below.length}
-        </button>
-      </div>
-
-      <div className="os-card os-mb-lg">
-        <div className="os-card-head">
-          <div className="os-card-title">Score distribution · cutoff at {cutoff.toFixed(1)}</div>
-          <div className="os-row gap-sm">
-            <button className="os-btn sm ghost" disabled={busy} onClick={() => setCutoff(c => Math.max(5, c - 0.5))}>−0.5</button>
-            <button className="os-btn sm ghost" disabled={busy} onClick={() => setCutoff(c => Math.min(9, c + 0.5))}>+0.5</button>
-          </div>
-        </div>
-        <div style={{ position: "relative", height: 200, padding: "0 8px" }}>
-          <div className="os-row" style={{ alignItems: "flex-end", height: "100%", gap: 6 }}>
-            {sorted.map((s) => {
-              const avg    = typeof s?.ai?.overall === "number" ? s.ai.overall : 0;
-              const passes = avg >= cutoff;
-              return (
-                <div key={s.id} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                  <div style={{ height: (avg * 16) + "px", width: "100%", background: passes ? "var(--ok)" : "var(--ink-dim)", position: "relative" }}>
-                    <span style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-soft)" }}>{avg.toFixed(1)}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ position: "absolute", left: 8, right: 8, top: (200 - cutoff * 16) + "px", borderTop: "2px dashed var(--accent)", pointerEvents: "none" }}>
-            <span style={{ position: "absolute", right: 4, top: -22, background: "var(--accent)", color: "white", fontFamily: "var(--font-mono)", fontSize: 11, padding: "2px 8px" }}>CUTOFF · {cutoff.toFixed(1)}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="os-grid-2">
-        <div className="os-card">
-          <div className="os-card-head">
-            <div className="os-card-title">Above cutoff · {above.length}</div>
-            <span className="os-chip green">→ SHORTLIST</span>
-          </div>
-          <div className="os-stack gap-sm">
-            {above.map(s => (
-              <div key={s.id} className="os-row between" style={{ padding: "8px 0", borderBottom: "1px dashed var(--line)" }}>
-                <span>{s.name} <span className="os-text-xs os-text-dim">· {s.domain}</span></span>
-                <span className="os-mono os-text-sm">{fmtScore(s.ai?.overall)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="os-card">
-          <div className="os-card-head">
-            <div className="os-card-title">Below cutoff · {below.length}</div>
-            <span className="os-chip red">→ REJECT</span>
-          </div>
-          <div className="os-stack gap-sm">
-            {below.map(s => (
-              <div key={s.id} className="os-row between" style={{ padding: "8px 0", borderBottom: "1px dashed var(--line)" }}>
-                <span className="os-text-soft">{s.name} <span className="os-text-xs os-text-dim">· {s.domain}</span></span>
-                <span className="os-mono os-text-sm">{fmtScore(s.ai?.overall)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════
 // VARIANT C · Batch decision room (prototype: GateReviewBatchDecision)
 // ══════════════════════════════════════════════════════════════════════════
-function GateReviewBatchDecision({ items, reload }) {
+function GateReviewBatchDecision({ items, reload, goDetail }) {
   const [selectedBatch, setSelectedBatch]     = useState("All");
   const [draftDecisions, setDraftDecisions]   = useState({}); // id → 'APPROVED' | 'HOLD' | 'REJECTED'
   const [busy, setBusy]                       = useState(false);
@@ -616,7 +482,14 @@ function GateReviewBatchDecision({ items, reload }) {
               const draft = draftDecisions[s.id];
               const score = revScore(s);
               return (
-                <tr key={s.id}>
+                <tr
+                  key={s.id}
+                  onClick={(e) => {
+                    if (e.target.closest("button") || e.target.closest("a")) return;
+                    if (goDetail) goDetail(s.id, s.track, "gate1");
+                  }}
+                  style={{ cursor: "pointer" }}
+                >
                   <td>
                     <b style={{ fontSize: 14 }}>{s.name}</b>
                     <div style={{ color: "var(--ink-dim)", fontSize: 11, marginTop: 2 }}>{s.domain}</div>
@@ -633,7 +506,6 @@ function GateReviewBatchDecision({ items, reload }) {
                   <td>
                     <div className="os-reco-group" style={{ margin: 0, justifyContent: "center", display: "flex", gap: 4 }}>
                       <button className={"os-reco-btn approve " + (draft === "APPROVED" ? "active" : "")} disabled={busy} onClick={() => handleDraftSelect(s.id, "APPROVED")} style={{ padding: "4px 10px", fontSize: 11, flex: 1 }}>Approve</button>
-                      <button className={"os-reco-btn waitlist " + (draft === "HOLD" ? "active" : "")} disabled={busy} onClick={() => handleDraftSelect(s.id, "HOLD")} style={{ padding: "4px 10px", fontSize: 11, flex: 1 }}>Hold</button>
                       <button className={"os-reco-btn reject " + (draft === "REJECTED" ? "active" : "")} disabled={busy} onClick={() => handleDraftSelect(s.id, "REJECTED")} style={{ padding: "4px 10px", fontSize: 11, flex: 1 }}>Reject</button>
                     </div>
                   </td>
@@ -859,9 +731,8 @@ export default function AdminGate1({ goDetail }) {
 
       <div className="os-row gap-sm os-mb-lg">
         <div className={"os-tab " + (variant === "stack"   ? "active" : "")} onClick={() => setVariant("stack")}>A · Status</div>
-        <div className={"os-tab " + (variant === "cutoff"  ? "active" : "")} onClick={() => setVariant("cutoff")}>B · Cutoff slider</div>
-        <div className={"os-tab " + (variant === "batch"   ? "active" : "")} onClick={() => setVariant("batch")}>C · Batch decision</div>
-        <div className={"os-tab " + (variant === "history" ? "active" : "")} onClick={() => setVariant("history")}>D · My history</div>
+        <div className={"os-tab " + (variant === "batch"   ? "active" : "")} onClick={() => setVariant("batch")}>B · Batch decision</div>
+        <div className={"os-tab " + (variant === "history" ? "active" : "")} onClick={() => setVariant("history")}>C · My history</div>
       </div>
 
       {loading ? (
@@ -870,10 +741,8 @@ export default function AdminGate1({ goDetail }) {
         <ErrorState error={error} onRetry={reload} />
       ) : variant === "stack" ? (
         <GateReviewStack   key={"stack-"   + evalRows.length} items={evalRows} reload={reload} />
-      ) : variant === "cutoff" ? (
-        <GateReviewCutoff  key={"cutoff-"  + evalRows.length} items={evalRows} reload={reload} />
       ) : variant === "batch" ? (
-        <GateReviewBatchDecision key={"batch-" + evalRows.length} items={evalRows} reload={reload} />
+        <GateReviewBatchDecision key={"batch-" + evalRows.length} items={evalRows} reload={reload} goDetail={goDetail} />
       ) : (
         <GateReviewHistory key={"hist-" + allRows.length} allStartups={allRows} reload={reload} goDetail={goDetail} />
       )}
