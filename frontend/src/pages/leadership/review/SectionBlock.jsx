@@ -9,7 +9,7 @@
 
 import QuestionBlock from "./QuestionBlock.jsx";
 
-export default function SectionBlock({ section, totalSections, application, applicationId }) {
+export default function SectionBlock({ section, totalSections, application, applicationId, signedUrl }) {
   return (
     <section className="sec-block">
       <div className="sec-block-head">
@@ -32,6 +32,7 @@ export default function SectionBlock({ section, totalSections, application, appl
             question={q}
             application={application}
             applicationId={applicationId}
+            signedUrl={signedUrl}
           />
         ))}
       </div>

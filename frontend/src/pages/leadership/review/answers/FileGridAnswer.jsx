@@ -8,14 +8,16 @@
 //   { name | original_filename | filename, size | size_bytes | file_size_bytes,
 //     storage_path | path, mime_type }
 //
-// Download: each file's button asks the backend for a short-lived signed URL
-// (leadershipApi.fileSignedUrl) scoped to THIS application, then opens it in a
-// new tab. The backend allow-lists the path against the application's own
-// files before signing — the frontend never constructs storage URLs itself.
+// Download: each file's button calls the injected `signedUrl` prop
+// (applicationId, storagePath) => Promise<{url}> to get a short-lived signed
+// URL, then opens it in a new tab. The signing function is injected by the
+// caller (e.g. ReviewApplicationPage passes leadershipApi.fileSignedUrl) so
+// this component is reusable across reviewer and admin surfaces.
+// The backend allow-lists the path against the application's own files before
+// signing — the frontend never constructs storage URLs itself.
 
 import { useCallback, useState } from "react";
 import EmptyAnswer from "./EmptyAnswer.jsx";
-import { leadershipApi } from "../../../../lib/leadershipApi.js";
 
 function readableSize(bytes) {
   if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) {
@@ -48,7 +50,7 @@ function pathOf(file) {
   return file?.storage_path || file?.path || null;
 }
 
-export default function FileGridAnswer({ value, applicationId }) {
+export default function FileGridAnswer({ value, applicationId, signedUrl }) {
   // Per-file UI state keyed by the file's grid index:
   //   busy[idx]  → request in flight (button disabled, "Opening…")
   //   error[idx] → inline error message
@@ -68,7 +70,7 @@ export default function FileGridAnswer({ value, applicationId }) {
       setErrors((e) => ({ ...e, [idx]: null }));
       setBusy((b) => ({ ...b, [idx]: true }));
       try {
-        const res = await leadershipApi.fileSignedUrl(applicationId, storagePath);
+        const res = await signedUrl(applicationId, storagePath);
         const url = res?.url;
         if (!url) throw new Error("No download URL returned.");
         // Open in a new tab — the signed URL points straight at storage and
@@ -90,7 +92,7 @@ export default function FileGridAnswer({ value, applicationId }) {
         setBusy((b) => ({ ...b, [idx]: false }));
       }
     },
-    [applicationId],
+    [applicationId, signedUrl],
   );
 
   let files = [];
@@ -121,8 +123,8 @@ export default function FileGridAnswer({ value, applicationId }) {
             <button
               type="button"
               className="dl"
-              disabled={isBusy || !hasPath || !applicationId}
-              aria-disabled={isBusy || !hasPath || !applicationId ? "true" : undefined}
+              disabled={isBusy || !hasPath || !applicationId || !signedUrl}
+              aria-disabled={isBusy || !hasPath || !applicationId || !signedUrl ? "true" : undefined}
               aria-busy={isBusy ? "true" : undefined}
               title={
                 hasPath ? "Download this file" : "No downloadable file reference."

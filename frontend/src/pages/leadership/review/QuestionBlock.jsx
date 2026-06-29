@@ -13,7 +13,7 @@ import DeclarationAnswer from "./answers/DeclarationAnswer.jsx";
 import TeamListAnswer from "./answers/TeamListAnswer.jsx";
 import CapTableAnswer from "./answers/CapTableAnswer.jsx";
 
-function renderAnswer(question, application, applicationId) {
+function renderAnswer(question, application, applicationId, signedUrl) {
   const value = application ? application[question.key] : undefined;
   switch (question.type) {
     case "choice":
@@ -22,7 +22,7 @@ function renderAnswer(question, application, applicationId) {
       return <MultiChoiceAnswer value={value} options={question.options} />;
     case "files":
     case "file":
-      return <FileGridAnswer value={value} applicationId={applicationId} />;
+      return <FileGridAnswer value={value} applicationId={applicationId} signedUrl={signedUrl} />;
     case "video":
       return <VideoAnswer value={value} />;
     case "declaration":
@@ -37,7 +37,7 @@ function renderAnswer(question, application, applicationId) {
   }
 }
 
-export default function QuestionBlock({ question, application, applicationId }) {
+export default function QuestionBlock({ question, application, applicationId, signedUrl }) {
   const chipLabel = question.required ? "Required" : "Optional";
   const chipClass = question.required ? "required" : "optional";
   return (
@@ -48,7 +48,7 @@ export default function QuestionBlock({ question, application, applicationId }) 
       </div>
       <h3 className="q-block-label">{question.label}</h3>
       {question.help && <p className="q-block-help">{question.help}</p>}
-      {renderAnswer(question, application, applicationId)}
+      {renderAnswer(question, application, applicationId, signedUrl)}
     </div>
   );
 }

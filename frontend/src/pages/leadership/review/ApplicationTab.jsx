@@ -3,7 +3,7 @@
 
 import SectionBlock from "./SectionBlock.jsx";
 
-export default function ApplicationTab({ schema, application, applicationId }) {
+export default function ApplicationTab({ schema, application, applicationId, signedUrl }) {
   if (!Array.isArray(schema) || schema.length === 0) {
     return (
       <div className="inline-error" role="alert">
@@ -20,6 +20,7 @@ export default function ApplicationTab({ schema, application, applicationId }) {
           totalSections={schema.length}
           application={application}
           applicationId={applicationId}
+          signedUrl={signedUrl}
         />
       ))}
     </>

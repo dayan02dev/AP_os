@@ -275,6 +275,7 @@ export default function ReviewApplicationPage() {
                     schema={schema}
                     application={application}
                     applicationId={id}
+                    signedUrl={(appId, path) => leadershipApi.fileSignedUrl(appId, path)}
                   />
                 )}
                 {tab === "reviews" && (
