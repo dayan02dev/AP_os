@@ -1028,3 +1028,59 @@ def test_decision_accepts_jury_review(client, monkeypatch, _clear_overrides):
     )
     # 200 (decided) — NOT 422 (invalid enum). Exact body depends on the fake; assert not-422.
     assert r.status_code != 422, r.text
+
+
+# ─── Task 5: Weight-adjusted reviewer score in the pipeline ───────────────
+
+
+def test_pipeline_includes_weight_adjusted_reviewer_score(client, monkeypatch, _clear_overrides):
+    app_id = "22222222-2222-2222-2222-222222222222"
+    tables = _empty_admin_tables()
+    tables["tir_applications"] = [
+        {"id": app_id, "status": "under_review", "display_seq": 26014,
+         "basic_full_name": "Bo", "submitted_at": "2026-06-02T00:00:00Z",
+         "created_at": "2026-05-21T00:00:00Z"},
+    ]
+
+    def _review(rid, v):
+        return {"application_id": app_id, "application_track": "tir",
+                "reviewer_user_id": rid, "submitted_at": "2026-06-03T00:00:00Z",
+                "score_problem": v, "score_solution": v, "score_tech": v,
+                "score_founders": v, "score_commitment": v}
+
+    # rev-a: all-6s → weighted_overall 6.0, weight 1.0
+    # rev-b: all-10s → weighted_overall 10.0, weight 3.0
+    # weight-adjusted mean = (1*6 + 3*10) / (1+3) = 9.0
+    tables["reviews"] = [_review("rev-a", 6), _review("rev-b", 10)]
+    tables["reviewer_profiles"] = [
+        {"reviewer_user_id": "rev-a", "weight": 1.0},
+        {"reviewer_user_id": "rev-b", "weight": 3.0},
+    ]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+
+    r = client.get("/admin/platform/applications")
+    assert r.status_code == 200, r.text
+    item = r.json()["applications"][0]
+    assert item["reviewer_score"] == 9.0
+
+
+def test_pipeline_reviewer_score_none_without_submitted_review(client, monkeypatch, _clear_overrides):
+    app_id = "33333333-3333-3333-3333-333333333333"
+    tables = _empty_admin_tables()
+    tables["tir_applications"] = [
+        {"id": app_id, "status": "under_review", "display_seq": 26015,
+         "submitted_at": "2026-06-02T00:00:00Z", "created_at": "2026-05-21T00:00:00Z"},
+    ]
+    # A draft review (no submitted_at) must NOT count.
+    tables["reviews"] = [
+        {"application_id": app_id, "application_track": "tir", "reviewer_user_id": "rev-a",
+         "submitted_at": None, "score_problem": 8, "score_solution": 8, "score_tech": 8,
+         "score_founders": 8, "score_commitment": 8},
+    ]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+
+    r = client.get("/admin/platform/applications")
+    assert r.status_code == 200, r.text
+    assert r.json()["applications"][0]["reviewer_score"] is None
