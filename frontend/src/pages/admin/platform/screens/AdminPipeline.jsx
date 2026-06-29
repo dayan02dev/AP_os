@@ -838,6 +838,17 @@ export function AdminPipeline({ goDetail, decisionMode }) {
 
           <div style={{ flex: 1 }} />
 
+          {hasFilters && (
+            <button
+              type="button"
+              className="lp-clear-btn"
+              style={{ fontSize: 13 }}
+              onClick={clearAll}
+            >
+              Clear filters
+            </button>
+          )}
+
           <button
             className={`lp-filters-toggle${filtersOpen ? ' is-open' : ''}`}
             onClick={() => setFiltersOpen(o => !o)}

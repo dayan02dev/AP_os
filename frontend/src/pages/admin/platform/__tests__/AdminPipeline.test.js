@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import React from "react";
 
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
@@ -143,6 +143,20 @@ describe("AdminPipeline screen (smoke)", () => {
       }),
     );
     expect(screen.getByText(/A-2 · PIPELINE/)).toBeTruthy();
+  });
+
+  it("shows a Clear filters button when a filter is active and clears it", () => {
+    render(
+      React.createElement(AdminPipeline, { goDetail: vi.fn(), decisionMode: "reviewer" }),
+    );
+    // No filters initially → no Clear-filters button.
+    expect(screen.queryByText(/Clear filters/i)).toBeNull();
+    // Activate the VIP track filter.
+    fireEvent.click(screen.getByRole("button", { name: "VIP" }));
+    expect(screen.getByText(/Clear filters/i)).toBeTruthy();
+    // Clicking it resets filters → the button disappears.
+    fireEvent.click(screen.getByText(/Clear filters/i));
+    expect(screen.queryByText(/Clear filters/i)).toBeNull();
   });
 
   it("in jury mode renders PreviewBadge for the jury assignment column", () => {
