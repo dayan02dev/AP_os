@@ -509,19 +509,8 @@ async def patch_review(
             detail={"code": "not_your_review"},
         )
 
-    # Lock check — only meaningful for already-submitted (non-draft) reviews
-    locked_at_str = existing.get("locked_at")
-    if locked_at_str:
-        locked_at = datetime.fromisoformat(locked_at_str.replace("Z", "+00:00"))
-        # Strict `>` so a PATCH at the exact instant is still allowed
-        if datetime.now(UTC) > locked_at:
-            raise HTTPException(
-                status_code=http_status.HTTP_423_LOCKED,
-                detail={
-                    "code": "review_locked",
-                    "message": f"Edit window closed at {locked_at.isoformat()}.",
-                },
-            )
+    # Edit lock removed (2026-06-29): reviewers may edit a submitted review at
+    # any time. `locked_at` is still stamped on submit (used only for display).
 
     # Build the patch — only fields the body actually sent (drop `draft`,
     # which controls the submit-transition rather than being persisted).

@@ -717,9 +717,10 @@ def test_patch_review_within_window_succeeds(
     assert any(u.get("score_problem") == 8 for u in updates)
 
 
-def test_patch_review_after_lock_returns_423(
+def test_patch_review_after_lock_succeeds(
     client, monkeypatch, _clear_overrides,
 ):
+    """Edit lock removed (2026-06-29): editing after the window must succeed."""
     me = "rev-a"
     _freeze_datetime(monkeypatch, "2026-05-18T11:01:00Z")
     _install_db(monkeypatch, {
@@ -731,14 +732,16 @@ def test_patch_review_after_lock_returns_423(
              "application_id": "app1", "application_track": "tir",
              "submitted_at": "2026-05-18T10:00:00+00:00",
              "locked_at": "2026-05-18T11:00:00+00:00",
-             "score_problem": 5, "recommendation": "maybe"},
+             "score_problem": 5, "score_solution": 6, "score_tech": 6,
+             "score_founders": 6, "score_commitment": 6,
+             "recommendation": "maybe", "quick_notes": "looks ok"},
         ],
         "application_status_log": [],
+        "ai_screening": [],
     })
     app.dependency_overrides[get_current_user] = _override_user(me)
     r = client.patch("/reviewer/reviews/rev1", json={"score_problem": 8})
-    assert r.status_code == 423
-    assert r.json()["detail"]["code"] == "review_locked"
+    assert r.status_code == 200
 
 
 def test_patch_review_does_not_extend_lock(
