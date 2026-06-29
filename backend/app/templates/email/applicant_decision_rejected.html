@@ -1,12 +1,9 @@
 {% extends "base.html" %}
 {% block title %}An update on your ARTPARK application{% endblock %}
 {% block content %}
-<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:600;line-height:1.3;">An update on your application, {{ applicant_name }}.</h1>
-
-<p style="margin:0 0 14px 0;">Thank you for taking the time to apply to ARTPARK. After careful review, we won't be moving your application forward this round.</p>
-
-<p style="margin:0 0 14px 0;">This was a competitive cycle and the decision was not an easy one. We genuinely appreciate the effort you put into your application and encourage you to apply again in the future.</p>
-
-<p style="margin:24px 0 0 0;">With appreciation,</p>
-<p style="margin:8px 0 0 0;">— The ARTPARK team</p>
+<div style="font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#8a86a0;margin-bottom:10px;">Application update</div>
+<div style="font-family:'Trebuchet MS','Lucida Grande',Tahoma,sans-serif;font-weight:700;font-size:22px;line-height:1.25;letter-spacing:-0.01em;color:#242424;margin:0 0 14px;">An update on your application, {{ applicant_name }}.</div>
+<p style="margin:0 0 14px;">Thank you for taking the time to apply to the ARTPARK {{ program_label }} programme. After careful review, we won't be moving your application forward this round.</p>
+<p style="margin:0 0 14px;">This was a competitive cycle and the decision was a difficult one. We genuinely value the work you put into your application, and we'd warmly encourage you to apply again in a future cohort.</p>
+<p style="margin:24px 0 0;color:#5a5a66;">With appreciation,<br />— The ARTPARK team</p>
 {% endblock %}

@@ -1,11 +1,7 @@
 {% extends "base.txt" %}
-{% block content %}Good news, {{ applicant_name }} — you're moving forward.
+{% block content %}Congratulations, {{ applicant_name }} — you've advanced to the next round.
 
-After review, your ARTPARK application has advanced to the next round and will now go before our evaluation jury.
+Thank you for applying to the ARTPARK {{ program_label }} programme. Your application has advanced to the next stage of evaluation. Please keep an eye on your inbox — further updates will be communicated by email.
 
-There's nothing you need to do right now — we'll be in touch with the next steps as the jury evaluation progresses.
-
-Thank you for your interest in ARTPARK.
-
-— The ARTPARK team
-{% endblock %}
+With appreciation,
+— The ARTPARK team{% endblock %}

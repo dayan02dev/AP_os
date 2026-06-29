@@ -39,8 +39,10 @@ def notify_applicant_decided(sb, *, track: str, application_id: str, decision: s
             log.warning("notify_applicant_decided: no email for %s/%s", track, application_id)
             return
         name = rows[0].get("basic_full_name") or "there"
+        program_label = "VIP" if track == "sip" else "TIR"
         get_email_service().send_applicant_decision(
-            to=email, applicant_name=name, outcome=outcome, application_ref=application_id[:8],
+            to=email, applicant_name=name, outcome=outcome,
+            application_ref=application_id[:8], program_label=program_label,
         )
     except Exception:  # noqa: BLE001
         log.warning("notify_applicant_decided failed for %s/%s", track, application_id, exc_info=True)

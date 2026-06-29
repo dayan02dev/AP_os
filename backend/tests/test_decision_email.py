@@ -3,6 +3,7 @@ best-effort send. Mirrors test_assignment_email's fake-client style."""
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from app.services import decision_email
 
@@ -63,3 +64,16 @@ def test_send_failure_is_swallowed(monkeypatch):
         lambda: SimpleNamespace(send_applicant_decision=boom))
     sb = _SB([{"basic_full_name": "Ada", "basic_email": "ada@x.com"}])
     decision_email.notify_applicant_decided(sb, track="tir", application_id="id1", decision="rejected")  # no raise
+
+
+def test_notify_threads_program_label_for_sip():
+    sb = MagicMock()
+    sb.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+        data=[{"basic_full_name": "Asha", "basic_email": "asha@x.com"}]
+    )
+    svc = MagicMock()
+    with patch.object(decision_email, "get_email_service", return_value=svc):
+        decision_email.notify_applicant_decided(sb, track="sip", application_id="app-1", decision="jury_review")
+    kwargs = svc.send_applicant_decision.call_args.kwargs
+    assert kwargs["outcome"] == "advanced"
+    assert kwargs["program_label"] == "VIP"

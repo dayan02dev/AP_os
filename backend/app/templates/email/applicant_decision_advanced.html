@@ -1,12 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Your ARTPARK application has advanced — ARTPARK{% endblock %}
+{% block title %}Your ARTPARK application has advanced{% endblock %}
 {% block content %}
-<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:600;line-height:1.3;">Good news, {{ applicant_name }} — you're moving forward.</h1>
-
-<p style="margin:0 0 14px 0;">After review, your ARTPARK application has <strong>advanced to the next round</strong> and will now go before our evaluation jury.</p>
-
-<p style="margin:0 0 14px 0;">There's nothing you need to do right now — we'll be in touch with the next steps as the jury evaluation progresses.</p>
-
-<p style="margin:24px 0 0 0;">Thank you for your interest in ARTPARK.</p>
-<p style="margin:8px 0 0 0;">— The ARTPARK team</p>
+<div style="font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#8a86a0;margin-bottom:10px;">Application update</div>
+<div style="font-family:'Trebuchet MS','Lucida Grande',Tahoma,sans-serif;font-weight:700;font-size:22px;line-height:1.25;letter-spacing:-0.01em;color:#242424;margin:0 0 14px;">Congratulations, {{ applicant_name }} — you've advanced to the next round.</div>
+<p style="margin:0 0 14px;">Thank you for applying to the ARTPARK {{ program_label }} programme. We're glad to share that your application has advanced to the next stage of evaluation.</p>
+<p style="margin:0 0 14px;">Please keep an eye on your inbox — any further updates will be communicated by email.</p>
+<p style="margin:24px 0 0;color:#5a5a66;">With appreciation,<br />— The ARTPARK team</p>
 {% endblock %}

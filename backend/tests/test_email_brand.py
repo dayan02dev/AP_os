@@ -41,3 +41,23 @@ def test_reviewer_assigned_is_count_only():
     assert "Open reviewer inbox" in html           # CTA
     assert "reassign" not in html.lower()          # removed line
     assert "deadbeef" not in html                  # no per-app ID list
+
+
+import re
+
+def _html_text(h):
+    return re.sub(r"<[^>]+>", "", h)
+
+def test_applicant_advanced_has_program_label_and_brand():
+    html = _render_html("applicant_decision_advanced", {
+        "applicant_name": "Asha", "application_ref": "abc12345", "program_label": "VIP",
+    })
+    assert "advanced" in html.lower()
+    assert "VIP" in html
+    assert "#3213b7" in html
+
+def test_applicant_rejected_is_gracious():
+    html = _render_html("applicant_decision_rejected", {
+        "applicant_name": "Asha", "application_ref": "abc12345", "program_label": "TIR",
+    })
+    assert "!" not in _html_text(html)   # brand rule: no exclamation marks in copy

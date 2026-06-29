@@ -299,6 +299,7 @@ class EmailService:
         applicant_name: str,
         outcome: str,
         application_ref: str = "",
+        program_label: str = "ARTPARK",
     ) -> dict[str, str]:
         """Applicant-facing gate-1 decision email.
 
@@ -313,7 +314,8 @@ class EmailService:
             subject = "An update on your ARTPARK application"
         html, text = self._render_pair(
             template_base,
-            {"applicant_name": applicant_name or "there", "application_ref": application_ref},
+            {"applicant_name": applicant_name or "there", "application_ref": application_ref,
+             "program_label": program_label},
         )
         return self.send_raw([to], subject, html, text)
 
