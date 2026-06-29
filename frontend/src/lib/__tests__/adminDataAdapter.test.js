@@ -121,6 +121,20 @@ describe("adaptDetail", () => {
   });
 });
 
+describe("reviewer flags surfacing", () => {
+  it("adaptPipelineRow passes backend flags through", () => {
+    expect(adaptPipelineRow({ id: "a", flags: ["f1", "f2"] }).flags).toEqual(["f1", "f2"]);
+    expect(adaptPipelineRow({ id: "b" }).flags).toEqual([]);
+  });
+  it("adaptDetail aggregates flags from submitted reviews", () => {
+    const d = { id: "x", reviews: [
+      { submitted_at: "2026-06-01", flags: ["late"] },
+      { submitted_at: "2026-06-02", flags: ["dup", "thin"] },
+    ] };
+    expect(adaptDetail(d).flags).toEqual(["late", "dup", "thin"]);
+  });
+});
+
 import { adaptReviewer, adaptCalibrationRow, adaptAuditEntry, adaptBatch } from "../adminDataAdapter";
 describe("misc adapters", () => {
   it("reviewer roster row", () => {
