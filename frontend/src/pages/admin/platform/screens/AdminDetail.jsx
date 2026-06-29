@@ -7,8 +7,6 @@
 //   • Admin decision — adminPlatformApi.decide(track, id, { decision, rationale })
 //     where decision = BUTTON_TO_DECISION[buttonLabel].
 //     After success → onBack().
-//   • Reviewer assignment — leadershipApi.assignReviewers / unassignReviewer
-//     (same call shapes as AdminApplicationDetail.jsx).
 //
 // Jury Scorecard + TIR Signal Profile are wrapped with <PreviewBadge/> and
 // only rendered when decisionMode === 'jury'.
@@ -25,7 +23,6 @@ import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import { Chip } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import FullApplication from "../../../../components/FullApplication";
-import { reviewerNameOf, reviewerStatusLabel } from "../../../../lib/reviewerStatus";
 
 // ── Criteria metadata (mirrors prototype CRIT_LABELS / METRICS) ─────────────
 const METRICS = [
@@ -120,136 +117,6 @@ function getTIRSignalScore(st, key) {
 function getTIRSignalOverall(st) {
   const sum = METRICS.reduce((acc, m) => acc + getTIRSignalScore(st, m.key), 0);
   return parseFloat((sum / METRICS.length).toFixed(2));
-}
-
-// ── Reviewer assignment card (reused from AdminApplicationDetail.jsx) ─────────
-function shortId(uid) { return (uid || '').slice(0, 8) || '—'; }
-
-function ReviewerAssignmentCard({ id, track, assignments, onReload, setBanner }) {
-  const [reviewerInput, setReviewerInput] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [unassigning, setUnassigning] = useState(null);
-
-  const assignedIds = useMemo(
-    () => new Set((assignments || []).map((a) => a?.reviewer_user_id)),
-    [assignments],
-  );
-
-  const handleAssign = useCallback(async () => {
-    const rid = reviewerInput.trim();
-    if (!rid || busy) return;
-    setBusy(true);
-    try {
-      const resp = await leadershipApi.assignReviewers(id, track, { reviewer_user_ids: [rid] });
-      const result = (resp?.results || [])[0];
-      const st = result?.status;
-      if (st === 'created') {
-        setBanner({ kind: 'ok', text: `Reviewer ${shortId(rid)} assigned.` });
-      } else if (st === 'already_assigned') {
-        setBanner({ kind: 'error', text: 'That reviewer is already assigned.' });
-      } else if (st === 'not_a_reviewer') {
-        setBanner({ kind: 'error', text: 'That user is not a reviewer.' });
-      } else {
-        setBanner({ kind: 'ok', text: 'Assignment processed.' });
-      }
-      setReviewerInput('');
-      await onReload();
-    } catch (err) {
-      const code = err?.details?.code || err?.code;
-      if (err?.status === 403 || code === 'missing_capability') {
-        setBanner({
-          kind: 'error',
-          text: "You don't have permission to assign reviewers (assign_reviewers capability required).",
-        });
-      } else {
-        setBanner({
-          kind: 'error',
-          text: err?.details?.message || err?.message || 'Failed to assign reviewer.',
-        });
-      }
-    } finally {
-      setBusy(false);
-    }
-  }, [reviewerInput, busy, id, track, onReload, setBanner]);
-
-  const handleUnassign = useCallback(async (a) => {
-    if (!a?.reviewer_user_id || unassigning) return;
-    if (!window.confirm(`Remove reviewer ${shortId(a.reviewer_user_id)} from this application?`)) return;
-    setUnassigning(a.reviewer_user_id);
-    try {
-      await leadershipApi.unassignReviewer(id, track, a.reviewer_user_id);
-      setBanner({ kind: 'ok', text: `Reviewer ${shortId(a.reviewer_user_id)} unassigned.` });
-      await onReload();
-    } catch (err) {
-      const code = err?.details?.code || err?.code;
-      if (code === 'review_already_submitted') {
-        setBanner({
-          kind: 'error',
-          text: "This reviewer has already submitted a review and can't be unassigned in Phase 1.",
-        });
-      } else if (err?.status === 403 || code === 'missing_capability') {
-        setBanner({
-          kind: 'error',
-          text: "You don't have permission to unassign reviewers (assign_reviewers capability required).",
-        });
-      } else {
-        setBanner({
-          kind: 'error',
-          text: err?.details?.message || err?.message || 'Failed to unassign reviewer.',
-        });
-      }
-    } finally {
-      setUnassigning(null);
-    }
-  }, [unassigning, id, track, onReload, setBanner]);
-
-  return (
-    <div className="os-card">
-      <div className="os-card-title os-mb-sm">Reviewer Assignment</div>
-      {(!assignments || assignments.length === 0) ? (
-        <p className="os-text-dim os-text-sm">No reviewers assigned yet.</p>
-      ) : (
-        <ul style={{ listStyle: 'none', margin: '0 0 12px', padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {assignments.map((a) => (
-            <li key={a?.id || `${a?.reviewer_user_id}-${a?.assigned_at}`}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-              <span style={{ fontSize: 13, color: 'var(--ink)', display: 'flex', flexDirection: 'column' }}>
-                Reviewer · {reviewerNameOf(a)}
-                <span style={{ fontSize: 11, color: 'var(--ink-dim)' }}>{reviewerStatusLabel(a)}</span>
-              </span>
-              <button
-                type="button"
-                className="os-btn ghost sm"
-                disabled={unassigning === a?.reviewer_user_id}
-                onClick={() => handleUnassign(a)}
-              >
-                {unassigning === a?.reviewer_user_id ? 'Unassigning…' : 'Unassign'}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input
-          className="os-input"
-          type="text"
-          placeholder="Reviewer user-id"
-          value={reviewerInput}
-          onChange={(e) => setReviewerInput(e.target.value)}
-          disabled={busy}
-          style={{ flex: 1 }}
-        />
-        <button
-          type="button"
-          className="os-btn sm"
-          disabled={busy || !reviewerInput.trim()}
-          onClick={handleAssign}
-        >
-          {busy ? 'Assigning…' : 'Assign'}
-        </button>
-      </div>
-    </div>
-  );
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -698,19 +565,6 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
               </div>
             )) : <div className="os-text-dim os-text-sm">No flags raised on this application.</div>}
           </div>
-
-          {/* Reviewer Assignment */}
-          <ReviewerAssignmentCard
-            id={s.id}
-            track={track}
-            assignments={
-              (s.reviewerAssignments && s.reviewerAssignments.length)
-                ? s.reviewerAssignments
-                : (s.assignedReviewers || []).map(rid => ({ reviewer_user_id: rid }))
-            }
-            onReload={doLoad}
-            setBanner={setBanner}
-          />
 
           {/* Admin Decision Card */}
           <div className="os-card">
