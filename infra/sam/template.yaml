@@ -391,6 +391,28 @@ Resources:
       LogGroupName: !Sub /aws/lambda/artpark-eir-daily-digest-${EnvName}
       RetentionInDays: 30
 
+  ReviewerReminderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub artpark-eir-reviewer-reminder-${EnvName}
+      CodeUri: ../../backend/
+      Handler: workers.reviewer_reminder.handler.lambda_handler
+      Timeout: 60
+      Events:
+        DailyMorning:
+          Type: Schedule
+          Properties:
+            # 03:30 UTC = 09:00 IST, every day
+            Schedule: "cron(30 3 * * ? *)"
+      Policies:
+        - CloudWatchLogsFullAccess
+
+  ReviewerReminderLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/artpark-eir-reviewer-reminder-${EnvName}
+      RetentionInDays: 30
+
 Outputs:
   ApiUrl:
     Description: Execute-API URL (before custom domain)
