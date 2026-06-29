@@ -6,6 +6,7 @@ import {
   reviewerStatusLabel,
   reviewerStatusOf,
 } from "../../../lib/reviewerStatus.js";
+import { weightedReviewScore } from "../../../lib/reviewScore.js";
 
 // Dimension labels mirror the reviewer portal's CRIT_LABELS (the names the
 // reviewer actually scored against). No Integrity row — reviews carry no
@@ -35,7 +36,7 @@ export default function ReviewsTab({ reviews, assignments }) {
   const totalAssignments = (assignments || []).length;
   const submittedCount = submittedReviews.length;
   const overalls = submittedReviews
-    .map((r) => r.score_overall)
+    .map((r) => weightedReviewScore(r))
     .filter((s) => typeof s === "number" && Number.isFinite(s));
   const avg =
     overalls.length > 0
@@ -60,7 +61,9 @@ export default function ReviewsTab({ reviews, assignments }) {
         <p className="ans-empty">No reviews submitted yet.</p>
       ) : (
         <div className="reviews-list">
-          {submittedReviews.map((r) => (
+          {submittedReviews.map((r) => {
+            const overall = weightedReviewScore(r);
+            return (
             <article
               key={r.id || `${r.reviewer_user_id}-${r.submitted_at}`}
               className="review-card"
@@ -69,7 +72,17 @@ export default function ReviewsTab({ reviews, assignments }) {
                 <span className="review-card-name">
                   Reviewer · {reviewerNameOf(r)}
                 </span>
-                <span className="review-card-when">{fmtDate(r.submitted_at)}</span>
+                <span className="review-card-head-right">
+                  {typeof overall === "number" && (
+                    <span
+                      className="review-card-score"
+                      aria-label={`Reviewer weighted score ${overall.toFixed(1)} out of 10`}
+                    >
+                      {overall.toFixed(1)}<span className="of">/10</span>
+                    </span>
+                  )}
+                  <span className="review-card-when">{fmtDate(r.submitted_at)}</span>
+                </span>
               </header>
               <div className="review-bars">
                 {CATEGORY_BARS.map((c) => {
@@ -90,7 +103,8 @@ export default function ReviewsTab({ reviews, assignments }) {
                 </p>
               )}
             </article>
-          ))}
+            );
+          })}
         </div>
       )}
 
