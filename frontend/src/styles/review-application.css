@@ -631,11 +631,39 @@
   overflow-y: auto;
   border-left: 1px solid var(--line);
 }
-/* On the lavender panel, lift the TL;DR card to white so it pops (in the
-   white drawer the base --bg-soft tint is used instead). */
-.ai-panel .ai-tldr {
-  background: var(--paper);
+/* Summary detail rows — always visible, hairline-separated (no accordions). */
+.ai-summary-sections {
+  display: flex;
+  flex-direction: column;
 }
+.ai-summary-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ai-summary-row:last-child { border-bottom: none; }
+.ai-summary-row.is-rec {
+  border-bottom: none;
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+  margin: 4px 0;
+}
+.ai-summary-label {
+  display: block;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 3px;
+}
+.ai-summary-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.ai-summary-text.is-strong { font-weight: 600; }
 .ai-panel-head {
   padding: var(--s-5) var(--s-5) 0;
   display: flex;

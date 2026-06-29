@@ -2,19 +2,17 @@
 //
 // The runner persists ai_screening.summary as JSON.stringify of a
 // Round1Summary (verdict, top_strength, top_concern, program_fit,
-// recommendation). Legacy Phase-1 rows stored a plain "Stub mode…"
-// string instead — parseSummary falls back to plain text for those.
+// recommendation). Legacy Phase-1 rows stored a plain "Stub mode…" string
+// instead — parseSummary falls back to plain text for those.
 //
-// Layout (progressive disclosure): flags → a TL;DR header that always shows
-// the two decision-driving pointers (Verdict + Recommendation) → the longer
-// supporting sections (Top strength / Top concern / Programme fit) collapsed
-// behind accordions so the panel/drawer isn't a wall of text. Also surfaces
-// flags.needs_human_review and the cap-rule count so leadership knows when an
-// auto-summary isn't trustworthy.
+// Layout: flags → Verdict (Read-more for long text) → Recommendation
+// (emphasised) → Top strength / Top concern / Programme fit, all as
+// always-visible labelled rows separated by hairlines. No accordions: the
+// supporting detail is short, and hiding it behind a tap read as "messy".
 
-import Collapsible from "./Collapsible.jsx";
+import ReadMoreText from "./ReadMoreText.jsx";
 
-// Sections shown collapsed by default (the supporting detail).
+// Supporting sections, always shown.
 const DETAIL_SECTIONS = [
   { key: "top_strength", label: "Top strength" },
   { key: "top_concern", label: "Top concern" },
@@ -26,7 +24,6 @@ function parseSummary(raw) {
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  // Try JSON first.
   if (trimmed.startsWith("{")) {
     try {
       const obj = JSON.parse(trimmed);
@@ -35,7 +32,6 @@ function parseSummary(raw) {
       }
     } catch {}
   }
-  // Fallback: plain text (legacy stub-mode rows).
   return { kind: "plain", text: trimmed };
 }
 
@@ -77,7 +73,7 @@ export default function AISummaryBlock({ aiScreening }) {
       <div className="ai-summary-block">
         <Flags isStub={isStub} needsReview={needsReview} capCount={capCount} />
         {parsed?.kind === "plain" ? (
-          <p className="ai-tldr-text">{parsed.text}</p>
+          <p className="ai-summary-text">{parsed.text}</p>
         ) : (
           <p className="ai-summary-empty">No summary written yet.</p>
         )}
@@ -89,35 +85,32 @@ export default function AISummaryBlock({ aiScreening }) {
   return (
     <div className="ai-summary-block">
       <Flags isStub={isStub} needsReview={needsReview} capCount={capCount} />
-
-      {/* TL;DR — the two pointers a reviewer acts on, always visible. */}
-      <div className="ai-tldr">
+      <div className="ai-summary-sections">
         {data.verdict && (
-          <div className="ai-tldr-item">
-            <span className="ai-tldr-label">Verdict</span>
-            <p className="ai-tldr-text">{data.verdict}</p>
+          <div className="ai-summary-row">
+            <span className="ai-summary-label">Verdict</span>
+            <ReadMoreText
+              text={data.verdict}
+              className="ai-summary-text"
+              words={60}
+            />
           </div>
         )}
         {data.recommendation && (
-          <div className="ai-tldr-item is-rec">
-            <span className="ai-tldr-label">Recommendation</span>
-            <p className="ai-tldr-text is-strong">{data.recommendation}</p>
+          <div className="ai-summary-row is-rec">
+            <span className="ai-summary-label">Recommendation</span>
+            <p className="ai-summary-text is-strong">{data.recommendation}</p>
           </div>
         )}
+        {DETAIL_SECTIONS.map((s) =>
+          data[s.key] ? (
+            <div className="ai-summary-row" key={s.key}>
+              <span className="ai-summary-label">{s.label}</span>
+              <p className="ai-summary-text">{data[s.key]}</p>
+            </div>
+          ) : null,
+        )}
       </div>
-
-      {/* Supporting detail — collapsed by default. */}
-      {DETAIL_SECTIONS.some((s) => data[s.key]) && (
-        <div className="ai-detail-sections">
-          {DETAIL_SECTIONS.map((s) =>
-            data[s.key] ? (
-              <Collapsible key={s.key} label={s.label}>
-                <p className="ai-tldr-text">{data[s.key]}</p>
-              </Collapsible>
-            ) : null,
-          )}
-        </div>
-      )}
     </div>
   );
 }
