@@ -19,6 +19,7 @@ import {
 import AISummaryBlock from "./AISummaryBlock.jsx";
 import Collapsible from "./Collapsible.jsx";
 import ReadMoreText from "./ReadMoreText.jsx";
+import { weightedReviewScore } from "../../../lib/reviewScore.js";
 
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -313,7 +314,9 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
               </p>
             ) : (
               <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
-                {reviews.map((r) => (
+                {reviews.map((r) => {
+                  const overall = weightedReviewScore(r);
+                  return (
                   <li
                     key={r.id || `${r.reviewer_user_id}-${r.submitted_at}`}
                     style={{
@@ -331,9 +334,9 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
                         {fmtDate(r.submitted_at)}
                       </span>
                     </div>
-                    {r.score_overall != null && (
+                    {overall != null && (
                       <div style={{ marginTop: 6, fontSize: 14 }}>
-                        <strong>{r.score_overall.toFixed(1)}</strong> / 10
+                        <strong>{overall.toFixed(1)}</strong> / 10
                         {r.recommendation && <> · {r.recommendation}</>}
                       </div>
                     )}
@@ -354,7 +357,8 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
                       </p>
                     )}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
             </Collapsible>
