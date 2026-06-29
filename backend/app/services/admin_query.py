@@ -219,6 +219,37 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     meta = _fetch_admin_meta(pairs)
     batches = _fetch_batches(pairs)
 
+    # Reviewer-flag aggregation: union of flags across all submitted reviews
+    # per app. One query per track; keyed (track, application_id) to match
+    # `scores`/`project_names`.
+    flags_by_key: dict[tuple[str, str], list] = {}
+    for track, ids in _by_track(pairs).items():
+        if not ids:
+            continue
+        try:
+            res = (
+                get_admin_client()
+                .table("reviews")
+                .select("application_id,application_track,submitted_at,flags")
+                .eq("application_track", track)
+                .in_("application_id", ids)
+                .execute()
+            )
+            for rv in res.data or []:
+                if not rv.get("submitted_at"):
+                    continue
+                fl = rv.get("flags")
+                if not isinstance(fl, list) or not fl:
+                    continue
+                aid = rv.get("application_id")
+                if aid is None:
+                    continue
+                k = (track, aid)
+                flags_by_key.setdefault(k, []).extend(fl)
+        except Exception as exc:
+            log.warning("admin_query.fetch_pipeline flags fetch failed",
+                        extra={"track": track, "err": str(exc)})
+
     # 3. Post-fetch filters (hidden/archived/decision/batch/industry/search).
     include_hidden = bool(filters.get("include_hidden"))
     include_archived = bool(filters.get("include_archived"))
@@ -287,6 +318,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
             "isArchived":       is_archived,
             "batch":            (batch or {}).get("name"),
             "submitted_at":     r.get("submitted_at"),
+            "flags":            flags_by_key.get(key, []),
         })
 
     # Sort newest-submitted first (NULLs last), matching the leadership list.
@@ -915,27 +947,18 @@ def bulk_remove_reviewer_apps(
     user_id: str, items: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Unassign many applications from one reviewer. Per-item status:
-    removed | skipped_submitted | not_found | error. Never orphans a submitted
-    review (mirrors leadership_actions.unassign_reviewer's 409 guard, but
-    per-item rather than aborting the whole request).
+    removed | not_found | error. Admins may remove an assignment even when the
+    reviewer has already submitted a review; the review row is left intact for
+    audit — only the reviewer_assignment is deleted.
     """
     sb = get_admin_client()
-    submitted: set[tuple[str, str]] = set()
-    try:
-        for r in (sb.table("reviews").select("*")
-                  .eq("reviewer_user_id", user_id).execute().data) or []:
-            if r.get("reviewer_user_id") == user_id and r.get("submitted_at"):
-                submitted.add((r.get("application_id"), r.get("application_track")))
-    except Exception as exc:
-        log.warning("bulk_remove: reviews fetch failed", extra={"err": str(exc)})
-
+    # 2026-06-29: admins may unassign an application even when the reviewer has
+    # already submitted a review (the review row is left intact for audit; only
+    # the reviewer_assignment is deleted).
     results: list[dict[str, Any]] = []
     for it in items:
         aid = it.get("application_id")
         track = it.get("track")
-        if (aid, track) in submitted:
-            results.append({"application_id": aid, "track": track, "status": "skipped_submitted"})
-            continue
         try:
             res = (sb.table("reviewer_assignments").delete()
                    .eq("application_id", aid)

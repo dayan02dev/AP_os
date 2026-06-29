@@ -937,7 +937,11 @@ def test_bulk_assign_marks_non_reviewer(client, monkeypatch, _clear_overrides):
     assert r.json()["results"][0]["status"] == "not_a_reviewer"
 
 
-def test_bulk_remove_skips_submitted(client, monkeypatch, _clear_overrides):
+def test_bulk_remove_removes_all_including_submitted(client, monkeypatch, _clear_overrides):
+    """Remove unassigns every item regardless of submitted-review status.
+    Both app-1 (no review) and app-2 (submitted review) must return 'removed'
+    and have their reviewer_assignments deleted; the review row is preserved.
+    """
     tables = _empty_admin_tables()
     tables["reviewer_assignments"] = [
         {"id": "as-1", "reviewer_user_id": "rev-1", "application_id": "app-1",
@@ -953,14 +957,14 @@ def test_bulk_remove_skips_submitted(client, monkeypatch, _clear_overrides):
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
     r = client.post("/admin/platform/reviewers/rev-1/applications/remove", json={"items": [
         {"application_id": "app-1", "track": "tir"},
-        {"application_id": "app-2", "track": "tir"},   # submitted → skipped
+        {"application_id": "app-2", "track": "tir"},   # submitted → still removed
     ]})
     assert r.status_code == 200, r.text
     results = {x["application_id"]: x["status"] for x in r.json()["results"]}
     assert results["app-1"] == "removed"
-    assert results["app-2"] == "skipped_submitted"
-    remaining = {a["application_id"] for a in fake.tables["reviewer_assignments"]}
-    assert remaining == {"app-2"}
+    assert results["app-2"] == "removed"     # no longer skipped_submitted
+    assert fake.tables["reviewer_assignments"] == []
+    assert len(fake.tables["reviews"]) == 1  # review row preserved for audit
 
 
 def test_bulk_endpoints_admin_only(client, _clear_overrides):
@@ -1028,3 +1032,89 @@ def test_decision_accepts_jury_review(client, monkeypatch, _clear_overrides):
     )
     # 200 (decided) — NOT 422 (invalid enum). Exact body depends on the fake; assert not-422.
     assert r.status_code != 422, r.text
+
+
+# ─── Task 5 (new): pipeline flags aggregation + remove-reviewed unblock ────
+
+
+def test_pipeline_flags_aggregated_from_submitted_reviews(
+    client, monkeypatch, _clear_overrides,
+):
+    """Pipeline rows must carry an aggregated `flags` list from submitted
+    reviews. An app with a submitted review that has flags=["x"] must have
+    flags==["x"] in the pipeline row; an app with no flagged review must have
+    flags==[].
+    """
+    app_id_flagged = "flagged-app-1111-1111-1111-111111111111"
+    app_id_clean = "clean-app-2222-2222-2222-222222222222"
+    tables = _empty_admin_tables()
+    tables["tir_applications"] = [
+        {"id": app_id_flagged, "status": "evaluated", "display_seq": 30001,
+         "basic_full_name": "Flagged Founder", "basic_email": "f@x.com",
+         "basic_org": "Flagged Org", "submitted_at": "2026-06-01T00:00:00Z"},
+        {"id": app_id_clean, "status": "evaluated", "display_seq": 30002,
+         "basic_full_name": "Clean Founder", "basic_email": "c@x.com",
+         "basic_org": "Clean Org", "submitted_at": "2026-06-01T00:00:00Z"},
+    ]
+    # Submitted review with a flag for app_id_flagged; draft review (no
+    # submitted_at) for app_id_clean — the draft must not contribute flags.
+    tables["reviews"] = [
+        {"id": "rv-flag", "reviewer_user_id": "rev-1",
+         "application_id": app_id_flagged, "application_track": "tir",
+         "submitted_at": "2026-06-02T00:00:00Z", "flags": ["x"]},
+        {"id": "rv-draft", "reviewer_user_id": "rev-1",
+         "application_id": app_id_clean, "application_track": "tir",
+         "submitted_at": None, "flags": ["y"]},  # draft — must NOT contribute
+    ]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user(
+        "admin-1", roles=["admin"],
+    )
+
+    r = client.get("/admin/platform/applications")
+    assert r.status_code == 200, r.text
+    by_id = {a["id"]: a for a in r.json()["applications"]}
+
+    assert by_id[app_id_flagged]["flags"] == ["x"], (
+        "flagged app should carry flags=['x'] from submitted review"
+    )
+    assert by_id[app_id_clean]["flags"] == [], (
+        "clean app (only draft review) should carry flags=[]"
+    )
+
+
+def test_bulk_remove_removes_app_with_submitted_review(
+    client, monkeypatch, _clear_overrides,
+):
+    """bulk_remove_reviewer_apps must return status='removed' (not
+    'skipped_submitted') for an app whose reviewer already submitted a review.
+    The reviewer_assignment is deleted; the reviews row is left intact.
+    """
+    tables = _empty_admin_tables()
+    tables["reviewer_assignments"] = [
+        {"id": "as-1", "reviewer_user_id": "rev-1", "application_id": "app-r",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None},
+    ]
+    tables["reviews"] = [
+        {"id": "r-1", "reviewer_user_id": "rev-1", "application_id": "app-r",
+         "application_track": "tir", "submitted_at": "2026-06-01T00:00:00Z",
+         "flags": []},
+    ]
+    fake = _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user(
+        "admin-1", roles=["admin"],
+    )
+    r = client.post(
+        "/admin/platform/reviewers/rev-1/applications/remove",
+        json={"items": [{"application_id": "app-r", "track": "tir"}]},
+    )
+    assert r.status_code == 200, r.text
+    results = {x["application_id"]: x["status"] for x in r.json()["results"]}
+    assert results["app-r"] == "removed", (
+        "should be 'removed', not 'skipped_submitted' — admins can unassign "
+        "even reviewed apps"
+    )
+    # Assignment deleted.
+    assert fake.tables["reviewer_assignments"] == []
+    # Review row preserved (audit trail).
+    assert len(fake.tables["reviews"]) == 1
