@@ -1867,3 +1867,161 @@ def test_queue_my_score_none_when_not_started(client, monkeypatch, _clear_overri
     r = client.get("/reviewer/queue")
     assert r.status_code == 200, r.text
     assert r.json()[0]["myScore"] is None
+
+
+# ─── Task 7: content `application` key + signed-URL endpoint ───────────
+
+
+def test_content_endpoint_includes_application_key(client, monkeypatch, _clear_overrides):
+    """The content response now carries the raw `application` row so the
+    schema-driven renderer can drive its own field display."""
+    me = "rev-1"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [{
+            "id": "asg-1", "application_id": "app-1", "application_track": "tir",
+            "reviewer_user_id": me, "declined_at": None, "reassigned_to": None,
+            "assigned_at": "2026-06-01T00:00:00+00:00"}],
+        "tir_applications": [{
+            "id": "app-1", "display_seq": 26001, "basic_full_name": "Alice",
+            "basic_org": "Widgets Inc", "submitted_at": "2026-05-20T00:00:00+00:00",
+            "evidence_files": []}],
+        "sip_applications": [],
+        "reviews": [],
+        "ai_screening": [],
+        "industry_categories": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get("/reviewer/applications/tir/app-1/content")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # The raw application row must be present under the "application" key.
+    assert "application" in body, "content response must include 'application' key"
+    assert body["application"]["id"] == "app-1"
+    assert body["application"]["basic_org"] == "Widgets Inc"
+
+
+def test_signed_url_404_when_not_assigned(client, monkeypatch, _clear_overrides):
+    """An unassigned reviewer gets 404 (not 403) to avoid app-existence enumeration."""
+    me = "rev-1"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [],  # no assignment for `me`
+        "tir_applications": [{"id": "app-1", "submitted_at": "2026-05-20T00:00:00+00:00"}],
+        "sip_applications": [],
+        "reviews": [],
+        "ai_screening": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get(
+        "/reviewer/applications/tir/app-1/files/signed-url",
+        params={"storage_path": "tir/app-1/resume.pdf"},
+    )
+    assert r.status_code == 404, r.text
+    assert r.json()["detail"]["code"] == "not_found"
+
+
+def test_signed_url_400_on_path_traversal(client, monkeypatch, _clear_overrides):
+    """A storage_path containing '..' is rejected immediately with 400."""
+    me = "rev-1"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [{
+            "id": "asg-1", "application_id": "app-1", "application_track": "tir",
+            "reviewer_user_id": me, "declined_at": None, "reassigned_to": None,
+            "assigned_at": "2026-06-01T00:00:00+00:00"}],
+        "tir_applications": [{"id": "app-1", "submitted_at": "2026-05-20T00:00:00+00:00"}],
+        "sip_applications": [],
+        "reviews": [],
+        "ai_screening": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get(
+        "/reviewer/applications/tir/app-1/files/signed-url",
+        params={"storage_path": "tir/../secrets/key.pem"},
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"]["code"] == "invalid_storage_path"
+
+
+def test_signed_url_404_on_off_allowlist_path(client, monkeypatch, _clear_overrides):
+    """A path that is NOT in the app's file fields gets a 404 (file_not_found),
+    not a signed URL — even for an assigned reviewer."""
+    me = "rev-1"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [{
+            "id": "asg-1", "application_id": "app-1", "application_track": "tir",
+            "reviewer_user_id": me, "declined_at": None, "reassigned_to": None,
+            "assigned_at": "2026-06-01T00:00:00+00:00"}],
+        "tir_applications": [{
+            "id": "app-1", "submitted_at": "2026-05-20T00:00:00+00:00",
+            # No file fields set → allow-list is empty
+        }],
+        "sip_applications": [],
+        "reviews": [],
+        "ai_screening": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get(
+        "/reviewer/applications/tir/app-1/files/signed-url",
+        params={"storage_path": "tir/app-1/arbitrary_file.pdf"},
+    )
+    assert r.status_code == 404, r.text
+    assert r.json()["detail"]["code"] == "file_not_found"
+
+
+def test_signed_url_happy_path_assigned_allowlisted(client, monkeypatch, _clear_overrides):
+    """Assigned reviewer + an allow-listed path returns {url, expires_in}.
+
+    We extend _FakeAdminClient with a storage attribute that returns a fake
+    signed URL so the happy path can be tested without a real Supabase client.
+
+    TIR file fields: evidence_files (array of {storage_path/path}),
+    evidence_deck (single {storage_path/path}), execution_milestone_files (array).
+    Use evidence_deck (single) → bucket "tir-evidence-files".
+    """
+    me = "rev-1"
+    _STORAGE_PATH = "tir/app-1/deck.pdf"
+
+    fake = _install_db(monkeypatch, {
+        "reviewer_assignments": [{
+            "id": "asg-1", "application_id": "app-1", "application_track": "tir",
+            "reviewer_user_id": me, "declined_at": None, "reassigned_to": None,
+            "assigned_at": "2026-06-01T00:00:00+00:00"}],
+        "tir_applications": [{
+            "id": "app-1", "submitted_at": "2026-05-20T00:00:00+00:00",
+            # evidence_deck is a single-file field → value is a dict with storage_path.
+            "evidence_deck": {"storage_path": _STORAGE_PATH, "name": "deck.pdf"},
+        }],
+        "sip_applications": [],
+        "reviews": [],
+        "ai_screening": [],
+    })
+
+    # Attach a fake storage to the fake client so create_signed_url works.
+    class _FakeBucket:
+        def create_signed_url(self, path, expiry):
+            return {"signedURL": f"https://cdn.example.com/{path}?token=abc"}
+
+    class _FakeStorage:
+        def from_(self, bucket):
+            return _FakeBucket()
+
+    fake.storage = _FakeStorage()
+
+    # Also patch the reviewer router's get_admin_client to return our extended fake.
+    from app.routers import reviewer as rv
+    monkeypatch.setattr(rv, "get_admin_client", lambda: fake)
+
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get(
+        "/reviewer/applications/tir/app-1/files/signed-url",
+        params={"storage_path": _STORAGE_PATH},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "url" in body
+    assert body["expires_in"] == 120
+    assert "cdn.example.com" in body["url"]

@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..deps import get_current_user
 from ..rbac import require_capability
-from ..services import review_presenter, reviewer_query, state_machine
+from ..services import applications_query, review_presenter, reviewer_query, state_machine
 from ..services import rubric as rubric_service
 from ..services.audit import write_audit
 from ..supabase_client import get_admin_client
@@ -98,6 +98,7 @@ async def get_application_content(
         "id": application_id,
         "applicationId": reviewer_query._display_id(track, app_row),
         "track": track,
+        "application": app_row,
         "name": ai.get("project_name") or app_row.get("basic_org")
                 or app_row.get("basic_full_name") or "—",
         "aiSummary": ai.get("summary"),
@@ -108,6 +109,64 @@ async def get_application_content(
         "evaluation": payload.get("my_review"),
         "assignment": payload.get("assignment"),
     }
+
+
+@router.get(
+    "/applications/{track}/{application_id}/files/signed-url",
+    dependencies=[Depends(require_capability("view_assigned_apps"))],
+)
+async def get_reviewer_file_signed_url(
+    track: Literal["tir", "sip"],
+    application_id: str,
+    storage_path: str = Query(..., min_length=1),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Short-lived signed URL for one of an ASSIGNED application's files.
+
+    Reviewers don't hold `view_app_detail`, so they can't use the leadership
+    endpoint. Authorisation = the SAME assignment check as the content endpoint
+    (`fetch_application_for_reviewer` returns None when unassigned) + a path
+    allow-list rebuilt from the application's own file fields. 404 (not 403) on
+    unassigned / unknown path — no enumeration. Path traversal rejected.
+    """
+    if ".." in storage_path:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_storage_path"},
+        )
+    payload = reviewer_query.fetch_application_for_reviewer(
+        user["user_id"], track, application_id,
+    )
+    if payload is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                            detail={"code": "not_found"})
+    app_row = payload["application"]
+    allowed = applications_query.collect_application_file_paths(track, app_row)
+    bucket = allowed.get(storage_path)
+    if bucket is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                            detail={"code": "file_not_found"})
+    try:
+        signed = (get_admin_client()
+                  .storage.from_(bucket)
+                  .create_signed_url(storage_path, 120))
+        url = None
+        if isinstance(signed, dict):
+            url = signed.get("signedURL") or signed.get("signedUrl") or signed.get("url")
+        if not url:
+            raise RuntimeError("no signed url")
+        return {"url": url, "expires_in": 120}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "not_found" in msg or "not found" in msg:
+            raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                                detail={"code": "file_not_available"}) from exc
+        log.warning("reviewer signed-url generation failed",
+                    extra={"application_id": application_id, "track": track})
+        raise HTTPException(status_code=http_status.HTTP_502_BAD_GATEWAY,
+                            detail={"code": "signed_url_failed"}) from exc
 
 
 @router.get(
