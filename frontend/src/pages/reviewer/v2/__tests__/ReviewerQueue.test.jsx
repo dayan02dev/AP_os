@@ -27,3 +27,27 @@ describe("ReviewerQueue My Score column", () => {
     expect(screen.getByText("My Score")).toBeTruthy();
   });
 });
+
+const queueAsync = {
+  data: [
+    {
+      id: "id-sip-1", applicationId: "SIP-26623", track: "sip",
+      name: "STHANUS Breast Ultrasound", founders: ["Banhimitra Kundu"],
+      industry: "Healthcare / MedTech", stage: "Pre-revenue",
+      ai: { overall: 8.6 }, myScore: 8.7, reviewStatus: "draft", due: null,
+    },
+  ],
+  loading: false, error: null, reload: () => {},
+};
+
+describe("ReviewerQueue", () => {
+  it("relabels SIP display IDs to VIP", () => {
+    render(<ReviewerQueue onOpen={() => {}} queueAsync={queueAsync} />);
+    expect(screen.getAllByText(/VIP-26623/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/SIP-26623/)).not.toBeInTheDocument();
+  });
+  it("does not render a Due column header", () => {
+    render(<ReviewerQueue onOpen={() => {}} queueAsync={queueAsync} />);
+    expect(screen.queryByRole("columnheader", { name: /^Due$/i })).not.toBeInTheDocument();
+  });
+});

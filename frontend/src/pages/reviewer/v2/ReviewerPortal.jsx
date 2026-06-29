@@ -13,6 +13,7 @@ import "../../../styles/reviewer-portal.css";
 import { useAuth } from "../../../hooks/useAuth.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
+import { relabelDisplayId } from "../../../lib/trackLabel.js";
 import { COHORT_LABEL, initialsOf } from "./ui.jsx";
 import PortalSwitcher from "../../../components/PortalSwitcher.jsx";
 
@@ -87,9 +88,9 @@ async function exportReviewerQueueCsv() {
     return /[",\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
   };
   const queue = await reviewerApi.getQueue();
-  const headers = ["ID", "Project", "Founders", "Industry", "Stage", "Track", "AI Score", "Status", "Due"];
+  const headers = ["ID", "Project", "Founders", "Industry", "Stage", "Track", "AI Score", "Status"];
   const rows = queue.map((s) => [
-    s.applicationId,
+    relabelDisplayId(s.applicationId),
     s.name,
     (s.founders || []).join("; "),
     s.industry,
@@ -97,7 +98,6 @@ async function exportReviewerQueueCsv() {
     s.track === "tir" ? "TIR" : "VIP",
     s.ai && s.ai.overall != null ? Number(s.ai.overall).toFixed(1) : "",
     STATUS_LABEL[s.reviewStatus] || "",
-    s.due || "",
   ]);
   const csv = [headers, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
   const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });

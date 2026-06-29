@@ -9,13 +9,7 @@
 
 import { useState } from "react";
 import { LoadingState, ErrorState, Chip } from "./ui.jsx";
-
-function fmtDue(due) {
-  if (!due) return "—";
-  const d = new Date(due);
-  if (isNaN(d.getTime())) return String(due);
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
-}
+import { relabelDisplayId } from "../../../lib/trackLabel.js";
 
 // The queue is fetched once at the ReviewerPortal shell level and passed down
 // via `queueAsync` ({ data, loading, error, reload }) so the queue table and
@@ -181,7 +175,6 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
               <th style={{ width: "11%" }}>AI Score</th>
               <th style={{ width: "11%" }}>My Score</th>
               <th style={{ width: "10%" }}>Status</th>
-              <th style={{ width: "4%" }}>Due</th>
               <th style={{ width: "5%" }}>ID</th>
             </tr>
           </thead>
@@ -191,7 +184,7 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
                 <td>
                   <div style={{ fontWeight: 600, color: "var(--ink)", fontSize: 13, lineHeight: 1.3 }}>{s.name}</div>
                   <div style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 3, fontFamily: "var(--font-code)" }}>
-                    {s.applicationId} · {s.track === "tir" ? "TIR" : "VIP"}
+                    {relabelDisplayId(s.applicationId)} · {s.track === "tir" ? "TIR" : "VIP"}
                   </div>
                 </td>
                 <td>
@@ -239,27 +232,26 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
                   {s.reviewStatus === "draft" && <Chip tone="amber">Draft</Chip>}
                   {s.reviewStatus === "not-started" && <Chip tone="slate">Not started</Chip>}
                 </td>
-                <td style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-soft)" }}>{fmtDue(s.due)}</td>
-                <td style={{ fontFamily: "var(--font-code)", fontSize: 11, color: "var(--ink-dim)" }}>{s.applicationId}</td>
+                <td style={{ fontFamily: "var(--font-code)", fontSize: 11, color: "var(--ink-dim)" }}>{relabelDisplayId(s.applicationId)}</td>
               </tr>
             ))}
             {loading && (
               <tr>
-                <td colSpan="9" style={{ padding: "40px 0" }}>
+                <td colSpan="8" style={{ padding: "40px 0" }}>
                   <LoadingState label="Loading your queue…" />
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr>
-                <td colSpan="9" style={{ padding: "40px 0" }}>
+                <td colSpan="8" style={{ padding: "40px 0" }}>
                   <ErrorState error={error} onRetry={reload} />
                 </td>
               </tr>
             )}
             {!loading && !error && filtered.length === 0 && (
               <tr>
-                <td colSpan="9" style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-dim)", fontSize: 13 }}>
+                <td colSpan="8" style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-dim)", fontSize: 13 }}>
                   {allQueue.length === 0 ? "No applications assigned." : "No startups match the current filters."}
                 </td>
               </tr>
