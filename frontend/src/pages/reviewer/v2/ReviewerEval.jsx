@@ -288,16 +288,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
   const [fieldErrors, setFieldErrors] = useState({ notes: false, dimensions: [] });
 
-  // Countdown — only meaningful once a review is locked (submitted_at stamped).
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!expiresAt) return undefined;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [expiresAt]);
-  const expiryMs = expiresAt ? new Date(expiresAt).getTime() : null;
-  const secondsLeft = expiryMs ? Math.max(0, Math.floor((expiryMs - now) / 1000)) : null;
-  const expired = expiryMs != null && now > expiryMs;
+  const expired = false; // edit lock removed 2026-06-29 — reviewers edit anytime
 
   const lockedSubmitted = submitted && !reopened;
   const editable = !lockedSubmitted && !expired;
@@ -510,18 +501,10 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
                 {saveState === "saving" ? "Saving…" : saveState === "error" ? "⚠ Save failed" : "✓ Saved"}
               </span>
             )}
-            {secondsLeft != null && (
-              <div className={"lp-edit-chip " + (secondsLeft < 600 ? "red" : "amber")}>
-                <span className="lp-edit-dot" />
-                {expired ? "Edit window closed" : `Edit window: ${Math.floor(secondsLeft / 60)} min remaining`}
-              </div>
-            )}
             {lockedSubmitted ? (
               <>
                 <Chip tone="green">Submitted ✓</Chip>
-                {!expired && (
-                  <button className="os-btn" onClick={reopenForEdit}>Re-open to edit</button>
-                )}
+                <button className="os-btn" onClick={reopenForEdit}>Re-open to edit</button>
               </>
             ) : (
               <>
