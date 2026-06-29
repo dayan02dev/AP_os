@@ -1,0 +1,31 @@
+"""The shared email shell renders the ARTPARK brand, and existing templates
+still render through it (backward-compatible base rewrite)."""
+import os
+
+# Stub required settings so this test runs without a .env file (same pattern
+# as conftest.py's SENTRY_DSN stub).
+os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
+os.environ.setdefault("SUPABASE_ANON_KEY", "test_anon_key")
+os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test_service_role_key")
+
+from app.services import email_service as es
+
+
+def _render_html(template_base, ctx):
+    es.get_email_service.cache_clear()
+    svc = es.EmailService()
+    return svc._render_pair(template_base, ctx)[0]
+
+
+def test_base_shell_is_artpark_branded_via_existing_template():
+    # reviewer_assigned extends base.html and is otherwise unchanged.
+    html = _render_html("reviewer_assigned", {
+        "reviewer_name": "Asha", "count": 1,
+        "apps": [{"applicant_name": "Test User", "track_label": "TIR",
+                  "application_id_short": "abc12345"}],
+        "inbox_url": "https://apply.artpark.info/reviewer",
+    })
+    assert "#3213b7" in html          # purple brand accent
+    assert "ARTPARK" in html          # wordmark
+    assert "artpark.in" in html       # footer
+    assert "#f4f1ea" not in html      # old beige shell is gone
