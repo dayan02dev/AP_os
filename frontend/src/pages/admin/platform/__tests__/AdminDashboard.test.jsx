@@ -68,15 +68,18 @@ describe("AdminDashboard screen (screens/)", () => {
     expect(tens.length).toBeGreaterThan(0);
   });
 
-  it("renders JURY EVALUATION tile with PreviewBadge and 0 value", () => {
+  it("UNDER REVIEW tile shows no '% of submissions' subtitle (removed)", () => {
     useAdminData.mockReturnValue({ data: SAMPLE_STATS, loading: false, error: null });
     render(<AdminDashboard go={() => {}} decisionMode="reviewer" />);
-    // JURY EVALUATION appears in both the KPI tile and the funnel row label
-    const juryLabels = screen.getAllByText(/JURY EVALUATION/i);
-    expect(juryLabels.length).toBeGreaterThan(0);
-    // Preview badge appears (may appear multiple times — JURY tile + industry section)
-    const previews = screen.getAllByText(/Preview/i);
-    expect(previews.length).toBeGreaterThan(0);
+    expect(screen.queryByText(/of submissions/i)).toBeNull();
+  });
+
+  it("JURY EVALUATION tile shows no Preview badge in reviewer mode (removed)", () => {
+    useAdminData.mockReturnValue({ data: SAMPLE_STATS, loading: false, error: null });
+    render(<AdminDashboard go={() => {}} decisionMode="reviewer" />);
+    expect(screen.getAllByText(/JURY EVALUATION/i).length).toBeGreaterThan(0);
+    // No "Preview — backend pending" badge anywhere in reviewer mode.
+    expect(screen.queryByText(/Preview/i)).toBeNull();
   });
 
   it("renders FINAL DECISIONS from funnel.decided", () => {
