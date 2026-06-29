@@ -121,6 +121,19 @@ describe("adaptDetail", () => {
   });
 });
 
+describe("adaptPipelineRow reviewer score", () => {
+  it("maps a numeric reviewer_score to rev.overall", () => {
+    expect(adaptPipelineRow({ id: "a", reviewer_score: 7.4 }).rev).toEqual({ overall: 7.4 });
+  });
+  it("leaves rev undefined when reviewer_score is null or absent", () => {
+    expect(adaptPipelineRow({ id: "a", reviewer_score: null }).rev).toBeUndefined();
+    expect(adaptPipelineRow({ id: "a" }).rev).toBeUndefined();
+  });
+  it("treats a 0 score as a real score, not missing", () => {
+    expect(adaptPipelineRow({ id: "a", reviewer_score: 0 }).rev).toEqual({ overall: 0 });
+  });
+});
+
 import { adaptReviewer, adaptCalibrationRow, adaptAuditEntry, adaptBatch } from "../adminDataAdapter";
 describe("misc adapters", () => {
   it("reviewer roster row", () => {

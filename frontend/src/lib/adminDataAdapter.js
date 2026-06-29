@@ -27,7 +27,7 @@ export function adaptPipelineRow(row) {
     domain: row.industry || "—",
     stage: row.stage || "—",
     ai: { overall: row.ai_score_overall ?? null },
-    rev: undefined,
+    rev: row.reviewer_score != null ? { overall: row.reviewer_score } : undefined,
     flags: [],
     variance: null,
     chip: STATUS_TO_CHIP[row.status] || "NEW",
