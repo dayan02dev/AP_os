@@ -23,41 +23,53 @@ const CATEGORY_BARS = [
   // value (reserved/unused), so the row was always blank.
 ];
 
+function bandFor(score) {
+  if (typeof score !== "number" || !Number.isFinite(score)) return null;
+  if (score >= 7) return "High";
+  if (score >= 5) return "Mid";
+  if (score >= 3) return "Low";
+  return "Weak";
+}
+
 function ScoreTab({ aiScreening }) {
   const overall = aiScreening?.score_overall;
   const hasOverall = typeof overall === "number" && Number.isFinite(overall);
+  const band = hasOverall ? bandFor(overall) : null;
   return (
     <div className="ai-panel-body">
-      <span className="ai-score-eyebrow">Composite score</span>
-      <span className="ai-score-big">
-        {hasOverall ? overall.toFixed(1) : "—"}
-        <span className="of">/ 10</span>
-      </span>
-      {hasOverall && overall >= 8 && <span className="ai-score-strong">Strong</span>}
-      {!hasOverall && (
-        <p className="ai-score-blurb">AI screening not run yet.</p>
-      )}
-
-      <div>
-        {CATEGORY_BARS.map((c) => {
-          const v = aiScreening?.[c.key];
-          const pct = typeof v === "number" ? (v / 10) * 100 : 0;
-          return (
-            <div key={c.key} className="ai-bar-row">
-              <span className="label">{c.label}</span>
-              <div className="track"><div className="fill" style={{ width: `${pct}%` }} /></div>
-              <span className="num">{typeof v === "number" ? v.toFixed(1) : "—"}</span>
-            </div>
-          );
-        })}
+      <div className="ai-card">
+        <div className="ai-score-head">
+          <span
+            className="ai-score-num"
+            aria-label={hasOverall ? `Composite AI score ${overall.toFixed(1)} out of 10` : "Composite AI score not available"}
+          >
+            {hasOverall ? overall.toFixed(1) : "—"}
+            <span className="of">/ 10</span>
+          </span>
+          {band && <span className={`ai-band ai-band-${band.toLowerCase()}`}>{band}</span>}
+        </div>
+        {!hasOverall && (
+          <p className="ai-score-blurb">AI screening not run yet.</p>
+        )}
+        <div className="ai-bars">
+          {CATEGORY_BARS.map((c) => {
+            const v = aiScreening?.[c.key];
+            const pct = typeof v === "number" ? (v / 10) * 100 : 0;
+            return (
+              <div key={c.key} className="ai-bar-row">
+                <span className="label">{c.label}</span>
+                <div className="track"><div className="fill" style={{ width: `${pct}%` }} /></div>
+                <span className="num">{typeof v === "number" ? v.toFixed(1) : "—"}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {aiScreening?.summary && (
-        <div className="ai-summary">
+        <div className="ai-card ai-summary">
           <div className="head">AI Summary</div>
-          <div className="body">
-            <AISummaryBlock aiScreening={aiScreening} />
-          </div>
+          <AISummaryBlock aiScreening={aiScreening} />
         </div>
       )}
     </div>

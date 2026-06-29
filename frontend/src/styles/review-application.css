@@ -154,7 +154,7 @@
 
 .review-body {
   display: grid;
-  grid-template-columns: 1fr 440px;
+  grid-template-columns: 1fr 500px;
   min-height: 0;
 }
 .review-body[data-aside-collapsed="true"] {
@@ -731,6 +731,52 @@
   flex-direction: column;
   gap: var(--s-5);
 }
+.ai-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sharp);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.ai-card.ai-summary { gap: 0; }
+.ai-score-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+.ai-score-num {
+  font-family: var(--font-serif, var(--font-display));
+  font-weight: 700;
+  font-size: 34px;
+  line-height: 1;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.ai-score-num .of {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-dim);
+  font-family: var(--font-body);
+  margin-left: 4px;
+}
+.ai-band {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border-radius: var(--r-sharp);
+  background: var(--bg-soft);
+  color: var(--ink-soft);
+}
+.ai-band-high { background: var(--accent-soft); color: var(--accent); }
+.ai-band-weak { background: #fdecec; color: #b42318; }
+.ai-bars { display: flex; flex-direction: column; }
 
 /* Composite-score block — mimics the dashboard's mint "AVERAGE AI SCORE" KPI
    card so the same number reads the same way both places. */
@@ -783,9 +829,10 @@
   display: flex;
   align-items: center;
   gap: var(--s-3);
-  padding: var(--s-3) 0;
-  border-bottom: 1px dashed var(--line);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
 }
+.ai-bars .ai-bar-row:last-child { border-bottom: none; }
 .ai-bar-row .label {
   flex: 0 0 160px;
   font-size: 13px;
@@ -813,12 +860,9 @@
 }
 
 /* AI Summary card — soft surface, structured fields with serif labels. */
-.ai-summary {
-  /* Plain container — AISummaryBlock now supplies its own TL;DR card and
-     collapsible sections, so no nested card background/border here. */
-  padding: 0;
-  background: transparent;
-  border: none;
+.ai-summary .head {
+  /* AISummaryBlock supplies the structured rows; this is just the card label. */
+  margin-bottom: var(--s-2);
 }
 .ai-summary .head {
   font-family: var(--font-body);
