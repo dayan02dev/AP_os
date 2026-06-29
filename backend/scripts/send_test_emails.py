@@ -7,9 +7,14 @@ Calls each sender directly with representative sample data — no DB writes,
 no real account creation (the invite mail uses a sample temp password)."""
 from __future__ import annotations
 
+import os
 import sys
 
-from app.services.email_service import get_email_service, frontend_url
+# Make `app` importable when run directly as `python scripts/send_test_emails.py`
+# from backend/ (plain python doesn't add backend/ to sys.path; pytest does).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.services.email_service import get_email_service, frontend_url  # noqa: E402
 
 TO = sys.argv[1] if len(sys.argv) > 1 else "udayanpawar03@gmail.com"
 INBOX = frontend_url("/reviewer")
