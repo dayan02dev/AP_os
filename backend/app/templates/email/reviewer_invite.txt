@@ -1,0 +1,13 @@
+{% extends "base.txt" %}
+{% block content %}You've been invited to review for ARTPARK.
+
+Hello {{ reviewer_name }}, the ARTPARK admin team has invited you to help review applications for the TIR and VIP programmes.
+
+Sign in with these credentials:
+  Email: {{ login_email }}
+  Temporary password: {{ temp_password }}
+
+Open your reviewer inbox: {{ inbox_url }}
+
+For your security, please change this temporary password after your first sign-in.
+— The ARTPARK team{% endblock %}

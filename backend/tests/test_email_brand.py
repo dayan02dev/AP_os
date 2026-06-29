@@ -61,3 +61,14 @@ def test_applicant_rejected_is_gracious():
         "applicant_name": "Asha", "application_ref": "abc12345", "program_label": "TIR",
     })
     assert "!" not in _html_text(html)   # brand rule: no exclamation marks in copy
+
+
+def test_reviewer_invite_carries_credentials():
+    html = _render_html("reviewer_invite", {
+        "reviewer_name": "Vikram", "login_email": "vikram@x.in",
+        "temp_password": "Pass-F5FY3U", "inbox_url": "https://apply.artpark.info/reviewer",
+    })
+    assert "vikram@x.in" in html
+    assert "Pass-F5FY3U" in html
+    assert "Open reviewer inbox" in html
+    assert "#3213b7" in html

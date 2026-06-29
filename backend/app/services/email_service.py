@@ -340,6 +340,28 @@ class EmailService:
             text=text,
         )
 
+    def send_reviewer_invite(
+        self,
+        *,
+        to: str,
+        reviewer_name: str,
+        login_email: str,
+        temp_password: str,
+        inbox_url: str,
+    ) -> dict[str, str]:
+        """Branded reviewer invitation carrying sign-in credentials."""
+        html, text = self._render_pair(
+            "reviewer_invite",
+            {"reviewer_name": reviewer_name or login_email, "login_email": login_email,
+             "temp_password": temp_password, "inbox_url": inbox_url},
+        )
+        return self.send_raw(
+            to=[to],
+            subject="You've been invited to review for ARTPARK",
+            html=html,
+            text=text,
+        )
+
     def send_daily_digest(
         self,
         *,
