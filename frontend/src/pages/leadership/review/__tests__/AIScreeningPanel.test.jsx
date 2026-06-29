@@ -20,3 +20,15 @@ describe("AIScreeningPanel score tab", () => {
     expect(screen.getByText(/Low/i)).toBeInTheDocument();
   });
 });
+
+describe("AIScreeningPanel reviewers tab", () => {
+  it("does not render an Unassign button", () => {
+    const assignments = [
+      { id: "a1", reviewer_user_id: "u1", reviewer_name: "Udita Uniyal", reviewer_status: "evaluated" },
+    ];
+    render(<AIScreeningPanel aiScreening={null} assignments={assignments} />);
+    const tabBtn = screen.getByRole("button", { name: /^Reviewers$/i });
+    fireEvent.click(tabBtn);
+    expect(screen.queryByRole("button", { name: /Unassign/i })).not.toBeInTheDocument();
+  });
+});

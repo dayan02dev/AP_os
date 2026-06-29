@@ -76,7 +76,7 @@ function ScoreTab({ aiScreening }) {
   );
 }
 
-function ReviewersTab({ assignments, onUnassign, unassigning, currentUserId }) {
+function ReviewersTab({ assignments }) {
   if (!Array.isArray(assignments) || assignments.length === 0) {
     return (
       <div className="ai-panel-body">
@@ -87,7 +87,6 @@ function ReviewersTab({ assignments, onUnassign, unassigning, currentUserId }) {
   return (
     <div className="ai-panel-body">
       {assignments.map((a) => {
-        const isSelf = a.reviewer_user_id === currentUserId;
         const dotCls = reviewerStatusDot(a);
         return (
           <div
@@ -101,17 +100,6 @@ function ReviewersTab({ assignments, onUnassign, unassigning, currentUserId }) {
                 {reviewerStatusLabel(a)}
               </div>
             </span>
-            <button
-              type="button"
-              className="ai-unassign"
-              onClick={() => onUnassign?.(a)}
-              disabled={isSelf || unassigning === a.reviewer_user_id}
-              title={isSelf
-                ? "You can't unassign yourself from your own review."
-                : "Remove this reviewer from the application."}
-            >
-              {unassigning === a.reviewer_user_id ? "Unassigning…" : "Unassign"}
-            </button>
           </div>
         );
       })}
@@ -122,10 +110,7 @@ function ReviewersTab({ assignments, onUnassign, unassigning, currentUserId }) {
 export default function AIScreeningPanel({
   aiScreening,
   assignments,
-  onUnassign,
   onClose,
-  unassigning,
-  currentUserId,
 }) {
   const [tab, setTab] = useState("score");
 
@@ -183,14 +168,7 @@ export default function AIScreeningPanel({
         </button>
       </nav>
       {tab === "score" && <ScoreTab aiScreening={aiScreening} />}
-      {tab === "reviewers" && (
-        <ReviewersTab
-          assignments={assignments}
-          onUnassign={onUnassign}
-          unassigning={unassigning}
-          currentUserId={currentUserId}
-        />
-      )}
+      {tab === "reviewers" && <ReviewersTab assignments={assignments} />}
     </aside>
   );
 }

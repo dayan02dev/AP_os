@@ -21,7 +21,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useAuth } from "../../hooks/useAuth.jsx";
 import { leadershipApi } from "../../lib/leadershipApi.js";
 import { labelFor } from "../../lib/statusMachine.js";
 import { printWithTitle } from "../../lib/printDocument.js";
@@ -90,8 +89,6 @@ function composeAppIdentifier(track, id, submittedAt, createdAt) {
 export default function ReviewApplicationPage() {
   const { track, id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
-
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -103,7 +100,6 @@ export default function ReviewApplicationPage() {
   const [asideCollapsed, setAsideCollapsed] = useState(() => readPanelCollapsed());
 
   const [idList, setIdList] = useState(() => readIdList() || []);
-  const [unassigning, setUnassigning] = useState(null);
 
   // ─── Detail fetch ─────────────────────────────────────────
   useEffect(() => {
@@ -224,28 +220,6 @@ export default function ReviewApplicationPage() {
     setAsideCollapsed((v) => !v);
   }, []);
 
-  const handleUnassign = useCallback(async (assignment) => {
-    if (!assignment?.reviewer_user_id) return;
-    if (!window.confirm(`Remove reviewer ${assignment.reviewer_user_id.slice(0, 8)} from this application?`)) {
-      return;
-    }
-    setUnassigning(assignment.reviewer_user_id);
-    try {
-      await leadershipApi.unassignReviewer(id, track, assignment.reviewer_user_id);
-      setReloadKey((k) => k + 1);
-    } catch (err) {
-      const code = err?.details?.code || err?.code;
-      const msg = err?.details?.message || err?.message || "Failed to unassign reviewer.";
-      if (code === "review_already_submitted") {
-        window.alert("This reviewer has already submitted a review and can't be unassigned in Phase 1.");
-      } else {
-        window.alert(msg);
-      }
-    } finally {
-      setUnassigning(null);
-    }
-  }, [id, track]);
-
   // ─── Keyboard navigation: ← / → ───────────────────────────
   useEffect(() => {
     const onKey = (e) => {
@@ -318,10 +292,7 @@ export default function ReviewApplicationPage() {
           <AIScreeningPanel
             aiScreening={aiScreening}
             assignments={assignments}
-            onUnassign={handleUnassign}
             onClose={toggleAside}
-            unassigning={unassigning}
-            currentUserId={user?.id || null}
           />
         )}
       </div>
