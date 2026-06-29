@@ -1084,3 +1084,84 @@ def test_pipeline_reviewer_score_none_without_submitted_review(client, monkeypat
     r = client.get("/admin/platform/applications")
     assert r.status_code == 200, r.text
     assert r.json()["applications"][0]["reviewer_score"] is None
+
+
+# ─── Task 7: batch assign fans out to the batch's reviewers + emails ──────────
+
+
+def test_assign_applications_fans_out_to_batch_reviewers(client, monkeypatch, _clear_overrides):
+    existing_app = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    new_app = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    tables = _empty_admin_tables()
+    tables["batches"] = [{"id": "b1", "name": "Batch A"}]
+    tables["application_batches"] = [
+        {"application_id": existing_app, "application_track": "tir", "batch_id": "b1"},
+    ]
+    tables["reviewer_assignments"] = [
+        {"application_id": existing_app, "application_track": "tir",
+         "reviewer_user_id": "rev-1", "declined_at": None, "reassigned_to": None},
+    ]
+    fake = _install_db(monkeypatch, tables)
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    notified = {}
+    monkeypatch.setattr(
+        "app.routers.admin_platform.notify_reviewers_assigned",
+        lambda sb, rows: notified.update({"rows": rows}),
+    )
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+
+    r = client.post("/admin/platform/batches/b1/applications",
+                    json={"items": [{"track": "tir", "application_id": new_app}]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["assigned"] == 1
+    assert body["assignments_created"] == 1
+    assert body["reviewers_notified"] == 1
+    ra_inserts = [row for (t, row) in fake.inserts if t == "reviewer_assignments"]
+    assert any(row["application_id"] == new_app and row["reviewer_user_id"] == "rev-1"
+               for row in ra_inserts)
+    assert notified.get("rows") and notified["rows"][0]["application_id"] == new_app
+
+
+def test_assign_applications_skips_existing_assignment(client, monkeypatch, _clear_overrides):
+    existing_app = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    new_app = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    tables = _empty_admin_tables()
+    tables["batches"] = [{"id": "b1", "name": "Batch A"}]
+    tables["application_batches"] = [
+        {"application_id": existing_app, "application_track": "tir", "batch_id": "b1"},
+    ]
+    tables["reviewer_assignments"] = [
+        {"application_id": existing_app, "application_track": "tir",
+         "reviewer_user_id": "rev-1", "declined_at": None, "reassigned_to": None},
+        {"application_id": new_app, "application_track": "tir",
+         "reviewer_user_id": "rev-1", "declined_at": None, "reassigned_to": None},
+    ]
+    _install_db(monkeypatch, tables)
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    monkeypatch.setattr("app.routers.admin_platform.notify_reviewers_assigned", lambda sb, rows: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+
+    r = client.post("/admin/platform/batches/b1/applications",
+                    json={"items": [{"track": "tir", "application_id": new_app}]})
+    assert r.status_code == 200, r.text
+    assert r.json()["assignments_created"] == 0
+
+
+def test_assign_applications_no_reviewers_no_fanout(client, monkeypatch, _clear_overrides):
+    new_app = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    tables = _empty_admin_tables()
+    tables["batches"] = [{"id": "b1", "name": "Batch A"}]
+    fake = _install_db(monkeypatch, tables)
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    monkeypatch.setattr("app.routers.admin_platform.notify_reviewers_assigned", lambda sb, rows: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+
+    r = client.post("/admin/platform/batches/b1/applications",
+                    json={"items": [{"track": "tir", "application_id": new_app}]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["assigned"] == 1
+    assert body["assignments_created"] == 0
+    assert body["reviewers_notified"] == 0
+    assert not any(t == "reviewer_assignments" for (t, _row) in fake.inserts)
