@@ -1118,3 +1118,138 @@ def test_bulk_remove_removes_app_with_submitted_review(
     assert fake.tables["reviewer_assignments"] == []
     # Review row preserved (audit trail).
     assert len(fake.tables["reviews"]) == 1
+# ─── Task 5: Weight-adjusted reviewer score in the pipeline ───────────────
+
+
+def test_pipeline_includes_weight_adjusted_reviewer_score(client, monkeypatch, _clear_overrides):
+    app_id = "22222222-2222-2222-2222-222222222222"
+    tables = _empty_admin_tables()
+    tables["tir_applications"] = [
+        {"id": app_id, "status": "under_review", "display_seq": 26014,
+         "basic_full_name": "Bo", "submitted_at": "2026-06-02T00:00:00Z",
+         "created_at": "2026-05-21T00:00:00Z"},
+    ]
+
+    def _review(rid, v):
+        return {"application_id": app_id, "application_track": "tir",
+                "reviewer_user_id": rid, "submitted_at": "2026-06-03T00:00:00Z",
+                "score_problem": v, "score_solution": v, "score_tech": v,
+                "score_founders": v, "score_commitment": v}
+
+    # rev-a: all-6s → weighted_overall 6.0, weight 1.0
+    # rev-b: all-10s → weighted_overall 10.0, weight 3.0
+    # weight-adjusted mean = (1*6 + 3*10) / (1+3) = 9.0
+    tables["reviews"] = [_review("rev-a", 6), _review("rev-b", 10)]
+    tables["reviewer_profiles"] = [
+        {"reviewer_user_id": "rev-a", "weight": 1.0},
+        {"reviewer_user_id": "rev-b", "weight": 3.0},
+    ]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+
+    r = client.get("/admin/platform/applications")
+    assert r.status_code == 200, r.text
+    item = r.json()["applications"][0]
+    assert item["reviewer_score"] == 9.0
+
+
+def test_pipeline_reviewer_score_none_without_submitted_review(client, monkeypatch, _clear_overrides):
+    app_id = "33333333-3333-3333-3333-333333333333"
+    tables = _empty_admin_tables()
+    tables["tir_applications"] = [
+        {"id": app_id, "status": "under_review", "display_seq": 26015,
+         "submitted_at": "2026-06-02T00:00:00Z", "created_at": "2026-05-21T00:00:00Z"},
+    ]
+    # A draft review (no submitted_at) must NOT count.
+    tables["reviews"] = [
+        {"application_id": app_id, "application_track": "tir", "reviewer_user_id": "rev-a",
+         "submitted_at": None, "score_problem": 8, "score_solution": 8, "score_tech": 8,
+         "score_founders": 8, "score_commitment": 8},
+    ]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("lead-1", roles=["leadership"])
+
+    r = client.get("/admin/platform/applications")
+    assert r.status_code == 200, r.text
+    assert r.json()["applications"][0]["reviewer_score"] is None
+
+
+# ─── Task 7: batch assign fans out to the batch's reviewers + emails ──────────
+
+
+def test_assign_applications_fans_out_to_batch_reviewers(client, monkeypatch, _clear_overrides):
+    existing_app = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    new_app = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    tables = _empty_admin_tables()
+    tables["batches"] = [{"id": "b1", "name": "Batch A"}]
+    tables["application_batches"] = [
+        {"application_id": existing_app, "application_track": "tir", "batch_id": "b1"},
+    ]
+    tables["reviewer_assignments"] = [
+        {"application_id": existing_app, "application_track": "tir",
+         "reviewer_user_id": "rev-1", "declined_at": None, "reassigned_to": None},
+    ]
+    fake = _install_db(monkeypatch, tables)
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    notified = {}
+    monkeypatch.setattr(
+        "app.routers.admin_platform.notify_reviewers_assigned",
+        lambda sb, rows: notified.update({"rows": rows}),
+    )
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+
+    r = client.post("/admin/platform/batches/b1/applications",
+                    json={"items": [{"track": "tir", "application_id": new_app}]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["assigned"] == 1
+    assert body["assignments_created"] == 1
+    assert body["reviewers_notified"] == 1
+    ra_inserts = [row for (t, row) in fake.inserts if t == "reviewer_assignments"]
+    assert any(row["application_id"] == new_app and row["reviewer_user_id"] == "rev-1"
+               for row in ra_inserts)
+    assert notified.get("rows") and notified["rows"][0]["application_id"] == new_app
+
+
+def test_assign_applications_skips_existing_assignment(client, monkeypatch, _clear_overrides):
+    existing_app = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    new_app = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    tables = _empty_admin_tables()
+    tables["batches"] = [{"id": "b1", "name": "Batch A"}]
+    tables["application_batches"] = [
+        {"application_id": existing_app, "application_track": "tir", "batch_id": "b1"},
+    ]
+    tables["reviewer_assignments"] = [
+        {"application_id": existing_app, "application_track": "tir",
+         "reviewer_user_id": "rev-1", "declined_at": None, "reassigned_to": None},
+        {"application_id": new_app, "application_track": "tir",
+         "reviewer_user_id": "rev-1", "declined_at": None, "reassigned_to": None},
+    ]
+    _install_db(monkeypatch, tables)
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    monkeypatch.setattr("app.routers.admin_platform.notify_reviewers_assigned", lambda sb, rows: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+
+    r = client.post("/admin/platform/batches/b1/applications",
+                    json={"items": [{"track": "tir", "application_id": new_app}]})
+    assert r.status_code == 200, r.text
+    assert r.json()["assignments_created"] == 0
+
+
+def test_assign_applications_no_reviewers_no_fanout(client, monkeypatch, _clear_overrides):
+    new_app = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    tables = _empty_admin_tables()
+    tables["batches"] = [{"id": "b1", "name": "Batch A"}]
+    fake = _install_db(monkeypatch, tables)
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    monkeypatch.setattr("app.routers.admin_platform.notify_reviewers_assigned", lambda sb, rows: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+
+    r = client.post("/admin/platform/batches/b1/applications",
+                    json={"items": [{"track": "tir", "application_id": new_app}]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["assigned"] == 1
+    assert body["assignments_created"] == 0
+    assert body["reviewers_notified"] == 0
+    assert not any(t == "reviewer_assignments" for (t, _row) in fake.inserts)

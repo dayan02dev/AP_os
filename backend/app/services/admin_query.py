@@ -183,6 +183,60 @@ def _fetch_batches(
 # ─── Pipeline list ──────────────────────────────────────────────────────
 
 
+def _fetch_reviewer_scores(
+    pairs: list[tuple[str, str]],
+) -> dict[tuple[str, str], float | None]:
+    """Weight-adjusted mean of submitted reviewers' weighted-overall, per app.
+
+    Keyed by ``(track, application_id)`` to match ``fetch_pipeline``'s row key.
+    Weight = ``reviewer_profiles.weight`` (default ``1.0``). Reviews with any
+    missing dimension (``_weighted_overall`` → None) and drafts (no
+    ``submitted_at``) are skipped. Apps with no scorable review are omitted
+    (callers default to None). Bounded by PostgREST's 1000-row default — fine
+    at Phase-1 scale.
+    """
+    if not pairs:
+        return {}
+    sb = get_admin_client()
+    want = set(pairs)  # {(track, id)}
+    try:
+        reviews = (sb.table("reviews").select("*").execute().data) or []
+    except Exception as exc:
+        log.warning("admin_query._fetch_reviewer_scores reviews failed",
+                    extra={"err": str(exc)})
+        return {}
+    try:
+        rp_rows = (sb.table("reviewer_profiles").select("*").execute().data) or []
+    except Exception as exc:
+        log.warning("admin_query._fetch_reviewer_scores profiles failed",
+                    extra={"err": str(exc)})
+        rp_rows = []
+
+    weight_of: dict[str, float] = {}
+    for rp in rp_rows:
+        rid = rp.get("reviewer_user_id")
+        if rid:
+            w = rp.get("weight")
+            weight_of[rid] = float(w) if w is not None else 1.0
+
+    num: dict[tuple[str, str], float] = {}
+    den: dict[tuple[str, str], float] = {}
+    for r in reviews:
+        if not r.get("submitted_at"):
+            continue
+        key = (r.get("application_track"), r.get("application_id"))
+        if key not in want:
+            continue
+        wo = reviewer_query._weighted_overall(r)
+        if wo is None:
+            continue
+        w = weight_of.get(r.get("reviewer_user_id"), 1.0)
+        num[key] = num.get(key, 0.0) + w * wo
+        den[key] = den.get(key, 0.0) + w
+
+    return {key: round(num[key] / den[key], 1) for key in num if den.get(key)}
+
+
 def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     """Admin pipeline list across both tracks with admin-portal joins.
 
@@ -218,6 +272,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     decisions = _fetch_latest_decisions(pairs)
     meta = _fetch_admin_meta(pairs)
     batches = _fetch_batches(pairs)
+    reviewer_scores = _fetch_reviewer_scores(pairs)
 
     # Reviewer-flag aggregation: union of flags across all submitted reviews
     # per app. One query per track; keyed (track, application_id) to match
@@ -317,6 +372,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
             "isHidden":         is_hidden,
             "isArchived":       is_archived,
             "batch":            (batch or {}).get("name"),
+            "reviewer_score":   reviewer_scores.get(key),
             "submitted_at":     r.get("submitted_at"),
             "flags":            flags_by_key.get(key, []),
         })

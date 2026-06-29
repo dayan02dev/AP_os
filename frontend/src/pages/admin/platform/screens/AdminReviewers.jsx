@@ -26,6 +26,22 @@ import { PageHead } from "../shell/osAtoms";
 import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import { ManageApplicationsDrawer } from "./ManageApplicationsDrawer";
 
+// Render a reviewer's last-activity value: ISO timestamps → absolute IST
+// date + time ("29 Jun 2026, 10:39 AM"); non-ISO strings (the jury mock's
+// "2h ago") pass through; empty → an em dash.
+export function formatLastActivity(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  const s = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  }).format(d);
+  // en-GB yields "29 Jun 2026, 10:39 am" → uppercase the meridiem.
+  return s.replace(/\b(am|pm)\b/i, (m) => m.toUpperCase());
+}
+
 // ─── Mock jury data (prototype-seeded) ──────────────────────────────────────
 
 const MOCK_JURY = [
@@ -574,7 +590,7 @@ export function AdminReviewers({ decisionMode }) {
                     {r.weight > 1.0 && <span className="os-chip purple" style={{ fontSize: 9, padding: '1px 5px', fontWeight: 700 }}>PRIMARY</span>}
                   </div>
                 </td>
-                <td className="os-mono os-text-sm os-text-soft">{r.last || '—'}</td>
+                <td className="os-mono os-text-sm os-text-soft">{formatLastActivity(r.last)}</td>
                 <td>
                   <button className="os-btn sm secondary" onClick={() => setManageTarget(r)}>Manage</button>
                 </td>
@@ -748,7 +764,7 @@ export function AdminReviewers({ decisionMode }) {
                     </td>
 
                     {/* Last activity */}
-                    <td className="os-mono os-text-sm os-text-soft">{r.last || '—'}</td>
+                    <td className="os-mono os-text-sm os-text-soft">{formatLastActivity(r.last)}</td>
 
                     {/* Actions */}
                     <td>

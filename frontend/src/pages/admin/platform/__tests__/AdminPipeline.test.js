@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import React from "react";
 
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
@@ -90,7 +90,7 @@ vi.mock("../../../../hooks/useAdminData", () => ({
     }
     // batches kind
     return {
-      data: { batches: [{ id: "b1", name: "Batch A", phase: "" }] },
+      data: { batches: [{ id: "b1", name: "Batch A", phase: "" }, { id: "b2", name: "Batch B", phase: "" }] },
       loading: false,
       error: null,
       reload: vi.fn(),
@@ -102,7 +102,7 @@ vi.mock("../../../../lib/adminPlatformApi", () => ({
   adminPlatformApi: {
     bulkDecide: vi.fn().mockResolvedValue({ results: [] }),
     patchMeta: vi.fn().mockResolvedValue({}),
-    assignBatch: vi.fn().mockResolvedValue({}),
+    assignBatch: vi.fn().mockResolvedValue({ assigned: 1, assignments_created: 2, reviewers_notified: 2 }),
     createBatch: vi.fn().mockResolvedValue({ id: "b2" }),
     renameBatch: vi.fn().mockResolvedValue({}),
   },
@@ -145,6 +145,20 @@ describe("AdminPipeline screen (smoke)", () => {
     expect(screen.getByText(/A-2 · PIPELINE/)).toBeTruthy();
   });
 
+  it("shows a Clear filters button when a filter is active and clears it", () => {
+    render(
+      React.createElement(AdminPipeline, { goDetail: vi.fn(), decisionMode: "reviewer" }),
+    );
+    // No filters initially → no Clear-filters button.
+    expect(screen.queryByText(/Clear filters/i)).toBeNull();
+    // Activate the VIP track filter.
+    fireEvent.click(screen.getByRole("button", { name: "VIP" }));
+    expect(screen.getByText(/Clear filters/i)).toBeTruthy();
+    // Clicking it resets filters → the button disappears.
+    fireEvent.click(screen.getByText(/Clear filters/i));
+    expect(screen.queryByText(/Clear filters/i)).toBeNull();
+  });
+
   it("in jury mode renders PreviewBadge for the jury assignment column", () => {
     render(
       React.createElement(AdminPipeline, {
@@ -153,5 +167,25 @@ describe("AdminPipeline screen (smoke)", () => {
       }),
     );
     expect(screen.getAllByTestId("preview-badge").length).toBeGreaterThan(0);
+  });
+
+  it("shows a 'reviewers notified' note after a per-row batch assign", async () => {
+    render(
+      React.createElement(AdminPipeline, { goDetail: vi.fn(), decisionMode: "reviewer" }),
+    );
+    const select = screen.getByDisplayValue("Batch A");
+    fireEvent.change(select, { target: { value: "Batch B" } });
+    expect(await screen.findByText(/reviewer\(s\) notified/i)).toBeTruthy();
+  });
+
+  it("STATUS filter no longer offers an 'AI screening' option", () => {
+    render(
+      React.createElement(AdminPipeline, { goDetail: vi.fn(), decisionMode: "reviewer" }),
+    );
+    // Open the collapsible Filters panel.
+    fireEvent.click(screen.getByRole("button", { name: /Filters/i }));
+    expect(screen.queryByText("AI screening")).toBeNull();
+    // Sanity: a sibling status option is still present.
+    expect(screen.getByText("Under review")).toBeTruthy();
   });
 });

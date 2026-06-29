@@ -77,7 +77,6 @@ function getChipTone(s) {
 const STATUSES = [
   { id: 'all', label: 'All' },
   { id: 'submitted', label: 'Submitted', color: '#b7a06a' },
-  { id: 'ai-screening', label: 'AI screening', color: '#3213b7' },
   { id: 'under-review', label: 'Under review', color: '#3213b7' },
   { id: 'evaluated', label: 'Evaluated', color: '#3213b7' },
   { id: 'shortlisted', label: 'Shortlisted', color: '#2a8f5a' },
@@ -423,10 +422,10 @@ export function AdminPipeline({ goDetail, decisionMode }) {
     setBusy(true);
     setNote(null);
     try {
-      await adminPlatformApi.assignBatch(targetBatchId, {
+      const resp = await adminPlatformApi.assignBatch(targetBatchId, {
         items: selectedRows.map((r) => ({ track: r.track, application_id: r.id })),
       });
-      await finishBulk({ kind: 'ok', text: `Assigned ${selectedRows.length} to ${targetBatchName}.` });
+      await finishBulk({ kind: 'ok', text: `Assigned ${selectedRows.length} to ${targetBatchName}. ${resp?.reviewers_notified ?? 0} reviewer(s) notified.` });
     } catch (e) {
       setNote({ kind: 'error', text: `Batch assign failed: ${e?.message || e}` });
     } finally {
@@ -441,11 +440,12 @@ export function AdminPipeline({ goDetail, decisionMode }) {
       if (!custom) return;
       try {
         const created = await adminPlatformApi.createBatch({ name: custom });
-        await adminPlatformApi.assignBatch(created.id, {
+        const resp = await adminPlatformApi.assignBatch(created.id, {
           items: [{ track: startup.track, application_id: startup.id }],
         });
         await reloadBatches();
         await reload();
+        setNote({ kind: 'ok', text: `Assigned to ${custom} · ${resp?.reviewers_notified ?? 0} reviewer(s) notified.` });
       } catch (e) {
         setNote({ kind: 'error', text: `Batch create failed: ${e?.message || e}` });
       }
@@ -453,10 +453,11 @@ export function AdminPipeline({ goDetail, decisionMode }) {
       const found = batches.find(b => b.name === val);
       if (!found) return;
       try {
-        await adminPlatformApi.assignBatch(found.id, {
+        const resp = await adminPlatformApi.assignBatch(found.id, {
           items: [{ track: startup.track, application_id: startup.id }],
         });
         await reload();
+        setNote({ kind: 'ok', text: `Assigned to ${val} · ${resp?.reviewers_notified ?? 0} reviewer(s) notified.` });
       } catch (e) {
         setNote({ kind: 'error', text: `Batch assign failed: ${e?.message || e}` });
       }
@@ -837,6 +838,17 @@ export function AdminPipeline({ goDetail, decisionMode }) {
           </div>
 
           <div style={{ flex: 1 }} />
+
+          {hasFilters && (
+            <button
+              type="button"
+              className="lp-clear-btn"
+              style={{ fontSize: 13 }}
+              onClick={clearAll}
+            >
+              Clear filters
+            </button>
+          )}
 
           <button
             className={`lp-filters-toggle${filtersOpen ? ' is-open' : ''}`}

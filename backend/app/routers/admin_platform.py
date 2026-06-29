@@ -342,7 +342,13 @@ async def assign_applications(
     body: BatchAssign,
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """Bulk-assign applications to a batch (upsert moves app between batches)."""
+    """Bulk-assign applications to a batch (upsert moves an app between batches).
+
+    Additively fans out to the batch's CURRENT reviewers: every reviewer with an
+    active assignment on an app already in the batch gets a new reviewer_assignment
+    for each newly-added app (skipping existing triples) and is emailed. Moving an
+    app between batches does NOT strip the previous batch's assignments.
+    """
     sb = get_admin_client()
     existing = sb.table("batches").select("id").eq("id", batch_id).limit(1).execute().data
     if not existing:
@@ -351,28 +357,92 @@ async def assign_applications(
             detail={"code": "batch_not_found"},
         )
     now = datetime.now(UTC).isoformat()
-    rows = [
-        {
-            "application_id": item.application_id,
-            "application_track": item.track,
-            "batch_id": batch_id,
-            "added_at": now,
-        }
-        for item in body.items
-    ]
+    new_apps = [(item.application_id, item.track) for item in body.items]
     sb.table("application_batches").upsert(
-        rows, on_conflict="application_id,application_track"
+        [
+            {
+                "application_id": aid,
+                "application_track": track,
+                "batch_id": batch_id,
+                "added_at": now,
+            }
+            for (aid, track) in new_apps
+        ],
+        on_conflict="application_id,application_track",
     ).execute()
     n = len(body.items)
+
+    # ── Additive fan-out to the batch's current reviewers ──────────────────
+    # Apps now in the batch (re-filter on batch_id in Python; the fake backend
+    # no-ops .eq() for non-PK selects, mirroring production bulk reads).
+    link_rows = (
+        sb.table("application_batches")
+        .select("application_id,application_track,batch_id")
+        .eq("batch_id", batch_id)
+        .execute()
+        .data
+    ) or []
+    batch_app_keys = {
+        (r["application_id"], r["application_track"])
+        for r in link_rows
+        if r.get("batch_id") == batch_id and r.get("application_id") and r.get("application_track")
+    }
+    # Batch reviewers = distinct ACTIVE assignees on apps already in the batch.
+    all_assignments = (sb.table("reviewer_assignments").select("*").execute().data) or []
+    existing_triples: set[tuple[str, str, str]] = set()
+    reviewer_ids: list[str] = []
+    seen_rev: set[str] = set()
+    for a in all_assignments:
+        rid = a.get("reviewer_user_id")
+        existing_triples.add((a.get("application_id"), a.get("application_track"), rid))
+        key = (a.get("application_id"), a.get("application_track"))
+        if (
+            key in batch_app_keys
+            and rid
+            and a.get("declined_at") is None
+            and a.get("reassigned_to") is None
+            and rid not in seen_rev
+        ):
+            seen_rev.add(rid)
+            reviewer_ids.append(rid)
+
+    fan_rows = [
+        {
+            "application_id": aid,
+            "application_track": track,
+            "reviewer_user_id": rid,
+            "assigned_by": user["user_id"],
+            "assigned_at": now,
+            "state": "pending",
+            "due_at": None,
+        }
+        for (aid, track) in new_apps
+        for rid in reviewer_ids
+        if (aid, track, rid) not in existing_triples
+    ]
+    assignments_created = len(fan_rows)
+    reviewers_notified = len({r["reviewer_user_id"] for r in fan_rows})
+    if fan_rows:
+        sb.table("reviewer_assignments").insert(fan_rows).execute()
+        notify_reviewers_assigned(sb, fan_rows)
+
     write_audit(
         actor_user_id=user["user_id"],
         actor_role=actor_role_of(user),
         action_type="batch_applications_assigned",
         target_table="application_batches",
         target_id=batch_id,
-        after={"count": n},
+        after={
+            "count": n,
+            "assignments_created": assignments_created,
+            "reviewers_notified": reviewers_notified,
+        },
     )
-    return {"assigned": n}
+    return {
+        "assigned": n,
+        "assignments_created": assignments_created,
+        "reviewers_notified": reviewers_notified,
+    }
 
 
 class BatchReviewersBody(BaseModel):
