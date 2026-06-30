@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}New applications to review — ARTPARK{% endblock %}
-{% block header_sublabel %} · Reviewer{% endblock %}
+{% block header_sublabel %}Reviewer{% endblock %}
 {% block content %}
 <div style="font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#8a86a0;margin-bottom:10px;">New applications assigned</div>
 <div style="font-family:'Trebuchet MS','Lucida Grande',Tahoma,sans-serif;font-weight:700;font-size:22px;line-height:1.25;letter-spacing:-0.01em;color:#242424;margin:0 0 14px;">Hello {{ reviewer_name }} — {{ count }} application{{ "s" if count != 1 else "" }} {{ "are" if count != 1 else "is" }} waiting for your review.</div>

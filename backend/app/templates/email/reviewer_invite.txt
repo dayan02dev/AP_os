@@ -5,7 +5,7 @@ Hello {{ reviewer_name }}, the ARTPARK admin team has invited you to help review
 
 Sign in with these credentials:
   Email: {{ login_email }}
-  Temporary password: {{ temp_password }}
+  Password: {{ temp_password }}
 
 Open your reviewer inbox: {{ inbox_url }}
 
