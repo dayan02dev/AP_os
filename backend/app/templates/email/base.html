@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="supported-color-schemes" content="light only" />
   <title>{% block title %}ARTPARK{% endblock %}</title>
 </head>
 <body style="margin:0;padding:0;background:#f6f6f8;font-family:'Open Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#242424;">
@@ -11,9 +13,13 @@
       <td align="center" style="padding:32px 16px;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="max-width:560px;background:#ffffff;border:1px solid #e4e2ee;">
           <tr>
-            <td style="background:#3213b7;padding:22px 28px;">
-              <div style="font-family:'Trebuchet MS','Lucida Grande',Tahoma,sans-serif;font-weight:700;font-size:20px;letter-spacing:-0.01em;color:#ffffff;">ARTPARK</div>
-              <div style="font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#c9bdf5;margin-top:3px;">IISc Bengaluru{% block header_sublabel %}{% endblock %}</div>
+            <td bgcolor="#ffffff" align="center" style="background-color:#ffffff;padding:24px 28px 18px;text-align:center;">
+              <img src="https://xtmszlpwgbyoumalgbhs.supabase.co/storage/v1/object/public/email-assets/artpark-iisc-logo.png" alt="ARTPARK — AI &amp; Robotics Technology Park @ IISc" width="270" height="54" style="display:block;margin:0 auto;width:270px;max-width:72%;height:auto;border:0;outline:none;text-decoration:none;" />
+            </td>
+          </tr>
+          <tr>
+            <td bgcolor="#3213b7" align="center" style="background-color:#3213b7;padding:12px 28px;text-align:center;">
+              <div style="font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:#c9bdf5;">IISc Bengaluru{% block header_sublabel %}{% endblock %}</div>
             </td>
           </tr>
           <tr>

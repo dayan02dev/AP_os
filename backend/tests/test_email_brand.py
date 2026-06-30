@@ -96,3 +96,17 @@ def test_daily_digest_lists_all_reviewers():
     })
     assert "Udita" in html and "Nirav" in html
     assert "#3213b7" in html
+
+
+def test_header_has_logo_and_colour_locked_band():
+    """New shell header: ARTPARK+IISc logo image on white + colour-locked band."""
+    html = _render_html("reviewer_invite", {
+        "reviewer_name": "Vikram", "login_email": "vikram@x.in",
+        "temp_password": "Pass-F5FY3U", "inbox_url": "https://apply.artpark.info/reviewer",
+    })
+    assert "<img" in html                                      # logo is an image now
+    assert "email-assets/artpark-iisc-logo.png" in html        # the hosted logo asset
+    assert 'bgcolor="#3213b7"' in html                         # bulletproof band bg (mobile dark-mode lock)
+    assert 'name="color-scheme"' in html                       # color-scheme meta present
+    assert 'content="light only"' in html                      # locked to light
+    assert "Reviewer invitation" in html                       # context label via header_sublabel
