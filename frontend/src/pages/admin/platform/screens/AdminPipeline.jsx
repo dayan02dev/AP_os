@@ -27,6 +27,23 @@ import { Chip } from "../ui.jsx";
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
 import { relabelDisplayId } from "../../../../lib/trackLabel.js";
 
+// Real industry chip counts from the loaded pipeline rows, scoped to the
+// selected track. Excludes hidden/archived rows and rows without an industry
+// ("—"). Returns [{ name, count }] sorted by count desc (name tiebreak).
+export function industryCountsFor(rows, track) {
+  const counts = new Map();
+  for (const s of rows || []) {
+    if (s.hidden || s.archived) continue;
+    if (track && track !== "all" && s.track !== track) continue;
+    const name = s.domain && s.domain !== "—" ? s.domain : null;
+    if (!name) continue;
+    counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
 // ─── Status/Chip helpers (mirrors prototype) ───────────────────────────────
 
 function getFriendlyStatus(s) {
@@ -89,21 +106,6 @@ const STATUSES = [
   { id: 'withdrawn', label: 'Withdrawn', color: '#242424' },
 ];
 
-const INDUSTRIES = [
-  "Robotics & Automation 48",
-  "Healthcare / MedTech 43",
-  "Artificial Intelligence / Foundational Models 41",
-  "Defense & Aerospace 38",
-  "Advanced Manufacturing / Industry 5.0 20",
-  "EV Mobility & Services 17",
-  "Other / Frontier 10",
-  "Semiconductor / Hardware 10",
-  "Climate Fintech / Urban Resilience 6",
-  "Developer Tools / DevOps 6",
-  "EdTech 6",
-  "E-commerce & Artisanal Crafts 2",
-];
-
 // ─── CSV download using the exported pure helper ────────────────────────────
 
 function downloadCsv(rows) {
@@ -164,6 +166,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
   const [status, setStatus] = React.useState('all');
   const [industry, setIndustry] = React.useState('all');
   const [batchFilter, setBatchFilter] = React.useState('all');
+  const industries = React.useMemo(() => industryCountsFor(S, track), [S, track]);
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState([]);
   const [showAssignJury, setShowAssignJury] = React.useState(null);
@@ -263,9 +266,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
     }
 
     if (industry !== 'all') {
-      const cleanIndustry = industry.replace(/\s+\d+$/, '').trim().toLowerCase();
-      const sDomain = (s.domain || '').toLowerCase().trim();
-      if (sDomain !== cleanIndustry) return false;
+      if ((s.domain || '') !== industry) return false;
     }
 
     return true;
@@ -323,7 +324,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
   // Active (applied) filters shown as removable pills
   const activeChips = [];
   if (status !== 'all') activeChips.push({ label: 'Status · ' + ((STATUSES.find(x => x.id === status) || {}).label || status), clear: () => setStatus('all') });
-  if (industry !== 'all') activeChips.push({ label: industry.replace(/\s+\d+$/, '').trim(), clear: () => setIndustry('all') });
+  if (industry !== 'all') activeChips.push({ label: industry, clear: () => setIndustry('all') });
   if (batchFilter !== 'all') activeChips.push({ label: 'Batch · ' + batchFilter, clear: () => setBatchFilter('all') });
   const activeCount = activeChips.length;
 
@@ -907,13 +908,13 @@ export function AdminPipeline({ goDetail, decisionMode }) {
                 >
                   All
                 </button>
-                {INDUSTRIES.map(ind => (
+                {industries.map(({ name, count }) => (
                   <button
-                    key={ind}
-                    className={`lp-filter-btn${industry === ind ? ' active' : ''}`}
-                    onClick={() => setIndustry(ind)}
+                    key={name}
+                    className={`lp-filter-btn${industry === name ? ' active' : ''}`}
+                    onClick={() => setIndustry(name)}
                   >
-                    {ind}
+                    {name} {count}
                   </button>
                 ))}
               </div>

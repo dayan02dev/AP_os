@@ -117,7 +117,7 @@ vi.mock("../ui.jsx", () => ({
   Chip: ({ children }) => React.createElement("span", { "data-testid": "chip" }, children),
 }));
 
-import { AdminPipeline } from "../screens/AdminPipeline.jsx";
+import { AdminPipeline, industryCountsFor } from "../screens/AdminPipeline.jsx";
 
 describe("AdminPipeline screen (smoke)", () => {
   beforeEach(() => {
@@ -187,5 +187,43 @@ describe("AdminPipeline screen (smoke)", () => {
     expect(screen.queryByText("AI screening")).toBeNull();
     // Sanity: a sibling status option is still present.
     expect(screen.getByText("Under review")).toBeTruthy();
+  });
+});
+
+describe("industryCountsFor", () => {
+  const rows = [
+    { domain: "EdTech", track: "tir" },
+    { domain: "EdTech", track: "tir" },
+    { domain: "EdTech", track: "sip" },
+    { domain: "Robotics & Automation", track: "tir" },
+    { domain: "EdTech", track: "tir", hidden: true },
+    { domain: "EdTech", track: "tir", archived: true },
+    { domain: "—", track: "tir" },
+  ];
+  it("counts per industry across all tracks, excluding hidden/archived/empty", () => {
+    expect(industryCountsFor(rows, "all")).toEqual([
+      { name: "EdTech", count: 3 },
+      { name: "Robotics & Automation", count: 1 },
+    ]);
+  });
+  it("is track-aware", () => {
+    expect(industryCountsFor(rows, "tir")).toEqual([
+      { name: "EdTech", count: 2 },
+      { name: "Robotics & Automation", count: 1 },
+    ]);
+    expect(industryCountsFor(rows, "sip")).toEqual([{ name: "EdTech", count: 1 }]);
+  });
+  it("handles empty input", () => {
+    expect(industryCountsFor([], "all")).toEqual([]);
+    expect(industryCountsFor(undefined, "all")).toEqual([]);
+  });
+});
+
+describe("AdminPipeline industry chips (real counts)", () => {
+  it("renders a computed count, not the hardcoded number", () => {
+    render(React.createElement(AdminPipeline, { goDetail: vi.fn(), decisionMode: "reviewer" }));
+    fireEvent.click(screen.getByRole("button", { name: /Filters/i }));
+    expect(screen.getByText("Healthcare / MedTech 1")).toBeTruthy();
+    expect(screen.queryByText("Healthcare / MedTech 43")).toBeNull();
   });
 });
