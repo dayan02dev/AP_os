@@ -219,3 +219,33 @@ def test_ai_screening_router_uses_new_pipeline():
     assert "ai_scoring.runner" not in src
     assert "AI_SCORING_ENABLED" not in src
     assert "ai_pipeline" in src
+
+
+class _FakeClassifier:
+    def __init__(self, cid):
+        self._cid = cid
+
+    def __call__(self, **_kw):  # constructed as ClassifierAgent(cache_dir=...)
+        return self
+
+    def run(self, *_a, **_k):
+        return ({"project_name": "X", "industry_category_id": self._cid,
+                 "industry_confidence": 0.9, "new_industry_proposal": None}, "")
+
+
+def test_classify_drops_hallucinated_category(monkeypatch):
+    from app.services.ai_pipeline import pipeline as P
+    monkeypatch.setattr(P.industry_categories, "fetch_categories",
+                        lambda: [{"id": "health", "label": "Health"}])
+    monkeypatch.setattr(P, "ClassifierAgent", _FakeClassifier("robotic"))
+    out = P._classify("text", cache_dir=None, no_cache=True)
+    assert out["industry_category_id"] is None  # hallucinated id nulled
+
+
+def test_classify_keeps_valid_category(monkeypatch):
+    from app.services.ai_pipeline import pipeline as P
+    monkeypatch.setattr(P.industry_categories, "fetch_categories",
+                        lambda: [{"id": "health", "label": "Health"}])
+    monkeypatch.setattr(P, "ClassifierAgent", _FakeClassifier("health"))
+    out = P._classify("text", cache_dir=None, no_cache=True)
+    assert out["industry_category_id"] == "health"

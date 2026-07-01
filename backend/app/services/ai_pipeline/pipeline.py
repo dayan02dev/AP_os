@@ -34,6 +34,15 @@ def _classify(app_text: str, *, cache_dir: Path | None, no_cache: bool) -> dict:
         _APP_ID.get("id", "x"), app_text=app_text, categories=cats,
         slots_remaining=slots, no_cache=no_cache,
     )
+    # Guard against a hallucinated category id: the LLM occasionally returns an
+    # invented `category_id` (e.g. "robotic") that is not a real row. Writing it
+    # would violate the ai_screening → industry_categories FK. Drop it to None;
+    # genuine new categories still flow through `new_industry_proposal` +
+    # create_category_if_under_cap in persist().
+    valid_ids = {c["id"] for c in cats}
+    cid = result.get("industry_category_id")
+    if cid is not None and cid not in valid_ids:
+        result["industry_category_id"] = None
     return result
 
 
