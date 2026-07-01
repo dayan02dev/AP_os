@@ -108,3 +108,36 @@ def test_summary_agent_reports_flag_when_never_in_range():
     agent._call_api = lambda messages: _para(50)  # type: ignore[method-assign]
     _result, flags = agent.run("app-8", app_text="x", project_name="Acme")
     assert "words" in flags
+
+
+from app.services.ai_pipeline.classifier_agent import ClassifierAgent
+
+
+def test_classifier_parses_existing_category():
+    agent = ClassifierAgent()
+    payload = _json.dumps({
+        "project_name": "AI dengue diagnostics",
+        "industry": {"category_id": "health", "industry_confidence": 0.9},
+    })
+    agent._call_api = lambda messages: payload  # type: ignore[method-assign]
+    result, flags = agent.run(
+        "app-9", app_text="x",
+        categories=[{"id": "health", "label": "Health"}], slots_remaining=5,
+    )
+    assert flags == ""
+    assert result["project_name"] == "AI dengue diagnostics"
+    assert result["industry_category_id"] == "health"
+    assert result["new_industry_proposal"] is None
+
+
+def test_classifier_parses_new_category_proposal():
+    agent = ClassifierAgent()
+    payload = _json.dumps({
+        "project_name": "Grid fault robots",
+        "industry": {"new_category": {"id": "grid", "label": "Grid"},
+                     "industry_confidence": 0.8},
+    })
+    agent._call_api = lambda messages: payload  # type: ignore[method-assign]
+    result, _flags = agent.run("app-10", app_text="x", categories=[], slots_remaining=3)
+    assert result["industry_category_id"] is None
+    assert result["new_industry_proposal"] == {"id": "grid", "label": "Grid"}
