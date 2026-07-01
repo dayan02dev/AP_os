@@ -1,4 +1,4 @@
-"""SummaryAgent: 300-400 word clinical executive summary (word-count self-correct)."""
+"""SummaryAgent: 150-200 word clinical executive summary (word-count self-correct)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,8 +7,8 @@ from .base_agent import BaseAgent
 
 _PROMPTS = Path(__file__).parent / "prompts"
 
-WORD_MIN = 300
-WORD_MAX = 400
+WORD_MIN = 150
+WORD_MAX = 200
 
 
 class SummaryAgent(BaseAgent):
@@ -75,4 +75,4 @@ class SummaryAgent(BaseAgent):
         )
 
     def mock_result(self) -> str:
-        return " ".join(["word"] * 320)
+        return " ".join(["word"] * 175)

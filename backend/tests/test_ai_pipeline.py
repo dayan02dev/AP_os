@@ -87,7 +87,7 @@ def _para(n_words: int) -> str:
 
 def test_summary_agent_accepts_in_range():
     agent = SummaryAgent()
-    agent._call_api = lambda messages: _para(350)  # type: ignore[method-assign]
+    agent._call_api = lambda messages: _para(175)  # type: ignore[method-assign]
     result, flags = agent.run("app-6", app_text="x", project_name="Acme")
     assert flags == ""
     assert WORD_MIN <= len(result.split()) <= WORD_MAX
@@ -95,11 +95,11 @@ def test_summary_agent_accepts_in_range():
 
 def test_summary_agent_self_corrects_short_then_ok():
     agent = SummaryAgent()
-    replies = iter([_para(120), _para(320)])
+    replies = iter([_para(120), _para(175)])
     agent._call_api = lambda messages: next(replies)  # type: ignore[method-assign]
     result, flags = agent.run("app-7", app_text="x", project_name="Acme")
     assert flags == ""
-    assert len(result.split()) == 320
+    assert len(result.split()) == 175
 
 
 def test_summary_agent_reports_flag_when_never_in_range():
