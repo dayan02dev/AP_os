@@ -29,10 +29,10 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
     if (track !== "all" && s.track !== track) return false;
     if (search) {
       const q = search.toLowerCase();
-      const founder = (s.founders && s.founders[0]) || "";
+      const foundersMatch = (s.founders || []).some((f) => (f || "").toLowerCase().includes(q));
       if (
         !(s.name || "").toLowerCase().includes(q) &&
-        !founder.toLowerCase().includes(q) &&
+        !foundersMatch &&
         !(s.industry || "").toLowerCase().includes(q)
       )
         return false;
