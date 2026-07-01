@@ -76,3 +76,35 @@ def test_scoring_agent_flags_missing_key():
     agent._call_api = lambda messages: _json.dumps(incomplete)  # type: ignore[method-assign]
     _result, flags = agent.run("app-5", app_text="x")
     assert "commitment" in flags
+
+
+from app.services.ai_pipeline.summary_agent import SummaryAgent, WORD_MIN, WORD_MAX
+
+
+def _para(n_words: int) -> str:
+    return " ".join(["word"] * n_words)
+
+
+def test_summary_agent_accepts_in_range():
+    agent = SummaryAgent()
+    agent._call_api = lambda messages: _para(350)  # type: ignore[method-assign]
+    result, flags = agent.run("app-6", app_text="x", project_name="Acme")
+    assert flags == ""
+    assert WORD_MIN <= len(result.split()) <= WORD_MAX
+
+
+def test_summary_agent_self_corrects_short_then_ok():
+    agent = SummaryAgent()
+    replies = iter([_para(120), _para(320)])
+    agent._call_api = lambda messages: next(replies)  # type: ignore[method-assign]
+    result, flags = agent.run("app-7", app_text="x", project_name="Acme")
+    assert flags == ""
+    assert len(result.split()) == 320
+
+
+def test_summary_agent_reports_flag_when_never_in_range():
+    agent = SummaryAgent()
+    agent.MAX_CORRECT_ROUNDS = 1
+    agent._call_api = lambda messages: _para(50)  # type: ignore[method-assign]
+    _result, flags = agent.run("app-8", app_text="x", project_name="Acme")
+    assert "words" in flags
