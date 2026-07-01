@@ -7,7 +7,7 @@
 //   * `reviewStatus` is only not-started | draft | submitted (no in-progress)
 //   * `due` is an ISO timestamp (or null) → rendered as a short date
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { LoadingState, ErrorState, Chip } from "./ui.jsx";
 import { relabelDisplayId } from "../../../lib/trackLabel.js";
 
@@ -21,6 +21,9 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
   const [stageFilter, setStageFilter] = useState("all");
   const [domainFilter, setDomainFilter] = useState(initialDomain);
   const [showFilters, setShowFilters] = useState(false);
+
+  const [sortCol, setSortCol] = useState(null);
+  const [sortAsc, setSortAsc] = useState(true);
 
   const { data, loading, error, reload } = queueAsync;
   const allQueue = data || [];
@@ -42,6 +45,73 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
     if (domainFilter !== "all" && s.industry !== domainFilter) return false;
     return true;
   });
+
+  const handleSort = (col) => {
+    if (sortCol === col) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortCol(col);
+      setSortAsc(true);
+    }
+  };
+
+  const renderHeader = (label, colKey, isNum = false, style = {}) => {
+    const isSorted = sortCol === colKey;
+    return (
+      <th
+        style={{ cursor: "pointer", userSelect: "none", ...style }}
+        onClick={() => handleSort(colKey)}
+      >
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          {label}
+          {isSorted ? (sortAsc ? " ▲" : " ▼") : ""}
+        </span>
+      </th>
+    );
+  };
+
+  const sortedFiltered = useMemo(() => {
+    if (!sortCol) return filtered;
+    return [...filtered].sort((a, b) => {
+      let valA, valB;
+      if (sortCol === "name") {
+        valA = a.name || "";
+        valB = b.name || "";
+      } else if (sortCol === "founder") {
+        valA = (a.founders && a.founders[0]) || "";
+        valB = (b.founders && b.founders[0]) || "";
+      } else if (sortCol === "industry") {
+        valA = a.industry || "";
+        valB = b.industry || "";
+      } else if (sortCol === "stage") {
+        valA = a.stage || "";
+        valB = b.stage || "";
+      } else if (sortCol === "ai") {
+        valA = (a.ai && a.ai.overall != null) ? a.ai.overall : -1;
+        valB = (b.ai && b.ai.overall != null) ? b.ai.overall : -1;
+        if (valA < valB) return sortAsc ? -1 : 1;
+        if (valA > valB) return sortAsc ? 1 : -1;
+        return 0;
+      } else if (sortCol === "myScore") {
+        valA = typeof a.myScore === "number" ? a.myScore : -1;
+        valB = typeof b.myScore === "number" ? b.myScore : -1;
+        if (valA < valB) return sortAsc ? -1 : 1;
+        if (valA > valB) return sortAsc ? 1 : -1;
+        return 0;
+      } else if (sortCol === "status") {
+        valA = a.reviewStatus || "";
+        valB = b.reviewStatus || "";
+      } else if (sortCol === "id") {
+        valA = a.applicationId || "";
+        valB = b.applicationId || "";
+      } else {
+        return 0;
+      }
+      if (valA < valB) return sortAsc ? -1 : 1;
+      if (valA > valB) return sortAsc ? 1 : -1;
+      return 0;
+    });
+  }, [filtered, sortCol, sortAsc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const STATUS_DOTS = {
     submitted: "var(--ok)",
@@ -184,18 +254,18 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
         <table className="os-table">
           <thead>
             <tr>
-              <th style={{ width: "20%" }}>Project</th>
-              <th style={{ width: "14%" }}>Founder</th>
-              <th style={{ width: "16%" }}>Industry</th>
-              <th style={{ width: "9%" }}>Stage</th>
-              <th style={{ width: "11%" }}>AI Score</th>
-              <th style={{ width: "11%" }}>My Score</th>
-              <th style={{ width: "10%" }}>Status</th>
-              <th style={{ width: "5%" }}>ID</th>
+              {renderHeader("Project", "name", false, { width: "20%" })}
+              {renderHeader("Founder", "founder", false, { width: "14%" })}
+              {renderHeader("Industry", "industry", false, { width: "16%" })}
+              {renderHeader("Stage", "stage", false, { width: "9%" })}
+              {renderHeader("AI Score", "ai", true, { width: "11%" })}
+              {renderHeader("My Score", "myScore", true, { width: "11%" })}
+              {renderHeader("Status", "status", false, { width: "10%" })}
+              {renderHeader("ID", "id", false, { width: "5%" })}
             </tr>
           </thead>
           <tbody>
-            {filtered.map((s) => (
+            {sortedFiltered.map((s) => (
               <tr key={s.id} style={{ cursor: "pointer" }} onClick={() => onOpen(s.track, s.id)}>
                 <td>
                   <div style={{ fontWeight: 600, color: "var(--ink)", fontSize: 13, lineHeight: 1.3 }}>{s.name}</div>
