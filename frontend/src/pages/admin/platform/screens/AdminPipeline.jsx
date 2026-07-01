@@ -225,7 +225,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
     setBatchFilter('all');
   };
 
-  const filtered = S.filter(s => {
+  const filtered = React.useMemo(() => S.filter(s => {
     if (s.archived) return false;
     if (s.hidden) return false;
 
@@ -244,7 +244,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
     if (search) {
       const q = search.toLowerCase();
       const matchName = (s.name || '').toLowerCase().includes(q);
-      const matchFounder = (s.founders || []).some(f => f.toLowerCase().includes(q));
+      const matchFounder = (s.founders || []).some(f => (f || '').toLowerCase().includes(q));
       const matchDomain = (s.domain || '').toLowerCase().includes(q);
       if (!matchName && !matchFounder && !matchDomain) return false;
     }
@@ -270,7 +270,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
     }
 
     return true;
-  });
+  }), [S, search, track, status, industry, batchFilter, decisionMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleAll = () => {
     if (selectedIds.length === filtered.length && filtered.length > 0) {
