@@ -219,6 +219,10 @@ export default function LeadershipDashboard() {
   // Bumped after a gate-1 decision (e.g. reject) to refetch stats + the list.
   const [refreshNonce, setRefreshNonce] = useState(0);
 
+  // ── Click-to-sort state for the applications table ──
+  const [sortCol, setSortCol] = useState(null);
+  const [sortAsc, setSortAsc] = useState(true);
+
   // ── Initial fetch ──
   useEffect(() => {
     let cancelled = false;
@@ -431,6 +435,71 @@ export default function LeadershipDashboard() {
   // discoverable when the panel is closed.
   const advFilterCount =
     (statusFilter ? 1 : 0) + (scoreBucket !== null ? 1 : 0) + (industry ? 1 : 0);
+
+  const handleSort = (col) => {
+    if (sortCol === col) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortCol(col);
+      setSortAsc(true);
+    }
+  };
+
+  const renderAppsHeader = (label, colKey, isNum = false) => {
+    const isSorted = sortCol === colKey;
+    return (
+      <th
+        className={isNum ? "num" : ""}
+        onClick={() => handleSort(colKey)}
+        style={{ cursor: "pointer", userSelect: "none" }}
+      >
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          {label}
+          {isSorted ? (sortAsc ? " ▲" : " ▼") : ""}
+        </span>
+      </th>
+    );
+  };
+
+  const sortedApps = useMemo(() => {
+    if (!sortCol) return apps;
+    return [...apps].sort((a, b) => {
+      let valA, valB;
+      if (sortCol === "project") {
+        valA = a.project_name || "";
+        valB = b.project_name || "";
+      } else if (sortCol === "founder") {
+        valA = a.founder?.name || a.basic_full_name || "";
+        valB = b.founder?.name || b.basic_full_name || "";
+      } else if (sortCol === "industry") {
+        valA = a.industry?.label || "";
+        valB = b.industry?.label || "";
+      } else if (sortCol === "stage") {
+        valA = a.stage?.label || a.stage_label || "";
+        valB = b.stage?.label || b.stage_label || "";
+      } else if (sortCol === "ai_score") {
+        valA = a.ai_score_overall != null ? a.ai_score_overall : -1;
+        valB = b.ai_score_overall != null ? b.ai_score_overall : -1;
+        if (valA < valB) return sortAsc ? -1 : 1;
+        if (valA > valB) return sortAsc ? 1 : -1;
+        return 0;
+      } else if (sortCol === "status") {
+        valA = statusLabelById[a.status] || a.status || "";
+        valB = statusLabelById[b.status] || b.status || "";
+      } else if (sortCol === "submitted") {
+        valA = a.submitted_at || a.created_at || "";
+        valB = b.submitted_at || b.created_at || "";
+      } else if (sortCol === "id") {
+        valA = a.display_id || "";
+        valB = b.display_id || "";
+      } else {
+        return 0;
+      }
+      if (valA < valB) return sortAsc ? -1 : 1;
+      if (valA > valB) return sortAsc ? 1 : -1;
+      return 0;
+    });
+  }, [apps, sortCol, sortAsc, statusLabelById]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Human-readable snapshot timestamp for the hero subline.
   const snapshotAt = useMemo(() => {
@@ -1020,18 +1089,22 @@ export default function LeadershipDashboard() {
               <table className="tbl lp-apps-table">
                 <thead>
                   <tr>
-                    <th>Project</th>
-                    <th>Founder</th>
-                    <th>Industry</th>
-                    <th>Stage</th>
-                    <th className="num">AI score</th>
-                    <th>Status</th>
-                    <th>Submitted</th>
-                    <th className="lp-id-col">ID</th>
+                    {renderAppsHeader("Project", "project")}
+                    {renderAppsHeader("Founder", "founder")}
+                    {renderAppsHeader("Industry", "industry")}
+                    {renderAppsHeader("Stage", "stage")}
+                    {renderAppsHeader("AI score", "ai_score", true)}
+                    {renderAppsHeader("Status", "status")}
+                    {renderAppsHeader("Submitted", "submitted")}
+                    <th className="lp-id-col" onClick={() => handleSort("id")} style={{ cursor: "pointer", userSelect: "none" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        ID{sortCol === "id" ? (sortAsc ? " ▲" : " ▼") : ""}
+                      </span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {apps.map((a) => (
+                  {sortedApps.map((a) => (
                     <tr
                       key={`${a.track}-${a.id}`}
                       className="clickable"
