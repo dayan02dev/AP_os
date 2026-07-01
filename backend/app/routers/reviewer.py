@@ -102,6 +102,7 @@ async def get_application_content(
         "name": ai.get("project_name") or app_row.get("basic_org")
                 or app_row.get("basic_full_name") or "—",
         "aiSummary": ai.get("summary"),
+        "aiSections": ai.get("sections"),
         "ai": reviewer_query._ai_block(payload.get("ai_screening")),
         "fields": review_presenter.build_fields(app_row, field_map),
         "sections": review_presenter.build_sections(app_row, track),
