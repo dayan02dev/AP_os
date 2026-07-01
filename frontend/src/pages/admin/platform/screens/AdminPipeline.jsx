@@ -1001,6 +1001,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
             {renderHeader('FOUNDER', 'founder')}
             {renderHeader('INDUSTRY', 'domain')}
             {renderHeader('STAGE', 'stage')}
+            {renderHeader('AI score', 'ai', true)}
             {renderHeader('Reviewer score', 'rev', true)}
             {renderHeader('STATUS', 'status')}
             {renderHeader(decisionMode === 'jury' ? 'ASSIGNED JURY' : 'BATCH', 'batch')}
@@ -1031,6 +1032,13 @@ export function AdminPipeline({ goDetail, decisionMode }) {
                 <td>{(s.founders && s.founders[0]) || '—'}</td>
                 <td className="os-text-soft">{s.domain}</td>
                 <td className="os-text-soft">{s.stage}</td>
+                <td className="num">
+                  {s.ai && s.ai.overall != null ? (
+                    <b>{s.ai.overall.toFixed(1)}</b>
+                  ) : (
+                    <span className="os-text-soft">—</span>
+                  )}
+                </td>
                 <td className="num">
                   {s.rev && s.rev.overall != null ? (
                     <b>{s.rev.overall.toFixed(1)}</b>
