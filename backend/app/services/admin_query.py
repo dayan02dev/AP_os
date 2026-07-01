@@ -458,6 +458,7 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
         "stage":                _stage_label(app_row_with_track),
         "application":          app_row,
         "ai_screening":         ai_screening,
+        "aiSections":           (ai_screening or {}).get("sections"),
         "reviews":              reviews,
         "reviewer_assignments": reviewer_assignments,
         "status_history":       status_history,
