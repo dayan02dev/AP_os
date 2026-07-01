@@ -58,6 +58,7 @@ class ScoreResult:
     industry_confidence: float | None = None
     new_industry_proposal: dict | None = None
     project_name: str | None = None
+    sections: dict | None = None
 
 
 def compute_overall(

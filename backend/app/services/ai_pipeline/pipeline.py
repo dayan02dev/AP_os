@@ -57,6 +57,19 @@ def _summarize(app_id, app_text, project_name, scoring_result, *, cache_dir, no_
     )
 
 
+def _sections(app_id: str, app_text: str, *, cache_dir, no_cache: bool) -> dict | None:
+    """Best-effort: a failure here must NOT block scoring / status advance."""
+    try:
+        from .section_agent import SectionAgent
+        result, _flags = SectionAgent(cache_dir=cache_dir).run(
+            app_id, app_text=app_text, no_cache=no_cache,
+        )
+        return result
+    except Exception as exc:  # noqa: BLE001
+        log.warning("sections stage failed", extra={"app_id": app_id, "err": str(exc)})
+        return None
+
+
 # module-level scratch so _classify can log an id without threading it through
 _APP_ID: dict[str, str] = {}
 
@@ -86,6 +99,7 @@ def run_for_application(
         app_id, app_text, classification.get("project_name"), scores,
         cache_dir=cache_dir, no_cache=no_cache,
     )
+    sections = _sections(app_id, app_text, cache_dir=cache_dir, no_cache=no_cache)
 
     def _sc(key: str) -> float:
         return float((scores.get(key) or {}).get("score", 0.0))
@@ -110,6 +124,7 @@ def run_for_application(
         industry_confidence=classification.get("industry_confidence"),
         new_industry_proposal=classification.get("new_industry_proposal"),
         project_name=classification.get("project_name"),
+        sections=sections,
     )
 
 
@@ -158,6 +173,7 @@ def persist(
         "industry_category_id": result.industry_category_id,
         "industry_confidence": result.industry_confidence,
         "project_name": result.project_name,
+        "sections": result.sections,
     }
     client.table("ai_screening").upsert(
         row, on_conflict="application_id,application_track"
