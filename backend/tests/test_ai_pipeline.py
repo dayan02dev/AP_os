@@ -141,3 +141,33 @@ def test_classifier_parses_new_category_proposal():
     result, _flags = agent.run("app-10", app_text="x", categories=[], slots_remaining=3)
     assert result["industry_category_id"] is None
     assert result["new_industry_proposal"] == {"id": "grid", "label": "Grid"}
+
+
+from app.services.ai_pipeline.serialize import build_app_text
+
+
+def test_serialize_tir_includes_core_fields_and_redacts_pii():
+    row = {
+        "basic_full_name": "Jane Doe", "basic_email": "j@x.com", "basic_phone": "123",
+        "basic_org": "Acme Labs",
+        "problem_describe": "Grids fail silently.",
+        "solution_describe": "Edge anomaly detection.",
+        "solution_core_tech": "INT4 model on QCS8550.",
+        "execution_milestone": "Pilot on 110kV corridor.",
+    }
+    text = build_app_text(row, "tir")
+    assert "Grids fail silently." in text
+    assert "Edge anomaly detection." in text
+    assert "Acme Labs" in text
+    assert "Jane Doe" not in text and "j@x.com" not in text and "123" not in text
+
+
+def test_serialize_vip_includes_sip_fields():
+    row = {
+        "basic_org": "Acme",
+        "problem_describe": "P", "solution_describe": "S",
+        "sip_incorporated": "Yes", "sip_trl": "TRL 6",
+        "sip_traction": "Revenue", "sip_traction_details": "₹40L ARR",
+    }
+    text = build_app_text(row, "sip")
+    assert "TRL 6" in text and "₹40L ARR" in text
