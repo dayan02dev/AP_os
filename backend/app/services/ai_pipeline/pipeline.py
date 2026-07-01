@@ -173,8 +173,12 @@ def persist(
         "industry_category_id": result.industry_category_id,
         "industry_confidence": result.industry_confidence,
         "project_name": result.project_name,
-        "sections": result.sections,
     }
+    # Only write sections when we actually generated them: a transient
+    # SectionAgent failure yields None, and upsert omits absent columns, so a
+    # failed re-run leaves any previously-good sections intact (never NULLs it).
+    if result.sections is not None:
+        row["sections"] = result.sections
     client.table("ai_screening").upsert(
         row, on_conflict="application_id,application_track"
     ).execute()

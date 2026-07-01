@@ -40,7 +40,9 @@ def test_persist_sections_defaults_to_none():
         summary="s", model="m", raw_response="{}",
     )
     pipeline.persist(client, "app-1", "tir", result, advance_status=False)
-    assert client.sink["ai_screening"]["sections"] is None
+    # When sections weren't generated (None), the key is OMITTED from the upsert
+    # so a failed re-run never NULLs previously-good sections.
+    assert "sections" not in client.sink["ai_screening"]
 
 
 def test_run_for_application_attaches_sections(monkeypatch):
