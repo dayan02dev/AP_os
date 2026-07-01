@@ -130,6 +130,7 @@ export function adaptDetail(d) {
     flag: flagColor(d.application?.status),
     ai: adaptAi(d.ai_screening),
     aiSummary: d.ai_screening?.summary || "",
+    aiSections: d.aiSections || null,
     rev: reviews.length ? adaptOneReview(reviews[0]) : undefined,
     reviews: reviews.map(adaptOneReview),
     flags: reviews.flatMap((r) => (Array.isArray(r.flags) ? r.flags : [])),

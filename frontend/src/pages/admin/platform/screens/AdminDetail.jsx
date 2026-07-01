@@ -20,6 +20,7 @@ import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 import { BUTTON_TO_DECISION } from "../../../../lib/adminDataAdapter";
 import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
+import AiSections from "../../../../components/AiSections.jsx";
 import { Chip } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import FullApplication from "../../../../components/FullApplication";
@@ -335,6 +336,8 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
                   <p className="ps-ai-text">{s.aiSummary}</p>
                 </div>
               )}
+
+              <AiSections variant="dropdown" sections={s.aiSections} />
 
               {/* Problem & solution — collapsible bullet sections */}
               {s.reviews && s.reviews.length > 0 && (
