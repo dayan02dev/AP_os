@@ -630,6 +630,20 @@ def fetch_roster() -> dict[str, Any]:
             if mine is None or ai_overall is None:
                 continue
             diffs.append(abs(mine - ai_overall))
+
+        # Fallback 1: max assigned_at from reviewer_assignments (covers reviewers
+        # who have been assigned but not yet submitted any review).
+        if last_activity is None:
+            for a in assignments_by_rev[rid]:
+                assigned_at = a.get("assigned_at")
+                if assigned_at and (last_activity is None or assigned_at > last_activity):
+                    last_activity = assigned_at
+
+        # Fallback 2: reviewer_profiles.updated_at if still no activity.
+        if last_activity is None:
+            rp_updated = rp.get("updated_at")
+            if rp_updated:
+                last_activity = rp_updated
         if diffs:
             consistency = round(1 - (sum(diffs) / len(diffs)) / 10, 2)
             consistency = max(0.0, min(1.0, consistency))
