@@ -281,6 +281,8 @@ function InviteModal({ allBatches, isJury, onClose, onInvited }) {
         roles: ['reviewer'],
         send_invite: true,
         temp_password: password,
+        expertise_domains: invDomain.split(',').map(s => s.trim()).filter(Boolean),
+        batch_id: invBatch || null,
       });
       setResult(res);
       onInvited();
