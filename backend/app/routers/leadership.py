@@ -26,7 +26,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..rbac import require_capability
-from ..services import applications_query, industry_categories, stats
+from ..services import admin_query, applications_query, industry_categories, stats
 from ..supabase_client import get_admin_client
 
 log = logging.getLogger(__name__)
@@ -217,6 +217,7 @@ async def list_applications(
     pairs = [(r["track"], r["id"]) for r in rows]
     scores = applications_query.fetch_ai_scores_for(pairs)
     project_names = applications_query.fetch_project_names_for(pairs)
+    reviewer_scores = admin_query._fetch_reviewer_scores(pairs)
 
     filter_ai = (
         ai_score_min is not None
@@ -275,6 +276,7 @@ async def list_applications(
             "industry":         industries.get((track, r["id"])),
             "stage":            stats.derive_stage_label(r),
             "ai_score_overall": scores.get((track, r["id"])),
+            "reviewer_score":   reviewer_scores.get((track, r["id"])),
             "submitted_at":     r.get("submitted_at"),
             "created_at":       r.get("created_at"),
             # Legacy fields the AppDrawer + existing tests still reference.
