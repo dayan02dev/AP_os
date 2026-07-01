@@ -939,8 +939,9 @@ def test_bulk_assign_marks_non_reviewer(client, monkeypatch, _clear_overrides):
 
 def test_bulk_remove_removes_all_including_submitted(client, monkeypatch, _clear_overrides):
     """Remove unassigns every item regardless of submitted-review status.
-    Both app-1 (no review) and app-2 (submitted review) must return 'removed'
-    and have their reviewer_assignments deleted; the review row is preserved.
+    app-1 (no review) returns 'removed'; app-2 (submitted review) returns
+    'skipped_submitted' (the frontend warns, but the assignment is still deleted).
+    The review row is preserved for audit.
     """
     tables = _empty_admin_tables()
     tables["reviewer_assignments"] = [
@@ -957,12 +958,12 @@ def test_bulk_remove_removes_all_including_submitted(client, monkeypatch, _clear
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
     r = client.post("/admin/platform/reviewers/rev-1/applications/remove", json={"items": [
         {"application_id": "app-1", "track": "tir"},
-        {"application_id": "app-2", "track": "tir"},   # submitted → still removed
+        {"application_id": "app-2", "track": "tir"},   # submitted → skipped_submitted but still deleted
     ]})
     assert r.status_code == 200, r.text
     results = {x["application_id"]: x["status"] for x in r.json()["results"]}
     assert results["app-1"] == "removed"
-    assert results["app-2"] == "removed"     # no longer skipped_submitted
+    assert results["app-2"] == "skipped_submitted"  # warns frontend but assignment is deleted
     assert fake.tables["reviewer_assignments"] == []
     assert len(fake.tables["reviews"]) == 1  # review row preserved for audit
 
@@ -1086,9 +1087,9 @@ def test_pipeline_flags_aggregated_from_submitted_reviews(
 def test_bulk_remove_removes_app_with_submitted_review(
     client, monkeypatch, _clear_overrides,
 ):
-    """bulk_remove_reviewer_apps must return status='removed' (not
-    'skipped_submitted') for an app whose reviewer already submitted a review.
-    The reviewer_assignment is deleted; the reviews row is left intact.
+    """bulk_remove_reviewer_apps must return status='skipped_submitted' for an
+    app whose reviewer already submitted a review, AND still delete the
+    reviewer_assignment. The reviews row is left intact for audit.
     """
     tables = _empty_admin_tables()
     tables["reviewer_assignments"] = [
@@ -1110,11 +1111,10 @@ def test_bulk_remove_removes_app_with_submitted_review(
     )
     assert r.status_code == 200, r.text
     results = {x["application_id"]: x["status"] for x in r.json()["results"]}
-    assert results["app-r"] == "removed", (
-        "should be 'removed', not 'skipped_submitted' — admins can unassign "
-        "even reviewed apps"
+    assert results["app-r"] == "skipped_submitted", (
+        "should be 'skipped_submitted' to warn frontend — reviewer submitted a review"
     )
-    # Assignment deleted.
+    # Assignment deleted even when a review exists.
     assert fake.tables["reviewer_assignments"] == []
     # Review row preserved (audit trail).
     assert len(fake.tables["reviews"]) == 1

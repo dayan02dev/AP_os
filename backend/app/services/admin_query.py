@@ -1010,18 +1010,36 @@ def bulk_remove_reviewer_apps(
     user_id: str, items: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Unassign many applications from one reviewer. Per-item status:
-    removed | not_found | error. Admins may remove an assignment even when the
-    reviewer has already submitted a review; the review row is left intact for
-    audit — only the reviewer_assignment is deleted.
+    removed | skipped_submitted | not_found | error.
+
+    The assignment is ALWAYS deleted (even if the reviewer submitted a review).
+    ``skipped_submitted`` is returned when a submitted review exists so the
+    frontend can warn the user; the deletion still happens. The review row is
+    preserved for audit purposes — only the reviewer_assignment is deleted.
     """
     sb = get_admin_client()
-    # 2026-06-29: admins may unassign an application even when the reviewer has
-    # already submitted a review (the review row is left intact for audit; only
-    # the reviewer_assignment is deleted).
+
+    # Pre-fetch submitted reviews for this reviewer so we can report per-item
+    # whether a review existed (without blocking the deletion).
+    submitted_pairs: set[tuple[str, str]] = set()
+    try:
+        for rv in (
+            sb.table("reviews")
+            .select("application_id,application_track,submitted_at")
+            .eq("reviewer_user_id", user_id)
+            .execute()
+            .data
+        ) or []:
+            if rv.get("submitted_at"):
+                submitted_pairs.add((rv.get("application_track"), rv.get("application_id")))
+    except Exception as exc:
+        log.warning("bulk_remove: reviews pre-fetch failed", extra={"err": str(exc)})
+
     results: list[dict[str, Any]] = []
     for it in items:
         aid = it.get("application_id")
         track = it.get("track")
+        had_submitted = (track, aid) in submitted_pairs
         try:
             res = (sb.table("reviewer_assignments").delete()
                    .eq("application_id", aid)
@@ -1029,8 +1047,13 @@ def bulk_remove_reviewer_apps(
                    .eq("reviewer_user_id", user_id)
                    .execute())
             removed = bool(res.data)
-            results.append({"application_id": aid, "track": track,
-                            "status": "removed" if removed else "not_found"})
+            if not removed:
+                status = "not_found"
+            elif had_submitted:
+                status = "skipped_submitted"
+            else:
+                status = "removed"
+            results.append({"application_id": aid, "track": track, "status": status})
         except Exception as exc:
             log.warning("bulk_remove: delete failed",
                         extra={"application_id": aid, "err": str(exc)})
