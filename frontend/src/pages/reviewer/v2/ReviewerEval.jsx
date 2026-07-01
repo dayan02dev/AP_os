@@ -24,6 +24,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import AiSections from "../../../components/AiSections.jsx";
 import FullApplication from "../../../components/FullApplication.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
@@ -194,7 +195,6 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   // Local UI-only state.
   const [showRubric, setShowRubric] = useState(false);
   const [showAi, setShowAi] = useState(false);
-  const [secOpen, setSecOpen] = useState({});
   const [viewApp, setViewApp] = useState(false);
   const [flagInput, setFlagInput] = useState("");
   const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
@@ -375,9 +375,6 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     );
   }
 
-  const longFields = (content.fields || []).filter((f) => Array.isArray(f.bullets));
-  const factFields = (content.fields || []).filter((f) => !Array.isArray(f.bullets));
-
   return (
     <div>
       <div className="lp-section-head">
@@ -467,47 +464,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
                 </div>
               )}
 
-              <div>
-                <div className="ps-group-label">Application detail</div>
-
-                {factFields.length > 0 && (
-                  <div className="ps-facts">
-                    {factFields.map((f, i) => (
-                      <div className="ps-fact" key={i}>
-                        <span className="ps-fact-label">{f.label}</span>
-                        <span className="ps-fact-value">{f.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="ps-sections">
-                  {longFields.map((f, i) => {
-                    const open = f.label in secOpen ? secOpen[f.label] : i === 0;
-                    const pts = f.bullets || [];
-                    return (
-                      <div className={"ps-sec" + (open ? " is-open" : "")} key={i}>
-                        <button
-                          className="ps-sec-head"
-                          aria-expanded={open}
-                          onClick={() => setSecOpen((prev) => ({ ...prev, [f.label]: !open }))}
-                        >
-                          <span className="ps-sec-chev">{open ? "▾" : "▸"}</span>
-                          <span className="ps-sec-label">{f.label}</span>
-                          <span className="ps-sec-hint">{open ? "" : pts.length + " points"}</span>
-                        </button>
-                        {open && (
-                          <ul className="ps-bullets">
-                            {pts.map((b, j) => (
-                              <li key={j}>{b}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <AiSections variant="dropdown" sections={content.aiSections} />
 
               <hr className="os-divider" />
 
