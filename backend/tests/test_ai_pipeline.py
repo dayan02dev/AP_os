@@ -211,3 +211,11 @@ def test_run_for_application_assembles_scoreresult(monkeypatch):
     assert result.summary == "A summary."
     assert result.project_name == "Acme robots"
     assert result.score_overall == 8.6           # weighted, rounded (0.22/0.30/0.22/0.14/0.12)
+
+
+def test_ai_screening_router_uses_new_pipeline():
+    import app.routers.ai_screening as r
+    src = __import__("inspect").getsource(r)
+    assert "ai_scoring.runner" not in src
+    assert "AI_SCORING_ENABLED" not in src
+    assert "ai_pipeline" in src
