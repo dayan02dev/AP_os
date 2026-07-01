@@ -1253,3 +1253,101 @@ def test_assign_applications_no_reviewers_no_fanout(client, monkeypatch, _clear_
     assert body["assignments_created"] == 0
     assert body["reviewers_notified"] == 0
     assert not any(t == "reviewer_assignments" for (t, _row) in fake.inserts)
+
+
+# ─── Fix 1: VIP (sip) pipeline rows use company name ─────────────────────
+
+
+def test_pipeline_vip_row_uses_basic_org_as_name(client, monkeypatch, _clear_overrides):
+    """A sip-track pipeline row must show basic_org as name, not ai project_name."""
+    app_id = "sip-app-1111-1111-1111-111111111111"
+    tables = _empty_admin_tables()
+    tables["sip_applications"] = [
+        {"id": app_id, "status": "submitted", "display_seq": 10001,
+         "basic_full_name": "Founder Name", "basic_email": "f@vip.com",
+         "basic_org": "Acme Pvt Ltd",
+         "submitted_at": "2026-06-15T00:00:00Z", "created_at": "2026-06-10T00:00:00Z"},
+    ]
+    tables["ai_screening"] = [
+        {"application_id": app_id, "application_track": "sip",
+         "score_overall": 7.5, "project_name": "Acme AI Project"},
+    ]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+
+    r = client.get("/admin/platform/applications")
+    assert r.status_code == 200, r.text
+    items = r.json()["applications"]
+    assert len(items) == 1
+    assert items[0]["name"] == "Acme Pvt Ltd"
+
+
+def test_pipeline_tir_row_uses_project_name(client, monkeypatch, _clear_overrides):
+    """A tir-track pipeline row keeps using ai_screening.project_name, not basic_org."""
+    app_id = "tir-app-2222-2222-2222-222222222222"
+    tables = _empty_admin_tables()
+    tables["tir_applications"] = [
+        {"id": app_id, "status": "submitted", "display_seq": 20001,
+         "basic_full_name": "Founder TIR", "basic_email": "t@tir.com",
+         "basic_org": "TIR Org",
+         "submitted_at": "2026-06-15T00:00:00Z", "created_at": "2026-06-10T00:00:00Z"},
+    ]
+    tables["ai_screening"] = [
+        {"application_id": app_id, "application_track": "tir",
+         "score_overall": 6.0, "project_name": "TIR Project Name"},
+    ]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+
+    r = client.get("/admin/platform/applications")
+    assert r.status_code == 200, r.text
+    items = r.json()["applications"]
+    assert len(items) == 1
+    assert items[0]["name"] == "TIR Project Name"
+
+
+# ─── Fix 2: bulk_remove returns skipped_submitted + still deletes ──────────
+
+
+def test_bulk_remove_not_found_returns_not_found(client, monkeypatch, _clear_overrides):
+    """An unknown assignment returns not_found."""
+    tables = _empty_admin_tables()
+    tables["reviewer_assignments"] = []
+    tables["reviews"] = []
+    fake = _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.post("/admin/platform/reviewers/rev-1/applications/remove",
+                    json={"items": [{"application_id": "ghost-app", "track": "tir"}]})
+    assert r.status_code == 200, r.text
+    results = {x["application_id"]: x["status"] for x in r.json()["results"]}
+    assert results["ghost-app"] == "not_found"
+    assert fake.tables["reviewer_assignments"] == []
+
+
+# ─── Fix 5: roster lastActivity falls back to assignment assigned_at ──────
+
+
+def test_roster_last_activity_fallback_to_assigned_at(client, monkeypatch, _clear_overrides):
+    """A reviewer with assignments but no submitted reviews must have a non-null
+    lastActivity derived from the latest reviewer_assignments.assigned_at."""
+    tables = _empty_admin_tables()
+    tables["user_roles"] = [{"user_id": "rev-2", "role": "reviewer"}]
+    tables["profiles"] = [{"id": "rev-2", "full_name": "Pending Rev", "email": "p@x.com"}]
+    tables["reviewer_profiles"] = []
+    tables["reviewer_assignments"] = [
+        {"id": "a-1", "reviewer_user_id": "rev-2", "application_id": "app-1",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None,
+         "assigned_at": "2026-06-20T10:00:00Z"},
+        {"id": "a-2", "reviewer_user_id": "rev-2", "application_id": "app-2",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None,
+         "assigned_at": "2026-06-22T08:00:00Z"},
+    ]
+    tables["reviews"] = []
+    tables["ai_screening"] = []
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.get("/admin/platform/reviewers")
+    assert r.status_code == 200, r.text
+    rev = {x["user_id"]: x for x in r.json()["reviewers"]}["rev-2"]
+    assert rev["lastActivity"] is not None, "lastActivity should fall back to assigned_at"
+    assert rev["lastActivity"] == "2026-06-22T08:00:00Z"

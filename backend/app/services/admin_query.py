@@ -351,12 +351,15 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
             if needle not in hay:
                 continue
 
-        name = (
-            project_names.get(key)
-            or stats.derive_project_name(r)
-            or r.get("basic_org")
-            or r.get("basic_full_name")
-        )
+        if r.get("track") == "sip":
+            name = r.get("basic_org") or r.get("basic_full_name")
+        else:
+            name = (
+                project_names.get(key)
+                or stats.derive_project_name(r)
+                or r.get("basic_org")
+                or r.get("basic_full_name")
+            )
 
         out_items.append({
             "id":               r["id"],
@@ -716,12 +719,15 @@ def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
     for a in active:
         key = (a["application_track"], a["application_id"])
         r = app_rows.get(key) or {}
-        project = (
-            project_names.get(key)
-            or stats.derive_project_name(r)
-            or r.get("basic_org")
-            or r.get("basic_full_name")
-        )
+        if a["application_track"] == "sip":
+            project = r.get("basic_org") or r.get("basic_full_name")
+        else:
+            project = (
+                project_names.get(key)
+                or stats.derive_project_name(r)
+                or r.get("basic_org")
+                or r.get("basic_full_name")
+            )
         out.append({
             "id":            a["application_id"],
             "track":         a["application_track"],

@@ -260,8 +260,14 @@ async def list_applications(
             "display_id":       stats.compose_display_id(track, r.get("display_seq")),
             "track":            track,
             "status":           r.get("status"),
-            "project_name":     project_names.get((track, r["id"]))
-                                or stats.derive_project_name(r),
+            "project_name":     (
+                                r.get("basic_org") or r.get("basic_full_name")
+                                if track == "sip"
+                                else (
+                                    project_names.get((track, r["id"]))
+                                    or stats.derive_project_name(r)
+                                )
+                            ),
             "founder": {
                 "name":         r.get("basic_full_name"),
                 "affiliation":  r.get("basic_org"),

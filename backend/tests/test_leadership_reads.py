@@ -832,6 +832,154 @@ def test_list_applications_industry_filter_matches_category_id(
     assert apps[0]["id"] == "id-1"
 
 
+# ─── Fix 1: VIP (sip) list row uses basic_org as project_name ────────────
+
+
+def test_list_applications_sip_row_uses_basic_org_as_project_name(
+    client, _clear_overrides, monkeypatch,
+):
+    """A sip-track row must use basic_org as project_name, not ai project_name."""
+    fake_rows = [
+        {
+            "id": "sip-app-1",
+            "track": "sip",
+            "status": "submitted",
+            "basic_full_name": "VIP Founder",
+            "basic_org": "Acme Pvt Ltd",
+            "basic_email": "vip@example.com",
+            "submitted_at": "2026-06-10T08:00:00Z",
+            "created_at": "2026-06-01T00:00:00Z",
+            "display_seq": 10001,
+        }
+    ]
+
+    def _fake_fetch(track, **kw):
+        if track == "sip":
+            return [dict(r) for r in fake_rows]
+        return []
+
+    monkeypatch.setattr(applications_query, "fetch_apps_for_track", _fake_fetch)
+    monkeypatch.setattr(
+        applications_query, "fetch_ai_scores_for", lambda pairs: {p: 7.0 for p in pairs}
+    )
+    monkeypatch.setattr(
+        applications_query, "fetch_industry_for_pairs", lambda pairs: {p: None for p in pairs}
+    )
+    monkeypatch.setattr(
+        applications_query,
+        "fetch_project_names_for",
+        lambda pairs: {p: "AI Project Name" for p in pairs},
+    )
+    # Patch _fetch_reviewer_scores to return empty (not the real Supabase call).
+    from app.services import admin_query as aq
+    monkeypatch.setattr(aq, "_fetch_reviewer_scores", lambda pairs: {})
+
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/applications?track=sip",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    a = res.json()["applications"][0]
+    assert a["project_name"] == "Acme Pvt Ltd"
+
+
+# ─── Fix 3: leadership list row includes reviewer_score ──────────────────
+
+
+def test_list_applications_includes_reviewer_score(
+    client, _clear_overrides, monkeypatch,
+):
+    """Each row in the leadership applications list must have a reviewer_score key
+    (float when a submitted review exists, None otherwise)."""
+    fake_rows = [
+        {
+            "id": "app-rs-1",
+            "track": "tir",
+            "status": "submitted",
+            "basic_full_name": "Test Founder",
+            "basic_org": "Test Org",
+            "basic_email": "t@x.com",
+            "submitted_at": "2026-06-10T08:00:00Z",
+            "created_at": "2026-06-01T00:00:00Z",
+            "display_seq": 26500,
+        }
+    ]
+
+    def _fake_fetch(track, **kw):
+        if track == "tir":
+            return [dict(r) for r in fake_rows]
+        return []
+
+    monkeypatch.setattr(applications_query, "fetch_apps_for_track", _fake_fetch)
+    monkeypatch.setattr(
+        applications_query, "fetch_ai_scores_for", lambda pairs: {p: 8.0 for p in pairs}
+    )
+    monkeypatch.setattr(
+        applications_query, "fetch_industry_for_pairs", lambda pairs: {p: None for p in pairs}
+    )
+    monkeypatch.setattr(
+        applications_query, "fetch_project_names_for", lambda pairs: {p: None for p in pairs}
+    )
+    from app.services import admin_query as aq
+    monkeypatch.setattr(aq, "_fetch_reviewer_scores", lambda pairs: {pairs[0]: 7.5})
+
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/applications?track=tir",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    a = res.json()["applications"][0]
+    assert "reviewer_score" in a, "reviewer_score key must be present"
+    assert a["reviewer_score"] == 7.5
+
+
+def test_list_applications_reviewer_score_none_without_review(
+    client, _clear_overrides, monkeypatch,
+):
+    """reviewer_score must be None when there are no submitted reviews."""
+    fake_rows = [
+        {
+            "id": "app-rs-2",
+            "track": "tir",
+            "status": "submitted",
+            "basic_full_name": "Founder 2",
+            "basic_org": "Org 2",
+            "basic_email": "f2@x.com",
+            "submitted_at": "2026-06-11T08:00:00Z",
+            "created_at": "2026-06-02T00:00:00Z",
+            "display_seq": 26501,
+        }
+    ]
+
+    def _fake_fetch(track, **kw):
+        return [dict(r) for r in fake_rows] if track == "tir" else []
+
+    monkeypatch.setattr(applications_query, "fetch_apps_for_track", _fake_fetch)
+    monkeypatch.setattr(
+        applications_query, "fetch_ai_scores_for", lambda pairs: {p: 6.0 for p in pairs}
+    )
+    monkeypatch.setattr(
+        applications_query, "fetch_industry_for_pairs", lambda pairs: {p: None for p in pairs}
+    )
+    monkeypatch.setattr(
+        applications_query, "fetch_project_names_for", lambda pairs: {p: None for p in pairs}
+    )
+    from app.services import admin_query as aq
+    monkeypatch.setattr(aq, "_fetch_reviewer_scores", lambda pairs: {})
+
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+    res = client.get(
+        "/leadership/applications?track=tir",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    a = res.json()["applications"][0]
+    assert "reviewer_score" in a
+    assert a["reviewer_score"] is None
+
+
 # ─── Integration tier (skipped unless RUN_STAGING_TESTS=1) ───────────────
 #
 # Fixtures here are LOCAL to this module — conftest.py does not (yet) define
