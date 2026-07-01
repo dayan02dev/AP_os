@@ -1,0 +1,47 @@
+/* Shared AI-section styling — imported by AiSections.jsx, so it applies in
+   the reviewer, admin, and leadership surfaces without portal scoping. */
+
+/* ── dropdown variant (reviewer + admin) ─────────────────────────────── */
+.ai-sec-list { margin-top: 8px; display: flex; flex-direction: column; gap: 10px; }
+.ai-sec { border: 1px solid var(--line, #e6e6ee); border-radius: 12px; overflow: hidden; }
+.ai-sec.is-open { border-color: #d9d0f5; box-shadow: 0 6px 20px rgba(50, 19, 183, 0.06); }
+.ai-sec-head {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 15px 18px; min-height: 52px; cursor: pointer;
+  background: none; border: 0; text-align: left; font: inherit;
+}
+.ai-sec.is-open .ai-sec-head { background: #f7f5fd; }
+.ai-sec-chev { color: var(--artblue, #3213b7); font-size: 11px; width: 12px; flex-shrink: 0; }
+.ai-sec-label { flex: 1; font-weight: 700; font-size: 16px; color: var(--ink, #1a1a22); }
+.ai-sec.is-open .ai-sec-label { color: var(--artblue, #3213b7); }
+.ai-sec-hint { font-size: 11px; letter-spacing: 0.02em; color: var(--ink-dim, #8a8a92); flex-shrink: 0; }
+
+/* Bullets fill the FULL card width (kills the old max-width:70ch whitespace). */
+.ai-sec-bullets {
+  margin: 0; padding: 4px 22px 18px 22px; list-style: none;
+  display: flex; flex-direction: column; gap: 11px; max-width: none;
+}
+.ai-sec-bullets li {
+  font-size: 14px; line-height: 1.62; color: var(--ink-soft, #4a4a52);
+  padding-left: 18px; position: relative;
+}
+.ai-sec-bullets li::before {
+  content: ""; position: absolute; left: 2px; top: 8px;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--artblue, #3213b7);
+}
+
+/* ── leadership variant (sub-headed blocks) ──────────────────────────── */
+.ai-sec-lead { display: flex; flex-direction: column; gap: 16px; }
+.ai-sec-lead-label {
+  font-weight: 700; font-size: 11px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-dim, #8a8a92); margin-bottom: 8px;
+}
+
+.ai-sec-empty { font-size: 13px; color: var(--ink-dim, #8a8a92); padding: 6px 2px; }
+
+/* ── responsive: collapse the eval/detail two-column grid on small screens ─ */
+@media (max-width: 860px) {
+  .os-grid-evaluation { grid-template-columns: 1fr !important; }
+  .ai-sec-head { padding: 14px 14px; }
+  .ai-sec-bullets { padding: 4px 14px 16px 16px; }
+}
