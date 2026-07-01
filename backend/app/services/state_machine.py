@@ -37,9 +37,9 @@ log = logging.getLogger(__name__)
 # The only states that cannot be rejected are the terminal ones (onboarded,
 # rejected, withdrawn).
 LEGAL_TRANSITIONS: dict[str, frozenset[str]] = {
-    "submitted":        frozenset({"rejected", "withdrawn"}),
-    "ai_screening":     frozenset({"rejected", "withdrawn"}),
-    "screening_failed": frozenset({"rejected", "withdrawn"}),
+    "submitted":        frozenset({"jury_review", "rejected", "withdrawn"}),
+    "ai_screening":     frozenset({"jury_review", "rejected", "withdrawn"}),
+    "screening_failed": frozenset({"jury_review", "rejected", "withdrawn"}),
     "under_review":     frozenset({"evaluated", "jury_review", "rejected", "withdrawn"}),
     "evaluated":        frozenset({"shortlisted", "on_hold", "jury_review", "rejected", "waitlisted", "withdrawn"}),
     "on_hold":          frozenset({"evaluated", "shortlisted", "jury_review", "rejected", "waitlisted", "withdrawn"}),

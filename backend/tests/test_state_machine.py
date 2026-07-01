@@ -230,3 +230,34 @@ def test_jury_review_reachable_from_review_states():
 def test_jury_review_can_be_rejected():
     # Smoke test relies on approve-then-reject of one app.
     sm.assert_legal_transition("jury_review", "rejected")  # must not raise
+
+
+# ─── VIP/TIR Approve (jury_review) from early statuses ──────────────────
+
+
+def test_submitted_allows_jury_review():
+    """Admin Approve on a freshly-submitted app must not 422."""
+    sm.assert_legal_transition("submitted", "jury_review")  # must not raise
+
+
+def test_ai_screening_allows_jury_review():
+    """Admin Approve while AI screening is in-flight must not 422."""
+    sm.assert_legal_transition("ai_screening", "jury_review")  # must not raise
+
+
+def test_screening_failed_allows_jury_review():
+    """Admin Approve after AI screening failed must not 422."""
+    sm.assert_legal_transition("screening_failed", "jury_review")  # must not raise
+
+
+def test_submitted_still_allows_rejected():
+    """Existing reject path from submitted must remain unaffected."""
+    sm.assert_legal_transition("submitted", "rejected")  # must not raise
+
+
+def test_illegal_transition_from_onboarded_to_jury_review():
+    """onboarded → jury_review is not a legal transition; must raise 422."""
+    with pytest.raises(HTTPException) as exc_info:
+        sm.assert_legal_transition("onboarded", "jury_review")
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["code"] == "illegal_transition"
