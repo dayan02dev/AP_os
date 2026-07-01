@@ -319,7 +319,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
       if (valA > valB) return sortAsc ? 1 : -1;
       return 0;
     });
-  }, [filtered, sortCol, sortAsc]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filtered, sortCol, sortAsc]);
 
   // Active (applied) filters shown as removable pills
   const activeChips = [];
