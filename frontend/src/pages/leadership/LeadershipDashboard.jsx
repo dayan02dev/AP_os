@@ -483,6 +483,12 @@ export default function LeadershipDashboard() {
         if (valA < valB) return sortAsc ? -1 : 1;
         if (valA > valB) return sortAsc ? 1 : -1;
         return 0;
+      } else if (sortCol === "reviewer_score") {
+        valA = a.reviewer_score != null ? a.reviewer_score : -1;
+        valB = b.reviewer_score != null ? b.reviewer_score : -1;
+        if (valA < valB) return sortAsc ? -1 : 1;
+        if (valA > valB) return sortAsc ? 1 : -1;
+        return 0;
       } else if (sortCol === "status") {
         valA = statusLabelById[a.status] || a.status || "";
         valB = statusLabelById[b.status] || b.status || "";
@@ -1094,6 +1100,7 @@ export default function LeadershipDashboard() {
                     {renderAppsHeader("Industry", "industry")}
                     {renderAppsHeader("Stage", "stage")}
                     {renderAppsHeader("AI score", "ai_score", true)}
+                    {renderAppsHeader("Reviewer score", "reviewer_score", true)}
                     {renderAppsHeader("Status", "status")}
                     {renderAppsHeader("Submitted", "submitted")}
                     <th className="lp-id-col" onClick={() => handleSort("id")} style={{ cursor: "pointer", userSelect: "none" }}>
@@ -1134,6 +1141,12 @@ export default function LeadershipDashboard() {
                       <td title={a.stage?.raw || ""}>{a.stage?.label || "—"}</td>
                       <td className="num">
                         <ScorePill score={a.ai_score_overall} />
+                      </td>
+                      <td className="num">
+                        {a.reviewer_score != null
+                          ? <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700 }}>{Number(a.reviewer_score).toFixed(1)}</span>
+                          : <span style={{ color: "var(--ink-dim)" }}>—</span>
+                        }
                       </td>
                       <td>
                         <StatusCell
