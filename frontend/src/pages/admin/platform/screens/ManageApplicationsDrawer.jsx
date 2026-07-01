@@ -102,7 +102,9 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged }) {
     setBusy(true); setErr(null); setNotice(null);
     try {
       const res = await adminPlatformApi.bulkRemoveReviewerApps(reviewer.id, items);
-      setNotice(`Remove: ${summarize(res?.results, "remove")}.`);
+      const skipped = (res?.results || []).filter(r => r.status === "skipped_submitted").length;
+      const msg = `Remove: ${summarize(res?.results, "remove")}.`;
+      setNotice(skipped > 0 ? { kind: "warn", text: msg } : { kind: "ok", text: msg });
       setSelRemove(new Set());
       reload();
     } catch (e) {
@@ -118,7 +120,7 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged }) {
     setBusy(true); setErr(null); setNotice(null);
     try {
       const res = await adminPlatformApi.bulkAssignReviewerApps(reviewer.id, items);
-      setNotice(`Assign: ${summarize(res?.results, "assign")}.`);
+      setNotice({ kind: "ok", text: `Assign: ${summarize(res?.results, "assign")}.` });
       setSelAssign(new Set());
       setSearch("");
       reload();
@@ -132,7 +134,9 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged }) {
     try {
       const res = await adminPlatformApi.bulkRemoveReviewerApps(
         reviewer.id, [{ application_id: a.id, track: a.track }]);
-      setNotice(`Remove: ${summarize(res?.results, "remove")}.`);
+      const skipped = (res?.results || []).filter(r => r.status === "skipped_submitted").length;
+      const msg = `Remove: ${summarize(res?.results, "remove")}.`;
+      setNotice(skipped > 0 ? { kind: "warn", text: msg } : { kind: "ok", text: msg });
       setSelRemove(prev => { const n = new Set(prev); n.delete(a.id); return n; });
       reload();
     } catch (e) {
@@ -218,7 +222,14 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged }) {
             <div style={{ color: "var(--bad)", fontSize: 13, fontWeight: 600, padding: "8px 12px", background: "var(--bad-soft)", borderRadius: 4 }}>{err}</div>
           )}
           {notice && (
-            <div style={{ color: "var(--ink-soft)", fontSize: 13, padding: "8px 12px", background: "var(--bg-soft)", borderRadius: 4 }}>{notice}</div>
+            <div style={{
+              color: notice.kind === "warn" ? "#92560b" : "var(--ink-soft)",
+              fontSize: 13, padding: "8px 12px", borderRadius: 4,
+              background: notice.kind === "warn" ? "#fff7e6" : "var(--bg-soft)",
+              border: notice.kind === "warn" ? "1px solid #f0c96e" : "none",
+            }}>
+              {notice.text || notice}
+            </div>
           )}
 
           {/* Assigned applications — bulk remove */}
