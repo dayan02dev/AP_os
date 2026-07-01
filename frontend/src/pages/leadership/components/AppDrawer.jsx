@@ -17,8 +17,8 @@ import {
   reviewerStatusLabel,
 } from "../../../lib/reviewerStatus.js";
 import AISummaryBlock from "./AISummaryBlock.jsx";
+import AiSections from "../../../components/AiSections.jsx";
 import Collapsible from "./Collapsible.jsx";
-import ReadMoreText from "./ReadMoreText.jsx";
 import { weightedReviewScore } from "../../../lib/reviewScore.js";
 
 function fmtDate(iso) {
@@ -38,49 +38,6 @@ function StatusInline({ statusId, label }) {
       <span className={`lp-status-dot lp-status-${bucketFor(statusId)}`} />
       <span style={{ textTransform: "capitalize" }}>{label || statusId}</span>
     </span>
-  );
-}
-
-function titleCase(s) {
-  return s.split(" ").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
-}
-
-function renderProblemSolution(application) {
-  if (!application) return null;
-  const fields = Object.entries(application).filter(
-    ([k, v]) =>
-      typeof v === "string" &&
-      v.trim() !== "" &&
-      (k.startsWith("problem_") || k.startsWith("solution_")),
-  );
-  if (fields.length === 0) {
-    return (
-      <p style={{ color: "var(--ink-dim)", fontSize: 13 }}>
-        No problem or solution text on file.
-      </p>
-    );
-  }
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4, 16px)" }}>
-      {fields.map(([k, v]) => (
-        <div key={k}>
-          <div style={{
-            fontFamily: "var(--font-body)",
-            fontWeight: 700,
-            fontSize: 11,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: "var(--ink-dim)",
-            marginBottom: "var(--s-2, 8px)",
-          }}>
-            {titleCase(k.replace(/_/g, " "))}
-          </div>
-          <div style={{ fontSize: 14, lineHeight: 1.6, color: "var(--ink)" }}>
-            <ReadMoreText text={v} />
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -260,7 +217,7 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
             {loading && !application ? (
               <div className="inline-loading">Loading…</div>
             ) : (
-              renderProblemSolution(application)
+              <AiSections variant="leadership" sections={aiScreening?.sections} />
             )}
             </Collapsible>
 
