@@ -171,3 +171,43 @@ def test_serialize_vip_includes_sip_fields():
     }
     text = build_app_text(row, "sip")
     assert "TRL 6" in text and "₹40L ARR" in text
+
+
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from app.services.ai_pipeline import pipeline
+
+
+def _fake_client_with_row(row: dict) -> MagicMock:
+    client = MagicMock()
+    chain = MagicMock()
+    chain.select.return_value = chain
+    chain.eq.return_value = chain
+    chain.maybe_single.return_value = chain
+    chain.execute.return_value = SimpleNamespace(data=row)
+    client.table.return_value = chain
+    return client
+
+
+def test_run_for_application_assembles_scoreresult(monkeypatch):
+    row = {"id": "a1", "status": "submitted", "basic_org": "Acme",
+           "problem_describe": "P", "solution_describe": "S"}
+    client = _fake_client_with_row(row)
+
+    monkeypatch.setattr(pipeline, "_classify", lambda *a, **k: {
+        "project_name": "Acme robots", "industry_category_id": "robotics",
+        "industry_confidence": 0.9, "new_industry_proposal": None})
+    monkeypatch.setattr(pipeline, "_score", lambda *a, **k: ({
+        "problem_impact": {"score": 9.0}, "completeness": {"score": 8.5},
+        "technical_depth": {"score": 8.0}, "behavioural": {"score": 8.5},
+        "commitment": {"score": 9.0}}, ""))
+    monkeypatch.setattr(pipeline, "_summarize", lambda *a, **k: ("A summary.", ""))
+
+    result = pipeline.run_for_application("a1", "tir", client=client, no_cache=True)
+    assert result.score_problem == 9.0
+    assert result.score_solution == 8.5          # completeness -> score_solution field
+    assert result.score_founders == 8.5          # behavioural -> score_founders field
+    assert result.summary == "A summary."
+    assert result.project_name == "Acme robots"
+    assert result.score_overall == 8.6           # weighted, rounded (0.22/0.30/0.22/0.14/0.12)
