@@ -49,6 +49,8 @@ class CreateUserRequest(BaseModel):
     roles: list[str] = Field(..., min_length=1, max_length=6)
     send_invite: bool = Field(default=True)
     temp_password: str | None = Field(default=None, max_length=128)
+    expertise_domains: list[str] | None = Field(default=None)
+    batch_id: str | None = Field(default=None)
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────
@@ -214,6 +216,19 @@ async def create_user(
             for r in body.roles
         ]).execute()
         final_roles = list(body.roles)
+
+    # For reviewer invites, persist reviewer_profiles (expertise_domains + batch_id)
+    # so the roster immediately shows the reviewer's domains and batch membership.
+    if is_reviewer_invite:
+        try:
+            client.table("reviewer_profiles").upsert({
+                "reviewer_user_id": new_user_id,
+                "expertise_domains": body.expertise_domains or [],
+                "batch_id": body.batch_id,
+            }, on_conflict="reviewer_user_id").execute()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("reviewer invite: reviewer_profiles upsert failed",
+                        extra={"user_id": new_user_id, "err": str(exc)[:200]})
 
     credentials_emailed = False
     if is_reviewer_invite and body.send_invite:

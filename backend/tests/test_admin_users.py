@@ -1153,3 +1153,103 @@ def test_invite_rejects_weak_password(client, monkeypatch, _clear_overrides):
               "send_invite": True, "temp_password": "weak"})
     assert res.status_code == 400
     assert res.json()["detail"]["code"] == "weak_password"
+
+
+# ─── Fix 4: invite persists expertise_domains + batch_id ──────────────────
+
+
+class _TrackingQuery(_FakeQuery):
+    """_FakeQuery extension that records upsert payloads by table name."""
+
+    def __init__(self, client_ref, name: str, data=None):
+        super().__init__(data=data or [], count=0)
+        self._client_ref = client_ref
+        self._name = name
+
+    def upsert(self, payload, **_kw):
+        self._client_ref.upserts.append((self._name, payload))
+        return self
+
+    def execute(self):
+        return SimpleNamespace(data=self._data, count=len(self._data))
+
+
+class _TrackingAdminClient(_FakeAdminClient):
+    """Extends _FakeAdminClient to record upsert calls per table."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.upserts: list[tuple[str, Any]] = []
+
+    def table(self, name: str) -> _FakeQuery:
+        return _TrackingQuery(self, name, data=self._rows.get(name, []))
+
+
+def test_reviewer_invite_persists_expertise_domains_and_batch_id(
+    client, monkeypatch, _clear_overrides,
+):
+    """create_user with roles=[reviewer] + expertise_domains + batch_id must
+    upsert a reviewer_profiles row carrying those values."""
+    auth = _ConvertAuth()
+    fake = _TrackingAdminClient(
+        rows={"profiles": [], "user_roles": []}, auth=auth
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(admin_users_router, "get_email_service", lambda: _InviteEmailSpy())
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    batch_uuid = "b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1"
+    res = client.post(
+        "/admin/users",
+        headers={"Authorization": "Bearer test-token"},
+        json={
+            "email": "rev-domains@x.com",
+            "full_name": "Domains Rev",
+            "roles": ["reviewer"],
+            "send_invite": True,
+            "temp_password": "GoodPass1!xy",
+            "expertise_domains": ["Robotics", "AI"],
+            "batch_id": batch_uuid,
+        },
+    )
+    assert res.status_code == 201, res.text
+
+    rp_upserts = [p for (tbl, p) in fake.upserts if tbl == "reviewer_profiles"]
+    assert rp_upserts, "expected at least one reviewer_profiles upsert"
+    rp = rp_upserts[-1]
+    assert rp["expertise_domains"] == ["Robotics", "AI"]
+    assert rp["batch_id"] == batch_uuid
+    assert rp["reviewer_user_id"] == "u-new"
+
+
+def test_reviewer_invite_persists_empty_domains_when_omitted(
+    client, monkeypatch, _clear_overrides,
+):
+    """When expertise_domains is omitted, reviewer_profiles must be upserted
+    with an empty list (not None)."""
+    auth = _ConvertAuth()
+    fake = _TrackingAdminClient(
+        rows={"profiles": [], "user_roles": []}, auth=auth
+    )
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(admin_users_router, "get_email_service", lambda: _InviteEmailSpy())
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users",
+        headers={"Authorization": "Bearer test-token"},
+        json={
+            "email": "rev-nodom@x.com",
+            "full_name": "No Domains Rev",
+            "roles": ["reviewer"],
+            "send_invite": True,
+            "temp_password": "GoodPass1!xy",
+        },
+    )
+    assert res.status_code == 201, res.text
+
+    rp_upserts = [p for (tbl, p) in fake.upserts if tbl == "reviewer_profiles"]
+    assert rp_upserts, "expected reviewer_profiles upsert even with no domains"
+    rp = rp_upserts[-1]
+    assert rp["expertise_domains"] == []
+    assert rp["batch_id"] is None
