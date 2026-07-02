@@ -40,6 +40,7 @@ from .routers import (
     health,
     leadership,
     leadership_actions,
+    mentors,
     milestone_files,
     resume,
     reviewer,
@@ -168,6 +169,7 @@ app.include_router(ai_screening.router)
 app.include_router(leadership.router)
 app.include_router(leadership_actions.router)
 app.include_router(reviewer.router)
+app.include_router(mentors.router)
 
 log.info(
     "app ready",
