@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Complete your ARTPARK TIR application{% endblock %}
+{% block header_sublabel %}COMPLETE YOUR APPLICATION{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:600;line-height:1.3;">Dear {{ applicant_name }},</h1>
+
+<p style="margin:0 0 14px 0;">Thank you for applying to the <strong>ARTPARK Technology Innovation Residency (TIR)</strong>. In TIR we assess the <strong>founder</strong> as closely as the idea — your background and track record weigh as heavily as the problem you're solving.</p>
+
+<p style="margin:0 0 20px 0;">While reviewing your application we couldn't find your <strong>{{ missing_label }}</strong>. To let us evaluate your candidacy fully, please add {{ "it" if is_single else "them" }} within <strong>24 hours</strong> using your secure link below.</p>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px 0;">
+  <tr><td bgcolor="#3213b7" style="background-color:#3213b7;border-radius:4px;">
+    <a href="{{ link_url }}" style="display:inline-block;padding:12px 28px;font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">Upload now →</a>
+  </td></tr>
+</table>
+
+<p style="margin:0 0 8px 0;color:#4a4a45;font-size:13px;">Or paste this link into your browser:</p>
+<p style="margin:0 0 20px 0;font-size:13px;word-break:break-all;"><a href="{{ link_url }}" style="color:#3213b7;">{{ link_url }}</a></p>
+
+<p style="margin:0 0 0 0;color:#4a4a45;font-size:13px;">This link is unique to your application and stays valid for 72 hours. If you've already added this, you can safely ignore this email.</p>
+
+<p style="margin:24px 0 0 0;">— The ARTPARK TIR team</p>
+{% endblock %}

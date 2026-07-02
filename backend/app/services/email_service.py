@@ -210,6 +210,31 @@ class EmailService:
             text=text,
         )
 
+    def send_profile_completion_request(
+        self,
+        to: str,
+        applicant_name: str,
+        needs_resume: bool,
+        needs_linkedin: bool,
+        link_url: str,
+    ) -> dict[str, str]:
+        label = missing_label(needs_resume, needs_linkedin)
+        html, text = self._render_pair(
+            "profile_completion_request",
+            {
+                "applicant_name": applicant_name or "Applicant",
+                "missing_label": label,
+                "is_single": not (needs_resume and needs_linkedin),
+                "link_url": link_url,
+            },
+        )
+        return self.send_raw(
+            to=[to],
+            subject="Action needed — complete your ARTPARK TIR application",
+            html=html,
+            text=text,
+        )
+
     def send_support_ticket(
         self,
         ticket: dict[str, Any],
@@ -502,6 +527,14 @@ def _track_label(track: str | None) -> str:
     if not track:
         return ""
     return {"tir": "TIR", "sip": "SIP"}.get(track.lower(), track.upper())
+
+
+def missing_label(needs_resume: bool, needs_linkedin: bool) -> str:
+    if needs_resume and needs_linkedin:
+        return "résumé and LinkedIn profile"
+    if needs_resume:
+        return "résumé"
+    return "LinkedIn profile"
 
 
 def frontend_url(path: str) -> str:

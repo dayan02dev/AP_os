@@ -1,0 +1,11 @@
+Dear {{ applicant_name }},
+
+Thank you for applying to the ARTPARK Technology Innovation Residency (TIR). In TIR we assess the founder as closely as the idea — your background and track record weigh as heavily as the problem you're solving.
+
+While reviewing your application we couldn't find your {{ missing_label }}. To let us evaluate your candidacy fully, please add {{ "it" if is_single else "them" }} within 24 hours using your secure link below:
+
+{{ link_url }}
+
+This link is unique to your application and stays valid for 72 hours. If you've already added this, you can safely ignore this email.
+
+— The ARTPARK TIR team
