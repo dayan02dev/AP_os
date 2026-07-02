@@ -83,6 +83,12 @@ describe("adminPlatformApi seam", () => {
     expect(api.del).toHaveBeenCalledWith("/admin/platform/batches/b-1/reviewers/r-1");
   });
 
+  it("unassignBatch → POST /admin/platform/batches/unassign with items", () => {
+    const items = [{ track: "tir", application_id: "app-1" }];
+    adminPlatformApi.unassignBatch(items);
+    expect(api.post).toHaveBeenCalledWith("/admin/platform/batches/unassign", { items });
+  });
+
   it("getReviewers → GET /admin/platform/reviewers", () => {
     adminPlatformApi.getReviewers();
     expect(api.get).toHaveBeenCalledWith("/admin/platform/reviewers");
