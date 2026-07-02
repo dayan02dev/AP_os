@@ -42,6 +42,7 @@ from .routers import (
     leadership_actions,
     mentors,
     milestone_files,
+    profile_completion,
     resume,
     reviewer,
     sip_application_templates,
@@ -162,6 +163,7 @@ app.include_router(sip_application_templates.router)
 # Shared
 app.include_router(support.router)
 app.include_router(waitlist.router)
+app.include_router(profile_completion.router)
 app.include_router(admin.router)
 app.include_router(admin_platform.router)
 app.include_router(admin_users.router)
