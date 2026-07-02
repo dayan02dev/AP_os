@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { adaptPipelineRow, adaptStats, adaptDetail, STATUS_TO_CHIP, DECISION_TO_ADMIN,
-  adaptReviewer, adaptCalibrationRow, adaptAuditEntry, adaptBatch } from "../adminDataAdapter";
+  adaptReviewer, adaptCalibrationRow, adaptAuditEntry, adaptBatch,
+  CHIP_META, chipLabel, chipStatusId, chipTone, BUTTON_TO_DECISION } from "../adminDataAdapter";
 
 describe("adaptPipelineRow", () => {
   const row = {
@@ -145,6 +146,76 @@ describe("adaptPipelineRow reviewer score", () => {
   });
   it("treats a 0 score as a real score, not missing", () => {
     expect(adaptPipelineRow({ id: "a", reviewer_score: 0 }).rev).toEqual({ overall: 0 });
+  });
+});
+
+// ── Regression: an APPROVED application ("jury_review") must render as
+//    "Jury review" everywhere in the admin portal — NEVER "Interview".
+//    (Bug: the prototype screens re-labelled the "JURY REVIEW" chip as
+//    "Interview" in AdminPipeline.getFriendlyStatus and AdminDetail.)
+describe("chip status labelling — jury_review never renders as 'Interview'", () => {
+  it("Approve writes jury_review, which the adapter maps to the JURY REVIEW chip", () => {
+    expect(BUTTON_TO_DECISION.approve).toBe("jury_review");
+    expect(STATUS_TO_CHIP.jury_review).toBe("JURY REVIEW");
+    expect(STATUS_TO_CHIP.interview).toBe("JURY REVIEW"); // legacy status, same chip
+  });
+
+  it("labels the JURY REVIEW chip 'Jury review' (both jury_review and legacy interview)", () => {
+    const jury = adaptPipelineRow({ id: "a", status: "jury_review" });
+    const legacy = adaptPipelineRow({ id: "b", status: "interview" });
+    expect(jury.chip).toBe("JURY REVIEW");
+    expect(legacy.chip).toBe("JURY REVIEW");
+    expect(chipLabel(jury.chip)).toBe("Jury review");
+    expect(chipLabel(legacy.chip)).toBe("Jury review");
+  });
+
+  it("gives the jury chip a filter id ('jury_review') that the pipeline filter option matches", () => {
+    expect(chipStatusId("JURY REVIEW")).toBe("jury_review");
+  });
+
+  it("never labels ANY admin-portal chip 'Interview'", () => {
+    for (const chip of Object.values(STATUS_TO_CHIP)) {
+      expect(chipLabel(chip)).not.toBe("Interview");
+    }
+    for (const meta of Object.values(CHIP_META)) {
+      expect(meta.label).not.toBe("Interview");
+    }
+  });
+
+  it("preserves the prototype labels/ids/tones for every non-jury chip", () => {
+    expect(chipLabel("NEW")).toBe("Submitted");
+    expect(chipLabel("PROCESSING")).toBe("AI screening");
+    expect(chipLabel("IN REVIEW")).toBe("Under review");
+    expect(chipLabel("EVALUATED")).toBe("Evaluated");
+    expect(chipLabel("SHORTLISTED")).toBe("Shortlisted");
+    expect(chipLabel("ACCEPTED")).toBe("Offered");
+    expect(chipLabel("REJECTED")).toBe("Rejected");
+    expect(chipLabel("WAITLISTED")).toBe("Waitlisted");
+    expect(chipLabel("HOLD")).toBe("Hold");
+
+    expect(chipStatusId("NEW")).toBe("submitted");
+    expect(chipStatusId("PROCESSING")).toBe("ai-screening");
+    expect(chipStatusId("IN REVIEW")).toBe("under-review");
+    expect(chipStatusId("ACCEPTED")).toBe("offered");
+    expect(chipStatusId("REJECTED")).toBe("not-selected");
+    expect(chipStatusId("HOLD")).toBe("hold");
+
+    expect(chipTone("JURY REVIEW")).toBe("blue");
+    expect(chipTone("ACCEPTED")).toBe("green");
+    expect(chipTone("SHORTLISTED")).toBe("green");
+    expect(chipTone("EVALUATED")).toBe("purple");
+    expect(chipTone("IN REVIEW")).toBe("amber");
+    expect(chipTone("HOLD")).toBe("amber");
+    expect(chipTone("REJECTED")).toBe("red");
+    expect(chipTone("NEW")).toBe("");
+  });
+
+  it("falls back exactly like the prototype for missing/unknown chips", () => {
+    expect(chipLabel(undefined)).toBe("Submitted");
+    expect(chipStatusId(undefined)).toBe("submitted");
+    expect(chipTone(undefined)).toBe("");
+    expect(chipLabel("MYSTERY")).toBe("MYSTERY"); // getFriendlyStatus default: return c
+    expect(chipStatusId("MYSTERY")).toBe("submitted");
   });
 });
 

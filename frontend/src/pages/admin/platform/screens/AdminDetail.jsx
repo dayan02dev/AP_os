@@ -18,7 +18,7 @@ import React, { useState, useEffect, useCallback, useReducer, useMemo } from "re
 import { loadDetail, useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
-import { BUTTON_TO_DECISION } from "../../../../lib/adminDataAdapter";
+import { BUTTON_TO_DECISION, chipLabel } from "../../../../lib/adminDataAdapter";
 import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import AiSections from "../../../../components/AiSections.jsx";
 import { Chip } from "../shell/osAtoms";
@@ -225,7 +225,9 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
   }
   if (!s) return null;
 
-  const isUnderInterview = s.chip === 'JURY REVIEW';
+  // An APPROVED application sits at status jury_review (chip "JURY REVIEW").
+  // It must read "Jury review" here — never "Interview" (see adminDataAdapter).
+  const isInJuryReview = s.chip === 'JURY REVIEW';
   const aiData = s.ai || {};
 
   // ── Reviewer averages — computed from the REAL submitted reviews (s.reviews).
@@ -276,7 +278,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
           <h2 className="lp-section-title">
             {s.name}
             <span className="lp-muted"> · admin review</span>
-            {isUnderInterview && (
+            {isInJuryReview && (
               <span style={{
                 marginLeft: 12, fontSize: 10.5, fontWeight: 700,
                 letterSpacing: '0.06em', textTransform: 'uppercase',
@@ -285,7 +287,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
                 display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle',
               }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#9a6206', flexShrink: 0 }} />
-                Interview requested
+                {chipLabel(s.chip)}
               </span>
             )}
           </h2>
@@ -401,11 +403,11 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
                 {/* Jury Scorecard */}
                 <div className="os-card" style={{ marginTop: 24, padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
                   <PreviewBadge />
-                  {isUnderInterview && (
+                  {isInJuryReview && (
                     <div className="os-banner amber" style={{ borderRadius: 2 }}>
                       <div>
-                        <div className="os-banner-title" style={{ color: '#9a6206' }}>Interview requested</div>
-                        <div className="os-banner-text" style={{ fontSize: 13 }}>This application is under interview review process.</div>
+                        <div className="os-banner-title" style={{ color: '#9a6206' }}>{chipLabel(s.chip)}</div>
+                        <div className="os-banner-text" style={{ fontSize: 13 }}>This application has advanced to the jury round.</div>
                       </div>
                     </div>
                   )}

@@ -26,6 +26,7 @@ import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import { Chip } from "../ui.jsx";
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
 import { relabelDisplayId } from "../../../../lib/trackLabel.js";
+import { chipLabel, chipStatusId, chipTone } from "../../../../lib/adminDataAdapter";
 
 // Real industry chip counts from the loaded pipeline rows, scoped to the
 // selected track. Excludes hidden/archived rows and rows without an industry
@@ -44,50 +45,14 @@ export function industryCountsFor(rows, track) {
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
-// ─── Status/Chip helpers (mirrors prototype) ───────────────────────────────
+// ─── Status/Chip helpers ────────────────────────────────────────────────────
+// Thin adapters over the shared CHIP_META source of truth in adminDataAdapter.
+// Do NOT re-inline a private status→label map here: the "JURY REVIEW" chip once
+// drifted to "Interview" precisely because this screen kept its own copy.
 
-function getFriendlyStatus(s) {
-  if (!s.chip) return 'Submitted';
-  const c = s.chip.toUpperCase();
-  if (c === 'NEW') return 'Submitted';
-  if (c === 'PROCESSING') return 'AI screening';
-  if (c === 'IN REVIEW') return 'Under review';
-  if (c === 'EVALUATED') return 'Evaluated';
-  if (c === 'SHORTLISTED') return 'Shortlisted';
-  if (c === 'JURY REVIEW') return 'Interview';
-  if (c === 'ACCEPTED') return 'Offered';
-  if (c === 'REJECTED') return 'Rejected';
-  if (c === 'WAITLISTED') return 'Waitlisted';
-  if (c === 'HOLD') return 'Hold';
-  return c;
-}
-
-function getStatusId(s) {
-  if (!s.chip) return 'submitted';
-  const c = s.chip.toUpperCase();
-  if (c === 'NEW') return 'submitted';
-  if (c === 'PROCESSING') return 'ai-screening';
-  if (c === 'IN REVIEW') return 'under-review';
-  if (c === 'EVALUATED') return 'evaluated';
-  if (c === 'SHORTLISTED') return 'shortlisted';
-  if (c === 'JURY REVIEW') return 'jury_review';
-  if (c === 'ACCEPTED') return 'offered';
-  if (c === 'REJECTED') return 'not-selected';
-  if (c === 'WAITLISTED') return 'waitlisted';
-  if (c === 'HOLD') return 'hold';
-  return 'submitted';
-}
-
-function getChipTone(s) {
-  const c = s.chip ? s.chip.toUpperCase() : 'NEW';
-  if (c === 'ACCEPTED' || c === 'SHORTLISTED') return 'green';
-  if (c === 'JURY REVIEW') return 'blue';
-  if (c === 'EVALUATED') return 'purple';
-  if (c === 'IN REVIEW') return 'amber';
-  if (c === 'HOLD') return 'amber';
-  if (c === 'REJECTED') return 'red';
-  return '';
-}
+const getFriendlyStatus = (s) => chipLabel(s.chip);
+const getStatusId = (s) => chipStatusId(s.chip);
+const getChipTone = (s) => chipTone(s.chip);
 
 // ─── Filter data ────────────────────────────────────────────────────────────
 
@@ -97,7 +62,7 @@ const STATUSES = [
   { id: 'under-review', label: 'Under review', color: '#3213b7' },
   { id: 'evaluated', label: 'Evaluated', color: '#3213b7' },
   { id: 'shortlisted', label: 'Shortlisted', color: '#2a8f5a' },
-  { id: 'interview', label: 'Interview', color: '#2a8f5a' },
+  { id: 'jury_review', label: 'Jury review', color: '#2a8f5a' },
   { id: 'hold', label: 'Hold', color: '#b7a06a' },
   { id: 'offered', label: 'Offered', color: '#242424' },
   { id: 'onboarded', label: 'Onboarded', color: '#242424' },
