@@ -123,8 +123,11 @@ class Settings(BaseSettings):
 
     # Edit-after-submit window deadlines (ISO 8601, IST). After these, a
     # submitted application locks. Configurable so dates change without a deploy.
-    edit_deadline_tir: str = "2026-07-05T23:59:59+05:30"
-    edit_deadline_sip: str = "2026-07-05T23:59:59+05:30"
+    # Edit-after-submit window CLOSED for both tracks (2026-07-02): submitted
+    # applications are now frozen ahead of jury review. A past timestamp makes
+    # is_edit_open() return False for both TIR and VIP.
+    edit_deadline_tir: str = "2026-07-02T00:00:00+05:30"
+    edit_deadline_sip: str = "2026-07-02T00:00:00+05:30"
 
     # ── TIR intake close (reversible toggle) ────────────────────
     # When true, the TIR track is CLOSED to new intake:

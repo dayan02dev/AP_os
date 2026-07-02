@@ -16,8 +16,9 @@ def test_deadline_per_track(monkeypatch):
     assert edit_window.edit_deadline_for("sip").year == 2030
 
 
-def test_tir_edit_deadline_extended_to_match_sip():
-    """TIR edit window extended to the SIP deadline (2026-07-05)."""
+def test_edit_window_closed_for_both_tracks():
+    """Edit window is CLOSED for both TIR and VIP (deadline set to a past date)."""
     from app.config import settings
-    assert settings.edit_deadline_tir == "2026-07-05T23:59:59+05:30"
     assert settings.edit_deadline_tir == settings.edit_deadline_sip
+    assert edit_window.is_edit_open("tir") is False
+    assert edit_window.is_edit_open("sip") is False
