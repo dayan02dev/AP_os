@@ -1,0 +1,13 @@
+{% extends "base.txt" %}
+{% block content %}Mentor response received — reply to this email to contact the mentor.
+
+  name              : {{ mentor.name }}
+  email             : {{ mentor.email }}
+  willing to mentor : {% if response.willing %}Yes{% else %}No{% endif %}
+
+  days available    : {{ response.days_available or "—" }}
+  honorarium opt-in : {% if response.honorarium_opt_in %}Yes{% elif response.honorarium_opt_in is none %}—{% else %}No{% endif %}
+{% if response.bank_details_provided %}  bank details      : Bank details captured — view in admin/DB
+{% endif %}  future comms      : {% if response.future_comms_opt_in %}Yes{% elif response.future_comms_opt_in is none %}—{% else %}No{% endif %}
+{% if response.contact_email %}  contact email     : {{ response.contact_email }}
+{% endif %}{% endblock %}

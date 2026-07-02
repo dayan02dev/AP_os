@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Mentor response received — ARTPARK TIR{% endblock %}
+{% block header_sublabel %}MENTORSHIP{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 8px 0;font-size:20px;font-weight:600;">Mentor response received</h1>
+<p style="margin:0 0 18px 0;color:#4a4a45;font-size:13px;">Reply directly to this email to contact the mentor — their address is set as Reply-To.</p>
+
+<table role="presentation" cellpadding="8" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:13px;">
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;width:160px;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;vertical-align:top;">name</td>
+    <td style="border:1px solid #d7d1c2;">{{ mentor.name }}</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">email</td>
+    <td style="border:1px solid #d7d1c2;">{{ mentor.email }}</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">willing to mentor</td>
+    <td style="border:1px solid #d7d1c2;">{% if response.willing %}<strong style="color:#1a7a4a;">Yes</strong>{% else %}<strong style="color:#b00020;">No</strong>{% endif %}</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">days available</td>
+    <td style="border:1px solid #d7d1c2;">{{ response.days_available or "—" }}</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">honorarium opt-in</td>
+    <td style="border:1px solid #d7d1c2;">{% if response.honorarium_opt_in %}Yes{% elif response.honorarium_opt_in is none %}—{% else %}No{% endif %}</td>
+  </tr>
+  {% if response.bank_details_provided %}
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">bank details</td>
+    <td style="border:1px solid #d7d1c2;color:#4a4a45;">Bank details captured — view in admin/DB</td>
+  </tr>
+  {% endif %}
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">future comms</td>
+    <td style="border:1px solid #d7d1c2;">{% if response.future_comms_opt_in %}Yes{% elif response.future_comms_opt_in is none %}—{% else %}No{% endif %}</td>
+  </tr>
+  {% if response.contact_email %}
+  <tr>
+    <td style="border:1px solid #d7d1c2;background:#f4f1ea;font-family:'SFMono-Regular',Menlo,Consolas,monospace;color:#4a4a45;">contact email</td>
+    <td style="border:1px solid #d7d1c2;">{{ response.contact_email }}</td>
+  </tr>
+  {% endif %}
+</table>
+{% endblock %}

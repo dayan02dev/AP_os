@@ -1,0 +1,29 @@
+{% extends "base.txt" %}
+{% block content %}Hi {{ mentor_name }},
+
+I hope you are doing well.
+
+We are gearing up to scale the impact of our Technology Innovator in Residence (TIR) Program, and I am reaching out to see if you would be interested in partnering with us as mentors to guide and shape the next cohort of breakthroughs.
+
+WHAT IS THE TIR JOURNEY?
+
+The core mission of the TIR program is to engage and enable startups to run rapid prototyping experiments to fast-track and identify true product-market fit. Over an initial six-month cycle, our goal is to quickly filter for and distill exceptional founders who demonstrate absolute product and technology excellence.
+
+This is a rolling, high-rigor journey. Startups that do not demonstrate the necessary intellectual and fundamental grit will exit the cohort, making room for new innovations every six months.
+
+MENTORSHIP SCOPE & COMMITMENT
+
+To ensure this remains high-yield for the startups and entirely manageable for you, we have structured the commitment with a clear baseline and maximum flexibility:
+
+  - Time Commitment: a baseline of one day to guide a startup; more is optional, based on your availability.
+  - No Overburdening: we cap the allocation to a maximum of three startups per mentor.
+  - Active Selection: you will be directly involved in identifying and choosing the specific startups you commit to guiding.
+
+If you have a passion for de-risking deep-tech and want to play a foundational role in building these ventures from the ground up, we would love to have your expertise on board.
+
+Respond to the invitation:
+{{ form_url }}
+
+Best regards,
+ARTPARK TIR Team
+{% endblock %}
