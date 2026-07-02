@@ -445,6 +445,43 @@ async def assign_applications(
     }
 
 
+@router.post(
+    "/batches/unassign",
+    dependencies=[Depends(require_capability("manage_batches"))],
+)
+async def unassign_applications(
+    body: BatchAssign,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Remove applications from whatever batch they are in (unlink only).
+
+    Deletes each app's `application_batches` row. Reviewer assignments and
+    reviews are left untouched — consistent with `delete_batch` and cross-batch
+    moves (batch membership and scored work are decoupled). Idempotent: an app
+    that is already unbatched contributes 0 to `removed`.
+    """
+    sb = get_admin_client()
+    removed = 0
+    for item in body.items:
+        res = (
+            sb.table("application_batches")
+            .delete()
+            .eq("application_id", item.application_id)
+            .eq("application_track", item.track)
+            .execute()
+        )
+        removed += len(res.data or [])
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="batch_applications_unassigned",
+        target_table="application_batches",
+        target_id=None,
+        after={"removed": removed, "count": len(body.items)},
+    )
+    return {"removed": removed}
+
+
 class BatchReviewersBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reviewer_user_ids: list[str] = Field(..., min_length=1, max_length=50)

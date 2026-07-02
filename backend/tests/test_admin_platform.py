@@ -491,6 +491,54 @@ def test_batch_assign_unknown_batch_404(client, monkeypatch, _clear_overrides):
     assert r.json()["detail"]["code"] == "batch_not_found"
 
 
+def test_batch_unassign_removes_link_only(client, monkeypatch, _clear_overrides):
+    """POST /batches/unassign deletes the app's application_batches row but
+    leaves reviewer_assignments untouched (unlink-only semantics)."""
+    fake = _install_db(monkeypatch, {
+        "application_batches": [
+            {"application_id": "app-1", "application_track": "tir", "batch_id": "b1"},
+            {"application_id": "app-2", "application_track": "sip", "batch_id": "b1"},
+        ],
+        "reviewer_assignments": [
+            {"application_id": "app-1", "application_track": "tir",
+             "reviewer_user_id": "rev-1", "declined_at": None, "reassigned_to": None},
+        ],
+    })
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+
+    r = client.post("/admin/platform/batches/unassign",
+                    json={"items": [{"track": "tir", "application_id": "app-1"}]})
+    assert r.status_code == 200
+    assert r.json()["removed"] == 1
+    # app-1 link gone, app-2 link kept
+    links = fake.tables["application_batches"]
+    assert not any(l["application_id"] == "app-1" for l in links)
+    assert any(l["application_id"] == "app-2" for l in links)
+    # reviewer assignment untouched
+    assert len(fake.tables["reviewer_assignments"]) == 1
+
+
+def test_batch_unassign_is_idempotent(client, monkeypatch, _clear_overrides):
+    """Unassigning an app that is not in any batch removes 0 rows (no error)."""
+    _install_db(monkeypatch, {"application_batches": []})
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.post("/admin/platform/batches/unassign",
+                    json={"items": [{"track": "tir", "application_id": "ghost"}]})
+    assert r.status_code == 200
+    assert r.json()["removed"] == 0
+
+
+def test_batch_unassign_requires_capability(client, monkeypatch, _clear_overrides):
+    """A reviewer (no manage_batches) is refused."""
+    _install_db(monkeypatch, {"application_batches": []})
+    app.dependency_overrides[get_current_user] = _override_user("rev-1", roles=["reviewer"])
+    r = client.post("/admin/platform/batches/unassign",
+                    json={"items": [{"track": "tir", "application_id": "app-1"}]})
+    assert r.status_code == 403
+
+
 # ─── Task 11: Reviewer roster (metrics + profile patch + rebalance) ────────
 
 
