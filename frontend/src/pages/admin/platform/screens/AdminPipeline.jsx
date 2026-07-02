@@ -391,6 +391,21 @@ export function AdminPipeline({ goDetail, decisionMode }) {
   // assignBatch body shape: { items:[{track, application_id}] }
   const applyBatchToSelected = async (batchNameOrNew) => {
     if (busy || selectedRows.length === 0) return;
+    if (batchNameOrNew === 'Unassigned') {
+      setBusy(true);
+      setNote(null);
+      try {
+        const resp = await adminPlatformApi.unassignBatch(
+          selectedRows.map((r) => ({ track: r.track, application_id: r.id })),
+        );
+        await finishBulk({ kind: 'ok', text: `Removed ${resp?.removed ?? selectedRows.length} from their batch.` });
+      } catch (e) {
+        setNote({ kind: 'error', text: `Batch unassign failed: ${e?.message || e}` });
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     let targetBatchId = null;
     let targetBatchName = batchNameOrNew;
 
@@ -436,6 +451,18 @@ export function AdminPipeline({ goDetail, decisionMode }) {
 
   // Per-row batch dropdown change
   const changeIndividualBatch = async (startup, val) => {
+    if (val === 'Unassigned') {
+      try {
+        await adminPlatformApi.unassignBatch([
+          { track: startup.track, application_id: startup.id },
+        ]);
+        await reload();
+        setNote({ kind: 'ok', text: 'Removed from batch.' });
+      } catch (e) {
+        setNote({ kind: 'error', text: `Batch unassign failed: ${e?.message || e}` });
+      }
+      return;
+    }
     if (val === 'new') {
       const custom = window.prompt('Enter new batch name:');
       if (!custom) return;
