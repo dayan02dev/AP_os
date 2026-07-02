@@ -407,6 +407,55 @@ class EmailService:
             text=text,
         )
 
+    def send_mentor_invite(
+        self,
+        *,
+        to: str,
+        mentor_name: str,
+        form_url: str,
+        reply_to: str | None = None,
+    ) -> dict[str, str]:
+        """Branded invitation email to a prospective mentor with a CTA link."""
+        html, text = self._render_pair(
+            "mentor_invite",
+            {"mentor_name": mentor_name, "form_url": form_url},
+        )
+        return self.send_raw(
+            to=[to],
+            subject="Invitation: Mentor our next-generation deep-tech startups (ARTPARK TIR Program)",
+            html=html,
+            text=text,
+            reply_to=reply_to,
+        )
+
+    def send_mentor_response_notification(
+        self,
+        *,
+        to: list[str],
+        mentor: dict,
+        response: dict,
+        reply_to: str | None = None,
+    ) -> dict[str, str]:
+        """Notify staff that a mentor has responded to their invitation.
+
+        ``response`` must NOT contain raw bank account numbers or IFSC codes.
+        Pass ``bank_details_provided=True`` if bank details were submitted —
+        the template renders a safe placeholder instead of the raw numbers.
+        """
+        # Safety: strip any raw bank numbers before they reach the template.
+        safe_response = {k: v for k, v in response.items() if k != "bank_details"}
+        html, text = self._render_pair(
+            "mentor_response_notify",
+            {"mentor": mentor, "response": safe_response},
+        )
+        return self.send_raw(
+            to=to,
+            subject=f"Mentor response: {mentor.get('name', 'unknown')} — ARTPARK TIR",
+            html=html,
+            text=text,
+            reply_to=reply_to,
+        )
+
 
 # ── Copy helpers (module-level so tests can import + diff against them) ─
 
