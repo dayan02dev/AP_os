@@ -31,6 +31,7 @@ import SignInPage from "./pages/SignInPage.jsx";
 import SignUpPage from "./pages/SignUpPage.jsx";
 import SipAppRoute from "./pages/SipAppRoute.jsx";
 import SupportPage from "./pages/SupportPage.jsx";
+import MentorRespondForm from "./pages/MentorRespondForm.jsx";
 import TirAppGate from "./pages/TirAppGate.jsx";
 import VerifyPage from "./pages/VerifyPage.jsx";
 import AdminLayout from "./pages/admin/AdminLayout.jsx";
@@ -212,6 +213,7 @@ export default function AppRoutes() {
       <Route path="/apply-sip/signup" element={<SignUpPage />} />
       <Route path="/apply/verify" element={<VerifyPage />} />
       <Route path="/apply/support" element={<SupportPage />} />
+      <Route path="/mentors/respond/:token" element={<MentorRespondForm />} />
 
       {/* /apply itself is public — unauthed users see the welcome screen.
           ApplyRoleGate bounces signed-in admin/leadership accounts to their
