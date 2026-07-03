@@ -5445,7 +5445,6 @@ kbd {
 .eir-dash-app2026-right {
   display: flex;
   flex-direction: column;
-  gap: 18px;
 }
 
 /* Card heads (shared by left + right column) */
@@ -5551,26 +5550,32 @@ kbd {
 
 /* Application progress pipeline (right column) */
 .eir-dash-pipebox {
-  padding: 18px;
+  padding: 20px;
   border: 1px solid var(--line);
   border-radius: 4px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 .eir-dash-pipeline {
   list-style: none;
   padding: 0;
-  margin: 0;
+  margin: 10px 0 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 .eir-dash-pipe-step {
   display: grid;
   grid-template-columns: 22px 1fr;
   gap: 12px;
-  padding-bottom: 14px;
+  flex: 1;
+  min-height: 56px;
 }
-.eir-dash-pipe-step:last-child { padding-bottom: 0; }
 .eir-dash-pipe-node {
-  position: relative;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
 }
 .eir-dash-pipe-dot {
   width: 10px;
@@ -5578,17 +5583,14 @@ kbd {
   border-radius: 50%;
   border: 1.5px solid var(--line-strong);
   background: var(--bg);
-  margin-top: 8px;
+  margin-top: 6px;
+  flex: none;
   z-index: 1;
 }
 .eir-dash-pipe-line {
-  position: absolute;
-  top: 18px;
-  bottom: -14px;
-  left: 50%;
+  flex: 1;
   width: 1.5px;
   background: var(--line);
-  transform: translateX(-50%);
 }
 .eir-dash-pipe-step.is-reached .eir-dash-pipe-dot {
   background: var(--accent);
@@ -5617,6 +5619,42 @@ kbd {
 .eir-dash-pipe-step.is-reached .eir-dash-pipe-label { color: var(--ink); }
 .eir-dash-pipe-step.is-current .eir-dash-pipe-num,
 .eir-dash-pipe-step.is-reached .eir-dash-pipe-num { color: var(--ink); }
+
+/* Advanced — admin Approve → jury_review. Green current step (matches the
+   applicant "accepted" status colour) with an "Advanced" tag. */
+.eir-dash-pipe-step.is-advanced .eir-dash-pipe-dot {
+  background: #2a7a3a;
+  border-color: #2a7a3a;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #2a7a3a 18%, transparent);
+}
+.eir-dash-pipe-step.is-advanced .eir-dash-pipe-label { color: #2a7a3a; }
+
+/* Rejected — admin Reject → rejected (terminal). Red dot + struck-through
+   "Under review" text + a "Rejected" tag. */
+.eir-dash-pipe-step.is-rejected .eir-dash-pipe-dot {
+  background: var(--coral-strong);
+  border-color: var(--coral-strong);
+}
+.eir-dash-pipe-step.is-rejected .eir-dash-pipe-label { color: var(--coral-strong); font-weight: 600; }
+.eir-dash-pipe-step.is-rejected .eir-dash-pipe-num { color: var(--coral-strong); }
+.eir-dash-pipe-step.is-rejected .eir-dash-pipe-text {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+/* Advanced / Rejected pill tags shown after the step label. */
+.eir-dash-pipe-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+.eir-dash-pipe-tag.adv { background: #2a7a3a; }
+.eir-dash-pipe-tag.rej { background: var(--coral-strong); }
 .eir-dash-pipe-desc {
   margin: 4px 0 0 0;
   font-size: 12px;

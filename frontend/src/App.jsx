@@ -40,31 +40,7 @@ import { useResume } from "./hooks/useResume.js";
 import { useToast } from "./hooks/useToast.jsx";
 import { api } from "./lib/api.js";
 import { SECTION_ORDER, collapseFromRow } from "./lib/fieldMap.js";
-
-// Backend stores progression in the `status` column (see
-// backend/app/services/state_machine.py). The dashboard's pipeline UI
-// uses a 6-stage applicant-facing model. Map one to the other so a
-// leadership/admin status flip in Supabase drives the dashboard
-// automatically — no extra column needed.
-const STATUS_TO_MILESTONE = {
-  submitted:        "submitted",     // Stage 01 Application
-  ai_screening:     "submitted",
-  screening_failed: "submitted",
-  under_review:     "under_review",  // Stage 02 Under review
-  evaluated:        "under_review",
-  shortlisted:      "profile",       // Stage 03 Profile building — psychometry block lights up
-  interview:        "interview",     // Stage 05 Interviews
-  offered:          "onboarding",    // Stage 06 Onboarding
-  onboarded:        "onboarding",
-  // Terminal-ish: keep the dashboard meaningful by surfacing the closest
-  // active stage. Real "outcome" handling happens via getSubmissionProgress
-  // when sub.outcome is set, not via this map.
-  rejected:         "under_review",
-  waitlisted:       "under_review",
-  withdrawn:        "submitted",
-};
-const milestoneFromRow = (r) =>
-  r.current_milestone || STATUS_TO_MILESTONE[r.status] || "submitted";
+import { progressFromRow } from "./lib/applicantProgress.js";
 
 const PHASES = {
   WELCOME: "welcome",
@@ -850,7 +826,7 @@ export default function App() {
                       : Date.now(),
                     cycle: r.cycle || "TIR.2026",
                     projectTitle: r.solution_describe?.slice(0, 80) || "",
-                    currentMilestone: milestoneFromRow(r),
+                    ...progressFromRow(r),
                     feedback: r.reviewer_feedback || null,
                     answers: collapseFromRow(r),
                   }));
@@ -864,7 +840,7 @@ export default function App() {
                         : Date.now(),
                       cycle: r.cycle || "VIP.2026",
                       projectTitle: r.solution_describe?.slice(0, 80) || "",
-                      currentMilestone: milestoneFromRow(r),
+                      ...progressFromRow(r),
                       feedback: r.reviewer_feedback || null,
                       // SIP rows can't be opened from the TIR DoneScreen
                       // (different field shape); leave answers empty so the
@@ -884,7 +860,7 @@ export default function App() {
                       cycle: application.cycle || "TIR.2026",
                       projectTitle:
                         application.solution_describe?.slice(0, 80) || "",
-                      currentMilestone: milestoneFromRow(application),
+                      ...progressFromRow(application),
                       feedback: application.reviewer_feedback || null,
                       answers,
                     });

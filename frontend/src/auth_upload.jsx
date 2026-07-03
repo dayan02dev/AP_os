@@ -178,13 +178,14 @@ const MILESTONES = [
   { key: "submitted",    label: "Application",      short: "Application",      desc: "Form submitted and in the queue." },
   { key: "under_review", label: "Under review",     short: "Under review",     desc: "Cohort committee reading and discussing." },
   { key: "profile",      label: "Profile building", short: "Profile building", desc: "Psychometry + references requested from you." },
-  { key: "jury",         label: "Jury evaluation",  short: "Jury evaluation",  desc: "Independent jury reviews shortlisted profiles." },
+  { key: "jury",         label: "Jury review",      short: "Jury review",      desc: "Independent jury reviews shortlisted profiles." },
   { key: "interview",    label: "Interviews",       short: "Interviews",       desc: "Panel interview with ARTPARK + industry leads." },
   { key: "onboarding",   label: "Final onboarding", short: "Onboarding",       desc: "Outcome communicated and onboarding logistics sent." },
 ];
 
 // Terminal states that don't fit the linear pipeline
 const TERMINAL_OUTCOMES = {
+  rejected: { label: "Rejected", tone: "negative" },
   not_shortlisted: { label: "Not shortlisted this cycle", tone: "neutral" },
   withdrawn: { label: "Withdrawn by applicant", tone: "neutral" },
   accepted: { label: "Accepted — welcome to the cohort", tone: "positive" },
@@ -286,14 +287,7 @@ function SubmittedDashboard({ sub, displayName, onViewFull, justSubmitted, track
   // the trigger to show the statbox + per-stage task cards. Backend devs
   // flip this column to move an applicant forward.
   const currentKey = sub.currentMilestone || MS[progress.currentIdx]?.key;
-  const isActiveStage = ACTIVE_STAGES.includes(currentKey);
-  const stageCta = STAGE_CTAS[currentKey] || null;
   const stageTasks = STAGE_TASKS[currentKey] || [];
-
-  // Status pill tone (drives the colour of the CURRENT STATUS chip).
-  const toneClass = progress.isTerminal
-    ? `eir-ret-status-${progress.outcomeKey}`
-    : `eir-ret-status-${currentKey}`;
 
   const A = sub.answers || {};
   const idTag = formatRefId(sub.id, track);
@@ -439,27 +433,6 @@ function SubmittedDashboard({ sub, displayName, onViewFull, justSubmitted, track
               or later). Pre-profile the box is suppressed so the dashboard
               stays quiet while reviewers are still reading. */}
           <div className="eir-dash-app2026-right">
-            {isActiveStage && (
-              <div className="eir-dash-statbox">
-                <div className="eir-mono eir-dash-card-eyebrow">Current status</div>
-                <div className={`eir-dash-statbox-val eir-ret-status ${toneClass}`}>
-                  {statusLabel}
-                </div>
-                <div className="eir-mono eir-dim eir-dash-statbox-meta">
-                  Last update {lastUpdate}
-                </div>
-                {stageCta && (
-                  <button
-                    type="button"
-                    className="eir-dash-statbox-cta"
-                    onClick={() => onViewFull(sub)}
-                  >
-                    {stageCta.label}
-                  </button>
-                )}
-              </div>
-            )}
-
             <div className="eir-dash-pipebox">
               <header className="eir-dash-card-head">
                 <span className="eir-mono eir-dash-card-eyebrow">Application progress</span>
@@ -469,7 +442,18 @@ function SubmittedDashboard({ sub, displayName, onViewFull, justSubmitted, track
                 {MS.map((m, mi) => {
                   const reached = mi < progress.currentIdx;
                   const isCurrent = !progress.isTerminal && mi === progress.currentIdx;
-                  const cls = isCurrent ? "is-current" : reached ? "is-reached" : "is-upcoming";
+                  const isRejected =
+                    progress.isTerminal &&
+                    progress.outcomeKey === "rejected" &&
+                    mi === progress.currentIdx;
+                  const isAdvanced = isCurrent && currentKey === "jury";
+                  const cls = isRejected
+                    ? "is-rejected"
+                    : isCurrent
+                    ? `is-current${isAdvanced ? " is-advanced" : ""}`
+                    : reached
+                    ? "is-reached"
+                    : "is-upcoming";
                   return (
                     <li key={m.key} className={`eir-dash-pipe-step ${cls}`}>
                       <span className="eir-dash-pipe-node">
@@ -479,7 +463,9 @@ function SubmittedDashboard({ sub, displayName, onViewFull, justSubmitted, track
                       <div>
                         <div className="eir-dash-pipe-label">
                           <span className="eir-mono eir-dash-pipe-num">{String(mi + 1).padStart(2, "0")}</span>
-                          <span>{m.short}</span>
+                          <span className="eir-dash-pipe-text">{m.short}</span>
+                          {isAdvanced && <span className="eir-dash-pipe-tag adv">Advanced</span>}
+                          {isRejected && <span className="eir-dash-pipe-tag rej">Rejected</span>}
                         </div>
                         {isCurrent && (
                           <div className="eir-dash-pipe-desc">{m.desc}</div>
