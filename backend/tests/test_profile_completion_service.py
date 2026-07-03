@@ -66,3 +66,24 @@ def test_compute_needs():
     assert svc.compute_needs({"resume_file_id":None,"linkedin_url":""})==(True,True)
     assert svc.compute_needs({"resume_file_id":"x","linkedin_url":"  "})==(False,True)
     assert svc.compute_needs({"resume_file_id":"x","linkedin_url":"http://li"})==(False,False)
+
+
+def test_find_cohort_excludes_rejected_and_withdrawn():
+    seeded = [
+        {"id":"a","user_id":"u","status":"under_review","resume_file_id":None,"linkedin_url":None,"submitted_at":"t","display_seq":1,"basic_full_name":"A"},
+        {"id":"b","user_id":"u","status":"rejected","resume_file_id":None,"linkedin_url":None,"submitted_at":"t","display_seq":2,"basic_full_name":"B"},
+        {"id":"c","user_id":"u","status":"withdrawn","resume_file_id":None,"linkedin_url":None,"submitted_at":"t","display_seq":3,"basic_full_name":"C"},
+        {"id":"d","user_id":"u","status":"under_review","resume_file_id":"x","linkedin_url":"http://li","submitted_at":"t","display_seq":4,"basic_full_name":"D"},
+    ]
+    class _Q:
+        def select(self,*a,**k): return self
+        @property
+        def not_(self): return self
+        def is_(self,*a,**k): return self
+        def execute(self): return type("R",(),{"data": seeded})()
+    class _C:
+        def table(self,n): return _Q()
+    out = svc.find_cohort(_C())
+    # b(rejected)+c(withdrawn) excluded by status; d excluded (has both) → only a
+    assert [r["id"] for r in out] == ["a"]
+    assert out[0]["needs_resume"] is True and out[0]["needs_linkedin"] is True

@@ -59,8 +59,22 @@ export default function ProfileCompletionPage() {
 
       {state.needs_resume && (
         <div style={{ margin: "16px 0" }}>
-          <label htmlFor="resume" style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>Upload résumé (PDF/DOCX)</label>
-          <input id="resume" type="file" accept=".pdf,.doc,.docx" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>Upload résumé (PDF/DOCX)</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <label htmlFor="resume" style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              background: "#fff", color: "#3213b7", border: "1.5px solid #3213b7",
+              padding: "9px 18px", borderRadius: 8, cursor: "pointer",
+              fontSize: 14, fontWeight: 600, lineHeight: 1,
+            }}>
+              <span aria-hidden="true">↑</span>{file ? "Change file" : "Choose file"}
+            </label>
+            <input id="resume" type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }}
+              onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            <span style={{ fontSize: 13, color: file ? "#242424" : "#8a8a92" }}>
+              {file ? file.name : "No file chosen"}
+            </span>
+          </div>
         </div>
       )}
       {state.needs_linkedin && (

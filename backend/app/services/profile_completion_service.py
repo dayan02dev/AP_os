@@ -133,18 +133,25 @@ def store_submission(
     return saved
 
 
+# Applicants no longer in consideration — never nudged to complete a profile.
+_EXCLUDED_STATUSES = {"rejected", "withdrawn"}
+
+
 def find_cohort(client: Any, *, limit: int | None = None) -> list[dict]:
     """Submitted TIR apps missing résumé and/or LinkedIn, with needs flags +
-    the fields needed to email them. Filters/needs computed in Python."""
+    the fields needed to email them. Excludes rejected/withdrawn applicants.
+    Filters/needs computed in Python."""
     rows = (
         client.table("tir_applications")
-        .select("id,user_id,basic_full_name,display_seq,resume_file_id,linkedin_url,submitted_at")
+        .select("id,user_id,basic_full_name,display_seq,resume_file_id,linkedin_url,submitted_at,status")
         .not_.is_("submitted_at", "null")
         .execute()
         .data
     ) or []
     out = []
     for r in rows:
+        if r.get("status") in _EXCLUDED_STATUSES:
+            continue
         nr, nl = compute_needs(r)
         if nr or nl:
             out.append({**r, "needs_resume": nr, "needs_linkedin": nl})
