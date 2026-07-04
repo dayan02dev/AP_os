@@ -1159,7 +1159,7 @@ def test_invite_rejects_weak_password(client, monkeypatch, _clear_overrides):
 
 
 class _TrackingQuery(_FakeQuery):
-    """_FakeQuery extension that records upsert payloads by table name."""
+    """_FakeQuery extension that records upsert + insert payloads by table name."""
 
     def __init__(self, client_ref, name: str, data=None):
         super().__init__(data=data or [], count=0)
@@ -1170,16 +1170,21 @@ class _TrackingQuery(_FakeQuery):
         self._client_ref.upserts.append((self._name, payload))
         return self
 
+    def insert(self, payload, **_kw):
+        self._client_ref.inserts.append((self._name, payload))
+        return self
+
     def execute(self):
         return SimpleNamespace(data=self._data, count=len(self._data))
 
 
 class _TrackingAdminClient(_FakeAdminClient):
-    """Extends _FakeAdminClient to record upsert calls per table."""
+    """Extends _FakeAdminClient to record upsert + insert calls per table."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.upserts: list[tuple[str, Any]] = []
+        self.inserts: list[tuple[str, Any]] = []
 
     def table(self, name: str) -> _FakeQuery:
         return _TrackingQuery(self, name, data=self._rows.get(name, []))
@@ -1188,17 +1193,21 @@ class _TrackingAdminClient(_FakeAdminClient):
 def test_reviewer_invite_persists_expertise_domains_and_batch_id(
     client, monkeypatch, _clear_overrides,
 ):
-    """create_user with roles=[reviewer] + expertise_domains + batch_id must
-    upsert a reviewer_profiles row carrying those values."""
+    """create_user with roles=[reviewer] + expertise_domains + a REAL batch_id
+    upserts a reviewer_profiles row carrying the domains and the batch pointer."""
     auth = _ConvertAuth()
+    batch_uuid = "b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1"
     fake = _TrackingAdminClient(
-        rows={"profiles": [], "user_roles": []}, auth=auth
+        rows={
+            "profiles": [], "user_roles": [],
+            "batches": [{"id": batch_uuid, "name": "Batch A"}],
+        },
+        auth=auth,
     )
     monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
     monkeypatch.setattr(admin_users_router, "get_email_service", lambda: _InviteEmailSpy())
     app.dependency_overrides[get_current_user] = _override_user(["admin"])
 
-    batch_uuid = "b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1"
     res = client.post(
         "/admin/users",
         headers={"Authorization": "Bearer test-token"},
@@ -1252,4 +1261,97 @@ def test_reviewer_invite_persists_empty_domains_when_omitted(
     assert rp_upserts, "expected reviewer_profiles upsert even with no domains"
     rp = rp_upserts[-1]
     assert rp["expertise_domains"] == []
-    assert rp["batch_id"] is None
+    # No batch requested → batch_id is omitted from the upsert entirely.
+    assert rp.get("batch_id") is None
+
+
+def test_reviewer_invite_unknown_batch_still_persists_domains(
+    client, monkeypatch, _clear_overrides,
+):
+    """Regression for the prod bug: the invite modal sent a batch *name* into the
+    `batch_id` uuid column, so the combined upsert threw and BOTH domain + batch
+    were lost (roster showed "—"). The batch now must resolve to a real batches
+    row; an unknown/invalid batch is ignored and the domains still persist."""
+    auth = _ConvertAuth()
+    # No batches seeded → any batch_id fails to resolve.
+    fake = _TrackingAdminClient(rows={"profiles": [], "user_roles": []}, auth=auth)
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(admin_users_router, "get_email_service", lambda: _InviteEmailSpy())
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users",
+        headers={"Authorization": "Bearer test-token"},
+        json={
+            "email": "rev-badbatch@x.com",
+            "full_name": "Bad Batch Rev",
+            "roles": ["reviewer"],
+            "send_invite": True,
+            "temp_password": "GoodPass1!xy",
+            "expertise_domains": ["Robotics"],
+            "batch_id": "Batch A",  # a NAME, not a uuid — the historical bug
+        },
+    )
+    assert res.status_code == 201, res.text
+
+    rp_upserts = [p for (tbl, p) in fake.upserts if tbl == "reviewer_profiles"]
+    assert rp_upserts, "domains must still be upserted even when the batch is bad"
+    rp = rp_upserts[-1]
+    assert rp["expertise_domains"] == ["Robotics"]   # domains survived
+    assert rp.get("batch_id") is None                # invalid batch dropped
+    # No assignment rows should have been created for an unresolved batch.
+    assert not [p for (tbl, p) in fake.inserts if tbl == "reviewer_assignments"]
+
+
+def test_reviewer_invite_valid_batch_assigns_apps_without_assignment_email(
+    client, monkeypatch, _clear_overrides,
+):
+    """A real batch assignment fans out reviewer_assignments for every app in the
+    batch (so the roster shows 'N of Batch X'), and does NOT send the separate
+    reviewer-assigned email — the invite credentials email already went out."""
+    auth = _ConvertAuth()
+    batch_uuid = "b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2"
+    fake = _TrackingAdminClient(
+        rows={
+            "profiles": [], "user_roles": [],
+            "batches": [{"id": batch_uuid, "name": "Batch A"}],
+            "application_batches": [
+                {"application_id": "app-1", "application_track": "tir", "batch_id": batch_uuid},
+                {"application_id": "app-2", "application_track": "sip", "batch_id": batch_uuid},
+            ],
+            "reviewer_assignments": [],
+        },
+        auth=auth,
+    )
+    spy = _InviteEmailSpy()
+    monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(admin_users_router, "get_email_service", lambda: spy)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    res = client.post(
+        "/admin/users",
+        headers={"Authorization": "Bearer test-token"},
+        json={
+            "email": "rev-batch@x.com",
+            "full_name": "Batch Rev",
+            "roles": ["reviewer"],
+            "send_invite": True,
+            "temp_password": "GoodPass1!xy",
+            "expertise_domains": ["AI"],
+            "batch_id": batch_uuid,
+        },
+    )
+    assert res.status_code == 201, res.text
+
+    # One reviewer_assignments insert carrying a row per app in the batch.
+    ra_inserts = [p for (tbl, p) in fake.inserts if tbl == "reviewer_assignments"]
+    assert ra_inserts, "expected reviewer_assignments to be created for the batch"
+    created = [row for payload in ra_inserts
+               for row in (payload if isinstance(payload, list) else [payload])]
+    assigned_apps = {(r["application_id"], r["application_track"]) for r in created}
+    assert assigned_apps == {("app-1", "tir"), ("app-2", "sip")}
+    assert all(r["reviewer_user_id"] == "u-new" for r in created)
+
+    # The invite credentials email is sent; NO reviewer-assigned email exists in
+    # this flow (create_user never imports notify_reviewers_assigned).
+    assert len(spy.calls) == 1  # exactly the invite credentials email

@@ -1020,6 +1020,80 @@ def bulk_assign_reviewer_apps(
     return {"results": results}
 
 
+def assign_reviewers_to_batch(
+    sb: Any,
+    batch_id: str,
+    reviewer_user_ids: list[str],
+    *,
+    assigned_by: str,
+) -> dict[str, Any]:
+    """Create one reviewer_assignment per (app in batch × reviewer), skipping any
+    ``(application_id, application_track, reviewer_user_id)`` triple that already
+    exists.
+
+    Pure data operation: it does NOT send the reviewer-assigned email and does
+    NOT write an audit row — the caller owns those side effects. This is shared
+    by the admin batch-assign endpoint (which emails + audits) and the
+    reviewer-invite flow (which suppresses the assignment email, since the
+    invite credentials email already went out).
+
+    Returns ``{"created", "reviewers", "applications", "created_rows"}`` so the
+    caller can decide whether to notify on the newly-created rows.
+    """
+    # Apps in this batch. `.eq()` narrows on real PostgREST; the fake test client
+    # no-ops `.eq()` for non-PK selects, so re-filter in Python on batch_id.
+    link_rows = (
+        sb.table("application_batches")
+        .select("application_id,application_track,batch_id")
+        .eq("batch_id", batch_id)
+        .execute()
+        .data
+    ) or []
+    apps = [
+        (r["application_id"], r["application_track"])
+        for r in link_rows
+        if r.get("batch_id") == batch_id and r.get("application_id") and r.get("application_track")
+    ]
+
+    reviewer_ids = list(dict.fromkeys(reviewer_user_ids))  # dedupe, keep order
+
+    # Existing assignments for these apps × reviewers, so we skip duplicates.
+    # Bulk-fetch then filter in Python (fake `.in_()` no-ops).
+    app_keys = set(apps)
+    reviewer_id_set = set(reviewer_ids)
+    existing_pairs: set[tuple[str, str, str]] = set()
+    for a in (sb.table("reviewer_assignments").select("*").execute().data) or []:
+        key = (a.get("application_id"), a.get("application_track"))
+        rid = a.get("reviewer_user_id")
+        if key in app_keys and rid in reviewer_id_set:
+            existing_pairs.add((a.get("application_id"), a.get("application_track"), rid))
+
+    now = datetime.now(UTC).isoformat()
+    rows = [
+        {
+            "application_id": aid,
+            "application_track": track,
+            "reviewer_user_id": rid,
+            "assigned_by": assigned_by,
+            "assigned_at": now,
+            "state": "pending",
+            "due_at": None,
+        }
+        for (aid, track) in apps
+        for rid in reviewer_ids
+        if (aid, track, rid) not in existing_pairs
+    ]
+    if rows:
+        sb.table("reviewer_assignments").insert(rows).execute()
+
+    return {
+        "created": len(rows),
+        "reviewers": len(reviewer_ids),
+        "applications": len(apps),
+        "created_rows": rows,
+    }
+
+
 def bulk_remove_reviewer_apps(
     user_id: str, items: list[dict[str, Any]],
 ) -> dict[str, Any]:

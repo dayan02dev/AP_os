@@ -511,52 +511,14 @@ async def assign_batch_reviewers(
             detail={"code": "batch_not_found"},
         )
 
-    # Apps in this batch. `.eq()` narrows on real PostgREST; the fake no-ops
-    # `.eq()` for non-PK selects, so re-filter in Python on batch_id.
-    link_rows = (
-        sb.table("application_batches")
-        .select("application_id,application_track,batch_id")
-        .eq("batch_id", batch_id)
-        .execute()
-        .data
-    ) or []
-    apps = [
-        (r["application_id"], r["application_track"])
-        for r in link_rows
-        if r.get("batch_id") == batch_id and r.get("application_id") and r.get("application_track")
-    ]
-
-    reviewer_ids = list(dict.fromkeys(body.reviewer_user_ids))  # dedupe, keep order
-
-    # Existing assignments for these apps × reviewers, so we skip duplicates.
-    # Bulk-fetch all assignments then filter in Python (fake `.in_()` no-ops).
-    app_keys = set(apps)
-    existing_pairs: set[tuple[str, str, str]] = set()
-    for a in (sb.table("reviewer_assignments").select("*").execute().data) or []:
-        key = (a.get("application_id"), a.get("application_track"))
-        rid = a.get("reviewer_user_id")
-        if key in app_keys and rid in set(reviewer_ids):
-            existing_pairs.add((a.get("application_id"), a.get("application_track"), rid))
-
-    now = datetime.now(UTC).isoformat()
-    rows = [
-        {
-            "application_id": aid,
-            "application_track": track,
-            "reviewer_user_id": rid,
-            "assigned_by": user["user_id"],
-            "assigned_at": now,
-            "state": "pending",
-            "due_at": None,
-        }
-        for (aid, track) in apps
-        for rid in reviewer_ids
-        if (aid, track, rid) not in existing_pairs
-    ]
-    if rows:
-        sb.table("reviewer_assignments").insert(rows).execute()
-        notify_reviewers_assigned(sb, rows)
-    created = len(rows)
+    # Row-creation is shared with the reviewer-invite flow (admin_query); this
+    # endpoint additionally emails the newly-assigned reviewers and audits.
+    result = admin_query.assign_reviewers_to_batch(
+        sb, batch_id, body.reviewer_user_ids, assigned_by=user["user_id"],
+    )
+    if result["created_rows"]:
+        notify_reviewers_assigned(sb, result["created_rows"])
+    created = result["created"]
 
     write_audit(
         actor_user_id=user["user_id"],
@@ -566,14 +528,14 @@ async def assign_batch_reviewers(
         target_id=batch_id,
         after={
             "created": created,
-            "reviewers": len(reviewer_ids),
-            "applications": len(apps),
+            "reviewers": result["reviewers"],
+            "applications": result["applications"],
         },
     )
     return {
         "created": created,
-        "reviewers": len(reviewer_ids),
-        "applications": len(apps),
+        "reviewers": result["reviewers"],
+        "applications": result["applications"],
     }
 
 

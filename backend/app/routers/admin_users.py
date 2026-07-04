@@ -21,6 +21,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from ..deps import get_current_user
 from ..rbac import ROLE_CAPABILITIES, require_capability
+from ..services import admin_query
 from ..services.audit import write_audit
 from ..services.email_service import (
     EmailDeliveryError,
@@ -217,18 +218,56 @@ async def create_user(
         ]).execute()
         final_roles = list(body.roles)
 
-    # For reviewer invites, persist reviewer_profiles (expertise_domains + batch_id)
-    # so the roster immediately shows the reviewer's domains and batch membership.
+    # For reviewer invites, persist the roster profile (expertise domains +
+    # primary batch). The domains are written on their OWN upsert so a bad or
+    # stale batch reference can never take them down with it: batch_id is a
+    # `uuid` column, and a combined upsert carrying a non-uuid batch value (the
+    # invite modal historically sent a batch *name*) raised and rolled the WHOLE
+    # row back — the roster then showed "—" for domain AND no batch. We only
+    # write batch_id once it resolves to a real batch, and when it does we also
+    # assign the reviewer to that batch's applications so the roster reflects the
+    # assignment. No assignment email is sent — the invite credentials email
+    # already covers it (product decision 2026-07-05).
     if is_reviewer_invite:
+        valid_batch_id: str | None = None
+        if body.batch_id:
+            try:
+                if (
+                    client.table("batches").select("id")
+                    .eq("id", body.batch_id).limit(1).execute().data
+                ):
+                    valid_batch_id = body.batch_id
+                else:
+                    log.warning("reviewer invite: unknown batch_id ignored",
+                                extra={"user_id": new_user_id, "batch_id": body.batch_id})
+            except Exception as exc:  # noqa: BLE001
+                log.warning("reviewer invite: batch lookup failed",
+                            extra={"batch_id": body.batch_id, "err": str(exc)[:200]})
+
+        profile_row = {
+            "reviewer_user_id": new_user_id,
+            "expertise_domains": body.expertise_domains or [],
+        }
+        if valid_batch_id:
+            profile_row["batch_id"] = valid_batch_id
         try:
-            client.table("reviewer_profiles").upsert({
-                "reviewer_user_id": new_user_id,
-                "expertise_domains": body.expertise_domains or [],
-                "batch_id": body.batch_id,
-            }, on_conflict="reviewer_user_id").execute()
+            client.table("reviewer_profiles").upsert(
+                profile_row, on_conflict="reviewer_user_id",
+            ).execute()
         except Exception as exc:  # noqa: BLE001
             log.warning("reviewer invite: reviewer_profiles upsert failed",
                         extra={"user_id": new_user_id, "err": str(exc)[:200]})
+
+        if valid_batch_id:
+            try:
+                admin_query.assign_reviewers_to_batch(
+                    client, valid_batch_id, [new_user_id],
+                    assigned_by=current_user["user_id"],
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("reviewer invite: batch assignment failed",
+                            extra={"user_id": new_user_id,
+                                   "batch_id": valid_batch_id, "err": str(exc)[:200]})
 
     credentials_emailed = False
     if is_reviewer_invite and body.send_invite:

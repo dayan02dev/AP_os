@@ -338,4 +338,39 @@ describe("InviteModal — sends temp_password to createUser", () => {
       expect(call.temp_password.length).toBeGreaterThan(0);
     });
   });
+
+  it("sends the selected batch's ID (not its name) as batch_id", async () => {
+    // Regression: the modal used to send the batch NAME into batch_id (a uuid
+    // column), so the backend upsert threw and both domain + batch were lost.
+    useAdminData.mockImplementation((kind) => {
+      if (kind === "batches")
+        return { data: { batches: [{ id: "bid-A", name: "Batch A" }] }, loading: false, error: null, reload: vi.fn() };
+      return { data: { reviewers: SAMPLE_REVIEWERS }, loading: false, error: null, reload: vi.fn() };
+    });
+    render(<AdminReviewers decisionMode="reviewer" />);
+    fireEvent.click(screen.getByText("Invite member"));
+
+    const inputs = screen.getAllByRole("textbox");
+    const nameInput = inputs.find(i => i.placeholder && /Vikram/i.test(i.placeholder));
+    const emailInput = inputs.find(i => i.placeholder && /example/i.test(i.placeholder));
+    fireEvent.change(nameInput, { target: { value: "Batch Rev" } });
+    fireEvent.change(emailInput, { target: { value: "batch@example.in" } });
+
+    // The invite modal's batch <select> is the one offering "None (Unassigned)".
+    const batchSelect = screen.getAllByRole("combobox").find(
+      s => Array.from(s.options || []).some(o => o.textContent === "None (Unassigned)")
+    );
+    expect(batchSelect).toBeTruthy();
+    // Its option value is the batch ID, not the name.
+    expect(Array.from(batchSelect.options).some(o => o.value === "bid-A")).toBe(true);
+    fireEvent.change(batchSelect, { target: { value: "bid-A" } });
+
+    fireEvent.click(screen.getByText("Send Invite"));
+
+    await waitFor(() => {
+      expect(adminApi.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ batch_id: "bid-A", expertise_domains: expect.any(Array) })
+      );
+    });
+  });
 });

@@ -250,7 +250,7 @@ function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
 
 // ─── Invite modal ────────────────────────────────────────────────────────────
 
-function InviteModal({ allBatches, isJury, onClose, onInvited }) {
+function InviteModal({ batchOptions = [], isJury, onClose, onInvited }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [invDomain, setInvDomain] = useState('');
@@ -349,7 +349,7 @@ function InviteModal({ allBatches, isJury, onClose, onInvited }) {
                 <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>Initial Batch Assignment</label>
                 <select className="os-select os-w-100" value={invBatch} onChange={e => setInvBatch(e.target.value)}>
                   <option value="">None (Unassigned)</option>
-                  {allBatches.map(b => <option key={b} value={b}>{b}</option>)}
+                  {batchOptions.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
               <div>
@@ -645,7 +645,7 @@ export function AdminReviewers({ decisionMode }) {
         )}
         {showInvite && (
           <InviteModal
-            allBatches={allBatches}
+            batchOptions={batchList}
             isJury={true}
             onClose={() => setShowInvite(false)}
             onInvited={() => setShowInvite(false)}
@@ -835,7 +835,7 @@ export function AdminReviewers({ decisionMode }) {
       {/* Invite modal */}
       {showInvite && (
         <InviteModal
-          allBatches={allBatches}
+          batchOptions={batchList}
           isJury={false}
           onClose={() => setShowInvite(false)}
           onInvited={() => { setShowInvite(false); reload(); }}
