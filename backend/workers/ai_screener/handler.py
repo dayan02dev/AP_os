@@ -20,6 +20,7 @@ import logging
 from typing import Any
 
 from app.services.ai_pipeline import pipeline
+from app.services.founder_check import run as founder_check_run
 from app.supabase_client import get_admin_client
 
 log = logging.getLogger(__name__)
@@ -57,6 +58,15 @@ def _process_record(record: dict) -> None:
         client, application_id, application_track, result, advance_status=True,
     )
     log.info("Screened application_id=%s overall=%.1f", application_id, result.score_overall)
+
+    # Founder check (TIR only, best-effort): reads the résumé and writes
+    # ai_screening.founder_check. Never fails the SQS record.
+    if application_track == "tir":
+        try:
+            founder_check_run.run_and_persist(client, application_id, application_track)
+        except Exception:
+            log.warning("founder_check failed (best-effort) for application_id=%s",
+                        application_id, exc_info=True)
 
 
 def lambda_handler(event: dict, context: Any) -> dict:
