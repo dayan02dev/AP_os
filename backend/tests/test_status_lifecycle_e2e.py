@@ -261,3 +261,58 @@ def test_A5_admin_approve_sets_jury_review(client, monkeypatch, _clear, track):
     assert dec and dec[0]["decision"] == "jury_review" and dec[0]["application_id"] == app_id
     # applicant email hook fired for jury_review
     assert any(c.get("decision") == "jury_review" for c in ctx.calls["decision_email"])
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_B1_B2_two_reviewers_only_flips_on_last(client, monkeypatch, _clear, track):
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
+    ctx = install_fake_db(monkeypatch, fake)
+    d = LifecycleDriver(client, ctx, track, app_id)
+
+    d.submit(); d.run_ai(); d.assign([REVIEWER, REVIEWER2])
+
+    d.submit_review(REVIEWER)               # 1 of 2
+    assert d.status() == "under_review"     # B1: not all complete
+    d.submit_review(REVIEWER2)              # 2 of 2
+    assert d.status() == "evaluated"        # B2: last one flips it
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_B3_draft_review_does_not_flip(client, monkeypatch, _clear, track):
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
+    ctx = install_fake_db(monkeypatch, fake)
+    d = LifecycleDriver(client, ctx, track, app_id)
+
+    d.submit(); d.run_ai(); d.assign([REVIEWER])
+    d.submit_review(REVIEWER, draft=True)
+    assert d.status() == "under_review"     # draft ≠ completion
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_B4_auto_transition_noop_when_not_under_review(client, monkeypatch, _clear, track):
+    from app.services import state_machine
+    app_id = f"app-{track}"
+    fake = FakeSupabase({
+        f"{track}_applications": [{"id": app_id, "user_id": APPLICANT, "status": "evaluated"}],
+        "reviewer_assignments": [
+            {"id": "as1", "application_id": app_id, "application_track": track,
+             "reviewer_user_id": REVIEWER, "completed_at": "2026-07-01T00:00:00Z"}],
+    })
+    install_fake_db(monkeypatch, fake)
+    fired = state_machine.auto_transition_to_evaluated_if_complete(app_id, track)
+    assert fired is False
+    assert fake.status_of(track, app_id) == "evaluated"  # unchanged
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_B5_auto_transition_noop_with_no_assignments(client, monkeypatch, _clear, track):
+    from app.services import state_machine
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [
+        {"id": app_id, "user_id": APPLICANT, "status": "under_review"}]})
+    install_fake_db(monkeypatch, fake)
+    fired = state_machine.auto_transition_to_evaluated_if_complete(app_id, track)
+    assert fired is False
+    assert fake.status_of(track, app_id) == "under_review"
