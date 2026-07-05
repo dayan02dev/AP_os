@@ -242,7 +242,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     """Admin pipeline list across both tracks with admin-portal joins.
 
     `filters` keys (all optional):
-        track, status, industry, decision, batch_id, search,
+        track, status, exclude_status, industry, decision, batch_id, search,
         include_hidden (bool), include_archived (bool)
 
     Hidden and archived apps are excluded by default; pass include_hidden /
