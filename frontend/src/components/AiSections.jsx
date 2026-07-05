@@ -6,6 +6,7 @@ const SECTION_DEFS = [
   ["solution", "Solution Description"],
   ["moats", "Moats & Technology Edge"],
   ["watchouts", "Watch-outs or Flags"],
+  ["founder", "Founder Check"],
 ];
 
 function normalize(sections) {

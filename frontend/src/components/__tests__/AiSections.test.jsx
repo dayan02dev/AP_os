@@ -36,3 +36,24 @@ describe("AiSections", () => {
     expect(screen.getByText(/not generated yet/i)).toBeInTheDocument();
   });
 });
+
+test("renders a Founder Check block when sections.founder is present", () => {
+  render(
+    <AiSections
+      variant="leadership"
+      sections={{
+        problem: ["p1"],
+        founder: ["Verdict: EXCEPTIONAL (HIGH confidence)", "Top signals: a, b"],
+      }}
+    />
+  );
+  expect(screen.getByText("Founder Check")).toBeInTheDocument();
+  expect(
+    screen.getByText("Verdict: EXCEPTIONAL (HIGH confidence)")
+  ).toBeInTheDocument();
+});
+
+test("no Founder Check block when sections.founder is absent", () => {
+  render(<AiSections variant="leadership" sections={{ problem: ["p1"] }} />);
+  expect(screen.queryByText("Founder Check")).not.toBeInTheDocument();
+});
