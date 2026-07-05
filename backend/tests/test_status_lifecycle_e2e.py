@@ -112,6 +112,11 @@ class LifecycleDriver:
         assert r.status_code in (200, 201), r.text
         return r
 
+    def run_ai(self):
+        # Simulate the SQS worker: the real persist() does the submitted->under_review write.
+        from app.services.ai_pipeline import pipeline
+        pipeline.persist(self.ctx.fake, self.app_id, self.track, _canned_score(), advance_status=True)
+
 
 def _seed_draft(track: str, app_id: str) -> dict:
     """Minimal draft row the submit path can flip. _fetch_application looks up
@@ -131,3 +136,19 @@ def test_A1_submit_sets_submitted(client, monkeypatch, _clear, track):
 
     assert d.status() == "submitted"
     assert ctx.published == [(app_id, track)]  # enqueued for AI screening
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_A2_ai_screening_sets_under_review(client, monkeypatch, _clear, track):
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
+    ctx = install_fake_db(monkeypatch, fake)
+    d = LifecycleDriver(client, ctx, track, app_id)
+
+    d.submit()
+    assert d.status() == "submitted"
+    d.run_ai()
+    assert d.status() == "under_review"
+    # ai_screening row was written for this app+track.
+    scr = fake.table("ai_screening").select("*").eq("application_id", app_id).eq("application_track", track).execute().data
+    assert scr and scr[0]["score_overall"] == 5.0
