@@ -241,3 +241,23 @@ def test_A6_full_happy_path_chain(client, monkeypatch, _clear, track):
     d.submit_review(REVIEWER); assert d.status() == "evaluated"
     r = d.decide("jury_review"); assert r.status_code == 200, r.text
     assert d.status() == "jury_review"
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_A5_admin_approve_sets_jury_review(client, monkeypatch, _clear, track):
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
+    ctx = install_fake_db(monkeypatch, fake)
+    d = LifecycleDriver(client, ctx, track, app_id)
+
+    d.submit(); d.run_ai(); d.assign([REVIEWER]); d.submit_review(REVIEWER)
+    assert d.status() == "evaluated"
+
+    r = d.decide("jury_review")
+    assert r.status_code == 200, r.text
+    assert d.status() == "jury_review"
+    # admin_decisions row written (gate1)
+    dec = fake.tables["admin_decisions"]
+    assert dec and dec[0]["decision"] == "jury_review" and dec[0]["application_id"] == app_id
+    # applicant email hook fired for jury_review
+    assert any(c.get("decision") == "jury_review" for c in ctx.calls["decision_email"])
