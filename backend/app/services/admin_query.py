@@ -309,6 +309,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     # 3. Post-fetch filters (hidden/archived/decision/batch/industry/search).
     include_hidden = bool(filters.get("include_hidden"))
     include_archived = bool(filters.get("include_archived"))
+    exclude_status = filters.get("exclude_status")
     want_decision = filters.get("decision")
     want_batch = filters.get("batch_id")
     want_industry = filters.get("industry")
@@ -323,6 +324,8 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
         if is_hidden and not include_hidden:
             continue
         if is_archived and not include_archived:
+            continue
+        if exclude_status and r.get("status") == exclude_status:
             continue
 
         dec_row = decisions.get(key)

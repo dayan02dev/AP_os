@@ -1399,3 +1399,44 @@ def test_roster_last_activity_fallback_to_assigned_at(client, monkeypatch, _clea
     rev = {x["user_id"]: x for x in r.json()["reviewers"]}["rev-2"]
     assert rev["lastActivity"] is not None, "lastActivity should fall back to assigned_at"
     assert rev["lastActivity"] == "2026-06-22T08:00:00Z"
+
+
+# ─── Rejected Applications tab: exclude_status filter ──────────────────
+
+
+def test_pipeline_exclude_status_drops_rejected(client, monkeypatch, _clear_overrides):
+    """?exclude_status=rejected omits rejected rows; total reflects the exclusion."""
+    tables = _empty_admin_tables()
+    tables["tir_applications"] = [
+        {"id": "a-ev", "status": "evaluated", "display_seq": 26001,
+         "basic_full_name": "Ev", "basic_email": "e@x.com", "basic_org": "OrgE",
+         "submitted_at": "2026-06-01T00:00:00Z"},
+        {"id": "a-rej", "status": "rejected", "display_seq": 26002,
+         "basic_full_name": "Rej", "basic_email": "r@x.com", "basic_org": "OrgR",
+         "submitted_at": "2026-06-02T00:00:00Z"},
+    ]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.get("/admin/platform/applications?exclude_status=rejected")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert [a["id"] for a in body["applications"]] == ["a-ev"]
+    assert body["total"] == 1
+
+
+def test_pipeline_status_rejected_returns_only_rejected(client, monkeypatch, _clear_overrides):
+    """?status=rejected returns only rejected rows (the Rejected tab's fetch)."""
+    tables = _empty_admin_tables()
+    tables["tir_applications"] = [
+        {"id": "a-ev", "status": "evaluated", "display_seq": 26001,
+         "basic_full_name": "Ev", "basic_email": "e@x.com", "basic_org": "OrgE",
+         "submitted_at": "2026-06-01T00:00:00Z"},
+        {"id": "a-rej", "status": "rejected", "display_seq": 26002,
+         "basic_full_name": "Rej", "basic_email": "r@x.com", "basic_org": "OrgR",
+         "submitted_at": "2026-06-02T00:00:00Z"},
+    ]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+    r = client.get("/admin/platform/applications?status=rejected")
+    assert r.status_code == 200, r.text
+    assert [a["id"] for a in r.json()["applications"]] == ["a-rej"]

@@ -47,6 +47,7 @@ router = APIRouter(prefix="/admin/platform", tags=["admin-platform"])
 async def list_pipeline(
     track: str | None = None,
     status: str | None = None,
+    exclude_status: str | None = None,
     industry: str | None = None,
     decision: str | None = None,
     batch_id: str | None = None,
@@ -59,6 +60,7 @@ async def list_pipeline(
     return admin_query.fetch_pipeline({
         "track":            track,
         "status":           status,
+        "exclude_status":    exclude_status,
         "industry":         industry,
         "decision":         decision,
         "batch_id":         batch_id,
