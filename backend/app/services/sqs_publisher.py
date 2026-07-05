@@ -81,3 +81,40 @@ def publish(application_id: str, application_track: str) -> None:
             "succeeds, admin can re-trigger from the dashboard",
             application_id,
         )
+
+
+def publish_founder_check(application_id: str, application_track: str) -> None:
+    """Enqueue a founder-check-only job (a résumé arrived for an already-submitted
+    app, e.g. via the profile-completion link). The worker runs ONLY the
+    founder-check, not a full re-screen. Never raises; no-op if the queue is unset.
+    """
+    queue_url = os.getenv(_QUEUE_URL_ENV, "").strip()
+    if not queue_url:
+        log.debug(
+            "%s unset — skipping founder-check enqueue for application_id=%s",
+            _QUEUE_URL_ENV, application_id,
+        )
+        return
+
+    payload = json.dumps({
+        "application_id": application_id,
+        "application_track": application_track,
+        "job": "founder_check",
+    })
+
+    try:
+        _sqs_client().send_message(
+            QueueUrl=queue_url,
+            MessageBody=payload,
+            MessageGroupId=application_id,
+        )
+        log.info(
+            "Enqueued founder-check for application_id=%s track=%s",
+            application_id, application_track,
+        )
+    except Exception:
+        log.exception(
+            "Failed to enqueue founder-check for application_id=%s — recoverable "
+            "(admin can re-run the backfill)",
+            application_id,
+        )
