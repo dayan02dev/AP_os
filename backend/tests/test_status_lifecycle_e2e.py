@@ -391,3 +391,54 @@ def test_D3_illegal_rewind_is_422_and_status_unchanged(client, monkeypatch, _cle
     # HTTPException 422 illegal_transition
     assert getattr(exc.value, "status_code", None) == 422
     assert fake.status_of(track, app_id) == "evaluated"  # unchanged
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_E1_ai_on_non_submitted_row_is_idempotent(client, monkeypatch, _clear, track):
+    """The worker skips non-submitted rows (its own idempotency guard). The
+    real module path (from backend/, pythonpath=".") is `workers.ai_screener.handler`
+    — NOT `app.workers.ai_screener.handler` (there is no `app/workers` package).
+    `handler.py` imports `get_admin_client` directly, so patching
+    `handler.get_admin_client` is what `_process_record` actually reads."""
+    from workers.ai_screener import handler
+
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [
+        {"id": app_id, "user_id": APPLICANT, "status": "evaluated"}]})
+    install_fake_db(monkeypatch, fake)
+    monkeypatch.setattr(handler, "get_admin_client", lambda: fake, raising=False)
+
+    handler._process_record({"body": {"application_id": app_id, "application_track": track}})
+
+    assert fake.status_of(track, app_id) == "evaluated"  # unchanged; not re-screened
+
+
+def test_F1_F2_track_parity_and_correct_table(client, monkeypatch, _clear):
+    """Same action sequence yields the same status at each hop for both tracks,
+    and writes land in the correct per-track table only."""
+    seq_status = {}
+    for track in ("tir", "sip"):
+        app_id = f"app-{track}"
+        other = "sip" if track == "tir" else "tir"
+        fake = FakeSupabase({
+            f"{track}_applications": [_seed_draft(track, app_id)],
+            f"{other}_applications": [],
+        })
+        ctx = install_fake_db(monkeypatch, fake)
+        d = LifecycleDriver(client, ctx, track, app_id)
+
+        hops = []
+        d.submit(); hops.append(d.status())
+        d.run_ai(); hops.append(d.status())
+        d.assign([REVIEWER]); hops.append(d.status())
+        d.submit_review(REVIEWER); hops.append(d.status())
+        d.decide("jury_review"); hops.append(d.status())
+        seq_status[track] = hops
+
+        # F2: the other track's table was never written.
+        assert fake.tables[f"{other}_applications"] == []
+        app.dependency_overrides.clear()
+
+    # F1: identical status sequence for both tracks.
+    assert seq_status["tir"] == seq_status["sip"] == [
+        "submitted", "under_review", "under_review", "evaluated", "jury_review"]
