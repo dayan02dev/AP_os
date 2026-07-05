@@ -114,8 +114,8 @@ function downloadCsv(rows) {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function AdminPipeline({ goDetail, decisionMode }) {
-  const { data, loading, error, reload } = useAdminData("pipeline", {});
+export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnly = false, heading }) {
+  const { data, loading, error, reload } = useAdminData("pipeline", baseFilter);
   const S = data?.startups || [];
 
   // Also fetch batches for the batch dropdown / assign action
@@ -791,7 +791,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 24 }}>
         <div>
           <div className="dash-section-tag">A-2 · PIPELINE</div>
-          <div className="dash-card-title" style={{ fontFamily: 'var(--font-serif)' }}>All <em>applications</em></div>
+          <div className="dash-card-title" style={{ fontFamily: 'var(--font-serif)' }}>{heading || <>All <em>applications</em></>}</div>
           <div style={{ color: 'var(--ink-dim)', fontFamily: 'var(--font-sans)', fontSize: 13, marginTop: 4 }}>
             Layer 1–4 unified view. Filter, sort, batch-action.
           </div>
@@ -982,13 +982,15 @@ export function AdminPipeline({ goDetail, decisionMode }) {
       <table className="os-table">
         <thead>
           <tr>
-            <th style={{ width: 40 }}>
-              <input
-                type="checkbox"
-                checked={selectedIds.length === filtered.length && filtered.length > 0}
-                onChange={toggleAll}
-              />
-            </th>
+            {!readOnly && (
+              <th style={{ width: 40 }}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.length === filtered.length && filtered.length > 0}
+                  onChange={toggleAll}
+                />
+              </th>
+            )}
             {renderHeader('PROJECT', 'name')}
             {renderHeader('FOUNDER', 'founder')}
             {renderHeader('INDUSTRY', 'domain')}
@@ -1010,13 +1012,15 @@ export function AdminPipeline({ goDetail, decisionMode }) {
                 style={{ cursor: 'pointer', opacity: isHidden ? 0.45 : 1 }}
                 onClick={() => goDetail && goDetail(s.id, s.track)}
               >
-                <td onClick={e => e.stopPropagation()} style={{ width: 40 }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(s.id)}
-                    onChange={() => toggleSelect(s.id)}
-                  />
-                </td>
+                {!readOnly && (
+                  <td onClick={e => e.stopPropagation()} style={{ width: 40 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(s.id)}
+                      onChange={() => toggleSelect(s.id)}
+                    />
+                  </td>
+                )}
                 <td style={{ fontWeight: 600 }}>
                   {s.name}
                   {isHidden && <span className="os-chip red" style={{ fontSize: 9, padding: '1px 4px', marginLeft: 6 }}>HIDDEN</span>}
@@ -1076,6 +1080,8 @@ export function AdminPipeline({ goDetail, decisionMode }) {
                         )}
                       </div>
                     </div>
+                  ) : readOnly ? (
+                    <span className="os-text-sm">{s.batch || 'Unassigned'}</span>
                   ) : (
                     <select
                       className="os-select sm"
@@ -1099,7 +1105,7 @@ export function AdminPipeline({ goDetail, decisionMode }) {
         </tbody>
       </table>
 
-      {selectedIds.length > 0 && (
+      {!readOnly && selectedIds.length > 0 && (
         <div className="os-floating-bar">
           <style dangerouslySetInnerHTML={{__html: `
             @keyframes slideDown {
