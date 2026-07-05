@@ -16,6 +16,7 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../hooks/useAuth.jsx";
 import { useAdminData } from "../../../hooks/useAdminData";
+import { pipelineBadges } from "../../../lib/adminBadges";
 import "../../../styles/admin-portal.css";
 import { AdminDashboard } from "./screens/AdminDashboard";
 import { AdminPipeline } from "./screens/AdminPipeline";
@@ -249,7 +250,7 @@ function AdminCohortHeader({ page, setPage, decisionMode, setDecisionMode }) {
   );
 }
 
-function AdminTabBar({ page, setPage, decisionMode, appsBadge, reviewBadge }) {
+function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBadge, reviewBadge }) {
   // Badges come from real /stats data (passed down from AdminApp). A null
   // badge renders as no badge at all (see render below) — we never show a
   // fabricated number.
@@ -262,6 +263,7 @@ function AdminTabBar({ page, setPage, decisionMode, appsBadge, reviewBadge }) {
       badge:null
     },
     { id:'pipeline',     label:'Applications', sub:'ALL SUBMISSIONS',            badge: appsBadge == null ? null : String(appsBadge) },
+    { id:'rejected',     label:'Rejected Applications', sub:'REJECTED BY ADMIN', badge: rejectedBadge == null ? null : String(rejectedBadge) },
     {
       id:'gate1',
       label: decisionMode === 'jury' ? 'Final Gate' : 'Admin Review',
@@ -300,7 +302,7 @@ function AdminApp() {
   // Real tab-badge counts from /stats. While loading (or if the field is
   // absent) we pass null so NO badge shows rather than a fabricated number.
   const { data: statsData, loading: statsLoading } = useAdminData('stats');
-  const appsBadge = statsLoading ? null : (statsData?.totals?.apps_submitted ?? null);
+  const { appsBadge, rejectedBadge } = pipelineBadges(statsData, statsLoading);
   // "Admin Review" = apps evaluated by reviewers and awaiting an admin decision.
   const evaluatedEntry = (statsData?.statusCounts || []).find(s => s.id === 'evaluated');
   const reviewBadge = statsLoading ? null : (evaluatedEntry ? evaluatedEntry.n : null);
@@ -368,12 +370,14 @@ function AdminApp() {
               setPage={setPage}
               decisionMode={decisionMode}
               appsBadge={appsBadge}
+              rejectedBadge={rejectedBadge}
               reviewBadge={reviewBadge}
             />
           )}
           <div className="lp-tab-content">
             {page === 'dashboard'   && <AdminDashboard go={setPage} decisionMode={decisionMode} />}
-            {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} />}
+            {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ exclude_status: 'rejected' }} />}
+            {page === 'rejected'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ status: 'rejected' }} readOnly heading="Rejected applications" />}
             {page === 'detail'      && (
               <AdminDetail
                 startupId={selectedStartupId}
