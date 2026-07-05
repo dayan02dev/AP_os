@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..rbac import require_capability
 from ..services import admin_query, applications_query, industry_categories, stats
+from ..services.founder_check.render import merge_sections as _merge_founder_sections
 from ..supabase_client import get_admin_client
 
 log = logging.getLogger(__name__)
@@ -352,6 +353,13 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
                 industry_obj = {"id": ind_id, "label": res.data[0]["label"]}
         except Exception:
             industry_obj = {"id": ind_id, "label": ind_id}
+
+    if ai_screening is not None:
+        ai_screening = {
+            **ai_screening,
+            "sections": _merge_founder_sections(
+                ai_screening.get("sections"), ai_screening.get("founder_check")),
+        }
 
     return {
         "id":                   application_id,

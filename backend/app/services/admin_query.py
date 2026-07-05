@@ -27,6 +27,7 @@ from typing import Any
 
 from ..supabase_client import get_admin_client
 from . import applications_query, reviewer_query, stats
+from .founder_check.render import merge_sections as _merge_founder_sections
 
 log = logging.getLogger(__name__)
 
@@ -461,7 +462,9 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
         "stage":                _stage_label(app_row_with_track),
         "application":          app_row,
         "ai_screening":         ai_screening,
-        "aiSections":           (ai_screening or {}).get("sections"),
+        "aiSections":           _merge_founder_sections(
+                                    (ai_screening or {}).get("sections"),
+                                    (ai_screening or {}).get("founder_check")),
         "reviews":              reviews,
         "reviewer_assignments": reviewer_assignments,
         "status_history":       status_history,

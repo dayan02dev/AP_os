@@ -31,6 +31,7 @@ from ..rbac import require_capability
 from ..services import applications_query, review_presenter, reviewer_query, state_machine
 from ..services import rubric as rubric_service
 from ..services.audit import write_audit
+from ..services.founder_check.render import merge_sections as _merge_founder_sections
 from ..supabase_client import get_admin_client
 
 log = logging.getLogger(__name__)
@@ -102,7 +103,7 @@ async def get_application_content(
         "name": ai.get("project_name") or app_row.get("basic_org")
                 or app_row.get("basic_full_name") or "—",
         "aiSummary": ai.get("summary"),
-        "aiSections": ai.get("sections"),
+        "aiSections": _merge_founder_sections(ai.get("sections"), ai.get("founder_check")),
         "ai": reviewer_query._ai_block(payload.get("ai_screening")),
         "fields": review_presenter.build_fields(app_row, field_map),
         "sections": review_presenter.build_sections(app_row, track),
