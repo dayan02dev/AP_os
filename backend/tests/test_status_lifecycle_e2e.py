@@ -349,3 +349,45 @@ def test_C4_reject_without_rationale_is_422_and_status_unchanged(client, monkeyp
     r = d.decide("rejected", rationale="")
     assert r.status_code == 422
     assert d.status() == "evaluated"  # unchanged
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_D1_approve_directly_from_under_review(client, monkeypatch, _clear, track):
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
+    ctx = install_fake_db(monkeypatch, fake)
+    d = LifecycleDriver(client, ctx, track, app_id)
+
+    d.submit(); d.run_ai()
+    assert d.status() == "under_review"       # no reviews at all
+    r = d.decide("jury_review")
+    assert r.status_code == 200, r.text
+    assert d.status() == "jury_review"        # skipped evaluated
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_D2_reject_directly_from_submitted(client, monkeypatch, _clear, track):
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
+    ctx = install_fake_db(monkeypatch, fake)
+    d = LifecycleDriver(client, ctx, track, app_id)
+
+    d.submit()
+    assert d.status() == "submitted"
+    r = d.decide("rejected", rationale="out of scope")
+    assert r.status_code == 200, r.text
+    assert d.status() == "rejected"
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_D3_illegal_rewind_is_422_and_status_unchanged(client, monkeypatch, _clear, track):
+    from app.services import state_machine
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [
+        {"id": app_id, "user_id": APPLICANT, "status": "evaluated"}]})
+    install_fake_db(monkeypatch, fake)
+    with pytest.raises(Exception) as exc:
+        state_machine.apply_status_change(app_id, track, to_status="submitted", changed_by=ADMIN)
+    # HTTPException 422 illegal_transition
+    assert getattr(exc.value, "status_code", None) == 422
+    assert fake.status_of(track, app_id) == "evaluated"  # unchanged
