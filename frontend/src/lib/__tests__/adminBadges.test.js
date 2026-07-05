@@ -15,4 +15,11 @@ describe("pipelineBadges", () => {
     const stats = { totals: { apps_submitted: 10 }, statusCounts: [{ id: "evaluated", n: 3 }] };
     expect(pipelineBadges(stats, false)).toEqual({ appsBadge: 10, rejectedBadge: 0 });
   });
+  it("returns nulls when stats data is unavailable (load failure, not loading)", () => {
+    expect(pipelineBadges(null, false)).toEqual({ appsBadge: null, rejectedBadge: null });
+  });
+  it("clamps the Applications badge at 0 when rejected exceeds submitted", () => {
+    const stats = { totals: { apps_submitted: 5 }, statusCounts: [{ id: "rejected", n: 20 }] };
+    expect(pipelineBadges(stats, false)).toEqual({ appsBadge: 0, rejectedBadge: 20 });
+  });
 });

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("../../../../hooks/useAdminData", () => ({
@@ -32,9 +32,12 @@ import AdminPortalDefault from "../AdminPortal";
 
 describe("AdminPortal — Rejected Applications tab", () => {
   it("renders the 5th tab with the rejected count and a reduced Applications count", () => {
-    render(<AdminPortalDefault />);
+    const { container } = render(<AdminPortalDefault />);
     expect(screen.getByText("Rejected Applications")).toBeTruthy();
-    expect(screen.getByText("88")).toBeTruthy();  // apps badge = 100 - 12
-    expect(screen.getByText("12")).toBeTruthy();  // rejected badge
+    // Scope the badge numbers to the tab bar so they don't couple to any
+    // incidental "88"/"12" that might appear elsewhere in the shell.
+    const tabs = within(container.querySelector(".lp-tabs"));
+    expect(tabs.getByText("88")).toBeTruthy();  // apps badge = 100 - 12
+    expect(tabs.getByText("12")).toBeTruthy();  // rejected badge
   });
 });
