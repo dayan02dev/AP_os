@@ -10,6 +10,7 @@ venv/
 dist/
 build/
 .DS_Store
+.founder_check_cache/
 # Environment files - NEVER commit
 .env
 .env.*
