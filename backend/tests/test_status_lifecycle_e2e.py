@@ -316,3 +316,36 @@ def test_B5_auto_transition_noop_with_no_assignments(client, monkeypatch, _clear
     fired = state_machine.auto_transition_to_evaluated_if_complete(app_id, track)
     assert fired is False
     assert fake.status_of(track, app_id) == "under_review"
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+@pytest.mark.parametrize("decision,expected", [
+    ("rejected", "rejected"), ("on_hold", "on_hold"), ("waitlisted", "waitlisted"),
+])
+def test_C1_C2_C3_decision_branches(client, monkeypatch, _clear, track, decision, expected):
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
+    ctx = install_fake_db(monkeypatch, fake)
+    d = LifecycleDriver(client, ctx, track, app_id)
+
+    d.submit(); d.run_ai(); d.assign([REVIEWER]); d.submit_review(REVIEWER)
+    assert d.status() == "evaluated"
+
+    r = d.decide(decision, rationale="because")
+    assert r.status_code == 200, r.text
+    assert d.status() == expected
+    if decision == "rejected":
+        assert any(c.get("decision") == "rejected" for c in ctx.calls["decision_email"])
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_C4_reject_without_rationale_is_422_and_status_unchanged(client, monkeypatch, _clear, track):
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
+    ctx = install_fake_db(monkeypatch, fake)
+    d = LifecycleDriver(client, ctx, track, app_id)
+
+    d.submit(); d.run_ai(); d.assign([REVIEWER]); d.submit_review(REVIEWER)
+    r = d.decide("rejected", rationale="")
+    assert r.status_code == 422
+    assert d.status() == "evaluated"  # unchanged
