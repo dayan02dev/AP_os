@@ -57,11 +57,12 @@ def install_fake_db(monkeypatch, fake: FakeSupabase):
     from app.routers import reviewer as rv
     from app.routers import admin_platform as ap
     from app.routers import leadership_actions as la
-    from app.services import reviewer_query, state_machine, decisions
+    from app.services import applications_query, reviewer_query, state_machine, decisions
     from app.services import decision_email
     from app.services.ai_pipeline import pipeline
 
-    for mod in (tir_r, sip_r, rv, ap, la, reviewer_query, state_machine, decisions, pipeline):
+    for mod in (tir_r, sip_r, rv, ap, la, applications_query, reviewer_query,
+                state_machine, decisions, pipeline):
         monkeypatch.setattr(mod, "get_admin_client", lambda: fake, raising=False)
 
     # No-op audit (each module imported it by name).
@@ -117,6 +118,24 @@ class LifecycleDriver:
         from app.services.ai_pipeline import pipeline
         pipeline.persist(self.ctx.fake, self.app_id, self.track, _canned_score(), advance_status=True)
 
+    def assign(self, reviewer_ids):
+        # Reviewers must have a user_roles row; the assign endpoint checks it.
+        for rid in reviewer_ids:
+            self.ctx.fake.tables.setdefault("user_roles", []).append(
+                {"user_id": rid, "role": "reviewer"})
+        _as(ADMIN, ["leadership"])
+        r = self.client.post(
+            f"/leadership/applications/{self.app_id}/reviewers",
+            json={"reviewer_user_ids": list(reviewer_ids), "due_at": None},
+        )
+        assert r.status_code == 200, r.text
+        return r
+
+    def assignment_id_for(self, reviewer_id):
+        rows = self.ctx.fake.tables.get("reviewer_assignments", [])
+        return next(a["id"] for a in rows
+                    if a["application_id"] == self.app_id and a["reviewer_user_id"] == reviewer_id)
+
 
 def _seed_draft(track: str, app_id: str) -> dict:
     """Minimal draft row the submit path can flip. _fetch_application looks up
@@ -152,3 +171,21 @@ def test_A2_ai_screening_sets_under_review(client, monkeypatch, _clear, track):
     # ai_screening row was written for this app+track.
     scr = fake.table("ai_screening").select("*").eq("application_id", app_id).eq("application_track", track).execute().data
     assert scr and scr[0]["score_overall"] == 5.0
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_A3_assign_reviewer_does_not_change_status(client, monkeypatch, _clear, track):
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
+    ctx = install_fake_db(monkeypatch, fake)
+    d = LifecycleDriver(client, ctx, track, app_id)
+
+    d.submit()
+    d.run_ai()
+    assert d.status() == "under_review"
+
+    d.assign([REVIEWER])
+
+    # THE KEY ASSERTION: assignment inserts a row but does NOT move status.
+    assert d.status() == "under_review"
+    assert len(fake.tables["reviewer_assignments"]) == 1
