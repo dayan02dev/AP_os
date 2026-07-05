@@ -136,6 +136,28 @@ class LifecycleDriver:
         return next(a["id"] for a in rows
                     if a["application_id"] == self.app_id and a["reviewer_user_id"] == reviewer_id)
 
+    def submit_review(self, reviewer_id, draft=False):
+        _as(reviewer_id, ["reviewer"])
+        body = {
+            "application_id": self.app_id,
+            "application_track": self.track,
+            "assignment_id": self.assignment_id_for(reviewer_id),
+            "score_problem": 7.0, "score_solution": 7.0, "score_tech": 7.0,
+            "score_founders": 7.0, "score_commitment": 7.0,
+            "recommendation": "yes", "quick_notes": "solid", "draft": draft,
+        }
+        r = self.client.post("/reviewer/reviews", json=body)
+        assert r.status_code in (200, 201), r.text
+        return r
+
+    def decide(self, decision, rationale="ok"):
+        _as(ADMIN, ["admin"])
+        r = self.client.post(
+            f"/admin/platform/applications/{self.track}/{self.app_id}/decision",
+            json={"decision": decision, "rationale": rationale},
+        )
+        return r
+
 
 def _seed_draft(track: str, app_id: str) -> dict:
     """Minimal draft row the submit path can flip. _fetch_application looks up
@@ -189,3 +211,33 @@ def test_A3_assign_reviewer_does_not_change_status(client, monkeypatch, _clear, 
     # THE KEY ASSERTION: assignment inserts a row but does NOT move status.
     assert d.status() == "under_review"
     assert len(fake.tables["reviewer_assignments"]) == 1
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_A4_last_reviewer_submits_sets_evaluated(client, monkeypatch, _clear, track):
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
+    ctx = install_fake_db(monkeypatch, fake)
+    d = LifecycleDriver(client, ctx, track, app_id)
+
+    d.submit(); d.run_ai(); d.assign([REVIEWER])
+    assert d.status() == "under_review"
+
+    d.submit_review(REVIEWER)
+
+    assert d.status() == "evaluated"
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_A6_full_happy_path_chain(client, monkeypatch, _clear, track):
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
+    ctx = install_fake_db(monkeypatch, fake)
+    d = LifecycleDriver(client, ctx, track, app_id)
+
+    d.submit();          assert d.status() == "submitted"
+    d.run_ai();          assert d.status() == "under_review"
+    d.assign([REVIEWER]); assert d.status() == "under_review"
+    d.submit_review(REVIEWER); assert d.status() == "evaluated"
+    r = d.decide("jury_review"); assert r.status_code == 200, r.text
+    assert d.status() == "jury_review"
