@@ -50,3 +50,38 @@ def test_worker_founder_check_failure_does_not_fail_record(monkeypatch):
     monkeypatch.setattr(fc_run, "run_and_persist", _boom)
     out = handler.lambda_handler({"Records": [_record("app-1", "tir")]}, None)
     assert out["batchItemFailures"] == []   # record still succeeds
+
+
+def _record_job(app_id, track, job):
+    import json as _json
+    return {"messageId": "mj",
+            "body": _json.dumps({"application_id": app_id,
+                                 "application_track": track, "job": job})}
+
+
+def test_worker_founder_check_job_runs_only_founder_check(monkeypatch):
+    # get_admin_client is used by the job branch; stub it.
+    monkeypatch.setattr(handler, "get_admin_client", lambda: object())
+    screened = {"n": 0}
+    monkeypatch.setattr(handler.pipeline, "run_for_application",
+                        lambda *a, **k: screened.update(n=screened["n"] + 1))
+    calls = []
+    monkeypatch.setattr(fc_run, "run_and_persist",
+                        lambda client, app_id, track: calls.append((app_id, track)))
+
+    out = handler.lambda_handler(
+        {"Records": [_record_job("app-9", "tir", "founder_check")]}, None)
+
+    assert calls == [("app-9", "tir")]        # founder-check ran
+    assert screened["n"] == 0                  # NO full screening
+    assert out["batchItemFailures"] == []
+
+
+def test_worker_founder_check_job_skips_non_tir(monkeypatch):
+    monkeypatch.setattr(handler, "get_admin_client", lambda: object())
+    calls = []
+    monkeypatch.setattr(fc_run, "run_and_persist",
+                        lambda client, app_id, track: calls.append((app_id, track)))
+    handler.lambda_handler(
+        {"Records": [_record_job("app-10", "sip", "founder_check")]}, None)
+    assert calls == []                         # TIR-only

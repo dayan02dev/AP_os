@@ -35,10 +35,22 @@ def _process_record(record: dict) -> None:
     body = json.loads(body_raw) if isinstance(body_raw, str) else body_raw
     application_id = body["application_id"]
     application_track = body["application_track"]
+    job = body.get("job", "screen")
 
-    log.info("Processing application_id=%s track=%s", application_id, application_track)
+    log.info("Processing application_id=%s track=%s job=%s",
+             application_id, application_track, job)
 
     client = get_admin_client()
+
+    # Founder-check-only job (a résumé arrived post-submit, e.g. via the
+    # profile-completion link). Runs regardless of status; TIR only. Raises on
+    # failure so SQS retries it (redrive -> DLQ), unlike the inline best-effort
+    # call in the screening path below.
+    if job == "founder_check":
+        if application_track == "tir":
+            log.info("Founder-check-only job for application_id=%s", application_id)
+            founder_check_run.run_and_persist(client, application_id, application_track)
+        return
     table = f"{application_track}_applications"
     res = client.table(table).select("*").eq("id", application_id).maybe_single().execute()
     app_row = res.data
