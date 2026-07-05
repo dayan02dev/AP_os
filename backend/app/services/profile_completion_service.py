@@ -10,6 +10,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from app.services import sqs_publisher
+
 _TOKEN_TABLE = "profile_completion_tokens"
 _TTL_HOURS = 72
 _BUCKET = "tir-resumes"
@@ -130,6 +132,12 @@ def store_submission(
 
     if app_patch:
         client.table("tir_applications").update(app_patch).eq("id", application_id).execute()
+
+    # A résumé arrived for an already-submitted app (profile-completion link) —
+    # enqueue an async, TIR-only founder-check. Best-effort: never blocks the form.
+    if saved["resume"]:
+        sqs_publisher.publish_founder_check(application_id, "tir")
+
     return saved
 
 
