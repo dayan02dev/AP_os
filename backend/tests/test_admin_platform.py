@@ -59,7 +59,7 @@ class _FakeQuery:
             self._parent.inserts.append((self._name, payload))
         return self
 
-    def upsert(self, payload, on_conflict=None):
+    def upsert(self, payload, on_conflict=None, ignore_duplicates=False, **_k):
         self._mode = "insert"
         self._payload = payload
         if isinstance(payload, list):

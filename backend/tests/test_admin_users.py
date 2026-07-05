@@ -1343,10 +1343,11 @@ def test_reviewer_invite_valid_batch_assigns_apps_without_assignment_email(
     )
     assert res.status_code == 201, res.text
 
-    # One reviewer_assignments insert carrying a row per app in the batch.
-    ra_inserts = [p for (tbl, p) in fake.inserts if tbl == "reviewer_assignments"]
-    assert ra_inserts, "expected reviewer_assignments to be created for the batch"
-    created = [row for payload in ra_inserts
+    # One reviewer_assignments upsert per app in the batch — the fix makes the
+    # fan-out insert idempotent (insert → upsert ON CONFLICT DO NOTHING).
+    ra_rows = [p for (tbl, p) in fake.upserts if tbl == "reviewer_assignments"]
+    assert ra_rows, "expected reviewer_assignments to be created for the batch"
+    created = [row for payload in ra_rows
                for row in (payload if isinstance(payload, list) else [payload])]
     assigned_apps = {(r["application_id"], r["application_track"]) for r in created}
     assert assigned_apps == {("app-1", "tir"), ("app-2", "sip")}

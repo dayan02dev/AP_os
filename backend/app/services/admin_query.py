@@ -1023,6 +1023,35 @@ def bulk_assign_reviewer_apps(
     return {"results": results}
 
 
+_ASSIGNMENT_PAGE = 1000
+
+
+def iter_assignment_rows(sb: Any, *, reviewer_ids=None, app_ids=None):
+    """Yield every ``reviewer_assignments`` row, paginated.
+
+    A plain ``select()`` is capped at ~1000 rows by PostgREST, so once the table
+    grew past that the dedup snapshots in the batch/reviewer assign paths silently
+    missed existing rows and re-inserted duplicates → unique-violation 500s. This
+    pages through ``.range()`` so callers see the WHOLE table. Optionally narrows
+    to specific reviewers (keeps the scan small; the URL stays short because the
+    caller passes ≤50 reviewer ids).
+    """
+    offset = 0
+    while True:
+        q = sb.table("reviewer_assignments").select(
+            "application_id,application_track,reviewer_user_id,declined_at,reassigned_to"
+        )
+        if reviewer_ids:
+            q = q.in_("reviewer_user_id", list(reviewer_ids))
+        if app_ids:
+            q = q.in_("application_id", list(app_ids))
+        page = (q.range(offset, offset + _ASSIGNMENT_PAGE - 1).execute().data) or []
+        yield from page
+        if len(page) < _ASSIGNMENT_PAGE:
+            break
+        offset += _ASSIGNMENT_PAGE
+
+
 def assign_reviewers_to_batch(
     sb: Any,
     batch_id: str,
@@ -1060,12 +1089,15 @@ def assign_reviewers_to_batch(
 
     reviewer_ids = list(dict.fromkeys(reviewer_user_ids))  # dedupe, keep order
 
-    # Existing assignments for these apps × reviewers, so we skip duplicates.
-    # Bulk-fetch then filter in Python (fake `.in_()` no-ops).
+    # Existing assignments for these reviewers, read COMPLETELY (paginated).
+    # A plain select('*') is capped at ~1000 rows by PostgREST; once the table
+    # grew past the cap this snapshot missed existing triples and the insert
+    # below re-created them → duplicate-key 500. Narrowing to reviewer_ids keeps
+    # the scan small.
     app_keys = set(apps)
     reviewer_id_set = set(reviewer_ids)
     existing_pairs: set[tuple[str, str, str]] = set()
-    for a in (sb.table("reviewer_assignments").select("*").execute().data) or []:
+    for a in iter_assignment_rows(sb, reviewer_ids=reviewer_ids):
         key = (a.get("application_id"), a.get("application_track"))
         rid = a.get("reviewer_user_id")
         if key in app_keys and rid in reviewer_id_set:
@@ -1087,7 +1119,13 @@ def assign_reviewers_to_batch(
         if (aid, track, rid) not in existing_pairs
     ]
     if rows:
-        sb.table("reviewer_assignments").insert(rows).execute()
+        # Idempotent insert: ON CONFLICT DO NOTHING so a race (or any residual
+        # dedup gap) can never raise a duplicate-key 500.
+        sb.table("reviewer_assignments").upsert(
+            rows,
+            on_conflict="application_id,application_track,reviewer_user_id",
+            ignore_duplicates=True,
+        ).execute()
 
     return {
         "created": len(rows),

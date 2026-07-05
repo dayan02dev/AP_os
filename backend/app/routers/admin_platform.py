@@ -388,7 +388,10 @@ async def assign_applications(
         if r.get("batch_id") == batch_id and r.get("application_id") and r.get("application_track")
     }
     # Batch reviewers = distinct ACTIVE assignees on apps already in the batch.
-    all_assignments = (sb.table("reviewer_assignments").select("*").execute().data) or []
+    # Paginate the full read: a plain select('*') is capped at ~1000 rows by
+    # PostgREST, so once the table grew past that this dedup missed existing
+    # triples and the fan-out insert below re-created them (duplicate-key 500).
+    all_assignments = list(admin_query.iter_assignment_rows(sb))
     existing_triples: set[tuple[str, str, str]] = set()
     reviewer_ids: list[str] = []
     seen_rev: set[str] = set()
@@ -423,7 +426,13 @@ async def assign_applications(
     assignments_created = len(fan_rows)
     reviewers_notified = len({r["reviewer_user_id"] for r in fan_rows})
     if fan_rows:
-        sb.table("reviewer_assignments").insert(fan_rows).execute()
+        # Idempotent: ON CONFLICT DO NOTHING so a duplicate triple (from a race
+        # or residual dedup gap) can never raise a unique-violation 500.
+        sb.table("reviewer_assignments").upsert(
+            fan_rows,
+            on_conflict="application_id,application_track,reviewer_user_id",
+            ignore_duplicates=True,
+        ).execute()
         notify_reviewers_assigned(sb, fan_rows)
 
     write_audit(
