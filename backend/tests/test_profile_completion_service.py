@@ -35,6 +35,9 @@ class _StorageBucket:
     def upload(self, path, file, file_options=None):
         self._uploads.append({"bucket": self.name, "path": path, "size": len(file), "options": file_options})
         return {"path": path}
+    def create_signed_upload_url(self, path):
+        return {"signed_url": f"https://fake.supabase/storage/v1/object/upload/sign/{self.name}/{path}?token=faketok",
+                "token": "faketok", "path": path}
 
 
 class _Storage:
@@ -199,3 +202,44 @@ def test_bytes_exist_signed_but_get_missing_pruned(monkeypatch):
     c = _SignClient({"signedURL": "https://x/y"})
     monkeypatch.setattr(svc.httpx, "get", lambda *a, **k: types.SimpleNamespace(status_code=400))
     assert svc._bytes_exist(c, "bkt", "p.pdf") is False
+
+
+def test_create_evidence_upload_url_returns_signed_url_and_owner_path():
+    out = svc.create_evidence_upload_url(FakeClient(), owner_user_id="u-9", filename="pic.png", mime="image/png")
+    assert out["path"].startswith("u-9/evidence/") and out["path"].endswith(".png")
+    assert out["signed_url"] and out["token"]
+
+
+def test_create_evidence_upload_url_rejects_bad_mime():
+    with pytest.raises(ValueError):
+        svc.create_evidence_upload_url(FakeClient(), owner_user_id="u-9", filename="x.exe", mime="application/x-msdownload")
+
+
+def test_finalize_evidence_prunes_dead_and_appends_uploaded():
+    client = FakeClient({"tir_applications": [{
+        "id": "app-1", "user_id": "u-1",
+        "evidence_files": [
+            {"file_uuid": "LIVE", "path": "u-1/evidence/LIVE.pdf", "name": "live.pdf", "size": 1, "mime": "application/pdf", "uploaded_at": "t"},
+            {"file_uuid": "DEAD", "path": "u-1/evidence/DEAD.pdf", "name": "dead.pdf", "size": 1, "mime": "application/pdf", "uploaded_at": "t"},
+        ]}]})
+    live = {"u-1/evidence/LIVE.pdf", "u-1/evidence/new.png"}  # DEAD is missing
+    out = svc.finalize_evidence_submission(
+        client, application_id="app-1", owner_user_id="u-1",
+        uploaded=[{"path": "u-1/evidence/new.png", "name": "new.png", "size": 2_000_000, "mime": "image/png"}],
+        exists_fn=lambda bucket, path: path in live)
+    _, payload = client.store["tir_applications_updates"][-1]
+    uuids = {e.get("file_uuid") for e in payload["evidence_files"]}
+    names = {e.get("name") for e in payload["evidence_files"]}
+    assert "LIVE" in uuids and "DEAD" not in uuids   # live kept, dead pruned
+    assert "new.png" in names                          # uploaded file registered
+    assert out == {"added": 1, "pruned": 1, "kept": 1}
+
+
+def test_finalize_evidence_rejects_foreign_path():
+    # a path outside the owner's evidence/ prefix must be ignored -> nothing valid -> ValueError
+    client = FakeClient({"tir_applications": [{"id": "app-1", "user_id": "u-1", "evidence_files": []}]})
+    with pytest.raises(ValueError):
+        svc.finalize_evidence_submission(
+            client, application_id="app-1", owner_user_id="u-1",
+            uploaded=[{"path": "SOMEONE-ELSE/evidence/x.png", "name": "x.png", "size": 1, "mime": "image/png"}],
+            exists_fn=lambda *_: True)

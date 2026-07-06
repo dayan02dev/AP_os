@@ -8,6 +8,7 @@ export default function ProfileCompletionPage() {
   const [file, setFile] = useState(null);
   const [linkedin, setLinkedin] = useState("");
   const [evFiles, setEvFiles] = useState([]);
+  const [progress, setProgress] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -23,7 +24,7 @@ export default function ProfileCompletionPage() {
     setErr(""); setBusy(true);
     try {
       const r = state.needs_evidence
-        ? await profileCompletionApi.submitEvidence(token, evFiles)
+        ? await profileCompletionApi.uploadEvidenceFiles(token, evFiles, setProgress)
         : await profileCompletionApi.submit(token, { file, linkedinUrl: linkedin });
       setState((s) => ({ ...s, phase: r.preview ? "preview_done" : "done" }));
     } catch (e) {
@@ -107,7 +108,11 @@ export default function ProfileCompletionPage() {
         ? evFiles.length === 0
         : (state.needs_resume && !file && !linkedin.trim()))}
         style={{ background: "#3213b7", color: "#fff", border: 0, padding: "12px 24px", fontSize: 15, cursor: "pointer" }}>
-        {busy ? "Submitting…" : "Submit →"}
+        {busy
+          ? (progress && progress.total
+              ? `Uploading ${Math.min(progress.index + 1, progress.total)} of ${progress.total}…`
+              : "Submitting…")
+          : "Submit →"}
       </button>
     </Shell>
   );

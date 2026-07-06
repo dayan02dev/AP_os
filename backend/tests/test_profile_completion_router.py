@@ -1,4 +1,7 @@
 import asyncio
+
+import pytest
+
 from app.routers import profile_completion as pc
 
 
@@ -144,3 +147,54 @@ def test_admin_evidence_send_list_dry_run(monkeypatch):
     body = pc.EvidenceSendBody(mode="list", application_ids=["app-1", "app-2"], dry_run=True)
     out = asyncio.run(pc.send_evidence_requests(body, user={"user_id": "admin-1"}))
     assert out == {"mode": "list", "matched": 2, "dry_run": True, "sent": 0}
+
+
+_EVIDENCE_ROW = {
+    "token": "t", "application_id": "app-1", "needs_resume": False, "needs_linkedin": False,
+    "needs_evidence": True, "is_preview": False, "used_at": None, "expires_at": "2999-01-01T00:00:00+00:00",
+}
+
+
+def test_evidence_upload_url_returns_signed_url(monkeypatch):
+    monkeypatch.setattr(pc, "get_admin_client", lambda: _FakeAdminClient({"id": "app-1", "user_id": "u-1"}))
+    monkeypatch.setattr(pc.svc, "fetch_token", lambda c, t: dict(_EVIDENCE_ROW))
+    seen = {}
+
+    def _mint(client, *, owner_user_id, filename, mime):
+        seen.update(owner=owner_user_id, filename=filename, mime=mime)
+        return {"path": f"{owner_user_id}/evidence/x.png", "signed_url": "https://sign", "token": "tk", "name": filename, "mime": mime}
+
+    monkeypatch.setattr(pc.svc, "create_evidence_upload_url", _mint)
+    out = asyncio.run(pc.evidence_upload_url("t", pc.EvidenceUploadUrlBody(filename="pic.png", mime="image/png")))
+    assert out["signed_url"] == "https://sign" and out["path"] == "u-1/evidence/x.png"
+    assert seen == {"owner": "u-1", "filename": "pic.png", "mime": "image/png"}
+
+
+def test_evidence_finalize_registers_and_marks_used(monkeypatch):
+    monkeypatch.setattr(pc, "get_admin_client", lambda: _FakeAdminClient({"id": "app-1", "user_id": "u-1"}))
+    monkeypatch.setattr(pc.svc, "fetch_token", lambda c, t: dict(_EVIDENCE_ROW))
+    seen = {}
+
+    def _fin(client, *, application_id, owner_user_id, uploaded):
+        seen.update(application_id=application_id, owner_user_id=owner_user_id, uploaded=uploaded)
+        return {"added": len(uploaded), "pruned": 1, "kept": 0}
+
+    monkeypatch.setattr(pc.svc, "finalize_evidence_submission", _fin)
+    marked = {}
+    monkeypatch.setattr(pc.svc, "mark_used", lambda c, t: marked.update(token=t))
+    body = pc.EvidenceFinalizeBody(files=[pc.UploadedEvidenceFile(path="u-1/evidence/a.png", name="a.png", size=1000, mime="image/png")])
+    out = asyncio.run(pc.evidence_finalize("t", body))
+    assert out == {"ok": True, "saved": {"added": 1, "pruned": 1, "kept": 0}}
+    assert seen["application_id"] == "app-1" and seen["owner_user_id"] == "u-1"
+    assert seen["uploaded"][0]["path"] == "u-1/evidence/a.png"
+    assert marked["token"] == "t"
+
+
+def test_evidence_upload_url_rejects_preview(monkeypatch):
+    preview = {"token": "t", "application_id": None, "needs_evidence": True, "is_preview": True,
+               "used_at": None, "expires_at": "2999-01-01T00:00:00+00:00"}
+    monkeypatch.setattr(pc, "get_admin_client", lambda: object())
+    monkeypatch.setattr(pc.svc, "fetch_token", lambda c, t: preview)
+    with pytest.raises(pc.HTTPException) as ei:
+        asyncio.run(pc.evidence_upload_url("t", pc.EvidenceUploadUrlBody(filename="x.png", mime="image/png")))
+    assert ei.value.status_code == 400

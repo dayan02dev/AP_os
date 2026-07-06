@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("react-router-dom", () => ({ useParams: () => ({ token: "tok123" }) }));
 vi.mock("../../lib/profileCompletionApi.js", () => ({
-  profileCompletionApi: { getState: vi.fn(), submit: vi.fn(), submitEvidence: vi.fn() },
+  profileCompletionApi: { getState: vi.fn(), submit: vi.fn(), uploadEvidenceFiles: vi.fn() },
 }));
 import { profileCompletionApi } from "../../lib/profileCompletionApi.js";
 import ProfileCompletionPage from "../ProfileCompletionPage.jsx";
@@ -36,11 +36,11 @@ describe("ProfileCompletionPage — evidence re-collection mode", () => {
     expect(screen.queryByText(/résumé|resume|linkedin/i)).not.toBeInTheDocument();
   });
 
-  it("disables Submit until at least one file is selected, then submits via submitEvidence", async () => {
+  it("disables Submit until a file is selected, then uploads via uploadEvidenceFiles (direct-to-storage)", async () => {
     profileCompletionApi.getState.mockResolvedValue({
       valid: true, needs_evidence: true, applicant_name: "A", display_id: "TIR-1",
     });
-    profileCompletionApi.submitEvidence.mockResolvedValue({ ok: true, saved: { added: 2, pruned: 0, kept: 0 } });
+    profileCompletionApi.uploadEvidenceFiles.mockResolvedValue({ ok: true, saved: { added: 2, pruned: 0, kept: 0 } });
     render(<ProfileCompletionPage />);
 
     await waitFor(() => expect(document.querySelector('input[type="file"]')).toBeInTheDocument());
@@ -55,8 +55,8 @@ describe("ProfileCompletionPage — evidence re-collection mode", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /submit/i }));
 
-    await waitFor(() => expect(profileCompletionApi.submitEvidence).toHaveBeenCalledTimes(1));
-    const [tokenArg, filesArg] = profileCompletionApi.submitEvidence.mock.calls[0];
+    await waitFor(() => expect(profileCompletionApi.uploadEvidenceFiles).toHaveBeenCalledTimes(1));
+    const [tokenArg, filesArg] = profileCompletionApi.uploadEvidenceFiles.mock.calls[0];
     expect(tokenArg).toBe("tok123");
     expect(Array.from(filesArg).map((f) => f.name)).toEqual(["a.pdf", "b.jpg"]);
     expect(profileCompletionApi.submit).not.toHaveBeenCalled();

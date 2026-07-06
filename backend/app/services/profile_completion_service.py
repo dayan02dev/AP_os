@@ -218,6 +218,69 @@ def store_evidence_submission(
     return {"added": len(new_entries), "pruned": pruned, "kept": len(kept)}
 
 
+def _rebuild_evidence_files(client: Any, application_id: str, new_entries: list[dict], exists_fn=None) -> dict:
+    """Rebuild tir_applications.evidence_files = (existing entries whose bytes still
+    resolve) + new_entries. Prunes dead entries. Returns {added, pruned, kept}."""
+    if exists_fn is None:
+        def exists_fn(bucket, path):
+            return _bytes_exist(client, bucket, path)
+    rows = (client.table("tir_applications").select("id,evidence_files")
+            .eq("id", application_id).limit(1).execute().data) or []
+    existing = list((rows[0].get("evidence_files") if rows else None) or [])
+    kept = [e for e in existing if isinstance(e, dict) and e.get("path")
+            and exists_fn(_EVIDENCE_BUCKET, e["path"])]
+    pruned = len(existing) - len(kept)
+    client.table("tir_applications").update(
+        {"evidence_files": [*kept, *new_entries]}).eq("id", application_id).execute()
+    return {"added": len(new_entries), "pruned": pruned, "kept": len(kept)}
+
+
+def create_evidence_upload_url(client: Any, *, owner_user_id: str, filename: str, mime: str) -> dict:
+    """Mint a Supabase signed upload URL so the browser PUTs the file DIRECTLY to storage,
+    bypassing the ~6MB API-Gateway/Lambda payload cap. Returns {path, signed_url, token,
+    name, mime}. Raises ValueError on an unsupported mime."""
+    m = (mime or "").lower()
+    if m not in _EVIDENCE_MIME_TO_EXT:
+        raise ValueError(f"unsupported_mime:{m}")
+    ext = _EVIDENCE_MIME_TO_EXT[m]
+    path = f"{owner_user_id}/evidence/{uuid.uuid4()}.{ext}"
+    signed = client.storage.from_(_EVIDENCE_BUCKET).create_signed_upload_url(path)
+    url, tok = None, None
+    if isinstance(signed, dict):
+        url = signed.get("signed_url") or signed.get("signedURL") or signed.get("signedUrl") or signed.get("url")
+        tok = signed.get("token")
+    if url and url.startswith("/"):
+        import os as _os
+        url = _os.environ["SUPABASE_URL"] + url
+    return {"path": path, "signed_url": url, "token": tok, "name": filename, "mime": m}
+
+
+def finalize_evidence_submission(client: Any, *, application_id: str, owner_user_id: str,
+                                 uploaded: list[dict], exists_fn=None) -> dict:
+    """Register files ALREADY uploaded via signed URLs into evidence_files (prune dead +
+    append). Guards that each path is under this owner's evidence/ prefix and that its bytes
+    actually resolve. Raises ValueError if nothing valid. Returns {added, pruned, kept}."""
+    prefix = f"{owner_user_id}/evidence/"
+    if exists_fn is None:
+        def exists_fn(bucket, path):
+            return _bytes_exist(client, bucket, path)
+    new_entries = []
+    for f in uploaded:
+        path = f.get("path") or ""
+        m = (f.get("mime") or "").lower()
+        if not path.startswith(prefix) or m not in _EVIDENCE_MIME_TO_EXT:
+            continue  # reject path injection / bad mime
+        if not exists_fn(_EVIDENCE_BUCKET, path):
+            continue  # client claimed an upload that isn't actually in storage
+        fid = path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        new_entries.append({"file_uuid": fid, "path": path,
+            "name": f.get("name") or f"evidence-{fid[:8]}",
+            "size": int(f.get("size") or 0), "mime": m, "uploaded_at": _now().isoformat()})
+    if not new_entries:
+        raise ValueError("no_valid_files")
+    return _rebuild_evidence_files(client, application_id, new_entries, exists_fn)
+
+
 # Applicants no longer in consideration — never nudged to complete a profile.
 _EXCLUDED_STATUSES = {"rejected", "withdrawn"}
 

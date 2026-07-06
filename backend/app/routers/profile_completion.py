@@ -279,3 +279,79 @@ async def send_evidence_requests(body: EvidenceSendBody, user: dict = Depends(ge
             failed += 1
             log.warning("evidence send failed", extra={"app": a["id"], "err": str(exc)})
     return {"mode": "list", "matched": len(apps), "sent": sent, "skipped": skipped, "failed": failed}
+
+
+# --- Direct-to-storage evidence upload (bypasses the ~6MB API payload cap) ---------------
+
+class EvidenceUploadUrlBody(BaseModel):
+    filename: str
+    mime: str
+
+
+class UploadedEvidenceFile(BaseModel):
+    path: str
+    name: str | None = None
+    size: int | None = None
+    mime: str
+
+
+class EvidenceFinalizeBody(BaseModel):
+    files: list[UploadedEvidenceFile]
+
+
+def _load_evidence_token(client: Any, token: str) -> tuple[dict, str]:
+    """Validate a real (non-preview) needs_evidence token; return (row, owner_user_id)."""
+    row = svc.fetch_token(client, token)
+    if not row:
+        raise HTTPException(status_code=404, detail={"code": "invalid"})
+    state = svc.token_state(row)
+    if state != "valid":
+        raise HTTPException(status_code=410, detail={"code": state})
+    if not row.get("needs_evidence"):
+        raise HTTPException(status_code=400, detail={"code": "not_evidence_token"})
+    if row.get("is_preview") or not row.get("application_id"):
+        raise HTTPException(status_code=400, detail={"code": "preview_no_storage"})
+    app_rows = (client.table("tir_applications").select("id,user_id")
+                .eq("id", row["application_id"]).limit(1).execute().data) or []
+    if not app_rows:
+        raise HTTPException(status_code=404, detail={"code": "application_not_found"})
+    return row, app_rows[0]["user_id"]
+
+
+async def evidence_upload_url(token: str, body: "EvidenceUploadUrlBody") -> dict:
+    client = get_admin_client()
+    _row, owner = _load_evidence_token(client, token)
+    try:
+        return svc.create_evidence_upload_url(
+            client, owner_user_id=owner, filename=body.filename, mime=body.mime,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+
+@router.post("/profile-completion/{token}/evidence-upload-url")
+@limiter.limit("60/hour", key_func=_pc_key)
+async def evidence_upload_url_route(token: str, request: Request, body: EvidenceUploadUrlBody) -> dict:
+    """Mint a signed URL for the browser to PUT one file directly to storage."""
+    return await evidence_upload_url(token, body)
+
+
+async def evidence_finalize(token: str, body: "EvidenceFinalizeBody") -> dict:
+    client = get_admin_client()
+    row, owner = _load_evidence_token(client, token)
+    try:
+        saved = svc.finalize_evidence_submission(
+            client, application_id=row["application_id"], owner_user_id=owner,
+            uploaded=[f.model_dump() for f in body.files],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+    svc.mark_used(client, token)
+    return {"ok": True, "saved": saved}
+
+
+@router.post("/profile-completion/{token}/evidence-finalize")
+@limiter.limit("20/hour", key_func=_pc_key)
+async def evidence_finalize_route(token: str, request: Request, body: EvidenceFinalizeBody) -> dict:
+    """Register the directly-uploaded files into evidence_files (prune dead + append)."""
+    return await evidence_finalize(token, body)
