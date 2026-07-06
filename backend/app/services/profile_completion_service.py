@@ -150,18 +150,24 @@ def store_submission(
 
 
 def _bytes_exist(client: Any, bucket: str, path: str) -> bool:
-    """True if the object's bytes serve. Conservative: unknown/error -> True
-    (never prune a file we can't confirm is missing)."""
+    """True if the object's bytes are retrievable. Supabase's ``create_signed_url`` raises
+    a ``not_found`` StorageException for a missing object — that IS the dead-file signal we
+    prune on, so treat it as False. Any OTHER error stays conservative (True: never prune a
+    file we cannot positively confirm is gone)."""
     try:
         s = client.storage.from_(bucket).create_signed_url(path, 120)
-        url = s.get("signedURL") or s.get("signedUrl") or s.get("url")
-        if not url:
-            return True
-        if url.startswith("/"):
-            import os as _os
-            url = _os.environ["SUPABASE_URL"] + url
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc).lower()
+        return not ("not_found" in msg or "not found" in msg)
+    url = (s or {}).get("signedURL") or (s or {}).get("signedUrl") or (s or {}).get("url")
+    if not url:
+        return True
+    if url.startswith("/"):
+        import os as _os
+        url = _os.environ["SUPABASE_URL"] + url
+    try:
         return httpx.get(url, headers={"Range": "bytes=0-0"}, timeout=20).status_code in (200, 206)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return True
 
 

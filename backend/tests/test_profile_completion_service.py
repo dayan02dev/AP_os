@@ -163,3 +163,39 @@ def test_store_evidence_default_exists_fn_no_arity_error():
     assert set(out) == {"added", "pruned", "kept"}
     _, payload = client.store["tir_applications_updates"][-1]
     assert any(e["path"].endswith(".jpg") for e in payload["evidence_files"])  # new appended
+
+
+class _SignBucket:
+    def __init__(self, behavior): self.behavior = behavior
+    def create_signed_url(self, path, ttl):
+        if isinstance(self.behavior, Exception):
+            raise self.behavior
+        return self.behavior
+
+
+class _SignClient:
+    def __init__(self, behavior):
+        self.storage = types.SimpleNamespace(from_=lambda bucket: _SignBucket(behavior))
+
+
+def test_bytes_exist_missing_object_pruned():
+    # Supabase raises a not_found StorageException when signing a missing object -> gone.
+    c = _SignClient(Exception("{'statusCode': 400, 'error': 'not_found', 'message': 'Object not found'}"))
+    assert svc._bytes_exist(c, "bkt", "dead.pdf") is False
+
+
+def test_bytes_exist_transient_error_kept():
+    c = _SignClient(Exception("read timeout"))
+    assert svc._bytes_exist(c, "bkt", "p.pdf") is True   # conservative keep
+
+
+def test_bytes_exist_live_object_kept(monkeypatch):
+    c = _SignClient({"signedURL": "https://x/y"})
+    monkeypatch.setattr(svc.httpx, "get", lambda *a, **k: types.SimpleNamespace(status_code=206))
+    assert svc._bytes_exist(c, "bkt", "p.pdf") is True
+
+
+def test_bytes_exist_signed_but_get_missing_pruned(monkeypatch):
+    c = _SignClient({"signedURL": "https://x/y"})
+    monkeypatch.setattr(svc.httpx, "get", lambda *a, **k: types.SimpleNamespace(status_code=400))
+    assert svc._bytes_exist(c, "bkt", "p.pdf") is False
