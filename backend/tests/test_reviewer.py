@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from app.deps import get_current_user
@@ -79,10 +80,29 @@ class _FakeQuery:
         return self
 
     def execute(self):
-        if self._mode in ("insert", "update"):
-            data = self._payload if isinstance(self._payload, list) else (
-                [self._payload] if self._payload else [{"ok": True}]
-            )
+        if self._mode == "insert":
+            # Mutate the underlying table storage (in addition to the
+            # `.inserts` bookkeeping list) so a subsequent SELECT later in
+            # the SAME request — e.g. state_machine's first-review check —
+            # observes the just-inserted row, mirroring real Postgres
+            # read-your-writes.
+            payloads = self._payload if isinstance(self._payload, list) else [self._payload]
+            store = self._parent.tables.setdefault(self._name, [])
+            written = []
+            for p in payloads:
+                row = dict(p)
+                row.setdefault("id", str(uuid4()))
+                store.append(row)
+                written.append(row)
+            return SimpleNamespace(data=written, count=len(written))
+        if self._mode == "update":
+            store = self._parent.tables.get(self._name, [])
+            hit = store
+            for col, val in self._eqs:
+                hit = [r for r in hit if r.get(col) == val]
+            for r in hit:
+                r.update(self._payload)
+            data = hit or ([self._payload] if self._payload else [{"ok": True}])
             return SimpleNamespace(data=data, count=len(data))
         rows = self._parent.tables.get(self._name, [])
         # Apply eq filters
@@ -439,10 +459,12 @@ def test_submit_review_writes_row_with_60_min_lock(
     assert row["locked_at"] == "2026-05-18T11:00:00+00:00"
 
 
-def test_submit_review_all_reviewers_complete_triggers_evaluated(
+def test_submit_review_first_review_triggers_evaluated(
     client, monkeypatch, _clear_overrides,
 ):
-    """Closes spec §14.4."""
+    """Closes spec §14.4. Under the assignment-driven contract, the FIRST
+    submitted review flips under_review -> evaluated — it does not wait for
+    every assignee to complete."""
     me = "rev-a"
     other = "rev-b"
     fake = _seed_one_assignment(
@@ -467,9 +489,14 @@ def test_submit_review_all_reviewers_complete_triggers_evaluated(
     assert any(u.get("status") == "evaluated" for u in status_updates)
 
 
-def test_submit_review_partial_completion_does_not_transition(
+def test_submit_review_first_review_transitions_even_with_coreviewer_pending(
     client, monkeypatch, _clear_overrides,
 ):
+    """Under the OLD "all reviewers complete" contract this app would stay
+    under_review since `other` hasn't submitted. Under the NEW assignment-
+    driven contract, `me`'s submission is the first (and only) submitted
+    review, so it flips the app to evaluated regardless of `other`'s pending
+    assignment."""
     me = "rev-a"
     other = "rev-b"
     fake = _seed_one_assignment(
@@ -489,7 +516,7 @@ def test_submit_review_partial_completion_does_not_transition(
     r = client.post("/reviewer/reviews", json=_VALID_SUBMIT)
     assert r.status_code == 201, r.text
     status_updates = [u for n, u, eqs in fake.updates if n == "tir_applications"]
-    assert not any(u.get("status") == "evaluated" for u in status_updates)
+    assert any(u.get("status") == "evaluated" for u in status_updates)
 
 
 def test_draft_does_not_transition_or_lock(

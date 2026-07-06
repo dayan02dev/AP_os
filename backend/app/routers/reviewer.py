@@ -483,12 +483,11 @@ async def submit_review(
             after={"recommendation": body.recommendation},
         )
 
-        # Auto-transition (closes spec §14.4). Pass the just-completed
-        # assignment id so the helper doesn't race a stale read-your-writes.
-        state_machine.auto_transition_to_evaluated_if_complete(
+        # Auto-transition (closes spec §14.4): the FIRST submitted review
+        # flips the application straight to evaluated.
+        state_machine.auto_transition_to_evaluated_on_first_review(
             body.application_id,
             body.application_track,
-            just_completed_assignment_id=body.assignment_id,
         )
 
     return {
@@ -688,10 +687,9 @@ async def patch_review(
             target_id=review_id,
             after={"recommendation": final_rec},
         )
-        state_machine.auto_transition_to_evaluated_if_complete(
+        state_machine.auto_transition_to_evaluated_on_first_review(
             existing["application_id"],
             existing["application_track"],
-            just_completed_assignment_id=existing.get("assignment_id"),
         )
 
     final_row = {**existing, **patch}
