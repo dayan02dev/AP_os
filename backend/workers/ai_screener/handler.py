@@ -5,9 +5,10 @@ Triggered by SQS. Each record payload is a JSON object:
 
 Per record:
 1. Fetch the application row from the {track}_applications table.
-2. Idempotency: only screen rows still in `submitted`.
-3. Run the ai_pipeline (classify -> score -> summarize) and persist ai_screening,
-   advancing submitted -> under_review.
+2. Idempotency: only screen apps that don't already have an ai_screening row
+   (decoupled from status — assignment, not AI screening, drives status now).
+3. Run the ai_pipeline (classify -> score -> summarize) and persist
+   ai_screening. Status is left untouched (advance_status=False).
 
 Partial-batch-response (ReportBatchItemFailures) is implemented: only failed
 message IDs are returned so the Lambda runtime replays only those records.
@@ -24,8 +25,6 @@ from app.services.founder_check import run as founder_check_run
 from app.supabase_client import get_admin_client
 
 log = logging.getLogger(__name__)
-
-_STATUS_SUBMITTED = "submitted"
 
 
 def _process_record(record: dict) -> None:
@@ -57,19 +56,26 @@ def _process_record(record: dict) -> None:
     if app_row is None:
         raise ValueError(f"application_id={application_id} not found in {table}")
 
-    current_status = app_row.get("status", "")
-    if current_status != _STATUS_SUBMITTED:
-        log.info("application_id=%s status=%s (not submitted) — skipping",
-                 application_id, current_status)
+    # Idempotency now keys on "already screened", decoupled from status — so
+    # an app assigned a reviewer (already under_review) still gets scored.
+    already = (
+        client.table("ai_screening").select("application_id")
+        .eq("application_id", application_id)
+        .eq("application_track", application_track)
+        .limit(1).execute().data
+    ) or []
+    if already:
+        log.info("application_id=%s already screened — skipping", application_id)
         return
 
     result = pipeline.run_for_application(
         application_id, application_track, client=client, no_cache=True,
     )
     pipeline.persist(
-        client, application_id, application_track, result, advance_status=True,
+        client, application_id, application_track, result, advance_status=False,
     )
-    log.info("Screened application_id=%s overall=%.1f", application_id, result.score_overall)
+    log.info("Screened application_id=%s overall=%s", application_id,
+              getattr(result, "score_overall", None))
 
     # Founder check (TIR only, best-effort): reads the résumé and writes
     # ai_screening.founder_check. Never fails the SQS record.
