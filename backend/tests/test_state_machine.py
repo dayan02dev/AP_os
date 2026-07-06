@@ -290,3 +290,38 @@ def test_advance_noop_when_already_evaluated(monkeypatch):
     monkeypatch.setattr(state_machine, "get_admin_client", lambda: fake)
     assert state_machine.advance_to_under_review_on_assignment("a2", "sip") is False
     assert fake.status_of("sip", "a2") == "evaluated"
+
+
+def test_first_review_flips_under_review_to_evaluated(monkeypatch):
+    from app.services import state_machine
+    from tests.fixtures.fake_supabase import FakeSupabase
+    fake = FakeSupabase({
+        "tir_applications": [{"id": "a1", "status": "under_review"}],
+        "reviews": [{"id": "r1", "application_id": "a1", "application_track": "tir",
+                     "status": "submitted", "submitted_at": "2026-07-01T00:00:00Z"}],
+    })
+    monkeypatch.setattr(state_machine, "get_admin_client", lambda: fake)
+    assert state_machine.auto_transition_to_evaluated_on_first_review("a1", "tir") is True
+    assert fake.status_of("tir", "a1") == "evaluated"
+
+
+def test_no_review_no_flip(monkeypatch):
+    from app.services import state_machine
+    from tests.fixtures.fake_supabase import FakeSupabase
+    fake = FakeSupabase({"sip_applications": [{"id": "a2", "status": "under_review"}], "reviews": []})
+    monkeypatch.setattr(state_machine, "get_admin_client", lambda: fake)
+    assert state_machine.auto_transition_to_evaluated_on_first_review("a2", "sip") is False
+    assert fake.status_of("sip", "a2") == "under_review"
+
+
+def test_flip_noop_when_not_under_review(monkeypatch):
+    from app.services import state_machine
+    from tests.fixtures.fake_supabase import FakeSupabase
+    fake = FakeSupabase({
+        "tir_applications": [{"id": "a3", "status": "evaluated"}],
+        "reviews": [{"id": "r", "application_id": "a3", "application_track": "tir",
+                     "status": "submitted", "submitted_at": "2026-07-01T00:00:00Z"}],
+    })
+    monkeypatch.setattr(state_machine, "get_admin_client", lambda: fake)
+    assert state_machine.auto_transition_to_evaluated_on_first_review("a3", "tir") is False
+    assert fake.status_of("tir", "a3") == "evaluated"
