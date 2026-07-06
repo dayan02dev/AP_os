@@ -133,6 +133,7 @@ async def get_token_state(token: str) -> dict:
         "valid": True,
         "needs_resume": bool(row.get("needs_resume")),
         "needs_linkedin": bool(row.get("needs_linkedin")),
+        "needs_evidence": bool(row.get("needs_evidence")),
         "is_preview": bool(row.get("is_preview")),
         "applicant_name": name,
         "display_id": disp,
@@ -148,6 +149,7 @@ async def get_token_state_route(token: str, request: Request) -> dict:
 async def submit_form(
     token: str,
     file: UploadFile | None = None,
+    files: list[UploadFile] | None = None,
     linkedin_url: str | None = None,
 ) -> dict:
     client = get_admin_client()
@@ -160,6 +162,25 @@ async def submit_form(
 
     if row.get("is_preview") or not row.get("application_id"):
         return {"ok": True, "preview": True}
+
+    if row.get("needs_evidence"):
+        ups = files or ([file] if file else [])
+        if not ups:
+            raise HTTPException(status_code=422, detail={"code": "nothing_provided"})
+        app_rows = (client.table("tir_applications").select("id,user_id")
+                    .eq("id", row["application_id"]).limit(1).execute().data) or []
+        if not app_rows:
+            raise HTTPException(status_code=404, detail={"code": "application_not_found"})
+        owner = app_rows[0]["user_id"]
+        payload = [{"bytes": await u.read(), "filename": u.filename, "mime": u.content_type} for u in ups]
+        try:
+            saved = svc.store_evidence_submission(
+                client, application_id=row["application_id"], owner_user_id=owner, files=payload,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+        svc.mark_used(client, token)
+        return {"ok": True, "saved": saved}
 
     if row.get("needs_resume") and file is None and not (linkedin_url or "").strip():
         raise HTTPException(status_code=422, detail={"code": "nothing_provided"})
@@ -188,6 +209,73 @@ async def submit_form_route(
     token: str,
     request: Request,
     file: UploadFile | None = File(None),
+    files: list[UploadFile] | None = File(None),
     linkedin_url: str | None = Form(None),
 ) -> dict:
-    return await submit_form(token, file=file, linkedin_url=linkedin_url)
+    return await submit_form(token, file=file, files=files, linkedin_url=linkedin_url)
+
+
+class EvidenceSendBody(BaseModel):
+    mode: Literal["sample", "list"]
+    sample_email: str | None = None
+    application_ids: list[str] | None = None
+    dry_run: bool = False
+    confirm: bool = False
+    force: bool = False
+
+
+@router.post(
+    "/admin/evidence-recollection/send",
+    dependencies=[Depends(require_capability("manage_users"))],
+)
+async def send_evidence_requests(body: EvidenceSendBody, user: dict = Depends(get_current_user)) -> dict:
+    client = get_admin_client()
+    es = get_email_service()
+
+    if body.mode == "sample":
+        if not body.sample_email:
+            raise HTTPException(status_code=400, detail={"code": "sample_email_required"})
+        token = svc.create_token(
+            client, application_id=None, needs_resume=False, needs_linkedin=False,
+            needs_evidence=True, sent_to=body.sample_email, is_preview=True,
+        )
+        es.send_evidence_recollection(
+            to=body.sample_email, applicant_name="Applicant",
+            display_id="TIR — sample", link_url=frontend_url(_FORM_PATH + token),
+        )
+        return {"mode": "sample", "sent": 1}
+
+    if not body.application_ids:
+        raise HTTPException(status_code=400, detail={"code": "application_ids_required"})
+    if body.dry_run:
+        return {"mode": "list", "matched": len(body.application_ids), "dry_run": True, "sent": 0}
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail={"code": "confirm_required"})
+
+    apps = (client.table("tir_applications").select("id,user_id,basic_full_name,display_seq")
+            .in_("id", body.application_ids).execute().data) or []
+    emails = _resolve_emails(client, [a["user_id"] for a in apps])
+    sent = skipped = failed = 0
+    for a in apps:
+        addr = emails.get(a["user_id"])
+        if not addr:
+            skipped += 1
+            continue
+        if not body.force and svc.has_live_token(client, a["id"]):
+            skipped += 1
+            continue
+        try:
+            token = svc.create_token(
+                client, application_id=a["id"], needs_resume=False, needs_linkedin=False,
+                needs_evidence=True, sent_to=addr, is_preview=False,
+            )
+            seq = a.get("display_seq")
+            es.send_evidence_recollection(
+                to=addr, applicant_name=a.get("basic_full_name") or "Applicant",
+                display_id=f"TIR-{seq}" if seq else "", link_url=frontend_url(_FORM_PATH + token),
+            )
+            sent += 1
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            log.warning("evidence send failed", extra={"app": a["id"], "err": str(exc)})
+    return {"mode": "list", "matched": len(apps), "sent": sent, "skipped": skipped, "failed": failed}

@@ -44,3 +44,103 @@ def test_send_sample(monkeypatch):
     assert out["mode"] == "sample" and out["sent"] == 1
     assert calls["tok"]["is_preview"] is True and calls["tok"]["application_id"] is None
     assert sent["to"] == "me@x.com" and "sample-tok" in sent["link_url"]
+
+
+class _FakeUpload:
+    def __init__(self, filename, content_type, data):
+        self.filename = filename
+        self.content_type = content_type
+        self._data = data
+
+    async def read(self):
+        return self._data
+
+
+class _FakeAppTable:
+    def __init__(self, row):
+        self._row = row
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, *a, **k):
+        return self
+
+    def limit(self, *a, **k):
+        return self
+
+    def execute(self):
+        return type("R", (), {"data": [self._row] if self._row else []})()
+
+
+class _FakeAdminClient:
+    def __init__(self, app_row):
+        self._app_row = app_row
+
+    def table(self, name):
+        assert name == "tir_applications"
+        return _FakeAppTable(self._app_row)
+
+
+def test_public_submit_evidence_stores_files(monkeypatch):
+    row = {
+        "token": "t", "application_id": "app-1", "needs_resume": False, "needs_linkedin": False,
+        "needs_evidence": True, "is_preview": False, "used_at": None,
+        "expires_at": "2999-01-01T00:00:00+00:00",
+    }
+    monkeypatch.setattr(pc, "get_admin_client", lambda: _FakeAdminClient({"id": "app-1", "user_id": "u-1"}))
+    monkeypatch.setattr(pc.svc, "fetch_token", lambda c, t: row)
+
+    calls = {}
+
+    def _store(client, *, application_id, owner_user_id, files):
+        calls["application_id"] = application_id
+        calls["owner_user_id"] = owner_user_id
+        calls["files"] = files
+        return {"added": len(files), "pruned": 1, "kept": 0}
+
+    monkeypatch.setattr(pc.svc, "store_evidence_submission", _store)
+    marked = {}
+    monkeypatch.setattr(pc.svc, "mark_used", lambda c, t: marked.update(token=t))
+
+    ups = [
+        _FakeUpload("a.pdf", "application/pdf", b"AAA"),
+        _FakeUpload("b.jpg", "image/jpeg", b"BBBB"),
+    ]
+    out = asyncio.run(pc.submit_form("t", files=ups))
+
+    assert out == {"ok": True, "saved": {"added": 2, "pruned": 1, "kept": 0}}
+    assert calls["application_id"] == "app-1"
+    assert calls["owner_user_id"] == "u-1"
+    assert [f["filename"] for f in calls["files"]] == ["a.pdf", "b.jpg"]
+    assert calls["files"][0]["mime"] == "application/pdf" and calls["files"][0]["bytes"] == b"AAA"
+    assert marked["token"] == "t"
+
+
+def test_admin_evidence_send_sample(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(pc, "get_admin_client", lambda: object())
+    monkeypatch.setattr(pc.svc, "create_token", lambda c, **kw: calls.update(tok=kw) or "sample-tok")
+    sent = {}
+
+    class _ES:
+        def send_evidence_recollection(self, **kw): sent.update(kw)
+    monkeypatch.setattr(pc, "get_email_service", lambda: _ES())
+    monkeypatch.setattr(pc, "frontend_url", lambda p: "https://x" + p)
+
+    body = pc.EvidenceSendBody(mode="sample", sample_email="udayanpawar03@gmail.com")
+    out = asyncio.run(pc.send_evidence_requests(body, user={"user_id": "admin-1"}))
+    assert out["mode"] == "sample" and out["sent"] == 1
+    assert calls["tok"]["is_preview"] is True and calls["tok"]["application_id"] is None
+    assert calls["tok"]["needs_evidence"] is True
+    assert sent["to"] == "udayanpawar03@gmail.com" and "sample-tok" in sent["link_url"]
+    assert sent["display_id"] == "TIR — sample"
+
+
+def test_admin_evidence_send_list_dry_run(monkeypatch):
+    monkeypatch.setattr(pc, "get_admin_client", lambda: object())
+    monkeypatch.setattr(pc, "get_email_service", lambda: object())
+
+    body = pc.EvidenceSendBody(mode="list", application_ids=["app-1", "app-2"], dry_run=True)
+    out = asyncio.run(pc.send_evidence_requests(body, user={"user_id": "admin-1"}))
+    assert out == {"mode": "list", "matched": 2, "dry_run": True, "sent": 0}
