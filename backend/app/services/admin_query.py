@@ -500,6 +500,27 @@ def _reviewer_user_ids() -> list[str]:
     return sorted({r["user_id"] for r in rows if r.get("role") == "reviewer"})
 
 
+_ROSTER_PAGE = 1000
+
+
+def _fetch_all(make_query, *, page: int = _ROSTER_PAGE) -> list[dict]:
+    """Read EVERY row from a PostgREST query, paging past the ~1000-row default cap.
+
+    `make_query` is a thunk returning a FRESH query builder on each call — a builder's
+    .range() can't be safely re-applied, so every page rebuilds the query (same pattern
+    as iter_assignment_rows). Loops until a short page signals the end.
+    """
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        chunk = (make_query().range(offset, offset + page - 1).execute().data) or []
+        rows.extend(chunk)
+        if len(chunk) < page:
+            break
+        offset += page
+    return rows
+
+
 def fetch_roster() -> dict[str, Any]:
     """Reviewer roster with per-reviewer workload + consistency metrics.
 
@@ -519,20 +540,20 @@ def fetch_roster() -> dict[str, Any]:
 
     def _fetch(table: str) -> list[dict]:
         try:
-            return (sb.table(table).select("*").execute().data) or []
+            return _fetch_all(lambda: sb.table(table).select("*"))
         except Exception as exc:
             log.warning("roster: fetch failed", extra={"table": table, "err": str(exc)})
             return []
 
     def _fetch_in(table: str, col: str) -> list[dict]:
-        # Filter by the (few) reviewer ids instead of select-all. A bare
-        # select("*") is capped at PostgREST's 1000-row default, which silently
-        # dropped some reviewers' profiles/assignments once the user table grew
-        # past 1000 rows — making the roster fall back to showing raw user-ids.
+        # Filter by the (few) reviewer ids, and PAGE past PostgREST's 1000-row
+        # default cap — reviewer_assignments alone is >3000 rows, so a single
+        # select("*") silently dropped most reviewers' assignments (roster showed
+        # "No assignments" / wrong batch for the newest reviewers).
         if not id_list:
             return []
         try:
-            return (sb.table(table).select("*").in_(col, id_list).execute().data) or []
+            return _fetch_all(lambda: sb.table(table).select("*").in_(col, id_list))
         except Exception as exc:
             log.warning("roster: fetch_in failed", extra={"table": table, "err": str(exc)})
             return []
