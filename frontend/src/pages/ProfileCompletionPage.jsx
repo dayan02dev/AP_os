@@ -7,6 +7,7 @@ export default function ProfileCompletionPage() {
   const [state, setState] = useState({ phase: "loading" });
   const [file, setFile] = useState(null);
   const [linkedin, setLinkedin] = useState("");
+  const [evFiles, setEvFiles] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -21,7 +22,9 @@ export default function ProfileCompletionPage() {
   const submit = async () => {
     setErr(""); setBusy(true);
     try {
-      const r = await profileCompletionApi.submit(token, { file, linkedinUrl: linkedin });
+      const r = state.needs_evidence
+        ? await profileCompletionApi.submitEvidence(token, evFiles)
+        : await profileCompletionApi.submit(token, { file, linkedinUrl: linkedin });
       setState((s) => ({ ...s, phase: r.preview ? "preview_done" : "done" }));
     } catch (e) {
       setErr(e?.message || "Something went wrong. Please try again.");
@@ -53,9 +56,24 @@ export default function ProfileCompletionPage() {
         </div>
       )}
       <h2 style={{ marginTop: 0 }}>Hello {state.applicant_name},</h2>
-      <p>In TIR we assess the founder as closely as the idea. We couldn't find your{" "}
-        {state.needs_resume && state.needs_linkedin ? "résumé and LinkedIn" : state.needs_resume ? "résumé" : "LinkedIn"}{" "}
-        in your application ({state.display_id}). Please add {single ? "it" : "them"} below.</p>
+      {state.needs_evidence ? (
+        <p>While reviewing your application ({state.display_id}), we found some of your evidence files need re-uploading due to some technical issues. Please re-upload them below.</p>
+      ) : (
+        <p>In TIR we assess the founder as closely as the idea. We couldn't find your{" "}
+          {state.needs_resume && state.needs_linkedin ? "résumé and LinkedIn" : state.needs_resume ? "résumé" : "LinkedIn"}{" "}
+          in your application ({state.display_id}). Please add {single ? "it" : "them"} below.</p>
+      )}
+
+      {state.needs_evidence && (
+        <div style={{ margin: "16px 0" }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>Re-upload your evidence files (PDF/JPG/PNG)</div>
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png" multiple
+            onChange={(e) => setEvFiles(e.target.files)} />
+          <div style={{ fontSize: 13, color: "#8a8a92", marginTop: 6 }}>
+            {evFiles?.length ? `${evFiles.length} file(s) selected` : "Select all the evidence you originally submitted."}
+          </div>
+        </div>
+      )}
 
       {state.needs_resume && (
         <div style={{ margin: "16px 0" }}>
@@ -85,7 +103,9 @@ export default function ProfileCompletionPage() {
         </div>
       )}
       {err && <p style={{ color: "#b3262b", fontSize: 13 }}>{err}</p>}
-      <button onClick={submit} disabled={busy || (state.needs_resume && !file && !linkedin.trim())}
+      <button onClick={submit} disabled={busy || (state.needs_evidence
+        ? evFiles.length === 0
+        : (state.needs_resume && !file && !linkedin.trim()))}
         style={{ background: "#3213b7", color: "#fff", border: 0, padding: "12px 24px", fontSize: 15, cursor: "pointer" }}>
         {busy ? "Submitting…" : "Submit →"}
       </button>

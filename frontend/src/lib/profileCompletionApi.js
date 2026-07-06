@@ -8,4 +8,9 @@ export const profileCompletionApi = {
     if (linkedinUrl) fd.append("linkedin_url", linkedinUrl);
     return apiCall(`/profile-completion/${encodeURIComponent(token)}`, { method: "POST", body: fd });
   },
+  submitEvidence: (token, filesList) => {
+    const fd = new FormData();
+    Array.from(filesList || []).forEach((f) => fd.append("files", f));
+    return apiCall(`/profile-completion/${encodeURIComponent(token)}`, { method: "POST", body: fd });
+  },
 };
