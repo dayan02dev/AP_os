@@ -114,9 +114,9 @@ class LifecycleDriver:
         return r
 
     def run_ai(self):
-        # Simulate the SQS worker: the real persist() does the submitted->under_review write.
+        # Simulate the SQS worker: the real worker no longer advances status.
         from app.services.ai_pipeline import pipeline
-        pipeline.persist(self.ctx.fake, self.app_id, self.track, _canned_score(), advance_status=True)
+        pipeline.persist(self.ctx.fake, self.app_id, self.track, _canned_score(), advance_status=False)
 
     def assign(self, reviewer_ids):
         # Reviewers must have a user_roles row; the assign endpoint checks it.
@@ -180,51 +180,46 @@ def test_A1_submit_sets_submitted(client, monkeypatch, _clear, track):
 
 
 @pytest.mark.parametrize("track", ["tir", "sip"])
-def test_A2_ai_screening_sets_under_review(client, monkeypatch, _clear, track):
+def test_A2_ai_screening_keeps_submitted(client, monkeypatch, _clear, track):
     app_id = f"app-{track}"
     fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
     ctx = install_fake_db(monkeypatch, fake)
     d = LifecycleDriver(client, ctx, track, app_id)
 
-    d.submit()
-    assert d.status() == "submitted"
-    d.run_ai()
-    assert d.status() == "under_review"
-    # ai_screening row was written for this app+track.
-    scr = fake.table("ai_screening").select("*").eq("application_id", app_id).eq("application_track", track).execute().data
-    assert scr and scr[0]["score_overall"] == 5.0
+    d.submit(); d.run_ai()
+    assert d.status() == "submitted"  # AI no longer advances status
+    scr = fake.table("ai_screening").select("*").eq("application_id", app_id).execute().data
+    assert scr and scr[0]["score_overall"] == 5.0  # but scores were written
 
 
 @pytest.mark.parametrize("track", ["tir", "sip"])
-def test_A3_assign_reviewer_does_not_change_status(client, monkeypatch, _clear, track):
+def test_A3_assign_moves_to_under_review(client, monkeypatch, _clear, track):
     app_id = f"app-{track}"
     fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
     ctx = install_fake_db(monkeypatch, fake)
     d = LifecycleDriver(client, ctx, track, app_id)
 
-    d.submit()
-    d.run_ai()
-    assert d.status() == "under_review"
+    d.submit(); d.run_ai(); assert d.status() == "submitted"
 
     d.assign([REVIEWER])
 
-    # THE KEY ASSERTION: assignment inserts a row but does NOT move status.
-    assert d.status() == "under_review"
+    assert d.status() == "under_review"  # assignment is THE trigger now
     assert len(fake.tables["reviewer_assignments"]) == 1
 
 
 @pytest.mark.parametrize("track", ["tir", "sip"])
-def test_A4_last_reviewer_submits_sets_evaluated(client, monkeypatch, _clear, track):
+def test_A4_first_review_sets_evaluated(client, monkeypatch, _clear, track):
     app_id = f"app-{track}"
     fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
     ctx = install_fake_db(monkeypatch, fake)
     d = LifecycleDriver(client, ctx, track, app_id)
 
-    d.submit(); d.run_ai(); d.assign([REVIEWER])
+    d.submit(); d.run_ai(); d.assign([REVIEWER, REVIEWER2])
     assert d.status() == "under_review"
 
-    d.submit_review(REVIEWER)
-
+    d.submit_review(REVIEWER)                 # FIRST of two
+    assert d.status() == "evaluated"          # single review flips it
+    d.submit_review(REVIEWER2)                # second is a no-op
     assert d.status() == "evaluated"
 
 
@@ -236,11 +231,28 @@ def test_A6_full_happy_path_chain(client, monkeypatch, _clear, track):
     d = LifecycleDriver(client, ctx, track, app_id)
 
     d.submit();          assert d.status() == "submitted"
-    d.run_ai();          assert d.status() == "under_review"
+    d.run_ai();          assert d.status() == "submitted"
     d.assign([REVIEWER]); assert d.status() == "under_review"
     d.submit_review(REVIEWER); assert d.status() == "evaluated"
     r = d.decide("jury_review"); assert r.status_code == 200, r.text
     assert d.status() == "jury_review"
+
+
+@pytest.mark.parametrize("track", ["tir", "sip"])
+def test_AI_screens_when_assigned_first(client, monkeypatch, _clear, track):
+    """Assign before AI runs -> app is under_review -> worker must still screen."""
+    app_id = f"app-{track}"
+    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
+    ctx = install_fake_db(monkeypatch, fake)
+    d = LifecycleDriver(client, ctx, track, app_id)
+
+    d.submit(); d.assign([REVIEWER]); assert d.status() == "under_review"
+    # No ai_screening row yet -> worker screens (real persist w/ advance_status=False
+    # via handler); simulate the worker's persist directly to stay hermetic:
+    d.run_ai()
+    assert d.status() == "under_review"  # AI did not change status
+    scr = fake.table("ai_screening").select("*").eq("application_id", app_id).execute().data
+    assert scr  # screened despite being under_review
 
 
 @pytest.mark.parametrize("track", ["tir", "sip"])
@@ -264,21 +276,6 @@ def test_A5_admin_approve_sets_jury_review(client, monkeypatch, _clear, track):
 
 
 @pytest.mark.parametrize("track", ["tir", "sip"])
-def test_B1_B2_two_reviewers_only_flips_on_last(client, monkeypatch, _clear, track):
-    app_id = f"app-{track}"
-    fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
-    ctx = install_fake_db(monkeypatch, fake)
-    d = LifecycleDriver(client, ctx, track, app_id)
-
-    d.submit(); d.run_ai(); d.assign([REVIEWER, REVIEWER2])
-
-    d.submit_review(REVIEWER)               # 1 of 2
-    assert d.status() == "under_review"     # B1: not all complete
-    d.submit_review(REVIEWER2)              # 2 of 2
-    assert d.status() == "evaluated"        # B2: last one flips it
-
-
-@pytest.mark.parametrize("track", ["tir", "sip"])
 def test_B3_draft_review_does_not_flip(client, monkeypatch, _clear, track):
     app_id = f"app-{track}"
     fake = FakeSupabase({f"{track}_applications": [_seed_draft(track, app_id)]})
@@ -287,7 +284,7 @@ def test_B3_draft_review_does_not_flip(client, monkeypatch, _clear, track):
 
     d.submit(); d.run_ai(); d.assign([REVIEWER])
     d.submit_review(REVIEWER, draft=True)
-    assert d.status() == "under_review"     # draft ≠ completion
+    assert d.status() == "under_review"  # a draft is not a submitted review
 
 
 @pytest.mark.parametrize("track", ["tir", "sip"])
@@ -296,24 +293,25 @@ def test_B4_auto_transition_noop_when_not_under_review(client, monkeypatch, _cle
     app_id = f"app-{track}"
     fake = FakeSupabase({
         f"{track}_applications": [{"id": app_id, "user_id": APPLICANT, "status": "evaluated"}],
-        "reviewer_assignments": [
-            {"id": "as1", "application_id": app_id, "application_track": track,
-             "reviewer_user_id": REVIEWER, "completed_at": "2026-07-01T00:00:00Z"}],
+        "reviews": [{"id": "r1", "application_id": app_id, "application_track": track,
+                     "status": "submitted", "submitted_at": "2026-07-01T00:00:00Z"}],
     })
     install_fake_db(monkeypatch, fake)
-    fired = state_machine.auto_transition_to_evaluated_if_complete(app_id, track)
+    fired = state_machine.auto_transition_to_evaluated_on_first_review(app_id, track)
     assert fired is False
     assert fake.status_of(track, app_id) == "evaluated"  # unchanged
 
 
 @pytest.mark.parametrize("track", ["tir", "sip"])
-def test_B5_auto_transition_noop_with_no_assignments(client, monkeypatch, _clear, track):
+def test_B5_auto_transition_noop_with_no_reviews(client, monkeypatch, _clear, track):
     from app.services import state_machine
     app_id = f"app-{track}"
-    fake = FakeSupabase({f"{track}_applications": [
-        {"id": app_id, "user_id": APPLICANT, "status": "under_review"}]})
+    fake = FakeSupabase({
+        f"{track}_applications": [{"id": app_id, "user_id": APPLICANT, "status": "under_review"}],
+        "reviews": [],
+    })
     install_fake_db(monkeypatch, fake)
-    fired = state_machine.auto_transition_to_evaluated_if_complete(app_id, track)
+    fired = state_machine.auto_transition_to_evaluated_on_first_review(app_id, track)
     assert fired is False
     assert fake.status_of(track, app_id) == "under_review"
 
@@ -358,7 +356,7 @@ def test_D1_approve_directly_from_under_review(client, monkeypatch, _clear, trac
     ctx = install_fake_db(monkeypatch, fake)
     d = LifecycleDriver(client, ctx, track, app_id)
 
-    d.submit(); d.run_ai()
+    d.submit(); d.assign([REVIEWER])
     assert d.status() == "under_review"       # no reviews at all
     r = d.decide("jury_review")
     assert r.status_code == 200, r.text
@@ -394,23 +392,35 @@ def test_D3_illegal_rewind_is_422_and_status_unchanged(client, monkeypatch, _cle
 
 
 @pytest.mark.parametrize("track", ["tir", "sip"])
-def test_E1_ai_on_non_submitted_row_is_idempotent(client, monkeypatch, _clear, track):
-    """The worker skips non-submitted rows (its own idempotency guard). The
-    real module path (from backend/, pythonpath=".") is `workers.ai_screener.handler`
-    — NOT `app.workers.ai_screener.handler` (there is no `app/workers` package).
+def test_E1_ai_worker_is_idempotent_on_already_screened(client, monkeypatch, _clear, track):
+    """The worker's idempotency guard now keys on an existing `ai_screening`
+    row — decoupled from status, since assignment (not AI screening) drives
+    status. An already-screened app (here `under_review`, i.e. assigned
+    before or after screening) must not be re-screened. The real module path
+    (from backend/, pythonpath=".") is `workers.ai_screener.handler` — NOT
+    `app.workers.ai_screener.handler` (there is no `app/workers` package).
     `handler.py` imports `get_admin_client` directly, so patching
     `handler.get_admin_client` is what `_process_record` actually reads."""
     from workers.ai_screener import handler
+    from app.services.ai_pipeline import pipeline
 
     app_id = f"app-{track}"
-    fake = FakeSupabase({f"{track}_applications": [
-        {"id": app_id, "user_id": APPLICANT, "status": "evaluated"}]})
+    fake = FakeSupabase({
+        f"{track}_applications": [{"id": app_id, "user_id": APPLICANT, "status": "under_review"}],
+        "ai_screening": [{"application_id": app_id, "application_track": track, "score_overall": 7.0}],
+    })
     install_fake_db(monkeypatch, fake)
     monkeypatch.setattr(handler, "get_admin_client", lambda: fake, raising=False)
+    ran = {"n": 0}
+    monkeypatch.setattr(
+        pipeline, "run_for_application",
+        lambda *a, **k: ran.__setitem__("n", ran["n"] + 1), raising=False,
+    )
 
     handler._process_record({"body": {"application_id": app_id, "application_track": track}})
 
-    assert fake.status_of(track, app_id) == "evaluated"  # unchanged; not re-screened
+    assert ran["n"] == 0  # already screened -> skipped, no pipeline run
+    assert fake.status_of(track, app_id) == "under_review"  # unchanged
 
 
 def test_F1_F2_track_parity_and_correct_table(client, monkeypatch, _clear):
@@ -441,4 +451,4 @@ def test_F1_F2_track_parity_and_correct_table(client, monkeypatch, _clear):
 
     # F1: identical status sequence for both tracks.
     assert seq_status["tir"] == seq_status["sip"] == [
-        "submitted", "under_review", "under_review", "evaluated", "jury_review"]
+        "submitted", "submitted", "under_review", "evaluated", "jury_review"]
