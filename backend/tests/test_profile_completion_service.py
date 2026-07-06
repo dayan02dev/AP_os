@@ -1,4 +1,7 @@
 import types
+
+import pytest
+
 from app.services import profile_completion_service as svc
 
 
@@ -27,8 +30,23 @@ class _Query:
         return _Resp(rows)
 
 
+class _StorageBucket:
+    def __init__(self, name, uploads): self.name = name; self._uploads = uploads
+    def upload(self, path, file, file_options=None):
+        self._uploads.append({"bucket": self.name, "path": path, "size": len(file), "options": file_options})
+        return {"path": path}
+
+
+class _Storage:
+    def __init__(self, uploads): self._uploads = uploads
+    def from_(self, bucket): return _StorageBucket(bucket, self._uploads)
+
+
 class FakeClient:
-    def __init__(self, seed=None): self.store=dict(seed or {})
+    def __init__(self, seed=None):
+        self.store=dict(seed or {})
+        self.uploads=[]
+        self.storage=_Storage(self.uploads)
     def table(self, name): return _Query(name, self.store)
 
 
@@ -87,3 +105,41 @@ def test_find_cohort_excludes_rejected_and_withdrawn():
     # b(rejected)+c(withdrawn) excluded by status; d excluded (has both) → only a
     assert [r["id"] for r in out] == ["a"]
     assert out[0]["needs_resume"] is True and out[0]["needs_linkedin"] is True
+
+
+def test_create_token_persists_needs_evidence():
+    client = FakeClient()
+    svc.create_token(client, application_id="app-1", needs_resume=False,
+                      needs_linkedin=False, needs_evidence=True, sent_to="x@x.com")
+    row = client.store["profile_completion_tokens"][0]
+    assert row["needs_evidence"] is True
+
+
+def test_store_evidence_prunes_dead_keeps_live_appends_new():
+    # existing evidence_files: one live (A), one dead (B). exists_fn marks B missing.
+    client = FakeClient({"tir_applications": [{
+        "id": "app-1", "user_id": "u-1",
+        "evidence_files": [
+            {"file_uuid": "A", "path": "u-1/evidence/A.pdf", "name": "a.pdf", "size": 1, "mime": "application/pdf", "uploaded_at": "t"},
+            {"file_uuid": "B", "path": "u-1/evidence/B.pdf", "name": "b.pdf", "size": 1, "mime": "application/pdf", "uploaded_at": "t"},
+        ]}]})
+    exists = lambda bucket, path: path != "u-1/evidence/B.pdf"   # B is dead
+    out = svc.store_evidence_submission(
+        client, application_id="app-1", owner_user_id="u-1",
+        files=[{"bytes": b"x", "filename": "new.jpg", "mime": "image/jpeg"}],
+        exists_fn=exists)
+    _, payload = client.store["tir_applications_updates"][-1]
+    saved = payload["evidence_files"]
+    uuids = {e["file_uuid"] for e in saved}
+    assert "A" in uuids and "B" not in uuids           # live kept, dead pruned
+    assert any(e["path"].endswith(".jpg") for e in saved)  # new appended
+    assert out == {"added": 1, "pruned": 1, "kept": 1}
+
+
+def test_store_evidence_rejects_bad_mime():
+    client = FakeClient({"tir_applications": [{"id": "app-1", "user_id": "u-1", "evidence_files": []}]})
+    with pytest.raises(ValueError):
+        svc.store_evidence_submission(
+            client, application_id="app-1", owner_user_id="u-1",
+            files=[{"bytes": b"x", "filename": "x.exe", "mime": "application/x-msdownload"}],
+            exists_fn=lambda *_: True)

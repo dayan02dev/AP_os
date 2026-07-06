@@ -10,6 +10,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import httpx
+
 from app.services import sqs_publisher
 
 _TOKEN_TABLE = "profile_completion_tokens"
@@ -21,6 +23,10 @@ _MIME_TO_EXT = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
     "application/msword": "doc",
 }
+
+_EVIDENCE_BUCKET = "tir-evidence-files"
+_EVIDENCE_MIME_TO_EXT = {"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png"}
+_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024
 
 
 def _now() -> datetime:
@@ -40,6 +46,7 @@ def create_token(
     application_id: str | None,
     needs_resume: bool,
     needs_linkedin: bool,
+    needs_evidence: bool = False,
     sent_to: str | None,
     is_preview: bool = False,
 ) -> str:
@@ -50,6 +57,7 @@ def create_token(
         "token": token,
         "needs_resume": needs_resume,
         "needs_linkedin": needs_linkedin,
+        "needs_evidence": needs_evidence,
         "is_preview": is_preview,
         "sent_to": sent_to,
         "expires_at": (_now() + timedelta(hours=_TTL_HOURS)).isoformat(),
@@ -139,6 +147,60 @@ def store_submission(
         sqs_publisher.publish_founder_check(application_id, "tir")
 
     return saved
+
+
+def _bytes_exist(client: Any, bucket: str, path: str) -> bool:
+    """True if the object's bytes serve. Conservative: unknown/error -> True
+    (never prune a file we can't confirm is missing)."""
+    try:
+        s = client.storage.from_(bucket).create_signed_url(path, 120)
+        url = s.get("signedURL") or s.get("signedUrl") or s.get("url")
+        if not url:
+            return True
+        if url.startswith("/"):
+            import os as _os
+            url = _os.environ["SUPABASE_URL"] + url
+        return httpx.get(url, headers={"Range": "bytes=0-0"}, timeout=20).status_code in (200, 206)
+    except Exception:
+        return True
+
+
+def store_evidence_submission(
+    client: Any,
+    *,
+    application_id: str,
+    owner_user_id: str,
+    files: list[dict],
+    exists_fn=_bytes_exist,
+) -> dict:
+    """Upload each evidence file, then rebuild evidence_files = (existing whose
+    bytes still resolve) + (new). Prunes dead entries. Raises ValueError on a bad file."""
+    new_entries = []
+    for f in files:
+        m = (f.get("mime") or "").lower()
+        if m not in _EVIDENCE_MIME_TO_EXT:
+            raise ValueError(f"unsupported_mime:{m}")
+        data = f["bytes"]
+        if len(data) > _EVIDENCE_MAX_BYTES:
+            raise ValueError("file_too_large")
+        ext = _EVIDENCE_MIME_TO_EXT[m]
+        fid = str(uuid.uuid4())
+        path = f"{owner_user_id}/evidence/{fid}.{ext}"
+        client.storage.from_(_EVIDENCE_BUCKET).upload(
+            path=path, file=data, file_options={"content-type": m})
+        new_entries.append({"file_uuid": fid, "path": path,
+            "name": f.get("filename") or f"evidence-{fid[:8]}.{ext}",
+            "size": len(data), "mime": m, "uploaded_at": _now().isoformat()})
+
+    rows = (client.table("tir_applications").select("id,evidence_files")
+            .eq("id", application_id).limit(1).execute().data) or []
+    existing = list((rows[0].get("evidence_files") if rows else None) or [])
+    kept = [e for e in existing if isinstance(e, dict) and e.get("path")
+            and exists_fn(_EVIDENCE_BUCKET, e["path"])]
+    pruned = len(existing) - len(kept)
+    client.table("tir_applications").update(
+        {"evidence_files": [*kept, *new_entries]}).eq("id", application_id).execute()
+    return {"added": len(new_entries), "pruned": pruned, "kept": len(kept)}
 
 
 # Applicants no longer in consideration — never nudged to complete a profile.
