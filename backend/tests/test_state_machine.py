@@ -261,3 +261,32 @@ def test_illegal_transition_from_onboarded_to_jury_review():
         sm.assert_legal_transition("onboarded", "jury_review")
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail["code"] == "illegal_transition"
+
+
+# ─── Assignment-driven status workflow (2026-07-06) ─────────────────────
+
+
+def test_submitted_to_under_review_is_legal():
+    from app.services import state_machine
+    assert "under_review" in state_machine.LEGAL_TRANSITIONS["submitted"]
+
+
+def test_advance_to_under_review_only_from_submitted(monkeypatch):
+    from app.services import state_machine
+    from tests.fixtures.fake_supabase import FakeSupabase
+    fake = FakeSupabase({"tir_applications": [{"id": "a1", "status": "submitted"}]})
+    monkeypatch.setattr(state_machine, "get_admin_client", lambda: fake)
+    assert state_machine.advance_to_under_review_on_assignment("a1", "tir") is True
+    assert fake.status_of("tir", "a1") == "under_review"
+    # idempotent / no-op when not submitted
+    assert state_machine.advance_to_under_review_on_assignment("a1", "tir") is False
+    assert fake.status_of("tir", "a1") == "under_review"
+
+
+def test_advance_noop_when_already_evaluated(monkeypatch):
+    from app.services import state_machine
+    from tests.fixtures.fake_supabase import FakeSupabase
+    fake = FakeSupabase({"sip_applications": [{"id": "a2", "status": "evaluated"}]})
+    monkeypatch.setattr(state_machine, "get_admin_client", lambda: fake)
+    assert state_machine.advance_to_under_review_on_assignment("a2", "sip") is False
+    assert fake.status_of("sip", "a2") == "evaluated"

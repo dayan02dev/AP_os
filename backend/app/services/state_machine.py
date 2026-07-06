@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 # The only states that cannot be rejected are the terminal ones (onboarded,
 # rejected, withdrawn).
 LEGAL_TRANSITIONS: dict[str, frozenset[str]] = {
-    "submitted":        frozenset({"jury_review", "rejected", "withdrawn"}),
+    "submitted":        frozenset({"under_review", "jury_review", "rejected", "withdrawn"}),
     "ai_screening":     frozenset({"jury_review", "rejected", "withdrawn"}),
     "screening_failed": frozenset({"jury_review", "rejected", "withdrawn"}),
     "under_review":     frozenset({"evaluated", "jury_review", "rejected", "withdrawn"}),
@@ -252,3 +252,21 @@ def apply_status_change(
             extra={"application_id": application_id, "err": str(exc)},
         )
     return from_status
+
+
+def advance_to_under_review_on_assignment(application_id: str, track: str) -> bool:
+    """Guarded submitted -> under_review, fired when a reviewer is assigned.
+    No-op (returns False) unless the app is currently 'submitted'. Idempotent."""
+    sb = get_admin_client()
+    table = "tir_applications" if track == "tir" else "sip_applications"
+    rows = (
+        sb.table(table).select("status").eq("id", application_id).limit(1).execute().data
+        or []
+    )
+    if not rows or rows[0].get("status") != "submitted":
+        return False
+    apply_status_change(
+        application_id, track,
+        to_status="under_review", changed_by=None, reason="reviewer assigned",
+    )
+    return True
