@@ -8,15 +8,27 @@ def _record(app_id, track):
             "body": json.dumps({"application_id": app_id, "application_track": track})}
 
 
-def _stub_screening(monkeypatch, status="submitted"):
-    """Make the record processable up to the founder_check call."""
+def _stub_screening(monkeypatch, status="submitted", already_screened=False):
+    """Make the record processable up to the founder_check call.
+
+    Table-aware: the worker's idempotency guard now queries `ai_screening`
+    (with .limit(1)) to decide whether to skip. Return [] there so screening
+    proceeds; return the app row for the {track}_applications maybe_single fetch.
+    """
     class _Q:
+        def __init__(self, name): self._name = name
         def select(self, *a, **k): return self
         def eq(self, *a, **k): return self
+        def limit(self, *a, **k): return self
         def maybe_single(self): return self
-        def execute(self): return type("R", (), {"data": {"id": "app-1", "status": status}})()
+        def execute(self):
+            if self._name == "ai_screening":
+                data = [{"application_id": "app-1"}] if already_screened else []
+            else:
+                data = {"id": "app-1", "status": status}
+            return type("R", (), {"data": data})()
     class _C:
-        def table(self, name): return _Q()
+        def table(self, name): return _Q(name)
     monkeypatch.setattr(handler, "get_admin_client", lambda: _C())
     monkeypatch.setattr(handler.pipeline, "run_for_application",
                         lambda *a, **k: type("SR", (), {"score_overall": 7.0})())
