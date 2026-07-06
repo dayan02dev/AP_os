@@ -1,0 +1,12 @@
+Dear {{ applicant_name }},
+
+While reviewing your ARTPARK TIR application ({{ display_id }}), we found that some of the evidence files you uploaded need to be re-uploaded due to some technical issues.
+
+Please re-upload your evidence using your secure link below. It is unique to your application, needs no login, and stays valid for 72 hours:
+
+{{ link_url }}
+
+What to upload: the supporting documents/images from the Evidence section of your application (PDF, JPG, PNG). Please re-upload all the evidence you originally submitted.
+
+Thank you.
+— The ARTPARK team

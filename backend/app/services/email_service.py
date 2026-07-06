@@ -235,6 +235,28 @@ class EmailService:
             text=text,
         )
 
+    def send_evidence_recollection(
+        self,
+        to: str,
+        applicant_name: str,
+        display_id: str,
+        link_url: str,
+    ) -> dict[str, str]:
+        html, text = self._render_pair(
+            "evidence_recollection",
+            {
+                "applicant_name": applicant_name or "Applicant",
+                "display_id": display_id,
+                "link_url": link_url,
+            },
+        )
+        return self.send_raw(
+            to=[to],
+            subject="Action needed — re-upload your ARTPARK TIR evidence files",
+            html=html,
+            text=text,
+        )
+
     def send_support_ticket(
         self,
         ticket: dict[str, Any],

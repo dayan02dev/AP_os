@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Re-upload your ARTPARK TIR evidence files{% endblock %}
+{% block header_sublabel %}RE-UPLOAD YOUR EVIDENCE FILES{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:600;line-height:1.3;">Dear {{ applicant_name }},</h1>
+
+<p style="margin:0 0 14px 0;">While reviewing your <strong>ARTPARK TIR</strong> application (<strong>{{ display_id }}</strong>), we found that some of the evidence files you uploaded need to be re-uploaded due to some technical issues.</p>
+
+<p style="margin:0 0 20px 0;">Please re-upload your evidence using your secure link below. It is unique to your application, needs no login, and stays valid for <strong>72 hours</strong>.</p>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px 0;">
+  <tr><td bgcolor="#3213b7" style="background-color:#3213b7;border-radius:4px;">
+    <a href="{{ link_url }}" style="display:inline-block;padding:12px 28px;font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">Re-upload my evidence files →</a>
+  </td></tr>
+</table>
+
+<p style="margin:0 0 8px 0;color:#4a4a45;font-size:13px;">Or paste this link into your browser:</p>
+<p style="margin:0 0 20px 0;font-size:13px;word-break:break-all;"><a href="{{ link_url }}" style="color:#3213b7;">{{ link_url }}</a></p>
+
+<p style="margin:0 0 0 0;color:#4a4a45;font-size:13px;">What to upload: the supporting documents/images from the Evidence section of your application (PDF, JPG, PNG). Please re-upload all the evidence you originally submitted.</p>
+
+<p style="margin:24px 0 0 0;">Thank you.<br>— The ARTPARK team</p>
+{% endblock %}
