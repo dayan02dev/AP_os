@@ -171,10 +171,19 @@ def store_evidence_submission(
     application_id: str,
     owner_user_id: str,
     files: list[dict],
-    exists_fn=_bytes_exist,
+    exists_fn=None,
 ) -> dict:
     """Upload each evidence file, then rebuild evidence_files = (existing whose
-    bytes still resolve) + (new). Prunes dead entries. Raises ValueError on a bad file."""
+    bytes still resolve) + (new). Prunes dead entries. Raises ValueError on a bad file.
+
+    ``exists_fn(bucket, path) -> bool`` defaults to a real signed-URL byte-check,
+    bound to ``client`` here. (The default ``_bytes_exist`` takes ``(client, bucket,
+    path)`` but the prune loop calls ``(bucket, path)`` — wiring it as a default arg
+    mismatched the arity and 500'd in production.)"""
+    if exists_fn is None:
+        def exists_fn(bucket, path):
+            return _bytes_exist(client, bucket, path)
+
     new_entries = []
     for f in files:
         m = (f.get("mime") or "").lower()

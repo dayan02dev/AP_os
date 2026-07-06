@@ -143,3 +143,23 @@ def test_store_evidence_rejects_bad_mime():
             client, application_id="app-1", owner_user_id="u-1",
             files=[{"bytes": b"x", "filename": "x.exe", "mime": "application/x-msdownload"}],
             exists_fn=lambda *_: True)
+
+
+def test_store_evidence_default_exists_fn_no_arity_error():
+    # Regression: with the DEFAULT exists_fn (client-bound _bytes_exist), the prune loop
+    # must not raise. Prod 500'd because the loop calls exists_fn(bucket, path) but the
+    # default _bytes_exist takes (client, bucket, path). The FakeClient has no
+    # create_signed_url, so _bytes_exist's own try/except returns True (entry kept) —
+    # the point of this test is that the call completes with NO TypeError.
+    client = FakeClient({"tir_applications": [{
+        "id": "app-1", "user_id": "u-1",
+        "evidence_files": [
+            {"file_uuid": "A", "path": "u-1/evidence/A.pdf", "name": "a.pdf", "size": 1, "mime": "application/pdf", "uploaded_at": "t"},
+        ]}]})
+    out = svc.store_evidence_submission(   # no exists_fn -> exercises the real default path
+        client, application_id="app-1", owner_user_id="u-1",
+        files=[{"bytes": b"x", "filename": "new.jpg", "mime": "image/jpeg"}])
+    assert out["added"] == 1
+    assert set(out) == {"added", "pruned", "kept"}
+    _, payload = client.store["tir_applications_updates"][-1]
+    assert any(e["path"].endswith(".jpg") for e in payload["evidence_files"])  # new appended
