@@ -30,6 +30,7 @@ class _Query:
         self._is_null: list[str] = []
         self._single: str | None = None  # None | "maybe" | "one"
         self._limit: int | None = None
+        self._ignore_duplicates: bool = False
 
     # chainable no-ops
     def select(self, *_a, **_k): return self
@@ -55,10 +56,11 @@ class _Query:
     def update(self, payload): self._mode = "update"; self._payload = payload; return self
     def delete(self): self._mode = "delete"; return self
 
-    def upsert(self, payload, on_conflict: str | None = None):
+    def upsert(self, payload, on_conflict: str | None = None, ignore_duplicates: bool = False):
         self._mode = "upsert"
         self._payload = payload
         self._on_conflict = [c.strip() for c in on_conflict.split(",")] if on_conflict else []
+        self._ignore_duplicates = ignore_duplicates
         return self
 
     def _match(self, row) -> bool:

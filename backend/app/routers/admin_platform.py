@@ -437,6 +437,10 @@ async def assign_applications(
         ).execute()
         notify_reviewers_assigned(sb, fan_rows)
 
+        from app.services import state_machine
+        for aid, atrack in {(r["application_id"], r["application_track"]) for r in fan_rows}:
+            state_machine.advance_to_under_review_on_assignment(aid, atrack)
+
     write_audit(
         actor_user_id=user["user_id"],
         actor_role=actor_role_of(user),

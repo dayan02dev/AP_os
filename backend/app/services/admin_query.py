@@ -1130,6 +1130,10 @@ def assign_reviewers_to_batch(
             ignore_duplicates=True,
         ).execute()
 
+    from app.services import state_machine  # local import to avoid cycles
+    for aid, atrack in {(r["application_id"], r["application_track"]) for r in rows}:
+        state_machine.advance_to_under_review_on_assignment(aid, atrack)
+
     return {
         "created": len(rows),
         "reviewers": len(reviewer_ids),

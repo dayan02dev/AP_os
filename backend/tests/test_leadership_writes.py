@@ -22,7 +22,7 @@ import pytest
 from app.deps import get_current_user
 from app.main import app
 from app.routers import leadership_actions as la_router
-from app.services import applications_query
+from app.services import applications_query, state_machine
 from app.services.state_machine import (
     LEGAL_TRANSITIONS,
     assert_legal_transition,
@@ -240,6 +240,10 @@ def _install_db(monkeypatch, tables: dict[str, list[dict]]):
     fake = _FakeAdminClient(tables=tables)
     monkeypatch.setattr(la_router, "get_admin_client", lambda: fake)
     monkeypatch.setattr(applications_query, "get_admin_client", lambda: fake)
+    # assign_reviewers now also calls state_machine.advance_to_under_review_
+    # on_assignment, which reads the global admin client — wire it to the
+    # same fake so no real network call is attempted.
+    monkeypatch.setattr(state_machine, "get_admin_client", lambda: fake)
     return fake
 
 

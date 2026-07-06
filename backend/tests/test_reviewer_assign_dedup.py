@@ -22,7 +22,7 @@ from types import SimpleNamespace
 
 from postgrest.exceptions import APIError
 
-from app.services import admin_query
+from app.services import admin_query, state_machine
 
 # Tiny cap so a 3rd row is "beyond the cap" without seeding 1000 rows.
 _CAP = 2
@@ -142,11 +142,16 @@ def _seed_over_cap():
     }
 
 
-def test_assign_survives_existing_beyond_row_cap():
+def test_assign_survives_existing_beyond_row_cap(monkeypatch):
     """The bug: dedup misses appDup (beyond the cap) → re-insert → 23505.
     The fix must NOT raise, must skip appDup, and must create only appX."""
     tables = _seed_over_cap()
     sb = _FakeClient(tables)
+    # assign_reviewers_to_batch now also advances submitted->under_review via
+    # state_machine, which reads the global admin client — point it at the
+    # same fake so no real network call is attempted. Neither app row exists
+    # in `tables`, so the lookup finds nothing and the advance is a no-op.
+    monkeypatch.setattr(state_machine, "get_admin_client", lambda: sb)
 
     result = admin_query.assign_reviewers_to_batch(
         sb, "b1", ["rev-1"], assigned_by="admin-1",
@@ -166,11 +171,12 @@ def test_assign_survives_existing_beyond_row_cap():
     assert dup_count == 1, f"appDup duplicated {dup_count}x"
 
 
-def test_assign_is_idempotent_when_repeated():
+def test_assign_is_idempotent_when_repeated(monkeypatch):
     """Assigning the same reviewer to the same batch twice must not 500 and must
     create 0 the second time."""
     tables = _seed_over_cap()
     sb = _FakeClient(tables)
+    monkeypatch.setattr(state_machine, "get_admin_client", lambda: sb)
 
     first = admin_query.assign_reviewers_to_batch(sb, "b1", ["rev-1"], assigned_by="admin-1")
     second = admin_query.assign_reviewers_to_batch(sb, "b1", ["rev-1"], assigned_by="admin-1")

@@ -145,6 +145,11 @@ async def assign_reviewers(
         {"reviewer_user_id": r["reviewer_user_id"], "application_id": application_id, "application_track": track}
         for r in results if r.get("status") == "created"
     ])
+
+    from app.services import state_machine
+    if any(r.get("status") == "created" for r in results):
+        state_machine.advance_to_under_review_on_assignment(application_id, track)
+
     return {"application_id": application_id, "track": track, "results": results}
 
 
