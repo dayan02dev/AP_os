@@ -469,6 +469,54 @@ def collect_application_file_paths(
     return out
 
 
+# Résumés are NOT stored inline on the application row (unlike evidence files);
+# each application FKs one upload row via `resume_file_id`. TIR → tir_resume_uploads
+# / tir-resumes; VIP(sip) → sip_resume_uploads / sip-resumes.
+_RESUME_TABLE: dict[str, str] = {"tir": "tir_resume_uploads", "sip": "sip_resume_uploads"}
+_RESUME_BUCKET: dict[str, str] = {"tir": "tir-resumes", "sip": "sip-resumes"}
+
+
+def resolve_resume_file(track: str, app_row: dict[str, Any]) -> dict[str, Any] | None:
+    """Resolve an application's ``resume_file_id`` into a file object.
+
+    Returns a dict shaped for the frontend FileGridAnswer renderer
+    (``original_filename`` / ``file_size_bytes`` / ``storage_path`` / ``mime_type``)
+    plus ``bucket`` for the signed-URL allow-list — or ``None`` when the
+    application has no résumé, or the upload row / its storage path is missing.
+    """
+    rid = app_row.get("resume_file_id")
+    table = _RESUME_TABLE.get(track)
+    if not rid or table is None:
+        return None
+    try:
+        res = (
+            get_admin_client()
+            .table(table)
+            .select("storage_path, original_filename, file_size_bytes, mime_type")
+            .eq("id", str(rid))
+            .limit(1)
+            .execute()
+        )
+    except Exception:
+        log.warning("resolve_resume_file: lookup failed",
+                    extra={"track": track, "resume_file_id": str(rid)})
+        return None
+    rows = res.data or []
+    if not rows:
+        return None
+    row = rows[0]
+    path = row.get("storage_path")
+    if not path:
+        return None
+    return {
+        "original_filename": row.get("original_filename") or "resume",
+        "file_size_bytes": row.get("file_size_bytes"),
+        "storage_path": path,
+        "mime_type": row.get("mime_type"),
+        "bucket": _RESUME_BUCKET[track],
+    }
+
+
 def fetch_ai_screening_for(
     application_id: str, track: str,
 ) -> dict[str, Any] | None:
