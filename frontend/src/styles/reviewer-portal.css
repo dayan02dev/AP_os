@@ -670,6 +670,7 @@
   display: flex; align-items: center; height: 60px; gap: 20px;
   padding: 0 20px; border-bottom: 1px solid #e3e3e8;
   background: #fff; flex-shrink: 0;
+  position: sticky; top: 0; z-index: 30;
 }
 .rv-portal .lp-brand {
   display: flex; align-items: center; gap: 9px;

@@ -363,10 +363,12 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   if (viewApp) {
     return (
       <div>
+        {/* Pinned below the sticky 60px topbar so the back button stays reachable
+            while scrolling, without overlapping the logo / role line. */}
         <div
           style={{
-            position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
-            height: 60, boxSizing: "border-box",
+            position: "fixed", top: 60, left: 0, right: 0, zIndex: 29,
+            height: 48, boxSizing: "border-box",
             display: "flex", alignItems: "center", padding: "0 20px",
             background: "var(--paper, #fff)",
             borderBottom: "1px solid var(--line, #e3e3e8)",
@@ -377,6 +379,8 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
             ← Back to evaluation
           </button>
         </div>
+        {/* Spacer offsets the fixed back bar so the first section isn't hidden. */}
+        <div style={{ height: 48 }} aria-hidden="true" />
         <FullApplication
           track={content.track}
           application={content.application}
