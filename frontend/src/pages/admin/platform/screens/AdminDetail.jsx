@@ -24,6 +24,7 @@ import AiSections from "../../../../components/AiSections.jsx";
 import { Chip } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import FullApplication from "../../../../components/FullApplication";
+import ProfilePills from "../../../../components/ProfilePills";
 
 // ── Criteria metadata (mirrors prototype CRIT_LABELS / METRICS) ─────────────
 const METRICS = [
@@ -250,9 +251,17 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
   if (viewApp) {
     return (
       <div>
-        <button className="os-btn ghost sm" style={{ marginBottom: 16 }} onClick={() => setViewApp(false)}>
-          ← Back
-        </button>
+        <div
+          style={{
+            position: "sticky", top: 0, zIndex: 20,
+            background: "var(--paper, #fff)", padding: "10px 0",
+            marginBottom: 16, borderBottom: "1px solid var(--line, #e3e3e8)",
+          }}
+        >
+          <button className="os-btn ghost sm" onClick={() => setViewApp(false)}>
+            ← Back
+          </button>
+        </div>
         <FullApplication
           track={track}
           application={s.application}
@@ -324,7 +333,16 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
           <div className="os-card">
             <div className="os-card-head">
               <div className="os-card-title">Application · {s.name}</div>
-              <div className="os-row gap-sm">
+              <div className="os-row gap-sm" style={{ alignItems: "center" }}>
+                <ProfilePills
+                  resumeFile={s.application?.resume_file}
+                  linkedinUrl={s.application?.linkedin_url}
+                  onOpenResume={async () => {
+                    const rf = s.application.resume_file;
+                    const { url } = await leadershipApi.fileSignedUrl(s.id, rf.storage_path);
+                    window.open(url, "_blank", "noopener,noreferrer");
+                  }}
+                />
                 <Chip>{s.domain}</Chip>
                 <Chip>{s.stage}</Chip>
                 {s.trl && s.trl !== '—' && <Chip>TRL {s.trl}</Chip>}
