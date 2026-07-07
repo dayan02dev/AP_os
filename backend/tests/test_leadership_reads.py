@@ -1162,3 +1162,51 @@ class TestLeadershipStagingIntegration:
         )
         assert r.status_code == 403, r.text
         assert r.json()["detail"]["code"] == "missing_capability"
+
+
+def test_signed_url_accepts_resume_path(client, _clear_overrides, monkeypatch):
+    """The leadership/admin signed-url endpoint signs the résumé path once it's
+    merged into the allow-list from resume_file_id."""
+    import app.routers.leadership as lead_mod
+
+    monkeypatch.setattr(
+        applications_query, "find_application_with_track",
+        lambda _id: ("tir", {"resume_file_id": "res-1"}),
+    )
+    monkeypatch.setattr(
+        applications_query, "resolve_resume_file",
+        lambda track, row: {
+            "original_filename": "cv.pdf", "file_size_bytes": 10,
+            "storage_path": "u1/res-1.pdf", "mime_type": "application/pdf",
+            "bucket": "tir-resumes",
+        },
+    )
+
+    calls = {}
+
+    class _FakeStorageBucket:
+        def __init__(self, bucket):
+            calls["bucket"] = bucket
+
+        def create_signed_url(self, path, ttl):
+            calls["path"] = path
+            return {"signedURL": "https://signed.example/u1/res-1.pdf?token=x"}
+
+    class _FakeStorage:
+        def from_(self, bucket):
+            return _FakeStorageBucket(bucket)
+
+    class _FakeAdmin:
+        storage = _FakeStorage()
+
+    monkeypatch.setattr(lead_mod, "get_admin_client", lambda: _FakeAdmin())
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.get(
+        "/leadership/applications/00000000-0000-0000-0000-000000000000/files/signed-url"
+        "?storage_path=u1/res-1.pdf",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    assert calls["bucket"] == "tir-resumes"
+    assert calls["path"] == "u1/res-1.pdf"

@@ -410,6 +410,7 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
     # The resolved track from find_application_with_track is authoritative;
     # the URL hint is not trusted (callers may pass an incorrect track).
     track = found_track
+    app_row["resume_file"] = applications_query.resolve_resume_file(track, app_row)
 
     ai_screening = applications_query.fetch_ai_screening_for(application_id, track)
     reviews = applications_query.fetch_reviews_for(application_id, track)

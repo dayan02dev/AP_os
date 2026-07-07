@@ -426,6 +426,9 @@ async def get_application_file_signed_url(
     track, app_row = found
 
     allowed = applications_query.collect_application_file_paths(track, app_row)
+    resume_file = applications_query.resolve_resume_file(track, app_row)
+    if resume_file:
+        allowed[resume_file["storage_path"]] = resume_file["bucket"]
     bucket = allowed.get(storage_path)
     if bucket is None:
         # Path isn't referenced by this application — refuse to sign it.
