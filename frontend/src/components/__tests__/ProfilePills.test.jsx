@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import ProfilePills from "../ProfilePills.jsx";
 
 describe("ProfilePills", () => {
@@ -15,6 +15,21 @@ describe("ProfilePills", () => {
     const btn = screen.getByRole("button", { name: /Résumé/ });
     fireEvent.click(btn);
     expect(onOpenResume).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces an inline error when the résumé download fails (e.g. bytes missing)", async () => {
+    const onOpenResume = vi.fn().mockRejectedValue({ code: "file_not_available" });
+    render(
+      <ProfilePills
+        resumeFile={{ storage_path: "u1/r.pdf" }}
+        linkedinUrl={null}
+        onOpenResume={onOpenResume}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Résumé/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(/isn't in storage/i),
+    );
   });
 
   it("shows a muted, inert Résumé pill when absent", () => {
