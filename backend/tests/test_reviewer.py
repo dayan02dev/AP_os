@@ -144,11 +144,12 @@ def _clear_overrides():
 
 def _install_db(monkeypatch, tables):
     from app.routers import reviewer as rv
-    from app.services import reviewer_query, state_machine
+    from app.services import applications_query, reviewer_query, state_machine
     fake = _FakeAdminClient(tables=tables)
     monkeypatch.setattr(rv, "get_admin_client", lambda: fake)
     monkeypatch.setattr(reviewer_query, "get_admin_client", lambda: fake)
     monkeypatch.setattr(state_machine, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(applications_query, "get_admin_client", lambda: fake)
     # Capture-only audit so we don't hit a real Supabase from inside
     # write_audit's own get_admin_client() call. Matches the pattern in
     # test_leadership_writes._capture_audit_writes.
@@ -2052,3 +2053,80 @@ def test_signed_url_happy_path_assigned_allowlisted(client, monkeypatch, _clear_
     assert "url" in body
     assert body["expires_in"] == 120
     assert "cdn.example.com" in body["url"]
+
+
+# ─── Résumé visibility (2026-07-07) ────────────────────────────────────
+
+
+def test_content_endpoint_includes_resume_file(client, monkeypatch, _clear_overrides):
+    """content.application.resume_file is resolved from tir_resume_uploads."""
+    me = "rev-1"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [{
+            "id": "asg-1", "application_id": "app-1", "application_track": "tir",
+            "reviewer_user_id": me, "declined_at": None, "reassigned_to": None,
+            "assigned_at": "2026-06-01T00:00:00+00:00"}],
+        "tir_applications": [{
+            "id": "app-1", "basic_full_name": "Alice", "basic_org": "Widgets Inc",
+            "submitted_at": "2026-05-20T00:00:00+00:00", "evidence_files": [],
+            "resume_file_id": "res-1", "linkedin_url": "https://linkedin.com/in/alice"}],
+        "tir_resume_uploads": [{
+            "id": "res-1", "storage_path": "u1/res-1.pdf",
+            "original_filename": "alice_cv.pdf", "file_size_bytes": 12345,
+            "mime_type": "application/pdf"}],
+        "sip_applications": [],
+        "reviews": [],
+        "ai_screening": [],
+        "industry_categories": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get("/reviewer/applications/tir/app-1/content")
+    assert r.status_code == 200, r.text
+    rf = r.json()["application"]["resume_file"]
+    assert rf["storage_path"] == "u1/res-1.pdf"
+    assert rf["original_filename"] == "alice_cv.pdf"
+    assert r.json()["application"]["linkedin_url"] == "https://linkedin.com/in/alice"
+
+
+def test_signed_url_accepts_resume_path(client, monkeypatch, _clear_overrides):
+    """An assigned reviewer can sign the résumé path even though it isn't an
+    inline file field — it's added to the allow-list from resume_file_id."""
+    me = "rev-1"
+    _RES_PATH = "u1/res-1.pdf"
+    fake = _install_db(monkeypatch, {
+        "reviewer_assignments": [{
+            "id": "asg-1", "application_id": "app-1", "application_track": "tir",
+            "reviewer_user_id": me, "declined_at": None, "reassigned_to": None,
+            "assigned_at": "2026-06-01T00:00:00+00:00"}],
+        "tir_applications": [{
+            "id": "app-1", "submitted_at": "2026-05-20T00:00:00+00:00",
+            "resume_file_id": "res-1"}],
+        "tir_resume_uploads": [{
+            "id": "res-1", "storage_path": _RES_PATH,
+            "original_filename": "alice_cv.pdf", "file_size_bytes": 10,
+            "mime_type": "application/pdf"}],
+        "sip_applications": [],
+        "reviews": [],
+        "ai_screening": [],
+    })
+
+    class _FakeBucket:
+        def create_signed_url(self, path, expiry):
+            return {"signedURL": f"https://cdn.example.com/{path}?token=abc"}
+
+    class _FakeStorage:
+        def from_(self, bucket):
+            return _FakeBucket()
+
+    fake.storage = _FakeStorage()
+    from app.routers import reviewer as rv
+    monkeypatch.setattr(rv, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get(
+        "/reviewer/applications/tir/app-1/files/signed-url",
+        params={"storage_path": _RES_PATH},
+    )
+    assert r.status_code == 200, r.text
+    assert "cdn.example.com" in r.json()["url"]

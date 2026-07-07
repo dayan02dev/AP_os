@@ -76,6 +76,7 @@ async def get_application_content(
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
                             detail={"code": "not_found"})
     app_row = payload["application"]
+    app_row["resume_file"] = applications_query.resolve_resume_file(track, app_row)
     ai = payload.get("ai_screening") or {}
     field_map = (review_presenter.TIR_FIELD_MAP if track == "tir"
                  else review_presenter.SIP_FIELD_MAP)
@@ -144,6 +145,9 @@ async def get_reviewer_file_signed_url(
                             detail={"code": "not_found"})
     app_row = payload["application"]
     allowed = applications_query.collect_application_file_paths(track, app_row)
+    resume_file = applications_query.resolve_resume_file(track, app_row)
+    if resume_file:
+        allowed[resume_file["storage_path"]] = resume_file["bucket"]
     bucket = allowed.get(storage_path)
     if bucket is None:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
