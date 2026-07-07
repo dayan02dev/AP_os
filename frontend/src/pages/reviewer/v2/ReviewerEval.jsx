@@ -365,9 +365,12 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
       <div>
         <div
           style={{
-            position: "sticky", top: 0, zIndex: 20,
-            background: "var(--paper, #fff)", padding: "10px 0",
-            marginBottom: 16, borderBottom: "1px solid var(--line, #e3e3e8)",
+            position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
+            height: 60, boxSizing: "border-box",
+            display: "flex", alignItems: "center", padding: "0 20px",
+            background: "var(--paper, #fff)",
+            borderBottom: "1px solid var(--line, #e3e3e8)",
+            boxShadow: "0 2px 8px rgba(15,23,42,0.06)",
           }}
         >
           <button className="os-btn ghost sm" onClick={() => setViewApp(false)}>
