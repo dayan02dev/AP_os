@@ -26,6 +26,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import AiSections from "../../../components/AiSections.jsx";
 import FullApplication from "../../../components/FullApplication.jsx";
+import ProfilePills from "../../../components/ProfilePills.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
 import {
@@ -362,9 +363,17 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   if (viewApp) {
     return (
       <div>
-        <button className="os-btn ghost sm" style={{ marginBottom: 16 }} onClick={() => setViewApp(false)}>
-          ← Back to evaluation
-        </button>
+        <div
+          style={{
+            position: "sticky", top: 0, zIndex: 20,
+            background: "var(--paper, #fff)", padding: "10px 0",
+            marginBottom: 16, borderBottom: "1px solid var(--line, #e3e3e8)",
+          }}
+        >
+          <button className="os-btn ghost sm" onClick={() => setViewApp(false)}>
+            ← Back to evaluation
+          </button>
+        </div>
         <FullApplication
           track={content.track}
           application={content.application}
@@ -452,7 +461,18 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
           <div className="os-card">
             <div className="os-card-head">
               <div className="os-card-title">Application · {application.name}</div>
-              <div className="os-row gap-sm">
+              <div className="os-row gap-sm" style={{ alignItems: "center" }}>
+                <ProfilePills
+                  resumeFile={content.application?.resume_file}
+                  linkedinUrl={content.application?.linkedin_url}
+                  onOpenResume={async () => {
+                    const rf = content.application.resume_file;
+                    const { url } = await reviewerApi.fileSignedUrl(
+                      content.track, content.id, rf.storage_path,
+                    );
+                    window.open(url, "_blank", "noopener,noreferrer");
+                  }}
+                />
                 <Chip>{application.track === "tir" ? "TIR" : "VIP"}</Chip>
               </div>
             </div>
