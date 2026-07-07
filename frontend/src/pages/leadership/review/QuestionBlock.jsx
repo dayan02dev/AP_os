@@ -12,6 +12,7 @@ import VideoAnswer from "./answers/VideoAnswer.jsx";
 import DeclarationAnswer from "./answers/DeclarationAnswer.jsx";
 import TeamListAnswer from "./answers/TeamListAnswer.jsx";
 import CapTableAnswer from "./answers/CapTableAnswer.jsx";
+import LinkAnswer from "./answers/LinkAnswer.jsx";
 
 function renderAnswer(question, application, applicationId, signedUrl) {
   const value = application ? application[question.key] : undefined;
@@ -31,6 +32,8 @@ function renderAnswer(question, application, applicationId, signedUrl) {
       return <TeamListAnswer value={value} />;
     case "captable":
       return <CapTableAnswer value={value} />;
+    case "link":
+      return <LinkAnswer value={value} />;
     case "text":
     default:
       return <TextAnswer value={value} />;
@@ -43,7 +46,7 @@ export default function QuestionBlock({ question, application, applicationId, si
   return (
     <div className="q-block">
       <div className="q-block-head">
-        <span className="q-block-num">{question.number} →</span>
+        {question.number && <span className="q-block-num">{question.number} →</span>}
         <span className={`q-block-chip ${chipClass}`}>{chipLabel}</span>
       </div>
       <h3 className="q-block-label">{question.label}</h3>
