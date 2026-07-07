@@ -129,6 +129,18 @@ export const TIR_SCHEMA = [
         ],
         required: true,
       },
+      {
+        key: "linkedin_url",
+        label: "LinkedIn profile",
+        type: "link",
+        required: false,
+      },
+      {
+        key: "resume_file",
+        label: "Résumé",
+        type: "file",
+        required: false,
+      },
     ],
   },
   {
@@ -438,6 +450,18 @@ export const SIP_SCHEMA = [
           "Other",
         ],
         required: true,
+      },
+      {
+        key: "linkedin_url",
+        label: "LinkedIn profile",
+        type: "link",
+        required: false,
+      },
+      {
+        key: "resume_file",
+        label: "Résumé",
+        type: "file",
+        required: false,
       },
     ],
   },
