@@ -97,6 +97,8 @@ def fetch_inbox(reviewer_user_id: str) -> list[dict]:
             app_row = None
         if app_row is None:
             continue
+        if app_row.get("status") == "rejected":
+            continue
 
         # my_review lookup
         try:
@@ -537,6 +539,8 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
         track = a["application_track"]
         app_row = apps_by_key.get((a["application_id"], track))
         if not app_row:
+            continue
+        if app_row.get("status") == "rejected":
             continue
 
         ai_row = ai_by_key.get((a["application_id"], track))

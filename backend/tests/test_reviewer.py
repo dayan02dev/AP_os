@@ -1548,6 +1548,77 @@ def test_queue_bulk_fetches_without_per_assignment_loop(
     assert counts.get("reviews", 0) <= 2, counts
 
 
+def test_queue_excludes_rejected_application(client, monkeypatch, _clear_overrides):
+    """A rejected app must never surface in the reviewer's queue, even if its
+    reviewer_assignments row wasn't (yet) cleaned up."""
+    me = "rev-1"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [
+            {"id": "asg-1", "application_id": "app-1", "application_track": "tir",
+             "reviewer_user_id": me, "due_at": None,
+             "declined_at": None, "reassigned_to": None},
+            {"id": "asg-2", "application_id": "app-2", "application_track": "tir",
+             "reviewer_user_id": me, "due_at": None,
+             "declined_at": None, "reassigned_to": None},
+        ],
+        "tir_applications": [
+            {"id": "app-1", "display_seq": 26001, "basic_full_name": "Aanya",
+             "status": "under_review",
+             "submitted_at": "2026-05-20T00:00:00+00:00", "basic_teammates": []},
+            {"id": "app-2", "display_seq": 26002, "basic_full_name": "Rahul",
+             "status": "rejected",
+             "submitted_at": "2026-05-21T00:00:00+00:00", "basic_teammates": []},
+        ],
+        "sip_applications": [],
+        "reviews": [],
+        "ai_screening": [],
+        "industry_categories": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get("/reviewer/queue")
+    assert r.status_code == 200, r.text
+    ids = {item["id"] for item in r.json()}
+    assert ids == {"app-1"}, ids
+
+
+def test_inbox_excludes_rejected_application(client, monkeypatch, _clear_overrides):
+    """A rejected app must never surface in the reviewer's inbox, even if its
+    reviewer_assignments row wasn't (yet) cleaned up."""
+    me = "rev-1"
+    _install_db(monkeypatch, {
+        "reviewer_assignments": [
+            {"id": "a1", "reviewer_user_id": me, "application_id": "app1",
+             "application_track": "tir", "assigned_at": "2026-05-16T09:00:00Z",
+             "assigned_by": "leader-u", "declined_at": None, "reassigned_to": None,
+             "completed_at": None},
+            {"id": "a2", "reviewer_user_id": me, "application_id": "app2",
+             "application_track": "tir", "assigned_at": "2026-05-16T09:00:00Z",
+             "assigned_by": "leader-u", "declined_at": None, "reassigned_to": None,
+             "completed_at": None},
+        ],
+        "tir_applications": [
+            {"id": "app1", "basic_org": "EdTech Co", "status": "under_review",
+             "answers": {"problem": "AI tutoring for K-12 in rural India"},
+             "submitted_at": "2026-05-15T00:00:00Z"},
+            {"id": "app2", "basic_org": "X", "status": "rejected",
+             "answers": {}, "submitted_at": "2026-05-15T00:00:00Z"},
+        ],
+        "sip_applications": [],
+        "reviews": [],
+        "profiles": [
+            {"id": "leader-u", "full_name": "Dev Dayan", "email": "dev@artpark.in"},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(me)
+
+    r = client.get("/reviewer/assignments")
+    assert r.status_code == 200, r.text
+    ids = [a["assignment_id"] for a in r.json()["assignments"]]
+    assert "a1" in ids
+    assert "a2" not in ids  # rejected
+
+
 # ─── GET /reviewer/applications/{track}/{id}/content ───────────────────
 
 
