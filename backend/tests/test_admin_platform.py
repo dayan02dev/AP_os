@@ -799,7 +799,8 @@ def test_batch_reviewer_unassign_unknown_batch_404(client, monkeypatch, _clear_o
 def test_roster_includes_batches_grouping(client, monkeypatch, _clear_overrides):
     """Each reviewer object carries a `batches` array of {name, count} derived
     from reviewer_assignments → application_batches → batches.name; apps with no
-    batch are omitted from `batches` but still count in `assigned`."""
+    batch membership still count in `assigned` and surface as an "Unbatched"
+    chip, so the visible chip counts always sum to `assigned`."""
     _install_db(monkeypatch, {
         "user_roles": [{"user_id": "rev-1", "role": "reviewer"}],
         "profiles": [{"id": "rev-1", "email": "r1@x.in", "full_name": "Rev One"}],
@@ -809,7 +810,7 @@ def test_roster_includes_batches_grouping(client, monkeypatch, _clear_overrides)
              "application_track": "tir", "declined_at": None, "reassigned_to": None},
             {"id": "a2", "reviewer_user_id": "rev-1", "application_id": "app-2",
              "application_track": "tir", "declined_at": None, "reassigned_to": None},
-            # app-3 has no batch membership → omitted from `batches` grouping.
+            # app-3 has no batch membership → surfaces as "Unbatched".
             {"id": "a3", "reviewer_user_id": "rev-1", "application_id": "app-3",
              "application_track": "tir", "declined_at": None, "reassigned_to": None},
         ],
@@ -826,7 +827,78 @@ def test_roster_includes_batches_grouping(client, monkeypatch, _clear_overrides)
     assert r.status_code == 200, r.text
     row = {x["user_id"]: x for x in r.json()["reviewers"]}["rev-1"]
     assert row["assigned"] == 3            # all three count toward assigned
-    assert row["batches"] == [{"name": "Batch A", "count": 2}]
+    assert row["batches"] == [
+        {"name": "Batch A", "count": 2},
+        {"name": "Unbatched", "count": 1},
+    ]
+
+
+def test_roster_excludes_rejected_and_adds_unbatched_bucket(client, monkeypatch, _clear_overrides):
+    """Rejected apps must not count toward a reviewer's `assigned`, and an
+    active assignment with no batch link surfaces as an "Unbatched" chip so
+    the visible batch-chip counts always sum to `assigned` — keeping the
+    roster consistent across reviewers who share a batch."""
+    tables = _empty_admin_tables()
+    tables["user_roles"] = [
+        {"user_id": "rev-a", "role": "reviewer"},
+        {"user_id": "rev-b", "role": "reviewer"},
+    ]
+    tables["profiles"] = [
+        {"id": "rev-a", "full_name": "Rev A", "email": "a@x.com"},
+        {"id": "rev-b", "full_name": "Rev B", "email": "b@x.com"},
+    ]
+    tables["reviewer_profiles"] = []
+    tables["tir_applications"] = [
+        {"id": "app-1", "status": "under_review"},
+        {"id": "app-2", "status": "under_review"},
+        {"id": "app-3", "status": "under_review"},
+        {"id": "app-4", "status": "rejected"},
+    ]
+    tables["reviewer_assignments"] = [
+        {"id": "a1", "reviewer_user_id": "rev-a", "application_id": "app-1",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None},
+        {"id": "a2", "reviewer_user_id": "rev-a", "application_id": "app-2",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None},
+        {"id": "b1a", "reviewer_user_id": "rev-b", "application_id": "app-1",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None},
+        {"id": "b2a", "reviewer_user_id": "rev-b", "application_id": "app-2",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None},
+        # app-3 has no batch membership → "Unbatched" for rev-b.
+        {"id": "b3", "reviewer_user_id": "rev-b", "application_id": "app-3",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None},
+        # app-4 is rejected → must NOT count toward rev-b's assigned/batches.
+        {"id": "b4", "reviewer_user_id": "rev-b", "application_id": "app-4",
+         "application_track": "tir", "declined_at": None, "reassigned_to": None},
+    ]
+    tables["application_batches"] = [
+        {"application_id": "app-1", "application_track": "tir", "batch_id": "b1"},
+        {"application_id": "app-2", "application_track": "tir", "batch_id": "b1"},
+    ]
+    tables["batches"] = [{"id": "b1", "name": "Batch A"}]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+
+    r = client.get("/admin/platform/reviewers")
+    assert r.status_code == 200, r.text
+    by_id = {x["user_id"]: x for x in r.json()["reviewers"]}
+    rev_a, rev_b = by_id["rev-a"], by_id["rev-b"]
+
+    # rejected app-4 excluded from rev-b's assigned count.
+    assert rev_a["assigned"] == 2
+    assert rev_b["assigned"] == 3  # app-1, app-2, app-3 — NOT app-4
+
+    a_batches = {b["name"]: b["count"] for b in rev_a["batches"]}
+    b_batches = {b["name"]: b["count"] for b in rev_b["batches"]}
+
+    # Shared batch (Batch A) count is identical for both reviewers.
+    assert a_batches["Batch A"] == b_batches["Batch A"] == 2
+
+    # rev-b's extra unbatched active assignment surfaces as "Unbatched", and
+    # the chip counts sum to `assigned` (no rejected-app leakage).
+    assert b_batches["Unbatched"] == 1
+    assert sum(b_batches.values()) == rev_b["assigned"]
+    assert "Unbatched" not in a_batches
+    assert sum(a_batches.values()) == rev_a["assigned"]
 
 
 def test_admin_stats_includes_decision_counts(client, monkeypatch, _clear_overrides):

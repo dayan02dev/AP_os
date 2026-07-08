@@ -604,6 +604,16 @@ def fetch_roster() -> dict[str, Any]:
         if aid and track and bid in batch_names:
             app_batch_name[(aid, track)] = batch_names.get(bid)
 
+    # Rejected apps: excluded from every reviewer's active/assigned/batches so
+    # a Gate-1 rejection (which detaches the app — see decisions.record_decision
+    # / applications_query.detach_application_from_review) can never re-appear
+    # in the roster via a not-yet-cleaned-up row.
+    rejected_keys: set[tuple[str, str]] = set()
+    for tbl, trk in (("tir_applications", "tir"), ("sip_applications", "sip")):
+        for row in _fetch_all(lambda t=tbl: sb.table(t).select("id,status")):
+            if row.get("status") == "rejected" and row.get("id"):
+                rejected_keys.add((row["id"], trk))
+
     out: list[dict[str, Any]] = []
     for rid in reviewer_ids:
         prof = profiles.get(rid) or {}
@@ -612,6 +622,7 @@ def fetch_roster() -> dict[str, Any]:
         active = [
             a for a in assignments_by_rev[rid]
             if a.get("declined_at") is None and a.get("reassigned_to") is None
+            and (a.get("application_id"), a.get("application_track")) not in rejected_keys
         ]
         # Progress = WORK DONE. `completed` = distinct apps this reviewer has
         # submitted a review for; `assigned` = |active assignments ∪ reviewed|.
@@ -622,6 +633,7 @@ def fetch_roster() -> dict[str, Any]:
             (r.get("application_id"), r.get("application_track"))
             for r in reviews_by_rev[rid]
             if r.get("submitted_at")
+            and (r.get("application_id"), r.get("application_track")) not in rejected_keys
         }
         active_keys = {
             (a.get("application_id"), a.get("application_track")) for a in active
@@ -638,10 +650,16 @@ def fetch_roster() -> dict[str, Any]:
             if name is None:
                 continue
             batch_counts[name] = batch_counts.get(name, 0) + 1
+        unbatched = sum(
+            1 for a in active
+            if app_batch_name.get((a.get("application_id"), a.get("application_track"))) is None
+        )
         batches = [
             {"name": name, "count": count}
             for name, count in sorted(batch_counts.items())
         ]
+        if unbatched:
+            batches.append({"name": "Unbatched", "count": unbatched})
 
         # Consistency over submitted reviews with a matching ai_overall.
         diffs: list[float] = []
