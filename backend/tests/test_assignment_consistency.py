@@ -12,12 +12,26 @@ class _Tbl:
         self._name = name
         self._eqs = []
         self._mode = "select"
+        self._payload = None
 
     def select(self, *a, **k):
         return self
 
     def delete(self):
         self._mode = "delete"
+        return self
+
+    def insert(self, payload):
+        # Minimal extension (beyond the plan's verbatim _Tbl) so Task 3 can
+        # drive the real `record_decision`, which inserts an admin_decisions
+        # row. Mirrors the shared harness's insert handling.
+        self._mode = "insert"
+        self._payload = payload
+        return self
+
+    def limit(self, *_a, **_k):
+        # Minimal extension: `record_decision` chains .limit(1) on its
+        # pre-validation select; a no-op here since our fake tables are tiny.
         return self
 
     def eq(self, col, val):
@@ -33,6 +47,11 @@ class _Tbl:
             removed = [r for r in rows if self._match(r)]
             self._store[self._name] = [r for r in rows if not self._match(r)]
             return SimpleNamespace(data=removed, count=len(removed))
+        if self._mode == "insert":
+            payloads = self._payload if isinstance(self._payload, list) else [self._payload]
+            written = [dict(p) for p in payloads]
+            self._store.setdefault(self._name, []).extend(written)
+            return SimpleNamespace(data=written, count=len(written))
         return SimpleNamespace(data=[r for r in rows if self._match(r)], count=0)
 
 
@@ -136,3 +155,66 @@ def test_unassign_endpoint_removes_all_reviewers_and_batch_link(
     assert body["assignments_removed"] == 2
     assert store["reviewer_assignments"] == []
     assert store["application_batches"] == []
+
+
+# ─── Task 3: rejecting an app detaches it from batch + all reviewers ──────
+
+
+def _install_decisions_fake(monkeypatch, store):
+    from app.services import decisions
+    fake = _Client(store)
+    monkeypatch.setattr(decisions, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(decisions.state_machine, "apply_status_change", lambda *a, **k: None)
+    monkeypatch.setattr(decisions, "write_audit", lambda **k: None)
+    monkeypatch.setattr(decisions.decision_email, "notify_applicant_decided",
+                         lambda _sb, **kw: None)
+    return fake
+
+
+def test_reject_detaches_app_from_batch_and_all_reviewers(monkeypatch):
+    from app.services import decisions
+
+    store = {
+        "tir_applications": [{"id": "a1", "status": "under_review"}],
+        "admin_decisions": [],
+        "reviewer_assignments": [
+            {"application_id": "a1", "application_track": "tir", "reviewer_user_id": "r1"},
+            {"application_id": "a1", "application_track": "tir", "reviewer_user_id": "r2"},
+        ],
+        "application_batches": [
+            {"application_id": "a1", "application_track": "tir", "batch_id": "b1"},
+        ],
+    }
+    _install_decisions_fake(monkeypatch, store)
+
+    decisions.record_decision(
+        track="tir", application_id="a1", decision="rejected",
+        rationale="not a fit", decided_by="admin-1",
+    )
+
+    assert store["reviewer_assignments"] == []
+    assert store["application_batches"] == []
+
+
+def test_jury_review_decision_leaves_assignments_intact(monkeypatch):
+    from app.services import decisions
+
+    store = {
+        "tir_applications": [{"id": "a1", "status": "under_review"}],
+        "admin_decisions": [],
+        "reviewer_assignments": [
+            {"application_id": "a1", "application_track": "tir", "reviewer_user_id": "r1"},
+        ],
+        "application_batches": [
+            {"application_id": "a1", "application_track": "tir", "batch_id": "b1"},
+        ],
+    }
+    _install_decisions_fake(monkeypatch, store)
+
+    decisions.record_decision(
+        track="tir", application_id="a1", decision="jury_review",
+        rationale=None, decided_by="admin-1",
+    )
+
+    assert len(store["reviewer_assignments"]) == 1
+    assert len(store["application_batches"]) == 1

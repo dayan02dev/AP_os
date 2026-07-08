@@ -22,13 +22,16 @@ decision row, where the retry 422'd on an illegal same-status transition).
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 
 from ..supabase_client import get_admin_client
-from . import decision_email, state_machine
+from . import applications_query, decision_email, state_machine
 from .audit import write_audit
+
+log = logging.getLogger(__name__)
 
 
 def record_decision(*, track, application_id, decision, rationale, decided_by, decided_by_role: str | None = None) -> dict:
@@ -73,6 +76,18 @@ def record_decision(*, track, application_id, decision, rationale, decided_by, d
         to_status=decision, changed_by=decided_by,
         reason=rationale or f"gate1: {decision}",
     )
+
+    # On rejection, remove the app from the batch and every reviewer so it
+    # leaves all reviewer queues. Best-effort: a cleanup failure must not undo
+    # the recorded decision. Reviews are preserved by the helper.
+    if decision == "rejected":
+        try:
+            applications_query.detach_application_from_review(
+                sb, application_id, track, remove_batch_link=True,
+            )
+        except Exception:  # noqa: BLE001
+            log.warning("reject cleanup failed",
+                        extra={"application_id": application_id, "track": track})
 
     # 4. Best-effort audit.
     write_audit(
