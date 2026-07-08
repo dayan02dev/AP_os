@@ -119,6 +119,26 @@ describe("AdminReviewers (reviewer-mode)", () => {
     expect(screen.getByText("Karthik Nair")).toBeTruthy();
   });
 
+  it("renders an 'Unbatched' bucket chip without a remove (×) control", () => {
+    useAdminData.mockReturnValue({
+      data: { reviewers: [{
+        ...SAMPLE_REVIEWERS[0],
+        batches: [{ name: "Batch A", count: 145 }, { name: "Unbatched", count: 10 }],
+        progress: "0 / 155",
+      }] },
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    });
+    render(<AdminReviewers decisionMode="reviewer" />);
+    // A real batch keeps its remove control…
+    expect(screen.getByLabelText(/Remove Batch A from/i)).toBeTruthy();
+    // …but the computed "Unbatched" bucket has none (nothing to unassign from).
+    expect(screen.queryByLabelText(/Remove Unbatched from/i)).toBeNull();
+    // The bucket count is still shown in the label.
+    expect(screen.getByText(/10 of Unbatched/i)).toBeTruthy();
+  });
+
   it("shows loading state while fetching", () => {
     useAdminData.mockReturnValue({ data: null, loading: true, error: null, reload: vi.fn() });
     render(<AdminReviewers decisionMode="reviewer" />);

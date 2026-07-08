@@ -742,15 +742,19 @@ export function AdminReviewers({ decisionMode }) {
                           {rBatches.map(b => (
                             <span key={b.name} className="os-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px', fontSize: 11 }}>
                               {b.name}
-                              <span
-                                role="button"
-                                aria-label={`Remove ${b.name} from ${r.name}`}
-                                title={`Remove ${b.name}`}
-                                style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 11, color: '#FF5A5F', marginLeft: 2 }}
-                                onClick={() => handleUnassignBatch(r.id, b.name)}
-                              >
-                                &times;
-                              </span>
+                              {/* "Unbatched" is a computed bucket (apps in no batch), not a real
+                                  batch — there's nothing to unassign from, so no × control. */}
+                              {b.name !== 'Unbatched' && (
+                                <span
+                                  role="button"
+                                  aria-label={`Remove ${b.name} from ${r.name}`}
+                                  title={`Remove ${b.name}`}
+                                  style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 11, color: '#FF5A5F', marginLeft: 2 }}
+                                  onClick={() => handleUnassignBatch(r.id, b.name)}
+                                >
+                                  &times;
+                                </span>
+                              )}
                             </span>
                           ))}
                           {availableBatches.length > 0 ? (
