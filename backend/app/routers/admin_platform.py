@@ -32,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..deps import get_current_user
 from ..rbac import require_capability
-from ..services import admin_query, decisions
+from ..services import admin_query, applications_query, decisions
 from ..services.assignment_email import notify_reviewers_assigned
 from ..services.audit import actor_role_of, write_audit
 from ..supabase_client import get_admin_client
@@ -468,33 +468,34 @@ async def unassign_applications(
     body: BatchAssign,
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """Remove applications from whatever batch they are in (unlink only).
+    """Remove applications from whatever batch they are in AND every reviewer.
 
-    Deletes each app's `application_batches` row. Reviewer assignments and
-    reviews are left untouched — consistent with `delete_batch` and cross-batch
-    moves (batch membership and scored work are decoupled). Idempotent: an app
-    that is already unbatched contributes 0 to `removed`.
+    Deletes each app's `application_batches` row plus ALL of its
+    `reviewer_assignments` rows (every reviewer, not just one) via
+    `detach_application_from_review`, so an unassigned app disappears from
+    every reviewer's queue/roster consistently. `reviews` rows are kept for
+    audit. Idempotent: an app that is already unbatched/unassigned
+    contributes 0 to both counters.
     """
     sb = get_admin_client()
     removed = 0
+    assignments_removed = 0
     for item in body.items:
-        res = (
-            sb.table("application_batches")
-            .delete()
-            .eq("application_id", item.application_id)
-            .eq("application_track", item.track)
-            .execute()
+        result = applications_query.detach_application_from_review(
+            sb, item.application_id, item.track, remove_batch_link=True,
         )
-        removed += len(res.data or [])
+        removed += result["batch_links_removed"]
+        assignments_removed += result["assignments_removed"]
     write_audit(
         actor_user_id=user["user_id"],
         actor_role=actor_role_of(user),
         action_type="batch_applications_unassigned",
         target_table="application_batches",
         target_id=None,
-        after={"removed": removed, "count": len(body.items)},
+        after={"removed": removed, "assignments_removed": assignments_removed,
+               "count": len(body.items)},
     )
-    return {"removed": removed}
+    return {"removed": removed, "assignments_removed": assignments_removed}
 
 
 class BatchReviewersBody(BaseModel):

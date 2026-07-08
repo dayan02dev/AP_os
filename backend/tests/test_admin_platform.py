@@ -491,9 +491,10 @@ def test_batch_assign_unknown_batch_404(client, monkeypatch, _clear_overrides):
     assert r.json()["detail"]["code"] == "batch_not_found"
 
 
-def test_batch_unassign_removes_link_only(client, monkeypatch, _clear_overrides):
-    """POST /batches/unassign deletes the app's application_batches row but
-    leaves reviewer_assignments untouched (unlink-only semantics)."""
+def test_batch_unassign_removes_link_and_reviewer_assignments(client, monkeypatch, _clear_overrides):
+    """POST /batches/unassign deletes the app's application_batches row AND
+    every reviewer_assignments row for that app (all reviewers), so the app
+    disappears from every reviewer's queue/roster consistently."""
     fake = _install_db(monkeypatch, {
         "application_batches": [
             {"application_id": "app-1", "application_track": "tir", "batch_id": "b1"},
@@ -502,6 +503,8 @@ def test_batch_unassign_removes_link_only(client, monkeypatch, _clear_overrides)
         "reviewer_assignments": [
             {"application_id": "app-1", "application_track": "tir",
              "reviewer_user_id": "rev-1", "declined_at": None, "reassigned_to": None},
+            {"application_id": "app-1", "application_track": "tir",
+             "reviewer_user_id": "rev-2", "declined_at": None, "reassigned_to": None},
         ],
     })
     monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
@@ -510,13 +513,15 @@ def test_batch_unassign_removes_link_only(client, monkeypatch, _clear_overrides)
     r = client.post("/admin/platform/batches/unassign",
                     json={"items": [{"track": "tir", "application_id": "app-1"}]})
     assert r.status_code == 200
-    assert r.json()["removed"] == 1
+    body = r.json()
+    assert body["removed"] == 1
+    assert body["assignments_removed"] == 2
     # app-1 link gone, app-2 link kept
     links = fake.tables["application_batches"]
     assert not any(l["application_id"] == "app-1" for l in links)
     assert any(l["application_id"] == "app-2" for l in links)
-    # reviewer assignment untouched
-    assert len(fake.tables["reviewer_assignments"]) == 1
+    # reviewer assignments for app-1 gone for BOTH reviewers
+    assert len(fake.tables["reviewer_assignments"]) == 0
 
 
 def test_batch_unassign_is_idempotent(client, monkeypatch, _clear_overrides):
