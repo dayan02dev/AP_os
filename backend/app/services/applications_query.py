@@ -517,6 +517,46 @@ def resolve_resume_file(track: str, app_row: dict[str, Any]) -> dict[str, Any] |
     }
 
 
+def detach_application_from_review(
+    sb: Any, application_id: str, track: str, *, remove_batch_link: bool,
+) -> dict[str, int]:
+    """Remove an application from active review.
+
+    Deletes EVERY ``reviewer_assignments`` row for ``(application_id, track)`` —
+    all reviewers, so a batch stays consistent — and, when ``remove_batch_link``,
+    its ``application_batches`` row. ``reviews`` rows are intentionally kept
+    (admin/leadership still see past scores). Best-effort per delete. Used when an
+    app is unassigned from a batch or rejected at Gate-1.
+    """
+    assignments_removed = 0
+    try:
+        res = (
+            sb.table("reviewer_assignments").delete()
+            .eq("application_id", application_id)
+            .eq("application_track", track)
+            .execute()
+        )
+        assignments_removed = len(res.data or [])
+    except Exception:
+        log.warning("detach: reviewer_assignments delete failed",
+                    extra={"application_id": application_id, "track": track})
+    batch_links_removed = 0
+    if remove_batch_link:
+        try:
+            res = (
+                sb.table("application_batches").delete()
+                .eq("application_id", application_id)
+                .eq("application_track", track)
+                .execute()
+            )
+            batch_links_removed = len(res.data or [])
+        except Exception:
+            log.warning("detach: application_batches delete failed",
+                        extra={"application_id": application_id, "track": track})
+    return {"assignments_removed": assignments_removed,
+            "batch_links_removed": batch_links_removed}
+
+
 def fetch_ai_screening_for(
     application_id: str, track: str,
 ) -> dict[str, Any] | None:
