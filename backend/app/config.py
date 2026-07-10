@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     support_recipient_emails: str = ""
     mentor_recipient_emails: str = ""
     mentor_invite_reply_to: str = "nirav@artpark.in"
+    jury_invite_reply_to: str = "nirav@artpark.in"
 
     # ── AWS region (retained for future boto3 use; not read by email) ──
     # AWS_REGION is a *reserved* Lambda env var that the runtime pre-populates

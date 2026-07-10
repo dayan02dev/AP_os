@@ -503,6 +503,33 @@ class EmailService:
             reply_to=reply_to,
         )
 
+    def send_jury_invite(
+        self, *, to: str, jury_name: str, form_url: str, reply_to: str | None = None,
+    ) -> dict[str, str]:
+        """Branded invitation to join the ARTPARK jury, with a tokenised accept link."""
+        html, text = self._render_pair(
+            "jury_invite", {"jury_name": jury_name, "form_url": form_url},
+        )
+        return self.send_raw(
+            to=[to],
+            subject="Invitation: Join the ARTPARK TIR jury panel",
+            html=html, text=text, reply_to=reply_to,
+        )
+
+    def send_jury_credentials(
+        self, *, to: str, jury_name: str, login_email: str,
+        temp_password: str, portal_url: str,
+    ) -> dict[str, str]:
+        """Login credentials after a jury invite is accepted (new-account path)."""
+        html, text = self._render_pair(
+            "jury_credentials",
+            {"jury_name": jury_name or login_email, "login_email": login_email,
+             "temp_password": temp_password, "portal_url": portal_url},
+        )
+        return self.send_raw(
+            to=[to], subject="Your ARTPARK jury portal access", html=html, text=text,
+        )
+
 
 # ── Copy helpers (module-level so tests can import + diff against them) ─
 
@@ -523,6 +550,10 @@ _ROLE_COPY: dict[str, tuple[str, str]] = {
     "mentor": (
         "Mentor",
         "Guide accepted founders through their residency milestones. The mentor surface arrives in Phase 2.",
+    ),
+    "jury": (
+        "Jury Member",
+        "Browse the startups assigned to you and pick the three you want to mentor through the ARTPARK TIR program.",
     ),
     "founder": (
         "Founder",
