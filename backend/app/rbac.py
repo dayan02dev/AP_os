@@ -36,6 +36,10 @@ ROLE_CAPABILITIES: dict[str, Set[str]] = {
         "comment_app",
         "decline_assignment",
     },
+    "jury": {
+        "view_assigned_jury_apps",
+        "submit_jury_picks",
+    },
     "mentor": {
         "view_assigned_founders",
         "comment_founder",
@@ -44,6 +48,7 @@ ROLE_CAPABILITIES: dict[str, Set[str]] = {
         "view_all_apps",
         "view_app_detail",
         "assign_reviewers",
+        "assign_jurors",
         "change_app_status",
         "view_stats",
         "export_data",
@@ -58,6 +63,8 @@ ROLE_CAPABILITIES: dict[str, Set[str]] = {
         "view_all_apps",
         "view_app_detail",
         "assign_reviewers",
+        "assign_jurors",
+        "manage_jury_roster",
         "change_app_status",
         "view_audit_log",
         "manage_support",

@@ -44,7 +44,7 @@ LEGAL_TRANSITIONS: dict[str, frozenset[str]] = {
     "evaluated":        frozenset({"shortlisted", "on_hold", "jury_review", "rejected", "waitlisted", "withdrawn"}),
     "on_hold":          frozenset({"evaluated", "shortlisted", "jury_review", "rejected", "waitlisted", "withdrawn"}),
     "shortlisted":      frozenset({"jury_review", "rejected", "withdrawn"}),
-    "jury_review":      frozenset({"rejected", "withdrawn"}),
+    "jury_review":      frozenset({"offered", "waitlisted", "on_hold", "rejected", "withdrawn"}),
     "interview":        frozenset({"rejected", "withdrawn"}),
     "offered":          frozenset({"rejected", "withdrawn"}),
     "onboarded":        frozenset({"withdrawn"}),
