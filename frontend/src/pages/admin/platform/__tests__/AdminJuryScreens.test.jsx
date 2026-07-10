@@ -18,23 +18,9 @@ vi.mock("../screens/ComparativeReviewModel", () => ({
   ComparativeReviewModel: () => <div data-testid="comparative-review-model" />,
 }));
 
-// ── AdminJury smoke ─────────────────────────────────────────────────────────
-import { AdminJury } from "../screens/AdminJury";
-
-describe("AdminJury smoke", () => {
-  it("renders with PreviewBadge and table heading", () => {
-    render(<AdminJury />);
-    expect(screen.getByTestId("preview-badge")).toBeTruthy();
-    expect(screen.getByText("Karkhana Robotics")).toBeTruthy();
-    expect(screen.getByText("Assigned Jury")).toBeTruthy();
-  });
-
-  it("shows the Scores In chip", () => {
-    render(<AdminJury />);
-    // The Chip with 2/2 is rendered
-    expect(screen.getByText("2/2")).toBeTruthy();
-  });
-});
+// AdminJury smoke tests moved to the dedicated AdminJury.test.jsx (jury v2
+// rewrite — Task 13). This file now only covers the still-mock AdminGate2
+// (Task 14 will port AdminGate2 to the real pick-matrix and rehome this test).
 
 // ── AdminGate2 smoke ────────────────────────────────────────────────────────
 import { AdminGate2 } from "../screens/AdminGate2";
