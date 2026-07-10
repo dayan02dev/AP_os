@@ -109,14 +109,13 @@ describe("AdminDashboard screen (screens/)", () => {
     expect(screen.queryByText(/Where every application sits right now/i)).toBeNull();
   });
 
-  it("renders the jury-mode KPI grid when decisionMode=jury", () => {
+  it("renders the real jury-mode KPI/funnel (no preview badge) when decisionMode=jury", () => {
     useAdminData.mockReturnValue({ data: SAMPLE_STATS, loading: false, error: null });
     render(<AdminDashboard go={() => {}} decisionMode="jury" />);
     // IN JURY EVALUATION appears in both the KPI tile and the funnel row
     const juryLabels = screen.getAllByText(/IN JURY EVALUATION/i);
     expect(juryLabels.length).toBeGreaterThan(0);
-    // The jury KPI block is wrapped in a PreviewBadge (may appear multiple times)
-    const previews = screen.getAllByText(/Preview/i);
-    expect(previews.length).toBeGreaterThan(0);
+    // The mock "Preview — backend pending" badge is gone in v2.
+    expect(screen.queryByText(/Preview — backend pending/i)).toBeNull();
   });
 });

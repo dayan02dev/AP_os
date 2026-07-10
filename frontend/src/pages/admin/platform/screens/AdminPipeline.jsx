@@ -22,7 +22,6 @@
 import React from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
-import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import { Chip } from "../ui.jsx";
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
 import { relabelDisplayId } from "../../../../lib/trackLabel.js";
@@ -134,7 +133,6 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   const industries = React.useMemo(() => industryCountsFor(S, track), [S, track]);
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState([]);
-  const [showAssignJury, setShowAssignJury] = React.useState(null);
 
   const [sortCol, setSortCol] = React.useState(null);
   const [sortAsc, setSortAsc] = React.useState(true);
@@ -1047,39 +1045,15 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                 </td>
                 <td onClick={e => e.stopPropagation()}>
                   {decisionMode === 'jury' ? (
-                    <div style={{ fontSize: 13, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {/* Jury assignment column — no backend; assign is a local no-op */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{ color: 'var(--ink-dim)', fontStyle: 'italic', fontSize: 12 }}>
-                          Unassigned
-                        </span>
-                        <PreviewBadge />
-                        {showAssignJury === s.id ? (
-                          <select
-                            className="os-select sm"
-                            style={{ fontSize: 11, padding: '1px 4px', height: 20, width: 120 }}
-                            autoFocus
-                            value=""
-                            onChange={() => setShowAssignJury(null)}
-                            onBlur={() => setShowAssignJury(null)}
-                          >
-                            <option value="">-- Select Jury --</option>
-                          </select>
-                        ) : (
-                          <span
-                            style={{
-                              cursor: 'pointer', color: '#4f46e5', fontWeight: 'bold', fontSize: 11,
-                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                              width: 16, height: 16, borderRadius: '50%', background: '#ede9fe', border: '1px solid #c4b5fd'
-                            }}
-                            title="Add Jury (preview)"
-                            onClick={() => setShowAssignJury(s.id)}
-                          >
-                            +
-                          </span>
-                        )}
+                    (s.jury_assigned_names && s.jury_assigned_names.length) ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {s.jury_assigned_names.map((n, i) => (
+                          <span key={i} className="os-chip" style={{ fontSize: 11, padding: '2px 6px' }}>{n}</span>
+                        ))}
                       </div>
-                    </div>
+                    ) : (
+                      <span className="os-text-soft">Unassigned</span>
+                    )
                   ) : readOnly ? (
                     <span className="os-text-sm">{s.batch || 'Unassigned'}</span>
                   ) : (
@@ -1227,22 +1201,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
           </span>
           <div style={{ width: 1, height: 16, background: 'var(--line)' }} />
           <button className="os-floating-btn danger-outline" disabled={busy} onClick={handleBulkReject}>Reject</button>
-          {decisionMode === 'jury' ? (
-            <>
-              <div style={{ width: 1, height: 16, background: 'var(--line)' }} />
-              <div className="os-floating-select-wrap">
-                {/* Jury bulk-assign — no backend wired; PreviewBadge marks it as upcoming */}
-                <select
-                  className="os-floating-select"
-                  value=""
-                  onChange={() => {/* jury assign: no backend, local no-op */}}
-                >
-                  <option value="" disabled>Allot to Jury...</option>
-                </select>
-              </div>
-              <PreviewBadge />
-            </>
-          ) : (
+          {decisionMode !== 'jury' && (
             <>
               <div style={{ width: 1, height: 16, background: 'var(--line)' }} />
               <div className="os-floating-select-wrap">

@@ -11,7 +11,6 @@
 
 import React from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
-import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 
 // ─── FunnelRow ────────────────────────────────────────────────────────────────
 function FunnelRow({ label, sublabel, count, maxCount, filledColor = '#1f0a8a' }) {
@@ -158,7 +157,6 @@ export function AdminDashboard({ go, decisionMode }) {
 
   // ── Jury-mode KPI values (best-effort; jury backend deferred) ──
   const juryTotal    = funnel.advanced ?? 0;           // apps that reached jury stage
-  const juryInterview = 0;                             // jury interview backend deferred
   const juryDecided  = decisions.shortlisted != null
     ? (decisions.shortlisted ?? 0) + (decisions.rejected ?? 0)
     : (accepted + rejected);
@@ -174,33 +172,25 @@ export function AdminDashboard({ go, decisionMode }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, paddingBottom: 40 }}>
 
       {isJury ? (
-        /* ── JURY MODE KPIs (jury backend deferred — wrapped in PreviewBadge) ── */
-        <div>
-          <PreviewBadge />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginTop: 12 }}>
-            <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-              <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>IN JURY EVALUATION</div>
-              <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryTotal}</div>
-              <div style={{ fontSize: 11, color: 'var(--ink-dim)' }}>shortlisted for jury</div>
-            </div>
-            <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-              <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>INTERVIEW REQUESTED</div>
-              <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryInterview}</div>
-              <div style={{ fontSize: 11, color: 'var(--ink-dim)' }}>jury requested interview</div>
-            </div>
-            <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-              <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>PENDING DECISION</div>
-              <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryPending}</div>
-              <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>awaiting final decision</div>
-            </div>
-            <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-              <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>FINAL DECISIONS</div>
-              <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryDecided}</div>
-              <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--ink-soft)' }}>
-                <span style={{ color: '#2F6F62', fontWeight: 600 }}>{accepted} accepted</span>
-                <span>·</span>
-                <span style={{ color: '#d23b40', fontWeight: 600 }}>{rejected} rejected</span>
-              </div>
+        /* ── JURY MODE KPIs (real stats — jurors pick, no scoring) ── */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>IN JURY EVALUATION</div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryTotal}</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-dim)' }}>in the jury round</div>
+          </div>
+          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>PENDING DECISION</div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryPending}</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>awaiting final decision</div>
+          </div>
+          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>FINAL DECISIONS</div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryDecided}</div>
+            <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--ink-soft)' }}>
+              <span style={{ color: '#2F6F62', fontWeight: 600 }}>{accepted} accepted</span>
+              <span>·</span>
+              <span style={{ color: '#d23b40', fontWeight: 600 }}>{rejected} rejected</span>
             </div>
           </div>
         </div>
@@ -245,9 +235,7 @@ export function AdminDashboard({ go, decisionMode }) {
         </div>
         {isJury ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <FunnelRow label="IN JURY EVALUATION" sublabel="shortlisted for jury" count={juryTotal} maxCount={juryTotal || 1} filledColor="#1f0a8a" />
-            <ArrowDown />
-            <FunnelRow label="INTERVIEW REQUESTED" sublabel="jury flagged for interview" count={juryInterview} maxCount={juryTotal || 1} filledColor="#1f0a8a" />
+            <FunnelRow label="IN JURY EVALUATION" sublabel="in the jury round" count={juryTotal} maxCount={juryTotal || 1} filledColor="#1f0a8a" />
             <ArrowDown />
             <FunnelRow label="ACCEPTED" sublabel="cohort onboarded" count={accepted} maxCount={juryTotal || 1} filledColor="#1f0a8a" />
             <ArrowDown />

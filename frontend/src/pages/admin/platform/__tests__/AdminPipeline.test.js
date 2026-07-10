@@ -159,14 +159,15 @@ describe("AdminPipeline screen (smoke)", () => {
     expect(screen.queryByText(/Clear filters/i)).toBeNull();
   });
 
-  it("in jury mode renders PreviewBadge for the jury assignment column", () => {
+  it("in jury mode renders the real ASSIGNED JURY column with no preview badge", () => {
     render(
       React.createElement(AdminPipeline, {
         goDetail: vi.fn(),
         decisionMode: "jury",
       }),
     );
-    expect(screen.getAllByTestId("preview-badge").length).toBeGreaterThan(0);
+    expect(screen.getByText("ASSIGNED JURY")).toBeTruthy();
+    expect(screen.queryAllByTestId("preview-badge").length).toBe(0);
   });
 
   it("shows a 'reviewers notified' note after a per-row batch assign", async () => {
