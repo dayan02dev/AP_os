@@ -8,12 +8,14 @@ follow-up task — this module intentionally leaves that seam.
 # resolve stringified deps (same constraint as routers/mentors.py & jury_invites.py).
 
 import logging
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 
 from ..deps import get_current_user
+from ..models.jury import SelectionsPut
 from ..rbac import require_capability
 from ..services import applications_query, jury_query
 from ..supabase_client import get_admin_client
@@ -101,3 +103,52 @@ async def get_signed_file_url(
                     extra={"application_id": application_id, "track": track})
         raise HTTPException(status_code=http_status.HTTP_502_BAD_GATEWAY,
                             detail={"code": "signed_url_failed"}) from exc
+
+
+@router.get("/selections/mine",
+            dependencies=[Depends(require_capability("view_assigned_jury_apps"))])
+async def get_my_selections(user: dict = Depends(get_current_user)) -> dict:
+    return {"selections": jury_query.fetch_my_selections(user["user_id"])}
+
+
+@router.put("/selections",
+            dependencies=[Depends(require_capability("submit_jury_picks"))])
+async def put_selections(body: SelectionsPut,
+                         user: dict = Depends(get_current_user)) -> dict:
+    juror_id = user["user_id"]
+    sb = get_admin_client()
+    if len(body.selections) != 3 or \
+       len({(s.application_id, s.application_track) for s in body.selections}) != 3:
+        raise HTTPException(status_code=422, detail={
+            "code": "must_pick_exactly_3",
+            "message": "Submit exactly 3 distinct picks."})
+
+    assigned = sb.table("jury_assignments").select("*") \
+        .eq("juror_user_id", juror_id).execute().data or []
+    assigned_keys = {(a["application_id"], a["application_track"])
+                     for a in assigned if a.get("juror_user_id") == juror_id}
+    new_keys = {(s.application_id, s.application_track) for s in body.selections}
+    if not new_keys <= assigned_keys:
+        raise HTTPException(status_code=403, detail={"code": "not_your_assignment"})
+
+    current = jury_query.fetch_my_selections(juror_id)
+    current_keys = {(r["application_id"], r["application_track"]) for r in current}
+    decided = jury_query.gate2_decided_keys(sb, sorted(current_keys | new_keys))
+    frozen_dropped = (current_keys & decided) - new_keys
+    newly_added_decided = (new_keys - current_keys) & decided
+    if frozen_dropped or newly_added_decided:
+        raise HTTPException(status_code=409, detail={
+            "code": "app_already_decided",
+            "message": "Picks on decided applications are frozen."})
+
+    now = datetime.now(UTC).isoformat()
+    for key in current_keys - new_keys:   # removals
+        sb.table("jury_selections").delete().eq("juror_user_id", juror_id) \
+            .eq("application_id", key[0]).eq("application_track", key[1]).execute()
+    for s in body.selections:             # upsert kept + new
+        sb.table("jury_selections").upsert({
+            "juror_user_id": juror_id, "application_id": s.application_id,
+            "application_track": s.application_track, "note": s.note,
+            "submitted_at": now, "updated_at": now,
+        }, on_conflict="application_id,application_track,juror_user_id").execute()
+    return {"selections": jury_query.fetch_my_selections(juror_id), "submitted_at": now}

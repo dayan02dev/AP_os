@@ -331,3 +331,21 @@ def fetch_jury_content(
         "mySelection": payload.get("my_selection"),
         "assignment": payload.get("assignment"),
     }
+
+
+def fetch_my_selections(juror_user_id: str) -> list[dict]:
+    sb = get_admin_client()
+    rows = sb.table("jury_selections").select("*") \
+        .eq("juror_user_id", juror_user_id).execute().data or []
+    return [r for r in rows if r.get("juror_user_id") == juror_user_id]
+
+
+def gate2_decided_keys(sb, pairs: list[tuple[str, str]]) -> set[tuple[str, str]]:
+    """(app_id, track) pairs that already have a gate-2 admin decision."""
+    if not pairs:
+        return set()
+    ids = sorted({p[0] for p in pairs})
+    rows = sb.table("admin_decisions").select("*") \
+        .in_("application_id", ids).execute().data or []
+    return {(r["application_id"], r.get("application_track"))
+            for r in rows if r.get("gate_stage") == "gate2"}
