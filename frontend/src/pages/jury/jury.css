@@ -1,0 +1,93 @@
+/* Jury Portal — jury-specific bits only. The rest reuses reviewer-portal.css
+   (imported alongside this file from JuryPortal.jsx). Everything here is scoped
+   under .jry-portal so the green jury accents never leak into the reviewer or
+   admin shells that share reviewer-portal.css.
+
+   Accent: ARTPARK jury green #1a6b3a (topbar avatar / live dot / pill). */
+
+:root {
+  --jry-green: #1a6b3a;
+  --jry-green-soft: #eaf4ee;
+  --jry-green-line: #b9dcc6;
+}
+
+/* ── Green topbar accents ─────────────────────────────────────────────── */
+.jry-portal .lp-topbar-pill { color: var(--jry-green); border-color: var(--jry-green-line); background: var(--jry-green-soft); }
+.jry-portal .lp-live-dot { background: var(--jry-green); }
+.jry-portal .lp-tab.active { border-bottom-color: var(--jry-green); }
+.jry-portal .lp-tab-badge { background: var(--jry-green); color: #fff; }
+
+/* ── Queue "Pick" toggle ──────────────────────────────────────────────── */
+.jry-pick-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 700;
+  letter-spacing: 0.02em; white-space: nowrap;
+  border: 1px solid var(--jry-green-line); background: #fff; color: var(--jry-green);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.jry-pick-btn:hover:not(:disabled) { background: var(--jry-green-soft); }
+.jry-pick-btn.is-picked { background: var(--jry-green); border-color: var(--jry-green); color: #fff; }
+.jry-pick-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.jry-pick-lock { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* Big pick toggle on the detail view. */
+.jry-pick-big {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 22px; border-radius: 10px; cursor: pointer;
+  font-family: var(--font-sans); font-size: 15px; font-weight: 700;
+  border: 1.5px solid var(--jry-green); background: #fff; color: var(--jry-green);
+}
+.jry-pick-big:hover:not(:disabled) { background: var(--jry-green-soft); }
+.jry-pick-big.is-picked { background: var(--jry-green); color: #fff; }
+.jry-pick-big:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Sticky PickBar (rendered by the shell on every tab) ──────────────── */
+.jry-pickbar {
+  position: sticky; bottom: 0; z-index: 40;
+  margin-top: 24px;
+  background: #fff; border-top: 2px solid var(--jry-green);
+  box-shadow: 0 -6px 20px -12px rgba(0,0,0,0.25);
+  padding: 16px 20px;
+}
+.jry-pickbar-inner { display: flex; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
+.jry-pickbar-head { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
+.jry-pickbar-count { font-family: var(--font-display); font-size: 20px; font-weight: 800; color: var(--ink); }
+.jry-pickbar-hint { font-size: 12px; color: var(--ink-dim); }
+.jry-pickbar-notes { display: flex; gap: 12px; flex: 1; flex-wrap: wrap; }
+.jry-pickbar-note { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 4px; }
+.jry-pickbar-note-label { font-size: 11px; font-weight: 700; color: var(--jry-green); }
+.jry-pickbar-note textarea {
+  width: 100%; min-height: 46px; resize: vertical; font-size: 13px; line-height: 1.4;
+  padding: 8px 10px; border: 1px solid var(--line-strong, #c8c8d0); border-radius: 8px;
+  font-family: var(--font-sans);
+}
+.jry-pickbar-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.jry-pickbar-submit {
+  padding: 11px 22px; border-radius: 10px; border: none; cursor: pointer;
+  font-family: var(--font-sans); font-size: 14px; font-weight: 700;
+  background: var(--jry-green); color: #fff;
+}
+.jry-pickbar-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+.jry-pickbar-msg { font-size: 12.5px; font-weight: 600; }
+.jry-pickbar-msg.ok { color: var(--jry-green); }
+.jry-pickbar-msg.error { color: #d23b40; }
+.jry-pickbar-empty { font-size: 13px; color: var(--ink-dim); }
+
+/* ── My Picks page cards ──────────────────────────────────────────────── */
+.jry-picks-grid { display: flex; gap: 16px; flex-wrap: wrap; }
+.jry-pick-card {
+  flex: 1; min-width: 280px; max-width: 380px;
+  background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 12px;
+}
+.jry-pick-card-name { font-size: 16px; font-weight: 700; color: var(--ink); line-height: 1.3; }
+.jry-pick-card-meta { font-size: 12px; color: var(--ink-dim); }
+.jry-pick-card-note-label { font-size: 11px; font-weight: 700; color: var(--jry-green); }
+.jry-pick-card textarea {
+  width: 100%; min-height: 70px; resize: vertical; font-size: 13px; line-height: 1.45;
+  padding: 9px 11px; border: 1px solid var(--line-strong, #c8c8d0); border-radius: 8px;
+  font-family: var(--font-sans);
+}
+.jry-picks-empty { padding: 48px 0; text-align: center; color: var(--ink-dim); font-size: 14px; }
+.jry-picks-submitted { font-size: 12px; color: var(--ink-dim); margin-bottom: 16px; }

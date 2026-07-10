@@ -14,6 +14,7 @@ export function landingPathFor(roles) {
   if (r.includes("leadership")) return "/leadership";
   if (r.includes("admin")) return "/admin";
   if (r.includes("reviewer")) return "/reviewer";
+  if (r.includes("jury")) return "/jury";
   return "/apply";
 }
 
