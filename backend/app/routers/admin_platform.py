@@ -943,3 +943,52 @@ async def rebalance_reviewers(
         after={"assigned": created, "reviewers": n_rev, "track": body.track},
     )
     return {"assigned": created, "reviewers": n_rev}
+
+
+# ─── Jury: expertise enrichment + recommendation matching (Task 5) ─────────
+#
+# Both endpoints only enqueue SQS jobs (`jury_enrich` / `jury_match`) that the
+# worker Lambda picks up asynchronously — enrichment does a web-grounded LLM
+# call and matching does one LLM pass per juror, both too slow for a
+# request/response cycle. 202 signals "accepted, not yet done".
+
+
+@router.post(
+    "/jurors/{user_id}/enrich",
+    status_code=202,
+    dependencies=[Depends(require_capability("manage_jury_roster"))],
+)
+async def enrich_juror(user_id: str, user: dict = Depends(get_current_user)) -> dict:
+    from ..services.sqs_publisher import publish_jury_job
+
+    queued = publish_jury_job("jury_enrich", user_id)
+    get_admin_client().table("jury_profiles").update({"enrichment_status": "pending"}) \
+        .eq("juror_user_id", user_id).execute()
+    return {"queued": bool(queued), "juror_user_id": user_id}
+
+
+class RecomputeBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    juror_user_id: str | None = None
+
+
+@router.post(
+    "/jury/recommendations/recompute",
+    status_code=202,
+    dependencies=[Depends(require_capability("manage_jury_roster"))],
+)
+async def recompute_recommendations(
+    body: RecomputeBody,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    from ..services.sqs_publisher import publish_jury_job
+
+    sb = get_admin_client()
+    if body.juror_user_id:
+        ids = [body.juror_user_id]
+    else:
+        ids = sorted({r["user_id"] for r in
+                      (sb.table("user_roles").select("user_id,role").eq("role", "jury")
+                       .execute().data or []) if r.get("role") == "jury"})
+    queued = [jid for jid in ids if publish_jury_job("jury_match", jid)]
+    return {"queued": queued}
