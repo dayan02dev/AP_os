@@ -98,8 +98,9 @@ async def get_detail(
 
 class DecisionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    decision: Literal["shortlisted", "on_hold", "rejected", "waitlisted", "jury_review"]
+    decision: Literal["shortlisted", "on_hold", "rejected", "waitlisted", "jury_review", "offered"]
     rationale: str | None = None
+    gate_stage: Literal["gate1", "gate2"] = "gate1"
 
 
 @router.post(
@@ -112,10 +113,25 @@ async def decide(
     body: DecisionBody,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Gate-1 admin decision: guarded status change + admin_decisions + audit.
+    """Gate-1 or Gate-2 admin decision: guarded status change + admin_decisions + audit.
 
-    Reject / waitlist / hold require a rationale; shortlist may omit one.
+    gate_stage="gate1" (default): shortlisted/on_hold/rejected/waitlisted/jury_review —
+        reject/waitlist/hold require a rationale; shortlist may omit one.
+    gate_stage="gate2": offered/waitlisted/on_hold/rejected —
+        routed via decisions.record_gate2_decision which enforces its own
+        rationale rule (required unless decision is 'offered').
     """
+    # Route to gate-2 when gate_stage is explicitly "gate2" OR when the
+    # decision is "offered" (offered is a gate-2-only outcome; accepting it
+    # on the gate-1 path would record the wrong gate_stage in admin_decisions).
+    is_gate2 = (body.gate_stage == "gate2") or (body.decision == "offered")
+    if is_gate2:
+        return decisions.record_gate2_decision(
+            track=track, application_id=application_id,
+            decision=body.decision, rationale=body.rationale,
+            decided_by=user["user_id"],
+            decided_by_role=actor_role_of(user),
+        )
     if body.decision in ("rejected", "waitlisted", "on_hold") and not (body.rationale or "").strip():
         raise HTTPException(
             status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,

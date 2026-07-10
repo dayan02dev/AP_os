@@ -115,6 +115,94 @@ def record_decision(*, track, application_id, decision, rationale, decided_by, d
     }
 
 
+_GATE2_VALID = frozenset({"offered", "waitlisted", "on_hold", "rejected"})
+
+
+def record_gate2_decision(
+    *, track, application_id, decision, rationale, decided_by, decided_by_role: str | None = None
+) -> dict:
+    """Gate-2 decision: offered | waitlisted | on_hold | rejected.
+
+    Validates the decision value (422 invalid_gate2_decision if not in set).
+    Rationale is required unless decision is ``offered``. Only allowed on apps
+    currently in ``jury_review`` (409 not_in_jury_review otherwise). Inserts an
+    admin_decisions row with gate_stage='gate2', then moves status. Unlike
+    gate-1, this path sends NO applicant email.
+    """
+    if decision not in _GATE2_VALID:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_gate2_decision",
+                    "valid": sorted(_GATE2_VALID)},
+        )
+    if decision != "offered" and not (rationale or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "rationale_required",
+                    "message": "A rationale is required for gate-2 decisions other than 'offered'."},
+        )
+
+    sb = get_admin_client()
+    table = f"{track}_applications"
+
+    # Pre-validate: 404 if missing, 422 if illegal move.
+    rows = (
+        sb.table(table).select("status").eq("id", application_id).limit(1).execute().data
+        or []
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "application_not_found"},
+        )
+    from_status = rows[0].get("status")
+
+    # Gate-2 is only allowed on apps that are currently in jury_review.
+    if from_status != "jury_review":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "not_in_jury_review",
+                "message": "Gate-2 decisions are only allowed on applications in jury_review.",
+            },
+        )
+
+    state_machine.assert_legal_transition(from_status, decision)
+
+    # Write the gate-2 decision row.
+    sb.table("admin_decisions").insert({
+        "application_id": application_id,
+        "application_track": track,
+        "gate_stage": "gate2",
+        "decision": decision,
+        "rationale": rationale,
+        "decided_by": decided_by,
+        "decided_at": datetime.now(UTC).isoformat(),
+    }).execute()
+
+    # Move status.
+    state_machine.apply_status_change(
+        application_id, track,
+        to_status=decision, changed_by=decided_by,
+        reason=rationale or f"gate2: {decision}",
+    )
+
+    # Best-effort audit.
+    write_audit(
+        actor_user_id=decided_by, actor_role=decided_by_role or "admin",
+        action_type="gate2_decision",
+        target_table=table, target_id=application_id,
+        after={"decision": decision, "from_status": from_status},
+    )
+    return {
+        "application_id": application_id,
+        "track": track,
+        "decision": decision,
+        "from_status": from_status,
+        "gate_stage": "gate2",
+    }
+
+
 def record_decision_safe(*, track, application_id, decision, rationale, decided_by, decided_by_role: str | None = None) -> dict:
     """record_decision wrapped to a per-id status string instead of raising."""
     if decision in ("rejected", "waitlisted", "on_hold") and not (rationale or "").strip():
