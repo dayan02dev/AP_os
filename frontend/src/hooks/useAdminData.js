@@ -3,6 +3,7 @@ import { adminPlatformApi } from "../lib/adminPlatformApi";
 import {
   adaptPipelineRow, adaptStats, adaptDetail, adaptReviewer,
   adaptReviewerApplication, adaptCalibrationRow, adaptAuditEntry, adaptBatch,
+  adaptJuror, adaptJurorApplication,
 } from "../lib/adminDataAdapter";
 
 const LOADERS = {
@@ -30,6 +31,15 @@ const LOADERS = {
   batches: async () => {
     const r = await adminPlatformApi.getBatches();
     return { batches: (r.batches || []).map(adaptBatch) };
+  },
+  jurors: async () => {
+    const r = await adminPlatformApi.getJurors();
+    return { jurors: (r.jurors || []).map(adaptJuror),
+             pendingInvites: r.pending_invites || [] };
+  },
+  jurorApplications: async ({ userId }) => {
+    const r = await adminPlatformApi.getJurorApplications(userId);
+    return { applications: (r.applications || []).map(adaptJurorApplication) };
   },
 };
 
