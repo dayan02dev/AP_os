@@ -1018,12 +1018,16 @@ def _fetch_jury_v2_metrics(
         return {}
     ids = sorted({p[1] for p in pairs})
     assigns = _fetch_all(lambda: sb.table("jury_assignments").select("*").in_("application_id", ids))
-    sels = _fetch_all(lambda: sb.table("jury_selections").select("*").in_("application_id", ids))
 
     juror_ids = sorted(
         {a.get("juror_user_id") for a in assigns if a.get("juror_user_id")}
-        | {s.get("juror_user_id") for s in sels if s.get("juror_user_id")}
     )
+    # Juror-scoped pick read (not app-scoped) so `picks_ready` reflects a
+    # juror's FULL 3-set even when the pipeline query is filtered to a subset
+    # of apps. `picked_by` still filters to this app below, so it's unaffected.
+    sels = _fetch_all(
+        lambda: sb.table("jury_selections").select("*").in_("juror_user_id", juror_ids)
+    ) if juror_ids else []
     names = {
         p["id"]: (p.get("full_name") or p.get("email") or p["id"])
         for p in (_fetch_all(lambda: sb.table("profiles").select("*").in_("id", juror_ids))

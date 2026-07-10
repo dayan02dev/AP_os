@@ -477,3 +477,37 @@ def test_pipeline_recommended_for_unset_returns_all(client, monkeypatch, _clear_
     assert r.status_code == 200, r.text
     ids = {i["id"] for i in r.json()["applications"]}
     assert ids == {A1, A2}  # unfiltered
+
+
+def test_picks_ready_counts_full_pick_set_under_filtered_pipeline(monkeypatch):
+    """`picks_ready` must reflect a juror's FULL 3-set even when the pipeline
+    query is narrowed to a subset of their picked apps. Uses the shared
+    FakeSupabase (which HONOURS .in_, unlike this file's local fake) so the
+    juror-scoped pick read is actually exercised: the old app-scoped read would
+    see only 1 of jX's 3 picks for the single-app `pairs` and wrongly report
+    picks_ready=False."""
+    from app.services import admin_query
+    from tests.fixtures.fake_supabase import FakeSupabase
+
+    fake = FakeSupabase({
+        "jury_assignments": [
+            {"juror_user_id": "jX", "application_id": "aX1", "application_track": "tir"},
+            {"juror_user_id": "jX", "application_id": "aX2", "application_track": "tir"},
+            {"juror_user_id": "jX", "application_id": "aX3", "application_track": "tir"},
+        ],
+        "jury_selections": [
+            {"juror_user_id": "jX", "application_id": "aX1", "application_track": "tir", "note": "a"},
+            {"juror_user_id": "jX", "application_id": "aX2", "application_track": "tir", "note": None},
+            {"juror_user_id": "jX", "application_id": "aX3", "application_track": "tir", "note": None},
+        ],
+        "profiles": [{"id": "jX", "full_name": "JX", "email": "jx@x.com"}],
+        "admin_decisions": [],
+    })
+    monkeypatch.setattr(admin_query, "get_admin_client", lambda: fake)
+
+    # Pipeline narrowed to only aX1 (simulating a filtered query).
+    metrics = admin_query._fetch_jury_v2_metrics([("tir", "aX1")])
+    row = metrics[("tir", "aX1")]
+    assert row["jury_assigned"] == 1
+    assert row["picked_by"] == [{"juror_user_id": "jX", "name": "JX", "note": "a"}]
+    assert row["picks_ready"] is True  # full 3-set counted juror-scoped
