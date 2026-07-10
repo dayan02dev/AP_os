@@ -1,9 +1,9 @@
 """Jury v2 onboarding router.
 
   POST /admin/platform/jury/invites    Admin-gated bulk invite (manage_jury_roster).
-  GET  /jury/respond/{token}           Public. Token → form view.            [Task 3]
+  GET  /jury/respond/{token}           Public. Token → form view.
   POST /jury/respond/{token}           Public, IP rate-limited. Accept/decline;
-                                       accept auto-creates the jury account.  [Task 3]
+                                       accept auto-creates the jury account.
 """
 # NOTE: no `from __future__ import annotations` — FastAPI + pydantic 2 cannot
 # resolve stringified Annotated deps (same constraint as routers/mentors.py).
@@ -88,7 +88,107 @@ async def create_jury_invites(
     return {"results": results}
 
 
-# NOTE: the public GET/POST /jury/respond/{token} endpoints (accept/decline,
-# account auto-creation, profile upsert, enrich-job publish) are appended to
-# this file in Task 3. `publish_jury_job` and `HTTPException`/`JuryFormView`/
-# `JuryRespondSubmit` are imported above in anticipation of that task.
+# ── GET/POST /jury/respond/{token} — public respond endpoints (Task 3) ────
+
+
+def _resolve_token(admin: Any, token: str) -> dict[str, Any]:
+    try:
+        result = (admin.table("jury_invites")
+                  .select("id,name,email,token,status,invited_by,linkedin_url,expertise_domains")
+                  .eq("token", token).limit(1).execute())
+    except Exception as exc:
+        log.error("jury_invites token lookup failed", extra={"err": str(exc)})
+        raise HTTPException(status_code=500, detail="Failed to resolve token") from exc
+    if not result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Invitation not found")
+    return result.data[0]
+
+
+@router.get("/jury/respond/{token}", response_model=JuryFormView)
+async def get_jury_form(token: str) -> JuryFormView:
+    invite = _resolve_token(get_admin_client(), token)
+    return JuryFormView(name=invite["name"], email=invite["email"], status=invite["status"])
+
+
+def _ensure_jury_account(admin: Any, invite: dict) -> tuple[str, bool, str | None]:
+    """Return (user_id, created_new, temp_password). Idempotent."""
+    email_lower = invite["email"].lower()
+    existing = (admin.table("profiles").select("id").eq("email", email_lower)
+                .limit(1).execute().data or [])
+    if existing:
+        return existing[0]["id"], False, None
+    temp_password = secrets.token_urlsafe(16) + "!1Aa"
+    create = admin.auth.admin.create_user({
+        "email": email_lower, "password": temp_password, "email_confirm": True,
+    })
+    user_id = create.user.id
+    admin.table("profiles").upsert({
+        "id": user_id, "email": email_lower, "full_name": invite["name"],
+    }).execute()
+    return user_id, True, temp_password
+
+
+def _grant_jury_role(admin: Any, user_id: str, granted_by: str | None) -> None:
+    current = (admin.table("user_roles").select("role")
+               .eq("user_id", user_id).execute().data or [])
+    if not any(r.get("role") == "jury" for r in current):
+        admin.table("user_roles").insert(
+            {"user_id": user_id, "role": "jury", "granted_by": granted_by}).execute()
+
+
+@router.post("/jury/respond/{token}", status_code=status.HTTP_200_OK)
+@limiter.limit("5/hour", key_func=_respond_rate_key)
+async def submit_jury_response(
+    request: Request, token: str, payload: JuryRespondSubmit,
+) -> dict[str, str]:
+    admin = get_admin_client()
+    invite = _resolve_token(admin, token)
+    now = datetime.now(UTC).isoformat()
+
+    # First response wins for the choice; declined stays declined.
+    if invite["status"] == "declined":
+        return {"status": "already_responded"}
+    if not payload.accept:
+        if invite["status"] == "accepted":
+            return {"status": "already_responded"}
+        admin.table("jury_invites").update(
+            {"status": "declined", "responded_at": now}).eq("id", invite["id"]).execute()
+        return {"status": "ok"}
+
+    # ACCEPT — steps below are idempotent so a repeat POST is a safe retry.
+    admin.table("jury_invites").update({
+        "status": "accepted", "responded_at": invite.get("responded_at") or now,
+        "linkedin_url": payload.linkedin_url or invite.get("linkedin_url"),
+        "expertise_domains": payload.expertise_domains or invite.get("expertise_domains") or [],
+    }).eq("id", invite["id"]).execute()
+
+    try:
+        user_id, created_new, temp_password = _ensure_jury_account(admin, invite)
+        _grant_jury_role(admin, user_id, invite.get("invited_by"))
+    except Exception as exc:
+        log.error("jury accept account step failed", extra={"invite_id": invite["id"], "err": str(exc)})
+        raise HTTPException(status_code=500, detail="Failed to set up jury access") from exc
+
+    admin.table("jury_profiles").upsert({
+        "juror_user_id": user_id, "invite_id": invite["id"],
+        "expertise_domains": payload.expertise_domains or [],
+        "linkedin_url": payload.linkedin_url,
+        "enrichment_status": "pending", "updated_at": now,
+    }, on_conflict="juror_user_id").execute()
+
+    try:  # credentials / role-added email — best-effort
+        svc = get_email_service()
+        if created_new:
+            svc.send_jury_credentials(to=invite["email"], jury_name=invite["name"],
+                                      login_email=invite["email"], temp_password=temp_password,
+                                      portal_url=frontend_url("/jury"))
+        else:
+            svc.send_role_granted(to=invite["email"], user_name=invite["name"], role="jury",
+                                  granted_by="ARTPARK", signin_url=frontend_url("/apply/signin"))
+    except Exception as exc:
+        log.warning("jury credentials email failed (best-effort)",
+                    extra={"invite_id": invite["id"], "err": str(exc)})
+
+    publish_jury_job("jury_enrich", user_id)   # fire-and-forget; worker chains matching
+    return {"status": "ok"}
