@@ -274,6 +274,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     meta = _fetch_admin_meta(pairs)
     batches = _fetch_batches(pairs)
     reviewer_scores = _fetch_reviewer_scores(pairs)
+    jury_metrics = _fetch_jury_v2_metrics(pairs)
 
     # Reviewer-flag aggregation: union of flags across all submitted reviews
     # per app. One query per track; keyed (track, application_id) to match
@@ -315,9 +316,34 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     want_industry = filters.get("industry")
     needle = (search or "").strip().lower()
 
+    # Jury recommendation filter: when set, keep only apps recommended for that
+    # juror and attach the {score, reason}; the result is later sorted by score
+    # desc instead of submitted_at. Unset → pipeline behaves exactly as before.
+    recommended_for = filters.get("recommended_for")
+    rec_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    if recommended_for:
+        try:
+            rec_rows = _fetch_all(
+                lambda: get_admin_client().table("jury_recommendations")
+                .select("*").eq("juror_user_id", recommended_for)
+            )
+        except Exception as exc:
+            log.warning("fetch_pipeline: jury_recommendations fetch failed",
+                        extra={"err": str(exc)})
+            rec_rows = []
+        for rr in rec_rows:
+            if rr.get("juror_user_id") != recommended_for:
+                continue
+            rec_by_key[(rr.get("application_track"), rr.get("application_id"))] = {
+                "score":  rr.get("score"),
+                "reason": rr.get("reason"),
+            }
+
     out_items: list[dict[str, Any]] = []
     for r in rows:
         key = (r["track"], r["id"])
+        if recommended_for and key not in rec_by_key:
+            continue
         m = meta.get(key) or {}
         is_hidden = bool(m.get("is_hidden"))
         is_archived = bool(m.get("is_archived"))
@@ -365,7 +391,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
                 or r.get("basic_full_name")
             )
 
-        out_items.append({
+        item = {
             "id":               r["id"],
             "applicationId":    stats.compose_display_id(r["track"], r.get("display_seq")),
             "track":            r["track"],
@@ -382,13 +408,25 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
             "reviewer_score":   reviewer_scores.get(key),
             "submitted_at":     r.get("submitted_at"),
             "flags":            flags_by_key.get(key, []),
-        })
+            # Additive jury-v2 pick metrics (all rows; zero-valued off-gate2).
+            **(jury_metrics.get(key) or {}),
+        }
+        if recommended_for:
+            item["recommendation"] = rec_by_key.get(key)
+        out_items.append(item)
 
-    # Sort newest-submitted first (NULLs last), matching the leadership list.
-    out_items.sort(
-        key=lambda i: (0, i["submitted_at"]) if i.get("submitted_at") else (1, ""),
-        reverse=True,
-    )
+    if recommended_for:
+        # Best fit first when filtering by a juror's recommendations.
+        out_items.sort(
+            key=lambda i: (i.get("recommendation") or {}).get("score") or 0,
+            reverse=True,
+        )
+    else:
+        # Sort newest-submitted first (NULLs last), matching the leadership list.
+        out_items.sort(
+            key=lambda i: (0, i["submitted_at"]) if i.get("submitted_at") else (1, ""),
+            reverse=True,
+        )
 
     return {"applications": out_items, "total": len(out_items)}
 
@@ -800,6 +838,233 @@ def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
         })
     out.sort(key=lambda i: (i.get("project") or "").lower())
     return {"applications": out}
+
+
+# ─── Task 8: Jury roster v2 + juror applications + pipeline metrics ───────
+#
+# Jury v2 is pick-based (jury_selections), NOT scoring — there are no
+# jury_reviews / weighted overalls / consistency. jury_assignments v2 has no
+# ``declined_at`` column (every row is active). Every bulk read pages through
+# ``_fetch_all`` so the ~1000-row PostgREST cap can never silently truncate a
+# juror's assignments/picks (the bug that bit the reviewer roster twice).
+
+
+def _jury_user_ids() -> list[str]:
+    """Distinct user_ids holding the 'jury' role (re-filtered in Python because
+    the fake `.eq()` is a no-op)."""
+    sb = get_admin_client()
+    try:
+        rows = _fetch_all(
+            lambda: sb.table("user_roles").select("user_id,role").eq("role", "jury")
+        )
+    except Exception as exc:
+        log.warning("jury roster: user_roles fetch failed", extra={"err": str(exc)})
+        return []
+    return sorted({r["user_id"] for r in rows if r.get("role") == "jury"})
+
+
+def fetch_jury_roster() -> dict[str, Any]:
+    """Jury roster (pick-based) plus outstanding invites.
+
+    Returns ``{"jurors": [...], "pending_invites": [...]}``. Each juror row:
+    ``{user_id, name, email, weight, domains, linkedin_url, enrichmentStatus,
+    matchedAt, assigned, picks("n / 3"), picksSubmitted, lastActivity, invite}``.
+    ``pending_invites`` lists invited-but-not-answered rows only (accepted +
+    declined excluded).
+    """
+    sb = get_admin_client()
+    juror_ids = _jury_user_ids()
+
+    profiles = (
+        {p["id"]: p for p in _fetch_all(
+            lambda: sb.table("profiles").select("*").in_("id", juror_ids))}
+        if juror_ids else {}
+    )
+    jprofiles = (
+        {p["juror_user_id"]: p for p in _fetch_all(
+            lambda: sb.table("jury_profiles").select("*").in_("juror_user_id", juror_ids))}
+        if juror_ids else {}
+    )
+    assignments = _fetch_all(lambda: sb.table("jury_assignments").select("*")) if juror_ids else []
+    selections = _fetch_all(lambda: sb.table("jury_selections").select("*")) if juror_ids else []
+    invites = _fetch_all(lambda: sb.table("jury_invites").select("*"))
+    invite_by_id = {i["id"]: i for i in invites if i.get("id") is not None}
+
+    out: list[dict[str, Any]] = []
+    for jid in juror_ids:
+        prof = profiles.get(jid) or {}
+        jp = jprofiles.get(jid) or {}
+        assigned = [a for a in assignments if a.get("juror_user_id") == jid]
+        picks = [s for s in selections if s.get("juror_user_id") == jid]
+        last = max((s.get("submitted_at") or "" for s in picks), default="") or None
+        inv = invite_by_id.get(jp.get("invite_id"))
+        weight = jp.get("weight")
+        out.append({
+            "user_id":          jid,
+            "name":             prof.get("full_name") or prof.get("email") or jid,
+            "email":            prof.get("email"),
+            "weight":           float(weight) if weight is not None else 1.0,
+            "domains":          jp.get("expertise_domains") or [],
+            "linkedin_url":     jp.get("linkedin_url"),
+            "enrichmentStatus": jp.get("enrichment_status") or "pending",
+            "matchedAt":        jp.get("matched_at"),
+            "assigned":         len(assigned),
+            "picks":            f"{len(picks)} / 3",
+            "picksSubmitted":   len(picks),
+            "lastActivity":     last,
+            "invite":           {"status": inv["status"]} if inv else None,
+        })
+
+    pending = [
+        {"name": i.get("name"), "email": i.get("email"), "sent_at": i.get("sent_at")}
+        for i in invites if i.get("status") == "invited"
+    ]
+    return {"jurors": out, "pending_invites": pending}
+
+
+def fetch_juror_applications(user_id: str) -> dict[str, Any]:
+    """Applications assigned to one juror, enriched for the admin drawer.
+
+    Ported from the reviewer analog with two v2 edits: there is no active/
+    declined filter (jury_assignments v2 has no ``declined_at`` — every row is
+    active), and ``reviewStatus`` becomes ``picked`` (a bool resolved from
+    ``jury_selections``). Returns ``{"applications": [...]}`` with each row
+    ``{id, track, project, industry, status, batch, picked, assignment_id}``.
+    """
+    sb = get_admin_client()
+    try:
+        rows = _fetch_all(
+            lambda: sb.table("jury_assignments").select("*").eq("juror_user_id", user_id)
+        )
+    except Exception as exc:
+        log.warning("juror apps: assignments fetch failed", extra={"err": str(exc)})
+        return {"applications": []}
+
+    active = [a for a in rows if a.get("juror_user_id") == user_id]
+    pairs = [(a["application_track"], a["application_id"]) for a in active]
+    if not pairs:
+        return {"applications": []}
+
+    project_names = applications_query.fetch_project_names_for(pairs)
+    industries = applications_query.fetch_industry_for_pairs(pairs)
+    batches = _fetch_batches(pairs)
+
+    # App rows (status + project fallback), one paged query per track.
+    app_rows: dict[tuple[str, str], dict] = {}
+    for track, ids in _by_track(pairs).items():
+        if not ids:
+            continue
+        try:
+            data = _fetch_all(
+                lambda tb=track, idl=ids:
+                sb.table(applications_query.track_table(tb)).select("*").in_("id", idl)
+            )
+        except Exception:
+            data = []
+        for r in data:
+            app_rows[(track, r["id"])] = r
+
+    # Which of these apps has this juror already PICKED (jury_selections)?
+    picked_keys: set[tuple[str, str]] = set()
+    try:
+        for s in _fetch_all(
+            lambda: sb.table("jury_selections").select("*").eq("juror_user_id", user_id)
+        ):
+            if s.get("juror_user_id") == user_id:
+                picked_keys.add((s.get("application_track"), s.get("application_id")))
+    except Exception:
+        pass
+
+    out: list[dict[str, Any]] = []
+    for a in active:
+        key = (a["application_track"], a["application_id"])
+        r = app_rows.get(key) or {}
+        if a["application_track"] == "sip":
+            project = r.get("basic_org") or r.get("basic_full_name")
+        else:
+            project = (
+                project_names.get(key)
+                or stats.derive_project_name(r)
+                or r.get("basic_org")
+                or r.get("basic_full_name")
+            )
+        out.append({
+            "id":            a["application_id"],
+            "track":         a["application_track"],
+            "project":       project,
+            "industry":      (industries.get(key) or {}).get("label"),
+            "status":        r.get("status"),
+            "batch":         (batches.get(key) or {}).get("name"),
+            "picked":        key in picked_keys,
+            "assignment_id": a.get("id"),
+        })
+    out.sort(key=lambda i: (i.get("project") or "").lower())
+    return {"applications": out}
+
+
+def _fetch_jury_v2_metrics(
+    pairs: list[tuple[str, str]],
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Per ``(track, application_id)`` jury metrics for the admin pipeline.
+
+    Returns for every pair a dict of ``jury_assigned`` (int),
+    ``jury_assigned_names`` (list), ``picked_by`` (``[{juror_user_id, name,
+    note}]``), ``picks_ready`` (bool: has assignments AND every assigned juror
+    has a full ≥3 pick-set) and ``gate2_decision`` (latest gate-2 decision or
+    None). All bulk reads page via ``_fetch_all``.
+    """
+    sb = get_admin_client()
+    if not pairs:
+        return {}
+    ids = sorted({p[1] for p in pairs})
+    assigns = _fetch_all(lambda: sb.table("jury_assignments").select("*").in_("application_id", ids))
+    sels = _fetch_all(lambda: sb.table("jury_selections").select("*").in_("application_id", ids))
+
+    juror_ids = sorted(
+        {a.get("juror_user_id") for a in assigns if a.get("juror_user_id")}
+        | {s.get("juror_user_id") for s in sels if s.get("juror_user_id")}
+    )
+    names = {
+        p["id"]: (p.get("full_name") or p.get("email") or p["id"])
+        for p in (_fetch_all(lambda: sb.table("profiles").select("*").in_("id", juror_ids))
+                  if juror_ids else [])
+    }
+
+    # Total picks per juror (a juror who submitted their 3-set is "ready" for
+    # every app they are assigned to).
+    picks_per_juror: dict[str, int] = {}
+    for s in sels:
+        jid = s.get("juror_user_id")
+        if jid:
+            picks_per_juror[jid] = picks_per_juror.get(jid, 0) + 1
+
+    decisions = _fetch_all(lambda: sb.table("admin_decisions").select("*").in_("application_id", ids))
+    gate2: dict[tuple[str, str], Any] = {}
+    for d in sorted(decisions, key=lambda x: x.get("decided_at") or ""):
+        if d.get("gate_stage") == "gate2":
+            gate2[(d.get("application_track"), d.get("application_id"))] = d.get("decision")
+
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    for track, app_id in pairs:
+        a_rows = [a for a in assigns
+                  if a.get("application_id") == app_id and a.get("application_track") == track]
+        s_rows = [s for s in sels
+                  if s.get("application_id") == app_id and s.get("application_track") == track]
+        assigned_jids = [a.get("juror_user_id") for a in a_rows]
+        out[(track, app_id)] = {
+            "jury_assigned": len(a_rows),
+            "jury_assigned_names": [names.get(j, j) for j in assigned_jids],
+            "picked_by": [
+                {"juror_user_id": s.get("juror_user_id"),
+                 "name": names.get(s.get("juror_user_id"), s.get("juror_user_id")),
+                 "note": s.get("note")}
+                for s in s_rows
+            ],
+            "picks_ready": bool(a_rows) and all(
+                picks_per_juror.get(j, 0) >= 3 for j in assigned_jids),
+            "gate2_decision": gate2.get((track, app_id)),
+        }
+    return out
 
 
 # ─── Task 13: Reviewer-calibration analytics ────────────────────────────

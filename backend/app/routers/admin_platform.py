@@ -54,9 +54,15 @@ async def list_pipeline(
     search: str | None = None,
     include_hidden: bool = False,
     include_archived: bool = False,
+    recommended_for: str | None = None,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Admin pipeline list with decision / meta / batch joins."""
+    """Admin pipeline list with decision / meta / batch / jury-pick joins.
+
+    ``recommended_for=<juror_user_id>`` narrows the list to that juror's
+    precomputed jury recommendations, attaches a ``recommendation`` block per
+    row, and sorts by fit score. Omit it for the normal newest-first pipeline.
+    """
     return admin_query.fetch_pipeline({
         "track":            track,
         "status":           status,
@@ -67,6 +73,7 @@ async def list_pipeline(
         "search":           search,
         "include_hidden":   include_hidden,
         "include_archived": include_archived,
+        "recommended_for":  recommended_for,
     })
 
 
@@ -943,6 +950,84 @@ async def rebalance_reviewers(
         after={"assigned": created, "reviewers": n_rev, "track": body.track},
     )
     return {"assigned": created, "reviewers": n_rev}
+
+
+# ─── Jury roster v2 (metrics + per-juror apps + profile patch) ─────────────
+#
+# Mirrors the reviewer roster endpoints under the `manage_jury_roster` cap.
+# Jury v2 is pick-based (no scoring), so the profile PATCH carries only
+# weight + expertise_domains — jury_profiles has no batch_id column (mig 033).
+
+
+class JurorProfileBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    weight: float | None = Field(default=None, ge=0, le=10)
+    expertise_domains: list[str] | None = None
+
+
+@router.get(
+    "/jurors",
+    dependencies=[Depends(require_capability("manage_jury_roster"))],
+)
+async def list_jurors() -> dict[str, Any]:
+    """Jury roster (pick-based workload) plus outstanding invites."""
+    return admin_query.fetch_jury_roster()
+
+
+@router.get(
+    "/jurors/{user_id}/applications",
+    dependencies=[Depends(require_capability("manage_jury_roster"))],
+)
+async def list_juror_applications(user_id: str) -> dict[str, Any]:
+    """Applications assigned to one juror (Manage Applications drawer)."""
+    return admin_query.fetch_juror_applications(user_id)
+
+
+@router.patch(
+    "/jurors/{user_id}",
+    dependencies=[Depends(require_capability("manage_jury_roster"))],
+)
+async def update_juror_profile(
+    user_id: str,
+    body: JurorProfileBody,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Edit a juror's roster details (weight, expertise_domains).
+
+    Upserts jury_profiles keyed by juror_user_id — the juror already has a
+    profiles row from accept time, so identity fields are not touched here.
+    """
+    fields: dict[str, Any] = {}
+    if body.weight is not None:
+        fields["weight"] = body.weight
+    if body.expertise_domains is not None:
+        fields["expertise_domains"] = body.expertise_domains
+
+    if not fields:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "no_fields", "message": "Provide at least one field."},
+        )
+
+    sb = get_admin_client()
+    sb.table("jury_profiles").upsert(
+        {
+            "juror_user_id": user_id,
+            "updated_at": datetime.now(UTC).isoformat(),
+            **fields,
+        },
+        on_conflict="juror_user_id",
+    ).execute()
+
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="juror_profile_update",
+        target_table="jury_profiles",
+        target_id=user_id,
+        after=fields,
+    )
+    return {"juror_user_id": user_id, **fields}
 
 
 # ─── Jury: expertise enrichment + recommendation matching (Task 5) ─────────
