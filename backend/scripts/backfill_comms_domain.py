@@ -108,6 +108,8 @@ def apply_matches(sb, matches: list[dict]) -> tuple[list[dict], int]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write changes (default: dry-run)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="explicit no-op; dry-run is the default when --apply is absent")
     args = ap.parse_args()
     sb = get_admin_client()
 
