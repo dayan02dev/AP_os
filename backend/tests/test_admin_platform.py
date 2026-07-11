@@ -778,7 +778,8 @@ def test_batch_reviewer_unassign_skips_reviewed(client, monkeypatch, _clear_over
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
     r = client.delete("/admin/platform/batches/b1/reviewers/rev-1")
     assert r.status_code == 200, r.text
-    assert r.json() == {"removed": 1}
+    # app-2 assignment removed; app-1 protected by a submitted review.
+    assert r.json() == {"removed": 1, "skipped_submitted": 1}
     # Only app-2's assignment was deleted; app-1 (reviewed) stays. The fake's
     # execute() removes matching rows from the in-memory table, so the surviving
     # rows are the proof of which assignment was (not) deleted.
@@ -1307,6 +1308,10 @@ def test_assign_applications_fans_out_to_batch_reviewers(client, monkeypatch, _c
     new_app = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     tables = _empty_admin_tables()
     tables["batches"] = [{"id": "b1", "name": "Batch A"}]
+    # Batch reviewers are now explicit membership rows (batch_reviewers,
+    # migration 034) — the source of truth for the fan-out (no longer inferred
+    # from existing assignments).
+    tables["batch_reviewers"] = [{"batch_id": "b1", "reviewer_user_id": "rev-1"}]
     tables["application_batches"] = [
         {"application_id": existing_app, "application_track": "tir", "batch_id": "b1"},
     ]

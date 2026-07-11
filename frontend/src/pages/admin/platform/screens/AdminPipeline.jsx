@@ -202,8 +202,10 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     }
 
     if (batchFilter !== 'all') {
-      const b = s.batch || 'Unassigned';
-      if (b !== batchFilter) return false;
+      const names = (s.batches || []).map(x => x.name);
+      const match = names.includes(batchFilter)
+        || (names.length === 0 && batchFilter === 'Unassigned');
+      if (!match) return false;
     }
 
     if (search) {
@@ -454,6 +456,20 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       } catch (e) {
         setNote({ kind: 'error', text: `Batch assign failed: ${e?.message || e}` });
       }
+    }
+  };
+
+  // Multi-batch: remove an app from ONE of its batches (smart remove keeps
+  // reviewers still supplied by the app's other batches).
+  const removeFromBatch = async (startup, batchId) => {
+    try {
+      await adminPlatformApi.removeAppFromBatch(batchId, [
+        { track: startup.track, application_id: startup.id },
+      ]);
+      await reload();
+      setNote({ kind: 'ok', text: 'Removed from batch.' });
+    } catch (e) {
+      setNote({ kind: 'error', text: `Remove from batch failed: ${e?.message || e}` });
     }
   };
 
@@ -1080,21 +1096,50 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                         )}
                       </div>
                     </div>
-                  ) : readOnly ? (
-                    <span className="os-text-sm">{s.batch || 'Unassigned'}</span>
                   ) : (
-                    <select
-                      className="os-select sm"
-                      style={{ padding: '2px 6px', fontSize: 12, height: 26 }}
-                      value={s.batch || 'Unassigned'}
-                      onChange={e => changeIndividualBatch(s, e.target.value)}
-                    >
-                      <option value="Unassigned">Unassigned</option>
-                      {getAvailableBatches().map(b => (
-                        <option key={b} value={b}>{b}</option>
-                      ))}
-                      <option value="new">+ New Batch...</option>
-                    </select>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                      {(s.batches && s.batches.length > 0) ? s.batches.map((b, bi) => (
+                        <span
+                          key={b.id || b.name || bi}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 3,
+                            padding: '1px 6px', fontSize: 11, borderRadius: 10,
+                            background: '#ede9fe', border: '1px solid #c4b5fd', color: '#5b21b6',
+                          }}
+                        >
+                          {b.name || '—'}
+                          {!readOnly && b.id && (
+                            <button
+                              type="button"
+                              title={`Remove from ${b.name}`}
+                              onClick={() => removeFromBatch(s, b.id)}
+                              style={{
+                                border: 'none', background: 'transparent', cursor: 'pointer',
+                                fontSize: 13, lineHeight: 1, padding: 0, color: '#7c3aed',
+                              }}
+                            >×</button>
+                          )}
+                        </span>
+                      )) : (
+                        <span className="os-text-xs" style={{ color: '#9ca3af' }}>Unassigned</span>
+                      )}
+                      {!readOnly && (
+                        <select
+                          className="os-select sm"
+                          style={{ padding: '2px 6px', fontSize: 12, height: 24 }}
+                          value=""
+                          onChange={e => { const v = e.target.value; if (v) changeIndividualBatch(s, v); }}
+                        >
+                          <option value="">+ Add…</option>
+                          {getAvailableBatches()
+                            .filter(name => !(s.batches || []).some(sb => sb.name === name))
+                            .map(b => (
+                              <option key={b} value={b}>{b}</option>
+                            ))}
+                          <option value="new">+ New Batch…</option>
+                        </select>
+                      )}
+                    </div>
                   )}
                 </td>
                 <td>{s.sub}</td>

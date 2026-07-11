@@ -358,88 +358,16 @@ async def assign_applications(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail={"code": "batch_not_found"},
         )
-    now = datetime.now(UTC).isoformat()
-    new_apps = [(item.application_id, item.track) for item in body.items]
-    sb.table("application_batches").upsert(
-        [
-            {
-                "application_id": aid,
-                "application_track": track,
-                "batch_id": batch_id,
-                "added_at": now,
-            }
-            for (aid, track) in new_apps
-        ],
-        on_conflict="application_id,application_track",
-    ).execute()
-    n = len(body.items)
+    # Append apps to the batch (multi-batch: an app may be in many batches) and
+    # fan out THIS batch's reviewers (batch_reviewers) to the newly-added apps.
+    from app.services import batch_membership
 
-    # ── Additive fan-out to the batch's current reviewers ──────────────────
-    # Apps now in the batch (re-filter on batch_id in Python; the fake backend
-    # no-ops .eq() for non-PK selects, mirroring production bulk reads).
-    link_rows = (
-        sb.table("application_batches")
-        .select("application_id,application_track,batch_id")
-        .eq("batch_id", batch_id)
-        .execute()
-        .data
-    ) or []
-    batch_app_keys = {
-        (r["application_id"], r["application_track"])
-        for r in link_rows
-        if r.get("batch_id") == batch_id and r.get("application_id") and r.get("application_track")
-    }
-    # Batch reviewers = distinct ACTIVE assignees on apps already in the batch.
-    # Paginate the full read: a plain select('*') is capped at ~1000 rows by
-    # PostgREST, so once the table grew past that this dedup missed existing
-    # triples and the fan-out insert below re-created them (duplicate-key 500).
-    all_assignments = list(admin_query.iter_assignment_rows(sb))
-    existing_triples: set[tuple[str, str, str]] = set()
-    reviewer_ids: list[str] = []
-    seen_rev: set[str] = set()
-    for a in all_assignments:
-        rid = a.get("reviewer_user_id")
-        existing_triples.add((a.get("application_id"), a.get("application_track"), rid))
-        key = (a.get("application_id"), a.get("application_track"))
-        if (
-            key in batch_app_keys
-            and rid
-            and a.get("declined_at") is None
-            and a.get("reassigned_to") is None
-            and rid not in seen_rev
-        ):
-            seen_rev.add(rid)
-            reviewer_ids.append(rid)
-
-    fan_rows = [
-        {
-            "application_id": aid,
-            "application_track": track,
-            "reviewer_user_id": rid,
-            "assigned_by": user["user_id"],
-            "assigned_at": now,
-            "state": "pending",
-            "due_at": None,
-        }
-        for (aid, track) in new_apps
-        for rid in reviewer_ids
-        if (aid, track, rid) not in existing_triples
-    ]
-    assignments_created = len(fan_rows)
-    reviewers_notified = len({r["reviewer_user_id"] for r in fan_rows})
-    if fan_rows:
-        # Idempotent: ON CONFLICT DO NOTHING so a duplicate triple (from a race
-        # or residual dedup gap) can never raise a unique-violation 500.
-        sb.table("reviewer_assignments").upsert(
-            fan_rows,
-            on_conflict="application_id,application_track,reviewer_user_id",
-            ignore_duplicates=True,
-        ).execute()
-        notify_reviewers_assigned(sb, fan_rows)
-
-        from app.services import state_machine
-        for aid, atrack in {(r["application_id"], r["application_track"]) for r in fan_rows}:
-            state_machine.advance_to_under_review_on_assignment(aid, atrack)
+    items = [(item.application_id, item.track) for item in body.items]
+    result = batch_membership.add_apps_to_batch(
+        sb, batch_id, items, actor=user["user_id"]
+    )
+    if result["created_rows"]:
+        notify_reviewers_assigned(sb, result["created_rows"])
 
     write_audit(
         actor_user_id=user["user_id"],
@@ -448,15 +376,61 @@ async def assign_applications(
         target_table="application_batches",
         target_id=batch_id,
         after={
-            "count": n,
-            "assignments_created": assignments_created,
-            "reviewers_notified": reviewers_notified,
+            "count": result["assigned"],
+            "assignments_created": result["assignments_created"],
+            "reviewers_notified": result["reviewers_notified"],
         },
     )
     return {
-        "assigned": n,
-        "assignments_created": assignments_created,
-        "reviewers_notified": reviewers_notified,
+        "assigned": result["assigned"],
+        "assignments_created": result["assignments_created"],
+        "reviewers_notified": result["reviewers_notified"],
+    }
+
+
+@router.post(
+    "/batches/{batch_id}/applications/remove",
+    dependencies=[Depends(require_capability("manage_batches"))],
+)
+async def remove_applications_from_batch(
+    batch_id: str,
+    body: BatchAssign,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Detach applications from ONE batch (smart remove).
+
+    Multi-batch aware: keeps a reviewer that another of the app's remaining
+    batches still supplies, and never removes a reviewer who already submitted a
+    review. Leaves the app's other batch memberships untouched.
+    """
+    sb = get_admin_client()
+    from app.services import batch_membership
+
+    removed = 0
+    skipped = 0
+    for item in body.items:
+        r = batch_membership.remove_app_from_batch(
+            sb, batch_id, item.application_id, item.track, actor=user["user_id"]
+        )
+        removed += r["assignments_removed"]
+        skipped += r["skipped_submitted"]
+
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="batch_applications_removed",
+        target_table="application_batches",
+        target_id=batch_id,
+        after={
+            "count": len(body.items),
+            "assignments_removed": removed,
+            "skipped_submitted": skipped,
+        },
+    )
+    return {
+        "removed": len(body.items),
+        "assignments_removed": removed,
+        "skipped_submitted": skipped,
     }
 
 
@@ -564,10 +538,12 @@ async def unassign_batch_reviewer(
     reviewer_user_id: str,
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """Remove a reviewer's assignments for a batch's apps.
+    """Remove a reviewer's membership in a batch (batch_reviewers) and their
+    assignments on the batch's apps.
 
-    Only deletes assignments where NO review has been submitted yet (mirrors the
-    leadership unassign guard). Returns the number of assignments removed.
+    Multi-batch aware: keeps the reviewer on an app that another of the app's
+    batches still supplies, and never removes a reviewer who already submitted a
+    review. Returns the number of assignments removed + submitted-skips.
     """
     sb = get_admin_client()
     existing_batch = sb.table("batches").select("id").eq("id", batch_id).limit(1).execute().data
@@ -577,42 +553,11 @@ async def unassign_batch_reviewer(
             detail={"code": "batch_not_found"},
         )
 
-    link_rows = (
-        sb.table("application_batches")
-        .select("application_id,application_track,batch_id")
-        .eq("batch_id", batch_id)
-        .execute()
-        .data
-    ) or []
-    apps = [
-        (r["application_id"], r["application_track"])
-        for r in link_rows
-        if r.get("batch_id") == batch_id and r.get("application_id") and r.get("application_track")
-    ]
+    from app.services import batch_membership
 
-    # Apps that already have a submitted review by this reviewer — guard so we
-    # never orphan a scored review. Bulk-fetch + Python filter (fake-friendly).
-    reviewed_keys: set[tuple[str, str]] = set()
-    for rv in (sb.table("reviews").select("*").execute().data) or []:
-        if (
-            rv.get("reviewer_user_id") == reviewer_user_id
-            and rv.get("status") == "submitted"
-        ):
-            reviewed_keys.add((rv.get("application_id"), rv.get("application_track")))
-
-    removed = 0
-    for (aid, track) in apps:
-        if (aid, track) in reviewed_keys:
-            continue
-        res = (
-            sb.table("reviewer_assignments")
-            .delete()
-            .eq("application_id", aid)
-            .eq("application_track", track)
-            .eq("reviewer_user_id", reviewer_user_id)
-            .execute()
-        )
-        removed += len(res.data or [])
+    result = batch_membership.remove_reviewer_from_batch(
+        sb, batch_id, reviewer_user_id, actor=user["user_id"]
+    )
 
     write_audit(
         actor_user_id=user["user_id"],
@@ -620,9 +565,13 @@ async def unassign_batch_reviewer(
         action_type="batch_reviewers_unassigned",
         target_table="batches",
         target_id=batch_id,
-        after={"reviewer_user_id": reviewer_user_id, "removed": removed},
+        after={
+            "reviewer_user_id": reviewer_user_id,
+            "removed": result["removed"],
+            "skipped_submitted": result["skipped_submitted"],
+        },
     )
-    return {"removed": removed}
+    return {"removed": result["removed"], "skipped_submitted": result["skipped_submitted"]}
 
 
 @router.patch(
