@@ -46,6 +46,8 @@ export const adminPlatformApi = {
   renameBatch: (id, body) => api.patch(`/admin/platform/batches/${id}`, body),
   assignBatch: (id, body) =>
     api.post(`/admin/platform/batches/${id}/applications`, body),
+  removeAppFromBatch: (id, items) =>
+    api.post(`/admin/platform/batches/${id}/applications/remove`, { items }),
   unassignBatch: (items) =>
     api.post(`/admin/platform/batches/unassign`, { items }),
   deleteBatch: (id) => api.del(`/admin/platform/batches/${id}`),

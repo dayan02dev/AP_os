@@ -79,6 +79,9 @@ export function adaptPipelineRow(row) {
     hidden: !!row.isHidden,
     archived: !!row.isArchived,
     batch: row.batch || "Unassigned",
+    batches: Array.isArray(row.batches)
+      ? row.batches
+      : (row.batch ? [{ name: row.batch }] : []),
     sub: row.submitted_at ? row.submitted_at.slice(0, 10) : "",
   };
 }
