@@ -36,11 +36,16 @@ KEYWORDS = _WORDS + _PHRASES
 _WORD_RE = {w: re.compile(r"\b" + re.escape(w) + r"\b", re.I) for w in _WORDS}
 
 _PROMPT = (
-    "You classify deep-tech startups. Is this venture PRIMARILY about wired or "
-    "wireless COMMUNICATION technology — networks, RF, wireless connectivity, "
-    "telecom, optical/fiber communication, or networking hardware? A venture that "
-    "merely 'communicates with users', has a chat feature, or a generic app is NOT "
-    "communication tech. Respond STRICT JSON: "
+    "You classify deep-tech startups by their CORE product. Answer is_comms=true "
+    "ONLY if the venture's PRIMARY product IS communication technology or "
+    "infrastructure that it builds or sells — e.g. wireless/RF systems, 5G/6G, "
+    "antennas, transceivers, modems, telecom/network equipment, optical/fiber "
+    "communication systems, networking hardware, or connectivity/spectrum "
+    "solutions. Answer is_comms=false if communication is only a SUPPORTING "
+    "component of a product whose core purpose is something else — a defense "
+    "system, robot, drone, wearable/health device, sensor, vehicle, or software "
+    "platform that merely USES connectivity (Wi-Fi, LoRa, 4G, mesh, telemetry) to "
+    "function. When in doubt, answer false. Respond STRICT JSON: "
     '{"is_comms": true|false, "reason": "<=15 words"}.'
 )
 
