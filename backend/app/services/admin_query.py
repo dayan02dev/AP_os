@@ -124,16 +124,18 @@ def _fetch_admin_meta(
 
 def _fetch_batches(
     pairs: list[tuple[str, str]],
-) -> dict[tuple[str, str], dict[str, Any]]:
-    """Resolve `(track, id) → {"id", "name"}` via application_batches → batches.
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    """Resolve `(track, id) → [{"id", "name"}, ...]` via application_batches →
+    batches. An application may now belong to MANY batches (migration 034), so
+    every membership is returned as a list.
 
     Two extra queries total: one application_batches projection per track plus
     a single batches lookup to resolve names.
     """
-    out: dict[tuple[str, str], dict[str, Any]] = {}
+    out: dict[tuple[str, str], list[dict[str, Any]]] = {}
     if not pairs:
         return out
-    link: dict[tuple[str, str], str] = {}
+    links: dict[tuple[str, str], list[str]] = {}
     for track, ids in _by_track(pairs).items():
         if not ids:
             continue
@@ -154,12 +156,9 @@ def _fetch_batches(
             aid = row.get("application_id")
             bid = row.get("batch_id")
             if aid and bid:
-                # application_batches has a unique constraint on
-                # (application_id, application_track) (migration 024), so
-                # there is at most one batch per app.
-                link[(track, aid)] = bid
+                links.setdefault((track, aid), []).append(bid)
 
-    needed = {bid for bid in link.values()}
+    needed = {b for bl in links.values() for b in bl}
     names: dict[str, str] = {}
     if needed:
         try:
@@ -176,8 +175,8 @@ def _fetch_batches(
             log.warning("admin_query._fetch_batches names failed",
                         extra={"err": str(exc)})
 
-    for key, bid in link.items():
-        out[key] = {"id": bid, "name": names.get(bid)}
+    for key, bids in links.items():
+        out[key] = [{"id": b, "name": names.get(b)} for b in bids]
     return out
 
 
@@ -333,8 +332,8 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
         if want_decision and decision != want_decision:
             continue
 
-        batch = batches.get(key)
-        if want_batch and (batch or {}).get("id") != want_batch:
+        batch_list = batches.get(key) or []
+        if want_batch and not any(b.get("id") == want_batch for b in batch_list):
             continue
 
         ind = industries.get(key)
@@ -378,7 +377,8 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
             "decision":         decision,
             "isHidden":         is_hidden,
             "isArchived":       is_archived,
-            "batch":            (batch or {}).get("name"),
+            "batch":            (batch_list[0]["name"] if batch_list else None),
+            "batches":          batch_list,
             "reviewer_score":   reviewer_scores.get(key),
             "submitted_at":     r.get("submitted_at"),
             "flags":            flags_by_key.get(key, []),
@@ -430,7 +430,7 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
     key = (track, application_id)
     decision = _fetch_latest_decisions([key]).get(key)
     meta = _fetch_admin_meta([key]).get(key)
-    batch = _fetch_batches([key]).get(key)
+    batch_list = _fetch_batches([key]).get(key) or []
 
     # Industry label (single lookup) — mirrors the leadership detail shape.
     industry_obj = None
@@ -475,7 +475,8 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
         # Admin-portal additions.
         "decision":             decision,
         "meta":                 meta,
-        "batch":                batch,
+        "batch":                (batch_list[0] if batch_list else None),
+        "batches":              batch_list,
     }
 
 
@@ -794,7 +795,7 @@ def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
             "project":       project,
             "industry":      (industries.get(key) or {}).get("label"),
             "status":        r.get("status"),
-            "batch":         (batches.get(key) or {}).get("name"),
+            "batch":         next((b["name"] for b in (batches.get(key) or [])), None),
             "reviewStatus":  "submitted" if key in submitted else "pending",
             "assignment_id": a.get("id"),
         })
@@ -1131,6 +1132,24 @@ def assign_reviewers_to_batch(
     ]
 
     reviewer_ids = list(dict.fromkeys(reviewer_user_ids))  # dedupe, keep order
+
+    # Record explicit batch<->reviewer membership (batch_reviewers, migration
+    # 034) — the source of truth for the multi-batch fan-out. Idempotent.
+    if reviewer_ids:
+        _now_iso = datetime.now(UTC).isoformat()
+        sb.table("batch_reviewers").upsert(
+            [
+                {
+                    "batch_id": batch_id,
+                    "reviewer_user_id": rid,
+                    "added_by": assigned_by,
+                    "added_at": _now_iso,
+                }
+                for rid in reviewer_ids
+            ],
+            on_conflict="batch_id,reviewer_user_id",
+            ignore_duplicates=True,
+        ).execute()
 
     # Existing assignments for these reviewers, read COMPLETELY (paginated).
     # A plain select('*') is capped at ~1000 rows by PostgREST; once the table

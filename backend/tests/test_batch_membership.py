@@ -108,3 +108,26 @@ def test_remove_reviewer_from_batch_smart():
     assigned = {a["reviewer_user_id"] for a in sb.tables["reviewer_assignments"]}
     assert "r2" not in assigned
     assert res2["removed"] == 1
+
+
+def test_reject_detaches_all_batch_links():
+    """Gate-1 reject must clear ALL of a multi-batch app's batch links + every
+    reviewer assignment (reviews are kept)."""
+    from app.services.applications_query import detach_application_from_review
+
+    sb = FakeSupabase(
+        {
+            "application_batches": [
+                {"application_id": "app1", "application_track": "tir", "batch_id": "A"},
+                {"application_id": "app1", "application_track": "tir", "batch_id": "B"},
+            ],
+            "reviewer_assignments": [
+                {"application_id": "app1", "application_track": "tir", "reviewer_user_id": "r1"},
+                {"application_id": "app1", "application_track": "tir", "reviewer_user_id": "r2"},
+            ],
+        }
+    )
+    res = detach_application_from_review(sb, "app1", "tir", remove_batch_link=True)
+    assert sb.tables["application_batches"] == []
+    assert sb.tables["reviewer_assignments"] == []
+    assert res["batch_links_removed"] == 2
