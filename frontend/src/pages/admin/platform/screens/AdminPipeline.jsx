@@ -25,7 +25,7 @@ import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import { Chip } from "../ui.jsx";
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
-import { relabelDisplayId } from "../../../../lib/trackLabel.js";
+import { relabelDisplayId, trackLabel } from "../../../../lib/trackLabel.js";
 import { chipLabel, chipStatusId, chipTone } from "../../../../lib/adminDataAdapter";
 
 // Real industry chip counts from the loaded pipeline rows, scoped to the
@@ -1040,6 +1040,20 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                 <td style={{ fontWeight: 600 }}>
                   {s.name}
                   {isHidden && <span className="os-chip red" style={{ fontSize: 9, padding: '1px 4px', marginLeft: 6 }}>HIDDEN</span>}
+                  {s.movedToTrack && (
+                    <span
+                      className="os-chip"
+                      title={`Moved to ${trackLabel(s.movedToTrack)}`}
+                      style={{
+                        marginLeft: 8, fontSize: 10, fontWeight: 700,
+                        letterSpacing: '0.04em', background: '#fff4d6',
+                        border: '1px solid #e6c34d', color: '#8a6d00',
+                        borderRadius: 999, padding: '1px 7px', verticalAlign: 'middle',
+                      }}
+                    >
+                      → {trackLabel(s.movedToTrack).toUpperCase()}
+                    </span>
+                  )}
                 </td>
                 <td>{(s.founders && s.founders[0]) || '—'}</td>
                 <td className="os-text-soft">{s.domain}</td>
