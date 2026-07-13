@@ -24,7 +24,6 @@ import { AdminDetail } from "./screens/AdminDetail";
 import AdminGate1 from "./screens/AdminGate1";
 import { AdminReviewers } from "./screens/AdminReviewers";
 import { AdminGate2 } from "./screens/AdminGate2";
-import { AdminJury } from "./screens/AdminJury";
 import { AdminPsychometry } from "./screens/AdminPsychometry";
 import { AdminAIStatus } from "./screens/AdminAIStatus";
 import { AdminRoles } from "./screens/AdminRoles";
@@ -250,7 +249,7 @@ function AdminCohortHeader({ page, setPage, decisionMode, setDecisionMode }) {
   );
 }
 
-function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBadge, reviewBadge }) {
+export function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBadge, reviewBadge, juryBadge }) {
   // Badges come from real /stats data (passed down from AdminApp). A null
   // badge renders as no badge at all (see render below) — we never show a
   // fabricated number.
@@ -264,6 +263,8 @@ function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBadge, re
     },
     { id:'pipeline',     label:'Applications', sub:'ALL SUBMISSIONS',            badge: appsBadge == null ? null : String(appsBadge) },
     { id:'rejected',     label:'Rejected Applications', sub:'REJECTED BY ADMIN', badge: rejectedBadge == null ? null : String(rejectedBadge) },
+    { id:'jury',         label:'Jury Selected', sub:'SELECTED FOR JURY',
+      badge: juryBadge == null ? null : String(juryBadge) },
     {
       id:'gate1',
       label: decisionMode === 'jury' ? 'Final Gate' : 'Admin Review',
@@ -302,7 +303,7 @@ function AdminApp() {
   // Real tab-badge counts from /stats. While loading (or if the field is
   // absent) we pass null so NO badge shows rather than a fabricated number.
   const { data: statsData, loading: statsLoading } = useAdminData('stats');
-  const { appsBadge, rejectedBadge } = pipelineBadges(statsData, statsLoading);
+  const { appsBadge, rejectedBadge, juryBadge } = pipelineBadges(statsData, statsLoading);
   // "Admin Review" = apps evaluated by reviewers and awaiting an admin decision.
   const evaluatedEntry = (statsData?.statusCounts || []).find(s => s.id === 'evaluated');
   const reviewBadge = statsLoading ? null : (evaluatedEntry ? evaluatedEntry.n : null);
@@ -372,12 +373,14 @@ function AdminApp() {
               appsBadge={appsBadge}
               rejectedBadge={rejectedBadge}
               reviewBadge={reviewBadge}
+              juryBadge={juryBadge}
             />
           )}
           <div className="lp-tab-content">
             {page === 'dashboard'   && <AdminDashboard go={setPage} decisionMode={decisionMode} />}
-            {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ exclude_status: 'rejected' }} />}
+            {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ exclude_status: 'rejected,jury_review' }} />}
             {page === 'rejected'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ status: 'rejected' }} readOnly heading="Rejected applications" />}
+            {page === 'jury'        && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ status: 'jury_review' }} readOnly heading="Jury selected applications" />}
             {page === 'detail'      && (
               <AdminDetail
                 startupId={selectedStartupId}
@@ -393,7 +396,6 @@ function AdminApp() {
             {page === 'gate1'       && (decisionMode === 'jury' ? <AdminGate2 goDetail={goDetail} /> : <AdminGate1 goDetail={goDetail} />)}
             {page === 'psychometry' && <AdminPsychometry />}
             {page === 'aistatus'   && <AdminAIStatus />}
-            {page === 'jury'        && <AdminJury />}
             {page === 'gate2'       && <AdminGate2 goDetail={goDetail} />}
           </div>
         </div>
