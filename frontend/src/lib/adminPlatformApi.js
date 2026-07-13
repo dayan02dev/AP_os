@@ -36,6 +36,9 @@ export const adminPlatformApi = {
   decide: (track, id, body) =>
     api.post(`/admin/platform/applications/${track}/${id}/decision`, body),
 
+  moveTrack: (track, id) =>
+    api.post(`/admin/platform/applications/${track}/${id}/move-track`, {}),
+
   bulkDecide: (body) => api.post(`/admin/platform/decisions/bulk`, body),
 
   patchMeta: (track, id, body) =>

@@ -26,6 +26,7 @@ import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import FullApplication from "../../../../components/FullApplication";
 import ProfilePills from "../../../../components/ProfilePills";
 import { trackLabel } from "../../../../lib/trackLabel";
+import { moveButtonLabel, moveBadgeText } from "../../../../lib/trackMove";
 
 // ── Criteria metadata (mirrors prototype CRIT_LABELS / METRICS) ─────────────
 const METRICS = [
@@ -136,6 +137,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
   const [rationale, setRationale] = useState('');
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [decisionError, setDecisionError] = useState(null);
+  const [moveBusy, setMoveBusy] = useState(false);
 
   const [banner, setBanner] = useState(null);
   const [, forceRefresh] = useReducer(x => x + 1, 0);
@@ -206,6 +208,21 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
       }
     } finally {
       setDecisionBusy(false);
+    }
+  };
+
+  const onMoveTrack = async () => {
+    if (!s) return;
+    setMoveBusy(true);
+    setBanner(null);
+    try {
+      await adminPlatformApi.moveTrack(track, s.id);
+      await doLoad();
+      setBanner({ kind: 'ok', text: 'Application track updated.' });
+    } catch (err) {
+      setBanner({ kind: 'error', text: err?.message || 'Failed to move track.' });
+    } finally {
+      setMoveBusy(false);
     }
   };
 
@@ -305,6 +322,18 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
               }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#9a6206', flexShrink: 0 }} />
                 {chipLabel(s.chip)}
+              </span>
+            )}
+            {moveBadgeText(track, s.movedToTrack) && (
+              <span style={{
+                marginLeft: 12, fontSize: 10.5, fontWeight: 700,
+                letterSpacing: '0.06em', textTransform: 'uppercase',
+                background: '#fff4d6', border: '1px solid #e6c34d', color: '#8a6d00',
+                borderRadius: 999, padding: '3px 11px',
+                display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle',
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#8a6d00', flexShrink: 0 }} />
+                {moveBadgeText(track, s.movedToTrack)}
               </span>
             )}
           </h2>
@@ -648,6 +677,19 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
               onClick={onApplyDecision}
             >
               {decisionBusy ? 'Recording…' : 'Apply decision'}
+            </button>
+
+            <button
+              className="os-btn os-w-100 os-mt"
+              style={{
+                background: s.movedToTrack ? '#8a6d00' : '#f3f0fd',
+                color: s.movedToTrack ? '#fff' : '#3213b7',
+                fontWeight: 600, border: '1px solid #cfc4f5',
+              }}
+              disabled={moveBusy}
+              onClick={onMoveTrack}
+            >
+              {moveBusy ? 'Moving…' : moveButtonLabel(track, s.movedToTrack)}
             </button>
           </div>
         </div>
