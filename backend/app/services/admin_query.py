@@ -237,6 +237,20 @@ def _fetch_reviewer_scores(
     return {key: round(num[key] / den[key], 1) for key in num if den.get(key)}
 
 
+def _parse_exclude_status(exclude_status: Any) -> set[str]:
+    """Normalize the `exclude_status` filter into a set of status strings.
+
+    Accepts a comma-separated string ("rejected,jury_review"), an iterable, or
+    None/"" (→ empty set). Lets the Applications tab hide several statuses at
+    once (rejected AND jury_review) while staying backward-compatible with the
+    single-value callers."""
+    if not exclude_status:
+        return set()
+    if isinstance(exclude_status, str):
+        return {s.strip() for s in exclude_status.split(",") if s.strip()}
+    return set(exclude_status)
+
+
 def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     """Admin pipeline list across both tracks with admin-portal joins.
 
@@ -308,7 +322,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     # 3. Post-fetch filters (hidden/archived/decision/batch/industry/search).
     include_hidden = bool(filters.get("include_hidden"))
     include_archived = bool(filters.get("include_archived"))
-    exclude_status = filters.get("exclude_status")
+    exclude_set = _parse_exclude_status(filters.get("exclude_status"))
     want_decision = filters.get("decision")
     want_batch = filters.get("batch_id")
     want_industry = filters.get("industry")
@@ -324,7 +338,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
             continue
         if is_archived and not include_archived:
             continue
-        if exclude_status and r.get("status") == exclude_status:
+        if exclude_set and r.get("status") in exclude_set:
             continue
 
         dec_row = decisions.get(key)
