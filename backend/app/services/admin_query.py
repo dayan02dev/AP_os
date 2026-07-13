@@ -465,9 +465,11 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
             industry_obj = {"id": ind_id, "label": ind_id}
 
     app_row_with_track = {**app_row, "track": track}
+    also_track = applications_query.also_in_track(app_row.get("basic_email"), track)
     return {
         "id":                   application_id,
         "track":                track,
+        "also_in_track":        also_track,
         "display_seq":          app_row.get("display_seq"),
         "display_id":           stats.compose_display_id(track, app_row.get("display_seq")),
         "project_name":         (ai_screening or {}).get("project_name")
