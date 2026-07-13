@@ -54,6 +54,35 @@ def track_table(track: str) -> str:
     return f"{track}_applications"
 
 
+def also_in_track(email: str | None, current_track: str) -> str | None:
+    """Return the OTHER track's code ('sip' | 'tir') if the same applicant — by
+    normalized `basic_email` — has a non-draft application there; else None.
+
+    Cross-track match key is the lower-cased, trimmed email. Powers the
+    "Also in VIP / Also in TIR" pill on the reviewer & admin detail screens.
+    Best-effort: any lookup error → None (the pill simply doesn't show)."""
+    norm = (email or "").strip().lower()
+    if not norm:
+        return None
+    other = "sip" if current_track == "tir" else "tir"
+    try:
+        rows = (
+            get_admin_client()
+            .table(f"{other}_applications")
+            .select("id,status,basic_email")
+            .ilike("basic_email", norm)
+            .neq("status", "draft")
+            .limit(1)
+            .execute()
+            .data
+        ) or []
+    except Exception:  # noqa: BLE001
+        log.warning("also_in_track lookup failed",
+                    extra={"current_track": current_track})
+        return None
+    return other if rows else None
+
+
 # ─── List query ─────────────────────────────────────────────────────────
 
 
