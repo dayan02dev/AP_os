@@ -32,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..deps import get_current_user
 from ..rbac import require_capability
-from ..services import admin_query, applications_query, decisions
+from ..services import admin_query, applications_query, decisions, track_move
 from ..services.assignment_email import notify_reviewers_assigned
 from ..services.audit import actor_role_of, write_audit
 from ..supabase_client import get_admin_client
@@ -122,6 +122,22 @@ async def decide(
         decision=body.decision, rationale=body.rationale,
         decided_by=user["user_id"],
         decided_by_role=actor_role_of(user),
+    )
+
+
+@router.post(
+    "/applications/{track}/{application_id}/move-track",
+    dependencies=[Depends(require_capability("decide_application"))],
+)
+async def move_track(
+    track: Literal["tir", "sip"],
+    application_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Toggle a reversible TIR<->VIP reclassification flag (admin only)."""
+    return track_move.move_track(
+        track=track, application_id=application_id,
+        actor_user_id=user["user_id"], actor_role=actor_role_of(user),
     )
 
 
