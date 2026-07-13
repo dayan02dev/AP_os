@@ -25,6 +25,7 @@ import { Chip } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import FullApplication from "../../../../components/FullApplication";
 import ProfilePills from "../../../../components/ProfilePills";
+import { trackLabel } from "../../../../lib/trackLabel";
 
 // ── Criteria metadata (mirrors prototype CRIT_LABELS / METRICS) ─────────────
 const METRICS = [
@@ -342,6 +343,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
               <div className="os-card-title">Application · {s.name}</div>
               <div className="os-row gap-sm" style={{ alignItems: "center" }}>
                 <ProfilePills
+                  alsoInTrack={s.alsoInTrack ? trackLabel(s.alsoInTrack) : null}
                   resumeFile={s.application?.resume_file}
                   linkedinUrl={s.application?.linkedin_url}
                   onOpenResume={async () => {

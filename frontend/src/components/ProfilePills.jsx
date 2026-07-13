@@ -23,7 +23,7 @@ function resumeErrorMessage(err) {
   return "Couldn't open the résumé. Try again.";
 }
 
-export default function ProfilePills({ resumeFile, linkedinUrl, onOpenResume }) {
+export default function ProfilePills({ resumeFile, linkedinUrl, onOpenResume, alsoInTrack }) {
   const hasResume = Boolean(resumeFile && resumeFile.storage_path);
   const liHref = normalizeUrl(linkedinUrl);
   const [busy, setBusy] = useState(false);
@@ -45,6 +45,14 @@ export default function ProfilePills({ resumeFile, linkedinUrl, onOpenResume }) 
 
   return (
     <div className="profile-pills">
+      {alsoInTrack && (
+        <span
+          className="pp-pill pp-cross"
+          title={`Applicant also submitted a ${alsoInTrack} application`}
+        >
+          Also in {alsoInTrack}
+        </span>
+      )}
       {hasResume ? (
         <span className="pp-slot">
           <button

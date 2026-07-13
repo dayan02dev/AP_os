@@ -29,6 +29,7 @@ import FullApplication from "../../../components/FullApplication.jsx";
 import ProfilePills from "../../../components/ProfilePills.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
+import { trackLabel } from "../../../lib/trackLabel.js";
 import {
   LoadingState,
   ErrorState,
@@ -470,6 +471,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               <div className="os-card-title">Application · {application.name}</div>
               <div className="os-row gap-sm" style={{ alignItems: "center" }}>
                 <ProfilePills
+                  alsoInTrack={content.also_in_track ? trackLabel(content.also_in_track) : null}
                   resumeFile={content.application?.resume_file}
                   linkedinUrl={content.application?.linkedin_url}
                   onOpenResume={async () => {

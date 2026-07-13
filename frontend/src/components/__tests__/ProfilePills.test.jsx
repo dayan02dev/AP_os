@@ -52,4 +52,22 @@ describe("ProfilePills", () => {
     expect(screen.queryByRole("link", { name: /LinkedIn/ })).toBeNull();
     expect(screen.getByText(/LinkedIn/)).toBeInTheDocument();
   });
+
+  it("renders a cross-track pill when alsoInTrack is set", () => {
+    render(<ProfilePills resumeFile={null} linkedinUrl={null} onOpenResume={vi.fn()} alsoInTrack="VIP" />);
+    expect(screen.getByText(/Also in VIP/)).toBeInTheDocument();
+  });
+
+  it("renders the cross-track pill as the leftmost pill", () => {
+    const { container } = render(
+      <ProfilePills resumeFile={{ storage_path: "u/r.pdf" }} linkedinUrl="x.com" onOpenResume={vi.fn()} alsoInTrack="TIR" />,
+    );
+    const pills = container.querySelectorAll(".profile-pills > *");
+    expect(pills[0]).toHaveTextContent(/Also in TIR/);
+  });
+
+  it("renders no cross-track pill when alsoInTrack is absent", () => {
+    render(<ProfilePills resumeFile={null} linkedinUrl={null} onOpenResume={vi.fn()} />);
+    expect(screen.queryByText(/Also in/)).toBeNull();
+  });
 });

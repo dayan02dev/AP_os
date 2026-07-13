@@ -19,3 +19,12 @@ button.pp-on { font-family: var(--font-body, inherit); }
 .pp-slot { display: inline-flex; align-items: center; gap: 6px; }
 .pp-pill:disabled { opacity: 0.6; cursor: default; }
 .pp-error { font-size: 10.5px; font-weight: 600; color: #b3262b; white-space: normal; }
+
+/* Cross-track pill — informational; distinct from the green present / muted
+   absent pills. Neutral indigo tint. */
+.pp-pill.pp-cross {
+  background: #eef0fb;
+  color: #3213b7;
+  border: 1px solid #cfc4f5;
+  cursor: default;
+}

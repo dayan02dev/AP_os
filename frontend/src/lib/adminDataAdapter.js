@@ -191,5 +191,6 @@ export function adaptDetail(d) {
     statusHistory: d.status_history || [],
     hidden: !!d.meta?.is_hidden,
     archived: !!d.meta?.is_archived,
+    alsoInTrack: d.also_in_track || null,
   };
 }
