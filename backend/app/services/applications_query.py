@@ -72,7 +72,7 @@ def also_in_track(email: str | None, current_track: str) -> str | None:
             .select("id,status,basic_email")
             .ilike("basic_email", norm)
             .neq("status", "draft")
-            .limit(1)
+            .limit(50)
             .execute()
             .data
         ) or []
@@ -80,7 +80,13 @@ def also_in_track(email: str | None, current_track: str) -> str | None:
         log.warning("also_in_track lookup failed",
                     extra={"current_track": current_track})
         return None
-    return other if rows else None
+    # ilike is a case-insensitive DB pre-filter, but SQL LIKE treats `_`/`%` in
+    # the email as wildcards — so confirm an EXACT normalized match in Python
+    # before claiming a cross-track submission (avoids false-positive pills).
+    for r in rows:
+        if (r.get("basic_email") or "").strip().lower() == norm:
+            return other
+    return None
 
 
 # ─── List query ─────────────────────────────────────────────────────────
