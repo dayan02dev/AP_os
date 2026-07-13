@@ -77,17 +77,19 @@ def record_decision(*, track, application_id, decision, rationale, decided_by, d
         reason=rationale or f"gate1: {decision}",
     )
 
-    # On rejection, remove the app from the batch and every reviewer so it
-    # leaves all reviewer queues. Best-effort: a cleanup failure must not undo
-    # the recorded decision. Reviews are preserved by the helper.
-    if decision == "rejected":
+    # On rejection OR admin approval (jury_review), remove the app from the
+    # batch and every reviewer so it leaves all reviewer queues. Best-effort:
+    # a cleanup failure must not undo the recorded decision. Reviews are
+    # preserved by the helper.
+    if decision in ("rejected", "jury_review"):
         try:
             applications_query.detach_application_from_review(
                 sb, application_id, track, remove_batch_link=True,
             )
         except Exception:  # noqa: BLE001
-            log.warning("reject cleanup failed",
-                        extra={"application_id": application_id, "track": track})
+            log.warning("decision cleanup failed",
+                        extra={"application_id": application_id, "track": track,
+                               "decision": decision})
 
     # 4. Best-effort audit.
     write_audit(

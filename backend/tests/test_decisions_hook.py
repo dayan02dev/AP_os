@@ -57,3 +57,27 @@ def test_email_failure_does_not_break_decision(monkeypatch):
     out = decisions.record_decision(track="tir", application_id="id1", decision="rejected",
                                     rationale="no", decided_by="u1")
     assert out["decision"] == "rejected"
+
+
+def test_jury_review_detaches_reviewers(monkeypatch):
+    _sb, _calls = _patch(monkeypatch)
+    detached = []
+    monkeypatch.setattr(
+        decisions.applications_query, "detach_application_from_review",
+        lambda sb, aid, track, *, remove_batch_link: detached.append((aid, track, remove_batch_link)),
+    )
+    decisions.record_decision(track="tir", application_id="id1", decision="jury_review",
+                              rationale=None, decided_by="u1")
+    assert detached == [("id1", "tir", True)]
+
+
+def test_on_hold_does_not_detach(monkeypatch):
+    _sb, _calls = _patch(monkeypatch)
+    detached = []
+    monkeypatch.setattr(
+        decisions.applications_query, "detach_application_from_review",
+        lambda *a, **k: detached.append(a),
+    )
+    decisions.record_decision(track="tir", application_id="id1", decision="on_hold",
+                              rationale="x", decided_by="u1")
+    assert detached == []
