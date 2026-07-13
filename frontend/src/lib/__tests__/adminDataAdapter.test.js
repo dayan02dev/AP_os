@@ -241,3 +241,14 @@ describe("misc adapters", () => {
     expect(adaptBatch({ id: "b1", name: "Batch A", phase: "p1" }).name).toBe("Batch A");
   });
 });
+
+it("adaptPipelineRow surfaces movedToTrack", () => {
+  expect(adaptPipelineRow({ id: "1", moved_to_track: "sip" }).movedToTrack).toBe("sip");
+  expect(adaptPipelineRow({ id: "1" }).movedToTrack).toBeNull();
+});
+
+it("adaptDetail surfaces movedToTrack from top-level or application row", () => {
+  expect(adaptDetail({ id: "1", moved_to_track: "tir" }).movedToTrack).toBe("tir");
+  expect(adaptDetail({ id: "1", application: { moved_to_track: "sip" } }).movedToTrack).toBe("sip");
+  expect(adaptDetail({ id: "1" }).movedToTrack).toBeNull();
+});

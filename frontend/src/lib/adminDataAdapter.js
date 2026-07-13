@@ -83,6 +83,7 @@ export function adaptPipelineRow(row) {
       ? row.batches
       : (row.batch ? [{ name: row.batch }] : []),
     sub: row.submitted_at ? row.submitted_at.slice(0, 10) : "",
+    movedToTrack: row.moved_to_track || null,
   };
 }
 
@@ -192,5 +193,6 @@ export function adaptDetail(d) {
     hidden: !!d.meta?.is_hidden,
     archived: !!d.meta?.is_archived,
     alsoInTrack: d.also_in_track || null,
+    movedToTrack: d.moved_to_track || d.application?.moved_to_track || null,
   };
 }

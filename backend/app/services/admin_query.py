@@ -396,6 +396,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
             "reviewer_score":   reviewer_scores.get(key),
             "submitted_at":     r.get("submitted_at"),
             "flags":            flags_by_key.get(key, []),
+            "moved_to_track":   r.get("moved_to_track"),
         })
 
     # Sort newest-submitted first (NULLs last), matching the leadership list.
@@ -470,6 +471,7 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
         "id":                   application_id,
         "track":                track,
         "also_in_track":        also_track,
+        "moved_to_track":       app_row.get("moved_to_track"),
         "display_seq":          app_row.get("display_seq"),
         "display_id":           stats.compose_display_id(track, app_row.get("display_seq")),
         "project_name":         (ai_screening or {}).get("project_name")

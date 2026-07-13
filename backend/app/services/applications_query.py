@@ -98,7 +98,7 @@ _BASE_LIST_COLUMNS = (
     "id,status,basic_full_name,basic_email,basic_org,"
     "submitted_at,created_at,"
     "solution_describe,solution_core_tech,problem_describe,"
-    "display_seq"
+    "display_seq,moved_to_track"
 )
 _TIR_EXTRA_COLUMNS = ",solution_stage"
 _SIP_EXTRA_COLUMNS = ",sip_traction,sip_trl"
