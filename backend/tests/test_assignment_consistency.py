@@ -196,7 +196,10 @@ def test_reject_detaches_app_from_batch_and_all_reviewers(monkeypatch):
     assert store["application_batches"] == []
 
 
-def test_jury_review_decision_leaves_assignments_intact(monkeypatch):
+def test_jury_review_decision_detaches_app_from_batch_and_all_reviewers(monkeypatch):
+    # Admin approval (jury_review) now detaches the app from every reviewer and
+    # its batch — same cleanup as reject — so an approved app leaves all
+    # reviewer queues. (Submitted reviews are preserved by the helper.)
     from app.services import decisions
 
     store = {
@@ -216,5 +219,5 @@ def test_jury_review_decision_leaves_assignments_intact(monkeypatch):
         rationale=None, decided_by="admin-1",
     )
 
-    assert len(store["reviewer_assignments"]) == 1
-    assert len(store["application_batches"]) == 1
+    assert store["reviewer_assignments"] == []
+    assert store["application_batches"] == []
