@@ -284,7 +284,14 @@ class TestSubmitJuryResponse:
             "profiles", [{"id": "u-exist", "email": "old@x.com", "full_name": "Old"}],
         )
         _seed_invite(install_db, token="t4", email="old@x.com")
-        res = client.post("/jury/respond/t4", json={"accept": True})
+        res = client.post(
+            "/jury/respond/t4",
+            json={
+                "accept": True,
+                "expertise_domains": ["Robotics"],
+                "linkedin_url": "https://linkedin.com/in/x",
+            },
+        )
         assert res.status_code == 200, res.text
         assert not install_db.auth.created                    # no NEW account
         assert install_db.auth.resets                          # password WAS reset
@@ -303,7 +310,14 @@ class TestSubmitJuryResponse:
             "profiles", [{"id": "u-r", "email": "r@x.com", "full_name": "R"}],
         )
         _seed_invite(install_db, token="t5", email="r@x.com", status="accepted")
-        res = client.post("/jury/respond/t5", json={"accept": True})
+        res = client.post(
+            "/jury/respond/t5",
+            json={
+                "accept": True,
+                "expertise_domains": ["Robotics"],
+                "linkedin_url": "https://linkedin.com/in/x",
+            },
+        )
         assert res.status_code == 200
         assert res.json()["status"] == "ok"
         assert not install_db.auth.resets      # no password churn on retry
@@ -311,7 +325,14 @@ class TestSubmitJuryResponse:
 
     def test_accept_after_decline_is_noop_ok(self, client, install_db, ses_mock):
         _seed_invite(install_db, token="t6", status="declined")
-        res = client.post("/jury/respond/t6", json={"accept": True})
+        res = client.post(
+            "/jury/respond/t6",
+            json={
+                "accept": True,
+                "expertise_domains": ["Robotics"],
+                "linkedin_url": "https://linkedin.com/in/x",
+            },
+        )
         assert res.status_code == 200
         assert res.json()["status"] == "already_responded"
         assert not install_db.auth.created
@@ -325,3 +346,20 @@ class TestSubmitJuryResponse:
     def test_post_unknown_token_404(self, client, install_db):
         res = client.post("/jury/respond/nope", json={"accept": False})
         assert res.status_code == 404
+
+    def test_accept_without_expertise_422(self, client, install_db, ses_mock):
+        _seed_invite(install_db, token="tq1", email="q1@x.com")
+        res = client.post("/jury/respond/tq1",
+                          json={"accept": True, "linkedin_url": "https://linkedin.com/in/x"})
+        assert res.status_code == 422
+
+    def test_accept_without_linkedin_422(self, client, install_db, ses_mock):
+        _seed_invite(install_db, token="tq2", email="q2@x.com")
+        res = client.post("/jury/respond/tq2",
+                          json={"accept": True, "expertise_domains": ["Robotics"]})
+        assert res.status_code == 422
+
+    def test_decline_needs_no_context(self, client, install_db, ses_mock):
+        _seed_invite(install_db, token="tq3", email="q3@x.com")
+        res = client.post("/jury/respond/tq3", json={"accept": False})
+        assert res.status_code == 200
