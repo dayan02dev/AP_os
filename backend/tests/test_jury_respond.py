@@ -120,11 +120,16 @@ class _FakeAuthAdmin:
 
     def __init__(self):
         self.created: list[dict] = []
+        self.resets: list[tuple[str, dict]] = []
         self.admin = self
 
     def create_user(self, payload):
         self.created.append(payload)
         return SimpleNamespace(user=SimpleNamespace(id="new-juror-uuid"))
+
+    def update_user_by_id(self, user_id, payload):
+        self.resets.append((user_id, payload))
+        return SimpleNamespace(user=SimpleNamespace(id=user_id))
 
 
 class FakeSupabaseClient:
@@ -268,9 +273,12 @@ class TestSubmitJuryResponse:
         assert ("jury_enrich", "new-juror-uuid") in published
         assert ses_mock.called  # credentials email
 
-    def test_accept_existing_user_grants_role_only(
+    def test_accept_existing_user_resets_password_and_emails_credentials(
         self, client, install_db, ses_mock, monkeypatch,
     ):
+        # An existing account must ALSO receive working credentials on accept —
+        # the juror has no other way to learn their login. So the password is
+        # reset and the credentials email (id + password) is sent.
         monkeypatch.setattr("app.routers.jury_invites.publish_jury_job", lambda *a: True)
         install_db.seed(
             "profiles", [{"id": "u-exist", "email": "old@x.com", "full_name": "Old"}],
@@ -278,17 +286,28 @@ class TestSubmitJuryResponse:
         _seed_invite(install_db, token="t4", email="old@x.com")
         res = client.post("/jury/respond/t4", json={"accept": True})
         assert res.status_code == 200, res.text
-        assert not install_db.auth.created
+        assert not install_db.auth.created                    # no NEW account
+        assert install_db.auth.resets                          # password WAS reset
+        assert install_db.auth.resets[0][0] == "u-exist"
+        assert "password" in install_db.auth.resets[0][1]
         assert any(r["role"] == "jury" for r in install_db.inserts["user_roles"])
+        assert ses_mock.called                                 # credentials email sent
 
-    def test_repeat_accept_is_idempotent_retry(
+    def test_repeat_accept_no_password_churn_no_reemail(
         self, client, install_db, ses_mock, monkeypatch,
     ):
+        # Already-accepted invite: a repeat POST must not reset the password or
+        # re-send credentials (the juror may already be signed in).
         monkeypatch.setattr("app.routers.jury_invites.publish_jury_job", lambda *a: True)
+        install_db.seed(
+            "profiles", [{"id": "u-r", "email": "r@x.com", "full_name": "R"}],
+        )
         _seed_invite(install_db, token="t5", email="r@x.com", status="accepted")
         res = client.post("/jury/respond/t5", json={"accept": True})
-        assert res.status_code == 200  # re-runs account/profile steps, still ok
+        assert res.status_code == 200
         assert res.json()["status"] == "ok"
+        assert not install_db.auth.resets      # no password churn on retry
+        assert not ses_mock.called             # no duplicate credentials email
 
     def test_accept_after_decline_is_noop_ok(self, client, install_db, ses_mock):
         _seed_invite(install_db, token="t6", status="declined")

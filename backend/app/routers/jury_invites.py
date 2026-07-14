@@ -111,13 +111,27 @@ async def get_jury_form(token: str) -> JuryFormView:
     return JuryFormView(name=invite["name"], email=invite["email"], status=invite["status"])
 
 
-def _ensure_jury_account(admin: Any, invite: dict) -> tuple[str, bool, str | None]:
-    """Return (user_id, created_new, temp_password). Idempotent."""
+def _ensure_jury_account(
+    admin: Any, invite: dict, *, reset_password: bool
+) -> tuple[str, bool, str | None]:
+    """Return (user_id, created_new, temp_password). Idempotent.
+
+    New account → created with a fresh temp password. Existing account →
+    when ``reset_password`` is True, its password is reset to a fresh temp
+    value so the juror always receives working credentials (there is no other
+    way for an external juror to learn their login). ``temp_password`` is
+    non-None exactly when a fresh credential should be emailed.
+    """
     email_lower = invite["email"].lower()
     existing = (admin.table("profiles").select("id").eq("email", email_lower)
                 .limit(1).execute().data or [])
     if existing:
-        return existing[0]["id"], False, None
+        user_id = existing[0]["id"]
+        temp_password: str | None = None
+        if reset_password:
+            temp_password = secrets.token_urlsafe(16) + "!1Aa"
+            admin.auth.admin.update_user_by_id(user_id, {"password": temp_password})
+        return user_id, False, temp_password
     temp_password = secrets.token_urlsafe(16) + "!1Aa"
     create = admin.auth.admin.create_user({
         "email": email_lower, "password": temp_password, "email_confirm": True,
@@ -157,6 +171,9 @@ async def submit_jury_response(
         return {"status": "ok"}
 
     # ACCEPT — steps below are idempotent so a repeat POST is a safe retry.
+    # First accept issues fresh credentials; a repeat POST (already accepted)
+    # must NOT churn the password or re-email — the juror already has creds.
+    was_accepted = invite["status"] == "accepted"
     admin.table("jury_invites").update({
         "status": "accepted", "responded_at": invite.get("responded_at") or now,
         "linkedin_url": payload.linkedin_url or invite.get("linkedin_url"),
@@ -164,7 +181,8 @@ async def submit_jury_response(
     }).eq("id", invite["id"]).execute()
 
     try:
-        user_id, created_new, temp_password = _ensure_jury_account(admin, invite)
+        user_id, _created_new, temp_password = _ensure_jury_account(
+            admin, invite, reset_password=not was_accepted)
         _grant_jury_role(admin, user_id, invite.get("invited_by"))
     except Exception as exc:
         log.error("jury accept account step failed", extra={"invite_id": invite["id"], "err": str(exc)})
@@ -177,18 +195,18 @@ async def submit_jury_response(
         "enrichment_status": "pending", "updated_at": now,
     }, on_conflict="juror_user_id").execute()
 
-    try:  # credentials / role-added email — best-effort
-        svc = get_email_service()
-        if created_new:
-            svc.send_jury_credentials(to=invite["email"], jury_name=invite["name"],
-                                      login_email=invite["email"], temp_password=temp_password,
-                                      portal_url=frontend_url("/jury"))
-        else:
-            svc.send_role_granted(to=invite["email"], user_name=invite["name"], role="jury",
-                                  granted_by="ARTPARK", signin_url=frontend_url("/apply/signin"))
-    except Exception as exc:
-        log.warning("jury credentials email failed (best-effort)",
-                    extra={"invite_id": invite["id"], "err": str(exc)})
+    # Always email the login id + password on first accept (new OR existing
+    # account) — an external juror has no other way to learn their credentials.
+    # temp_password is set exactly on first accept; None on a retry.
+    if temp_password:
+        try:
+            get_email_service().send_jury_credentials(
+                to=invite["email"], jury_name=invite["name"],
+                login_email=invite["email"], temp_password=temp_password,
+                portal_url=frontend_url("/jury"))
+        except Exception as exc:
+            log.warning("jury credentials email failed (best-effort)",
+                        extra={"invite_id": invite["id"], "err": str(exc)})
 
     publish_jury_job("jury_enrich", user_id)   # fire-and-forget; worker chains matching
     return {"status": "ok"}
