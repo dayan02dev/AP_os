@@ -15,6 +15,7 @@
 import React, { useState, useMemo } from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
 import { leadershipApi } from "../../../../lib/leadershipApi";
+import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 
 // jurorApplications rows are adapted without a chip; derive a display label
 // from the raw status ("jury_review" → "JURY REVIEW").
@@ -33,6 +34,7 @@ export function ManageJurorsDrawer({ juror, onClose, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [autoBusy, setAutoBusy] = useState(false);
 
   const assigned = apps.data?.applications ?? [];
   const assignedIds = useMemo(() => new Set(assigned.map(a => a.id)), [assigned]);
@@ -59,6 +61,18 @@ export function ManageJurorsDrawer({ juror, onClose, onChanged }) {
   }, [pipeline.data, assignedIds, search]);
 
   const reload = () => { apps.reload(); onChanged && onChanged(); };
+
+  const handleAutoAssignJuror = async () => {
+    setAutoBusy(true);
+    try {
+      await adminPlatformApi.autoAssignJury(juror.id);
+      reload();
+    } catch (e) {
+      setErr(e?.details?.message || e?.message || "Auto-assign failed.");
+    } finally {
+      setAutoBusy(false);
+    }
+  };
 
   const handleAssign = async () => {
     const app = candidates.find(c => c.id === sel) ||
@@ -155,6 +169,10 @@ export function ManageJurorsDrawer({ juror, onClose, onChanged }) {
                 Assign Application
               </button>
             </div>
+            <button className="os-btn secondary sm" style={{ marginTop: 8 }}
+              onClick={handleAutoAssignJuror} disabled={autoBusy}>
+              {autoBusy ? "Assigning…" : "Auto-assign matches"}
+            </button>
           </div>
 
           {err && (

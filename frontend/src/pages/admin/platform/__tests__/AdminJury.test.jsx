@@ -21,6 +21,7 @@ vi.mock("../../../../lib/adminPlatformApi", () => ({
     createJuryInvites: vi.fn(),
     enrichJuror: vi.fn().mockResolvedValue({ ok: true }),
     recomputeRecommendations: vi.fn().mockResolvedValue({ status: "queued" }),
+    autoAssignJury: vi.fn(),
   },
 }));
 
@@ -180,6 +181,29 @@ describe("AdminJury v2 — applications tab", () => {
     });
     fireEvent.click(screen.getByText("Recompute"));
     expect(adminPlatformApi.recomputeRecommendations).toHaveBeenCalledWith("j1");
+  });
+});
+
+describe("AdminJury v2 — auto-assign", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("Auto-assign button calls autoAssignJury and reloads", async () => {
+    adminPlatformApi.autoAssignJury = vi.fn().mockResolvedValue(
+      { assigned: 4, jurors: 2, per_juror: {}, skipped_already: 0, skipped_not_jury_review: 0 });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { jurorsRet } = setup({
+      jurors: [{ ...JUROR_DONE, matchedAt: "2026-07-14T00:00:00Z" }],
+    });
+    render(<AdminJury />);
+    fireEvent.click(screen.getByText(/Auto-assign from AI matches/i));
+    await waitFor(() => expect(adminPlatformApi.autoAssignJury).toHaveBeenCalled());
+    expect(jurorsRet.reload).toHaveBeenCalled();
+  });
+
+  it("disables the button when no juror has matchedAt", () => {
+    setup({ jurors: [JUROR_DONE] });
+    render(<AdminJury />);
+    expect(screen.getByText(/Auto-assign from AI matches/i).closest("button")).toBeDisabled();
   });
 });
 

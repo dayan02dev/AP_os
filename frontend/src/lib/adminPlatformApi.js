@@ -91,6 +91,9 @@ export const adminPlatformApi = {
   recomputeRecommendations: (jurorUserId) =>
     api.post(`/admin/platform/jury/recommendations/recompute`,
              jurorUserId ? { juror_user_id: jurorUserId } : {}),
+  autoAssignJury: (jurorUserId) =>
+    api.post(`/admin/platform/jury/auto-assign`,
+             jurorUserId ? { juror_user_id: jurorUserId } : {}),
   decideGate2: (track, id, body) =>
     api.post(`/admin/platform/applications/${track}/${id}/decision`,
              { ...body, gate_stage: "gate2" }),

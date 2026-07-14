@@ -463,6 +463,8 @@ export function AdminJury() {
   const [recommendedFor, setRecommendedFor] = useState("");
   const [pickedBy, setPickedBy] = useState("");
   const [recomputeMsg, setRecomputeMsg] = useState(null);
+  const [autoAssigning, setAutoAssigning] = useState(false);
+  const [autoMsg, setAutoMsg] = useState(null);
 
   // Drawer / juror-picker state.
   const [manageJuror, setManageJuror] = useState(null);   // juror object → drawer
@@ -499,6 +501,20 @@ export function AdminJury() {
     }
   };
 
+  const handleAutoAssign = async () => {
+    if (!window.confirm("Assign each juror their AI-matched applications? You can still adjust afterwards.")) return;
+    setAutoAssigning(true); setAutoMsg(null);
+    try {
+      const r = await adminPlatformApi.autoAssignJury();
+      setAutoMsg(`Assigned ${r.assigned} application(s) across ${r.jurors} juror(s).`);
+      reloadAll();
+    } catch (e) {
+      setAutoMsg(e?.message || "Auto-assign failed.");
+    } finally {
+      setAutoAssigning(false);
+    }
+  };
+
   const openPickerForApp = (appRow) => {
     setPickerApp(appRow);
     setPickerSel(jurors[0]?.id || "");
@@ -513,6 +529,11 @@ export function AdminJury() {
         title="Jury <em>selection</em>"
         sub="Invite jury members, track background enrichment, and see who each juror picked to mentor."
         actions={[
+          <button key="auto" className="os-btn secondary" onClick={handleAutoAssign}
+            disabled={autoAssigning || !jurors.some(j => j.matchedAt)}
+            title={jurors.some(j => j.matchedAt) ? "" : "No AI matches yet — run Recompute first"}>
+            {autoAssigning ? "Assigning…" : "Auto-assign from AI matches"}
+          </button>,
           <button key="inv" className="os-btn" style={{ background: "#3213b7", color: "#fff" }} onClick={() => setShowInvite(true)}>Invite member</button>,
         ]}
       />
@@ -521,6 +542,8 @@ export function AdminJury() {
         <div className={"os-tab " + (tab === "applications" ? "active" : "")} onClick={() => setTab("applications")}>Applications</div>
         <div className={"os-tab " + (tab === "roster" ? "active" : "")} onClick={() => setTab("roster")}>Jury Roster</div>
       </div>
+
+      {autoMsg && <div className="os-text-sm os-text-soft os-mb-lg">{autoMsg}</div>}
 
       {tab === "applications" && (
         pipeline.loading ? <LoadingState label="Loading applications…" />

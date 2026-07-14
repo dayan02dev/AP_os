@@ -165,6 +165,7 @@ export function adaptJuror(r) {
     picks: r.picks || "0 / 3", picksSubmitted: r.picksSubmitted ?? 0,
     assigned: r.assigned ?? 0, last: r.lastActivity,
     invite: r.invite || null,
+    matchedAt: r.matchedAt || null,
   };
 }
 export function adaptJurorApplication(r) {
