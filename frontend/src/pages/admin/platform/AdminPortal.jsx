@@ -24,6 +24,7 @@ import { AdminDetail } from "./screens/AdminDetail";
 import AdminGate1 from "./screens/AdminGate1";
 import { AdminReviewers } from "./screens/AdminReviewers";
 import { AdminGate2 } from "./screens/AdminGate2";
+import { AdminJury } from "./screens/AdminJury";
 import { AdminPsychometry } from "./screens/AdminPsychometry";
 import { AdminAIStatus } from "./screens/AdminAIStatus";
 import { AdminRoles } from "./screens/AdminRoles";
