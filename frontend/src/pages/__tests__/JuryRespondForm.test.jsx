@@ -102,6 +102,21 @@ describe("JuryRespondForm — Accept path", () => {
     await waitFor(() => expect(screen.getByText(/rao@x\.com/i)).toBeInTheDocument());
     expect(screen.getByRole("heading", { name: /on the panel/i })).toBeInTheDocument();
   });
+
+  it("blocks accept until expertise + LinkedIn are filled", async () => {
+    api.post.mockResolvedValueOnce({ status: "ok" });
+    renderForm();
+
+    await waitFor(() => screen.getByText(/join the artpark tir jury panel/i));
+
+    fireEvent.click(screen.getByRole("radio", { name: /^Yes$/i }));
+
+    const submitBtn = await waitFor(() => screen.getByRole("button", { name: /submit/i }));
+    fireEvent.click(submitBtn);
+
+    expect(api.post).not.toHaveBeenCalled();
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+  });
 });
 
 describe("JuryRespondForm — Decline path", () => {

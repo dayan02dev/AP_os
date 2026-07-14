@@ -78,6 +78,11 @@ export default function JuryRespondForm() {
   /* Validation */
   function validate() {
     if (!accept) return "Please indicate whether you'll join the jury panel.";
+    if (accept === "yes") {
+      const exp = expertise.split(",").map((s) => s.trim()).filter(Boolean);
+      if (exp.length === 0) return "Please list at least one area of expertise.";
+      if (!linkedinUrl.trim()) return "Please add your LinkedIn profile URL.";
+    }
     return null;
   }
 
@@ -96,7 +101,7 @@ export default function JuryRespondForm() {
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
-      payload.linkedin_url = linkedinUrl.trim() || null;
+      payload.linkedin_url = linkedinUrl.trim();
     }
 
     setSubmitting(true);
@@ -221,7 +226,7 @@ export default function JuryRespondForm() {
           <>
             <div className="form-row">
               <label className="field-label" htmlFor="expertise">
-                Areas of expertise (optional)
+                Areas of expertise
               </label>
               <input
                 id="expertise"
@@ -235,7 +240,7 @@ export default function JuryRespondForm() {
 
             <div className="form-row">
               <label className="field-label" htmlFor="linkedin-url">
-                LinkedIn profile (optional)
+                LinkedIn profile
               </label>
               <input
                 id="linkedin-url"
