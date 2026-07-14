@@ -87,3 +87,79 @@ def run_for_all(client=None) -> dict:
            (client.table("user_roles").select("user_id,role").eq("role", "jury")
             .execute().data or []) if r.get("role") == "jury"]
     return {jid: run_for_juror(client, jid) for jid in sorted(set(ids))}
+
+
+_PAGE = 1000
+
+
+def _all(make_query):
+    """Read every row, paging past the 1000-row PostgREST cap."""
+    rows, off = [], 0
+    while True:
+        chunk = (make_query().range(off, off + _PAGE - 1).execute().data) or []
+        rows.extend(chunk)
+        if len(chunk) < _PAGE:
+            break
+        off += _PAGE
+    return rows
+
+
+def _jury_review_keys(client) -> set:
+    keys = set()
+    for track in ("tir", "sip"):
+        rows = _all(lambda t=track: client.table(f"{t}_applications")
+                    .select("id,status").eq("status", "jury_review"))
+        for r in rows:
+            if r.get("status") == "jury_review":   # fake .eq no-op safety
+                keys.add((r["id"], track))
+    return keys
+
+
+def auto_assign_from_recommendations(client, juror_user_id=None, *, assigned_by=None) -> dict:
+    """Turn each juror's stored jury_recommendations into jury_assignments.
+
+    Additive + idempotent: only jury_review apps, only pairs not already
+    assigned; never deletes. Synchronous (no LLM). Returns counts.
+    """
+    client = client or get_admin_client()
+    if juror_user_id:
+        juror_ids = [juror_user_id]
+    else:
+        juror_ids = sorted({r["user_id"] for r in
+                            (client.table("user_roles").select("user_id,role")
+                             .eq("role", "jury").execute().data or [])
+                            if r.get("role") == "jury"})
+    jr_keys = _jury_review_keys(client)
+    now = datetime.now(UTC).isoformat()
+    assigned = skipped_already = skipped_not_jr = 0
+    per_juror = {}
+    for jid in juror_ids:
+        recs = _all(lambda j=jid: client.table("jury_recommendations").select("*")
+                    .eq("juror_user_id", j))
+        recs = [r for r in recs if r.get("juror_user_id") == jid]
+        existing = _all(lambda j=jid: client.table("jury_assignments").select("*")
+                        .eq("juror_user_id", j))
+        existing_keys = {(a["application_id"], a["application_track"])
+                         for a in existing if a.get("juror_user_id") == jid}
+        to_add = []
+        for r in recs:
+            key = (r["application_id"], r["application_track"])
+            if key not in jr_keys:
+                skipped_not_jr += 1
+                continue
+            if key in existing_keys:
+                skipped_already += 1
+                continue
+            existing_keys.add(key)
+            to_add.append({"application_id": key[0], "application_track": key[1],
+                           "juror_user_id": jid, "assigned_by": assigned_by,
+                           "assigned_at": now})
+        if to_add:
+            client.table("jury_assignments").upsert(
+                to_add, on_conflict="application_id,application_track,juror_user_id",
+                ignore_duplicates=True).execute()
+        per_juror[jid] = len(to_add)
+        assigned += len(to_add)
+    return {"assigned": assigned, "per_juror": per_juror,
+            "skipped_already": skipped_already,
+            "skipped_not_jury_review": skipped_not_jr, "jurors": len(juror_ids)}
