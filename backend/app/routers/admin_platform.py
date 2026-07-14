@@ -1058,3 +1058,25 @@ async def recompute_recommendations(
                        .execute().data or []) if r.get("role") == "jury"})
     queued = [jid for jid in ids if publish_jury_job("jury_match", jid)]
     return {"queued": queued}
+
+
+class AutoAssignBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    juror_user_id: str | None = None
+
+
+@router.post(
+    "/jury/auto-assign",
+    dependencies=[Depends(require_capability("manage_jury_roster"))],
+)
+async def auto_assign_jury(
+    body: AutoAssignBody, user: dict = Depends(get_current_user),
+) -> dict:
+    from ..services.jury_matching.run import auto_assign_from_recommendations
+
+    result = auto_assign_from_recommendations(
+        get_admin_client(), body.juror_user_id, assigned_by=user["user_id"])
+    write_audit(actor_user_id=user["user_id"], actor_role=actor_role_of(user),
+                action_type="jury.auto_assigned", target_table="jury_assignments",
+                target_id=body.juror_user_id or "all", after=result)
+    return result
