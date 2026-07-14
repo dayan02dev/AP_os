@@ -78,4 +78,20 @@ export const adminPlatformApi = {
     api.get(`/admin/platform/analytics/reviewer-calibration`),
 
   getStats: () => api.get(`/admin/platform/stats`),
+
+  // ─── Jury v2 ───────────────────────────────────────────────────────────
+  getJurors: () => api.get(`/admin/platform/jurors`),
+  getJurorApplications: (userId) =>
+    api.get(`/admin/platform/jurors/${encodeURIComponent(userId)}/applications`),
+  patchJuror: (id, body) => api.patch(`/admin/platform/jurors/${id}`, body),
+  createJuryInvites: (invites) =>
+    api.post(`/admin/platform/jury/invites`, { invites }),
+  enrichJuror: (userId) =>
+    api.post(`/admin/platform/jurors/${encodeURIComponent(userId)}/enrich`, {}),
+  recomputeRecommendations: (jurorUserId) =>
+    api.post(`/admin/platform/jury/recommendations/recompute`,
+             jurorUserId ? { juror_user_id: jurorUserId } : {}),
+  decideGate2: (track, id, body) =>
+    api.post(`/admin/platform/applications/${track}/${id}/decision`,
+             { ...body, gate_stage: "gate2" }),
 };

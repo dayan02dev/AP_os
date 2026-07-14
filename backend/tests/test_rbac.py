@@ -41,7 +41,7 @@ def test_admin_and_leadership_both_see_audit():
 
 
 def test_six_roles_in_constant():
-    # Spec §3.1 — Phase 1 has exactly these six roles.
+    # Spec §3.1 — Phase 1's six roles, plus jury (added in jury v2).
     assert set(ROLE_CAPABILITIES.keys()) == {
         "applicant",
         "founder",
@@ -49,6 +49,7 @@ def test_six_roles_in_constant():
         "mentor",
         "leadership",
         "admin",
+        "jury",
     }
 
 

@@ -54,9 +54,15 @@ async def list_pipeline(
     search: str | None = None,
     include_hidden: bool = False,
     include_archived: bool = False,
+    recommended_for: str | None = None,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Admin pipeline list with decision / meta / batch joins."""
+    """Admin pipeline list with decision / meta / batch / jury-pick joins.
+
+    ``recommended_for=<juror_user_id>`` narrows the list to that juror's
+    precomputed jury recommendations, attaches a ``recommendation`` block per
+    row, and sorts by fit score. Omit it for the normal newest-first pipeline.
+    """
     return admin_query.fetch_pipeline({
         "track":            track,
         "status":           status,
@@ -67,6 +73,7 @@ async def list_pipeline(
         "search":           search,
         "include_hidden":   include_hidden,
         "include_archived": include_archived,
+        "recommended_for":  recommended_for,
     })
 
 
@@ -91,8 +98,9 @@ async def get_detail(
 
 class DecisionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    decision: Literal["shortlisted", "on_hold", "rejected", "waitlisted", "jury_review"]
+    decision: Literal["shortlisted", "on_hold", "rejected", "waitlisted", "jury_review", "offered"]
     rationale: str | None = None
+    gate_stage: Literal["gate1", "gate2"] = "gate1"
 
 
 @router.post(
@@ -105,10 +113,25 @@ async def decide(
     body: DecisionBody,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Gate-1 admin decision: guarded status change + admin_decisions + audit.
+    """Gate-1 or Gate-2 admin decision: guarded status change + admin_decisions + audit.
 
-    Reject / waitlist / hold require a rationale; shortlist may omit one.
+    gate_stage="gate1" (default): shortlisted/on_hold/rejected/waitlisted/jury_review —
+        reject/waitlist/hold require a rationale; shortlist may omit one.
+    gate_stage="gate2": offered/waitlisted/on_hold/rejected —
+        routed via decisions.record_gate2_decision which enforces its own
+        rationale rule (required unless decision is 'offered').
     """
+    # Route to gate-2 when gate_stage is explicitly "gate2" OR when the
+    # decision is "offered" (offered is a gate-2-only outcome; accepting it
+    # on the gate-1 path would record the wrong gate_stage in admin_decisions).
+    is_gate2 = (body.gate_stage == "gate2") or (body.decision == "offered")
+    if is_gate2:
+        return decisions.record_gate2_decision(
+            track=track, application_id=application_id,
+            decision=body.decision, rationale=body.rationale,
+            decided_by=user["user_id"],
+            decided_by_role=actor_role_of(user),
+        )
     if body.decision in ("rejected", "waitlisted", "on_hold") and not (body.rationale or "").strip():
         raise HTTPException(
             status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -908,3 +931,130 @@ async def rebalance_reviewers(
         after={"assigned": created, "reviewers": n_rev, "track": body.track},
     )
     return {"assigned": created, "reviewers": n_rev}
+
+
+# ─── Jury roster v2 (metrics + per-juror apps + profile patch) ─────────────
+#
+# Mirrors the reviewer roster endpoints under the `manage_jury_roster` cap.
+# Jury v2 is pick-based (no scoring), so the profile PATCH carries only
+# weight + expertise_domains — jury_profiles has no batch_id column (mig 033).
+
+
+class JurorProfileBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    weight: float | None = Field(default=None, ge=0, le=10)
+    expertise_domains: list[str] | None = None
+
+
+@router.get(
+    "/jurors",
+    dependencies=[Depends(require_capability("manage_jury_roster"))],
+)
+async def list_jurors() -> dict[str, Any]:
+    """Jury roster (pick-based workload) plus outstanding invites."""
+    return admin_query.fetch_jury_roster()
+
+
+@router.get(
+    "/jurors/{user_id}/applications",
+    dependencies=[Depends(require_capability("manage_jury_roster"))],
+)
+async def list_juror_applications(user_id: str) -> dict[str, Any]:
+    """Applications assigned to one juror (Manage Applications drawer)."""
+    return admin_query.fetch_juror_applications(user_id)
+
+
+@router.patch(
+    "/jurors/{user_id}",
+    dependencies=[Depends(require_capability("manage_jury_roster"))],
+)
+async def update_juror_profile(
+    user_id: str,
+    body: JurorProfileBody,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Edit a juror's roster details (weight, expertise_domains).
+
+    Upserts jury_profiles keyed by juror_user_id — the juror already has a
+    profiles row from accept time, so identity fields are not touched here.
+    """
+    fields: dict[str, Any] = {}
+    if body.weight is not None:
+        fields["weight"] = body.weight
+    if body.expertise_domains is not None:
+        fields["expertise_domains"] = body.expertise_domains
+
+    if not fields:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "no_fields", "message": "Provide at least one field."},
+        )
+
+    sb = get_admin_client()
+    sb.table("jury_profiles").upsert(
+        {
+            "juror_user_id": user_id,
+            "updated_at": datetime.now(UTC).isoformat(),
+            **fields,
+        },
+        on_conflict="juror_user_id",
+    ).execute()
+
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="juror_profile_update",
+        target_table="jury_profiles",
+        target_id=user_id,
+        after=fields,
+    )
+    return {"juror_user_id": user_id, **fields}
+
+
+# ─── Jury: expertise enrichment + recommendation matching (Task 5) ─────────
+#
+# Both endpoints only enqueue SQS jobs (`jury_enrich` / `jury_match`) that the
+# worker Lambda picks up asynchronously — enrichment does a web-grounded LLM
+# call and matching does one LLM pass per juror, both too slow for a
+# request/response cycle. 202 signals "accepted, not yet done".
+
+
+@router.post(
+    "/jurors/{user_id}/enrich",
+    status_code=202,
+    dependencies=[Depends(require_capability("manage_jury_roster"))],
+)
+async def enrich_juror(user_id: str, user: dict = Depends(get_current_user)) -> dict:
+    from ..services.sqs_publisher import publish_jury_job
+
+    queued = publish_jury_job("jury_enrich", user_id)
+    get_admin_client().table("jury_profiles").update({"enrichment_status": "pending"}) \
+        .eq("juror_user_id", user_id).execute()
+    return {"queued": bool(queued), "juror_user_id": user_id}
+
+
+class RecomputeBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    juror_user_id: str | None = None
+
+
+@router.post(
+    "/jury/recommendations/recompute",
+    status_code=202,
+    dependencies=[Depends(require_capability("manage_jury_roster"))],
+)
+async def recompute_recommendations(
+    body: RecomputeBody,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    from ..services.sqs_publisher import publish_jury_job
+
+    sb = get_admin_client()
+    if body.juror_user_id:
+        ids = [body.juror_user_id]
+    else:
+        ids = sorted({r["user_id"] for r in
+                      (sb.table("user_roles").select("user_id,role").eq("role", "jury")
+                       .execute().data or []) if r.get("role") == "jury"})
+    queued = [jid for jid in ids if publish_jury_job("jury_match", jid)]
+    return {"queued": queued}

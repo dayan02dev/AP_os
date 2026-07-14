@@ -32,14 +32,31 @@ def _process_record(record: dict) -> None:
     message ID to batchItemFailures."""
     body_raw = record.get("body", "{}")
     body = json.loads(body_raw) if isinstance(body_raw, str) else body_raw
+    job = body.get("job", "screen")
+
+    client = get_admin_client()
+
+    # Jury jobs carry {"job": ..., "juror_user_id": ...} — no application_id /
+    # application_track (see sqs_publisher.publish_jury_job) — so they must be
+    # branched on before those keys are read below.
+    if job == "jury_enrich":
+        log.info("Processing job=jury_enrich juror_user_id=%s", body["juror_user_id"])
+        from app.services.jury_enrichment import run as jury_enrich_run
+        ok = jury_enrich_run.run_and_persist(body["juror_user_id"])
+        if not ok:
+            raise RuntimeError(f"jury_enrich failed for {body['juror_user_id']}")
+        return
+    if job == "jury_match":
+        log.info("Processing job=jury_match juror_user_id=%s", body["juror_user_id"])
+        from app.services.jury_matching import run as jury_match_run
+        jury_match_run.run_for_juror(None, body["juror_user_id"])
+        return
+
     application_id = body["application_id"]
     application_track = body["application_track"]
-    job = body.get("job", "screen")
 
     log.info("Processing application_id=%s track=%s job=%s",
              application_id, application_track, job)
-
-    client = get_admin_client()
 
     # Founder-check-only job (a résumé arrived post-submit, e.g. via the
     # profile-completion link). Runs regardless of status; TIR only. Raises on

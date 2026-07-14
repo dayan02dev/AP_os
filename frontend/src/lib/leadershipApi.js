@@ -61,6 +61,29 @@ export const leadershipApi = {
   assignReviewers: (id, track, body) =>
     api.post(`/leadership/applications/${id}/reviewers`, body),
 
+  // ─── Jury v2: per-app assignment ───────────────────────────────────────
+  //
+  // POST /leadership/applications/{id}/jurors
+  // Body: { juror_user_ids: string[] }
+  // Response: { application_id, track, results: [{juror_user_id, status}] }
+  // where status ∈ created | already_assigned | not_a_juror. The backend
+  // also 409s the whole call as not_eligible_for_jury if the app isn't
+  // already in jury_review (v2 has no shortlisted→jury_review auto-flip).
+  // Track is inferred server-side; the `track` arg is signature symmetry
+  // with the list rows only and is ignored on the wire.
+  assignJurors: (id, track, body) =>
+    api.post(`/leadership/applications/${id}/jurors`, body),
+
+  // DELETE /leadership/applications/{id}/jurors/{juror_user_id}
+  // Hard-deletes the assignment and cascades away that juror's pick for the
+  // same app (if any) so no dangling selection remains. 409
+  // app_already_decided once the app has a Gate-2 (Final Gate) decision —
+  // assignments freeze at that point.
+  unassignJuror: (id, track, jurorUserId) =>
+    api.del(
+      `/leadership/applications/${id}/jurors/${encodeURIComponent(jurorUserId)}`,
+    ),
+
   // Gate-1 decision from the leadership surface. Maps to
   //   POST /leadership/applications/{id}/decision
   // (leadership_actions router; capability `decide_application`). Track is

@@ -1,20 +1,14 @@
-// AdminReviewers — A-5 Reviewer Roster / A-6 Jury Panel (Task 12)
+// AdminReviewers — A-5 Reviewer Roster
 //
-// Faithful port of prototype AdminReviewers from admin-2.jsx.
+// Faithful port of prototype AdminReviewers from admin-2.jsx (reviewer-mode
+// only — jury now has its own AdminJury v2 screen).
 //
-// reviewer-mode (decisionMode !== 'jury'):
 //   • Roster table rows ← useAdminData("reviewers") → data.reviewers
 //   • Sortable columns: name, domain, progress, consistency, weight, lastActivity
 //   • Per-row "Manage" drawer: edit weight, domains, batch assignments
 //     → patchReviewer(id, { weight, domains }) on save, then reload()
 //   • Invite reviewer modal → adminApi.createUser({ email, full_name, roles, send_invite })
 //     Shows temp_password / invite_url on success
-//
-// jury-mode (decisionMode === 'jury'):
-//   • PreviewBadge at the top (no backend)
-//   • Local mock JURY data (seeded from prototype)
-//   • Random Allotment: local no-op (mock only)
-//   • Invite Member modal: local no-op (mock only)
 
 import React, { useState, useMemo } from "react";
 
@@ -22,7 +16,6 @@ import { useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { adminApi } from "../../../../lib/adminApi";
 import { PageHead } from "../shell/osAtoms";
-import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import { ManageApplicationsDrawer } from "./ManageApplicationsDrawer";
 
 // Guaranteed policy-compliant temp password: >=10 chars with upper, lower,
@@ -57,15 +50,6 @@ export function formatLastActivity(value) {
   return s.replace(/\b(am|pm)\b/i, (m) => m.toUpperCase());
 }
 
-// ─── Mock jury data (prototype-seeded) ──────────────────────────────────────
-
-const MOCK_JURY = [
-  { id: 'j1', name: 'Anand Mahindra',       org: 'M&M Group',  domain: 'Strategic Partner', startups: [], progress: '0 / 0', consistency: 0.95, weight: 1.0, last: '2h ago', batches: [] },
-  { id: 'j2', name: 'Kiran Mazumdar-Shaw',  org: 'Biocon',     domain: 'Strategic Partner', startups: [], progress: '0 / 0', consistency: 0.95, weight: 1.0, last: '2h ago', batches: [] },
-  { id: 'j3', name: 'Nandan Nilekani',      org: 'Infosys',    domain: 'Strategic Partner', startups: [], progress: '0 / 0', consistency: 0.95, weight: 1.0, last: '2h ago', batches: [] },
-  { id: 'j4', name: 'Falguni Nayar',        org: 'Nykaa',      domain: 'Strategic Partner', startups: [], progress: '0 / 0', consistency: 0.95, weight: 1.0, last: '2h ago', batches: [] },
-];
-
 // ─── Rebalance banner ────────────────────────────────────────────────────────
 
 // (Rebalance banner removed — the Rebalance batches action was retired.)
@@ -73,7 +57,7 @@ const MOCK_JURY = [
 // ─── Manage / Edit drawer ────────────────────────────────────────────────────
 // Weight + domains + inline batch chip editor (reviewer-mode only).
 
-function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
+function ManageDrawer({ reviewer, allBatches, onClose, onSaved }) {
   const [name, setName] = useState(reviewer.name || '');
   const [email, setEmail] = useState(reviewer.email || '');
   const [weight, setWeight] = useState(typeof reviewer.weight === 'number' ? reviewer.weight : 1.0);
@@ -125,43 +109,39 @@ function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
       >
         <div className="os-drawer-head" style={{ padding: '20px 24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div className="os-drawer-title" style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>{isJury ? 'Manage Applications' : 'Edit reviewer details'}</div>
+            <div className="os-drawer-title" style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>Edit reviewer details</div>
             <div className="os-drawer-subtitle" style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 4 }}>
-              {isJury ? 'Jury Member' : 'Reviewer'}: <strong>{reviewer.name}</strong> &middot; {reviewer.org || reviewer.domain}
+              Reviewer: <strong>{reviewer.name}</strong> &middot; {reviewer.org || reviewer.domain}
             </div>
           </div>
           <button className="os-btn sm ghost" onClick={onClose} style={{ padding: '2px 8px', fontSize: 18 }}>&times;</button>
         </div>
 
         <div className="os-drawer-body" style={{ padding: 24, flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Identity — name + email (reviewer mode only; jury is mock) */}
-          {!isJury && (
-            <>
-              <div>
-                <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Full Name</label>
-                <input
-                  type="text"
-                  className="os-input"
-                  style={{ width: '100%', fontSize: 14 }}
-                  placeholder="e.g. Rohan Sakpal"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Email Address</label>
-                <input
-                  type="email"
-                  className="os-input"
-                  style={{ width: '100%', fontSize: 14 }}
-                  placeholder="name@artpark.in"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                />
-                <div style={{ fontSize: 11, color: 'var(--ink-dim)', marginTop: 4 }}>Changing the email also updates this reviewer's login.</div>
-              </div>
-            </>
-          )}
+          {/* Identity — name + email */}
+          <div>
+            <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Full Name</label>
+            <input
+              type="text"
+              className="os-input"
+              style={{ width: '100%', fontSize: 14 }}
+              placeholder="e.g. Rohan Sakpal"
+              value={name}
+              onChange={e => setName(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="os-text-xs os-text-dim os-uppercase" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Email Address</label>
+            <input
+              type="email"
+              className="os-input"
+              style={{ width: '100%', fontSize: 14 }}
+              placeholder="name@artpark.in"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+            />
+            <div style={{ fontSize: 11, color: 'var(--ink-dim)', marginTop: 4 }}>Changing the email also updates this reviewer's login.</div>
+          </div>
 
           {/* Weight */}
           <div>
@@ -192,36 +172,34 @@ function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
             />
           </div>
 
-          {/* Assigned batches — reviewer mode only */}
-          {!isJury && (
-            <div>
-              <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 8 }}>Assigned Batches:</div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                {batches.length > 0 ? batches.map(b => (
-                  <span key={b} className="os-chip" style={{ background: 'var(--bg-soft)', border: '1px solid var(--line)', fontWeight: 600, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    {b}
-                    <span
-                      style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 11, color: '#FF5A5F', marginLeft: 2 }}
-                      onClick={() => removeBatch(b)}
-                    >
-                      &times;
-                    </span>
+          {/* Assigned batches */}
+          <div>
+            <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 8 }}>Assigned Batches:</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {batches.length > 0 ? batches.map(b => (
+                <span key={b} className="os-chip" style={{ background: 'var(--bg-soft)', border: '1px solid var(--line)', fontWeight: 600, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  {b}
+                  <span
+                    style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 11, color: '#FF5A5F', marginLeft: 2 }}
+                    onClick={() => removeBatch(b)}
+                  >
+                    &times;
                   </span>
-                )) : <span className="os-text-soft" style={{ fontSize: 13 }}>None</span>}
-                <select
-                  className="os-select sm"
-                  style={{ padding: '0 4px', fontSize: 11, height: 26, width: 40, minWidth: 40 }}
-                  value=""
-                  onChange={e => { if (e.target.value) addBatch(e.target.value); }}
-                >
-                  <option value="" disabled>+</option>
-                  {allBatches.filter(b => !batches.includes(b)).map(b => (
-                    <option key={b} value={b}>{b}</option>
-                  ))}
-                </select>
-              </div>
+                </span>
+              )) : <span className="os-text-soft" style={{ fontSize: 13 }}>None</span>}
+              <select
+                className="os-select sm"
+                style={{ padding: '0 4px', fontSize: 11, height: 26, width: 40, minWidth: 40 }}
+                value=""
+                onChange={e => { if (e.target.value) addBatch(e.target.value); }}
+              >
+                <option value="" disabled>+</option>
+                {allBatches.filter(b => !batches.includes(b)).map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
             </div>
-          )}
+          </div>
 
           {err && (
             <div style={{ color: 'var(--bad)', fontSize: 13, fontWeight: 600, padding: '8px 12px', background: 'var(--bad-soft)', borderRadius: 4 }}>
@@ -232,16 +210,14 @@ function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
 
         <div className="os-drawer-foot" style={{ padding: '16px 24px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end', gap: 12, background: 'var(--bg-soft)' }}>
           <button className="os-btn secondary" onClick={onClose} disabled={saving}>Close</button>
-          {!isJury && (
-            <button
-              className="os-btn"
-              style={{ background: 'var(--accent)', color: '#fff' }}
-              onClick={handleSave}
-              disabled={saving}
-            >
-              {saving ? 'Saving…' : 'Save changes'}
-            </button>
-          )}
+          <button
+            className="os-btn"
+            style={{ background: 'var(--accent)', color: '#fff' }}
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
         </div>
       </div>
     </div>
@@ -250,7 +226,7 @@ function ManageDrawer({ reviewer, allBatches, isJury, onClose, onSaved }) {
 
 // ─── Invite modal ────────────────────────────────────────────────────────────
 
-function InviteModal({ batchOptions = [], isJury, onClose, onInvited }) {
+function InviteModal({ batchOptions = [], onClose, onInvited }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [invDomain, setInvDomain] = useState('');
@@ -262,19 +238,13 @@ function InviteModal({ batchOptions = [], isJury, onClose, onInvited }) {
 
   const handleInvite = async () => {
     if (!name.trim() || !email.trim()) { setErr('Name and email are required.'); return; }
-    if (!isJury && !pwValid(password)) {
+    if (!pwValid(password)) {
       setErr('Password must be at least 10 characters and include an uppercase letter, a lowercase letter, a digit, and a symbol.');
       return;
     }
     setSaving(true);
     setErr(null);
     try {
-      if (isJury) {
-        // jury-mode: local no-op
-        setResult({ local: true, name: name.trim(), email: email.trim() });
-        onInvited();
-        return;
-      }
       const res = await adminApi.createUser({
         email: email.trim(),
         full_name: name.trim(),
@@ -314,7 +284,7 @@ function InviteModal({ batchOptions = [], isJury, onClose, onInvited }) {
           {result ? (
             <div>
               <div style={{ color: 'var(--ok)', fontWeight: 600, fontSize: 14, marginBottom: 12 }}>
-                {isJury ? 'Jury member added (preview only).' : 'Reviewer invited successfully.'}
+                Reviewer invited successfully.
               </div>
               {result.temp_password && (
                 <div style={{ background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: 4, padding: '10px 14px', fontFamily: 'var(--font-mono, monospace)', fontSize: 13, color: 'var(--ink)' }}>
@@ -458,10 +428,7 @@ function EditPicker({ reviewers, onPick, onClose }) {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function AdminReviewers({ decisionMode }) {
-  const isJury = decisionMode === 'jury';
-
-  // reviewer-mode: live data; jury-mode: mock
+export function AdminReviewers() {
   const { data, loading, error, reload } = useAdminData('reviewers');
   const liveReviewers = data?.reviewers ?? [];
 
@@ -502,10 +469,7 @@ export function AdminReviewers({ decisionMode }) {
     }
   };
 
-  // jury uses local mock (no backend)
-  const [juryList] = useState(() => MOCK_JURY.map(j => ({ ...j })));
-
-  const R = isJury ? juryList : liveReviewers;
+  const R = liveReviewers;
 
   // Sorting
   const [sortCol, setSortCol] = useState(null);
@@ -576,84 +540,6 @@ export function AdminReviewers({ decisionMode }) {
     @keyframes osDrawerFadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes osDrawerSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
   `;
-
-  // ── Jury mode ────────────────────────────────────────────────────────────
-  if (isJury) {
-    return (
-      <div>
-        <style dangerouslySetInnerHTML={{ __html: drawerStyles }} />
-        <PreviewBadge />
-        <PageHead
-          eyebrow="A-6 · JURY PANEL"
-          title="Jury <em>roster</em>"
-          sub="Assignments, progress, and alignment calibration."
-          actions={[
-            <button key="inv" className="os-btn ghost" onClick={() => setShowInvite(true)}>Invite member</button>,
-            <button key="reb" className="os-btn" onClick={() => window.alert('Random allotment — distributes shortlisted applications across active jury members.')}>Random Allotment</button>,
-          ]}
-        />
-
-        <table className="os-table">
-          <thead>
-            <tr>
-              {renderHeader('Jury Member', 'name')}
-              {renderHeader('Organization', 'domain')}
-              {renderHeader('Progress', 'progress')}
-              {renderHeader('Weight / Primary', 'weight')}
-              {renderHeader('Last activity', 'lastActivity')}
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedReviewers.map(r => (
-              <tr key={r.id}>
-                <td>
-                  <div className="startup">{r.name}<small>Jury Member</small></div>
-                </td>
-                <td className="os-text-soft">{r.org || r.domain}</td>
-                <td>
-                  <div className="os-row gap-sm">
-                    <div className="os-scorebar-track" style={{ width: 90 }}>
-                      <div className="os-scorebar-fill" style={{ width: (() => { const p = String(r.progress || '0 / 0').split('/'); const n = parseInt(p[0]) || 0; const d = parseInt(p[1]) || 1; return Math.min(100, Math.max(0, (n / d) * 100)); })() + '%', background: 'var(--ink)' }} />
-                    </div>
-                    <span className="os-mono os-text-sm">{r.progress || '0 / 0'}</span>
-                  </div>
-                </td>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{(r.weight || 1.0).toFixed(1)}</span>
-                    {r.weight > 1.0 && <span className="os-chip purple" style={{ fontSize: 9, padding: '1px 5px', fontWeight: 700 }}>PRIMARY</span>}
-                  </div>
-                </td>
-                <td className="os-mono os-text-sm os-text-soft">{formatLastActivity(r.last)}</td>
-                <td>
-                  <button className="os-btn sm secondary" onClick={() => setManageTarget(r)}>Manage</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {manageTarget && (
-          <ManageDrawer
-            reviewer={manageTarget}
-            allBatches={allBatches}
-            isJury={true}
-            onClose={() => setManageTarget(null)}
-            onSaved={() => setManageTarget(null)}
-          />
-        )}
-        {showInvite && (
-          <InviteModal
-            batchOptions={batchList}
-            isJury={true}
-            onClose={() => setShowInvite(false)}
-            onInvited={() => setShowInvite(false)}
-          />
-        )}
-      </div>
-    );
-  }
 
   // ── Reviewer mode (live) ──────────────────────────────────────────────────
   return (
@@ -821,7 +707,6 @@ export function AdminReviewers({ decisionMode }) {
         <ManageDrawer
           reviewer={manageTarget}
           allBatches={allBatches}
-          isJury={false}
           onClose={() => setManageTarget(null)}
           onSaved={() => { setManageTarget(null); reload(); }}
         />
@@ -840,7 +725,6 @@ export function AdminReviewers({ decisionMode }) {
       {showInvite && (
         <InviteModal
           batchOptions={batchList}
-          isJury={false}
           onClose={() => setShowInvite(false)}
           onInvited={() => { setShowInvite(false); reload(); }}
         />

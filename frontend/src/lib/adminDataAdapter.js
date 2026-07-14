@@ -84,6 +84,12 @@ export function adaptPipelineRow(row) {
       : (row.batch ? [{ name: row.batch }] : []),
     sub: row.submitted_at ? row.submitted_at.slice(0, 10) : "",
     movedToTrack: row.moved_to_track || null,
+    jury_assigned: row.jury_assigned ?? 0,
+    jury_assigned_names: row.jury_assigned_names || [],
+    picked_by: row.picked_by || [],
+    picks_ready: Boolean(row.picks_ready),
+    gate2_decision: row.gate2_decision ?? null,
+    recommendation: row.recommendation || null,
   };
 }
 
@@ -148,6 +154,26 @@ export const adaptReviewerApplication = (a) => ({
   reviewStatus: a.reviewStatus || "pending",
   assignmentId: a.assignment_id || null,
 });
+// ─── Jury v2 ──────────────────────────────────────────────────────────────
+export function adaptJuror(r) {
+  return {
+    id: r.user_id, name: r.name, email: r.email,
+    weight: r.weight ?? 1.0,
+    domains: r.domains || [], domain: (r.domains || []).join(", "),
+    enrichmentStatus: r.enrichmentStatus || "pending",
+    linkedinUrl: r.linkedin_url || null,
+    picks: r.picks || "0 / 3", picksSubmitted: r.picksSubmitted ?? 0,
+    assigned: r.assigned ?? 0, last: r.lastActivity,
+    invite: r.invite || null,
+  };
+}
+export function adaptJurorApplication(r) {
+  return {
+    id: r.id, track: r.track, project: r.project, industry: r.industry,
+    status: r.status, picked: Boolean(r.picked),
+  };
+}
+
 export const adaptCalibrationRow = (r) => ({
   id: r.user_id, name: r.name, nReviews: r.n_reviews, avgScore: r.avg_score,
   variance: r.avg_variance_vs_ai,

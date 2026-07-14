@@ -209,6 +209,7 @@ export const api = {
   get: (path, opts = {}) => apiCall(path, { ...opts, method: "GET" }),
   post: (path, body, opts = {}) => apiCall(path, { ...opts, method: "POST", body }),
   patch: (path, body, opts = {}) => apiCall(path, { ...opts, method: "PATCH", body }),
+  put: (path, body, opts = {}) => apiCall(path, { ...opts, method: "PUT", body }),
   del: (path, opts = {}) => apiCall(path, { ...opts, method: "DELETE" }),
 
   // Edit a SUBMITTED application by id (edit-after-submit window).

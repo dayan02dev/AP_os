@@ -110,7 +110,7 @@ describe("AdminDetail — smoke test", () => {
     expect(screen.queryByText(/Final Jury Panel/i)).toBeNull();
   });
 
-  it("renders jury cards in jury mode", async () => {
+  it("renders the real jury panel (assigned jurors + picked by) in jury mode", async () => {
     render(
       <AdminDetail
         startupId="test-uuid-001"
@@ -122,7 +122,10 @@ describe("AdminDetail — smoke test", () => {
       />
     );
     await screen.findByRole("heading", { level: 2, name: /Test Startup/ });
-    expect(await screen.findByText(/TIR Signal Profile/i)).toBeTruthy();
-    expect(await screen.findByText(/Final Jury Panel/i)).toBeTruthy();
+    // v2: real pick-based panel, not the old seeded scorecards.
+    expect(await screen.findByText(/Jury panel/i)).toBeTruthy();
+    expect(screen.getAllByText(/Assigned jurors/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/TIR Signal Profile/i)).toBeNull();
+    expect(screen.queryByText(/Final Jury Panel/i)).toBeNull();
   });
 });

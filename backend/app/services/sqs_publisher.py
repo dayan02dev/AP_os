@@ -118,3 +118,39 @@ def publish_founder_check(application_id: str, application_track: str) -> None:
             "(admin can re-run the backfill)",
             application_id,
         )
+
+
+def publish_jury_job(job: str, juror_user_id: str) -> bool:
+    """Fire-and-forget jury job ('jury_enrich' | 'jury_match'). Never raises;
+    no-op if the queue is unset. Returns True if the message was enqueued.
+    """
+    queue_url = os.getenv(_QUEUE_URL_ENV, "").strip()
+    if not queue_url:
+        log.debug(
+            "%s unset — skipping jury job enqueue job=%s juror_user_id=%s",
+            _QUEUE_URL_ENV, job, juror_user_id,
+        )
+        return False
+
+    payload = json.dumps({
+        "job": job,
+        "juror_user_id": juror_user_id,
+    })
+
+    try:
+        _sqs_client().send_message(
+            QueueUrl=queue_url,
+            MessageBody=payload,
+            MessageGroupId=juror_user_id,
+        )
+        log.info(
+            "Enqueued jury job=%s for juror_user_id=%s",
+            job, juror_user_id,
+        )
+        return True
+    except Exception:
+        log.warning(
+            "Failed to enqueue jury job=%s for juror_user_id=%s",
+            job, juror_user_id, exc_info=True,
+        )
+        return False

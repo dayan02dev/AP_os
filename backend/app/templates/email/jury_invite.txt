@@ -1,0 +1,13 @@
+{% extends "base.txt" %}
+{% block content %}Hi {{ jury_name }},
+
+ARTPARK invites you to join the jury panel for the 2026 Technology Innovator in Residence (TIR) cohort. You will be matched with a small set of deep-tech startups and asked to pick the three you would like to mentor.
+
+Please respond below to accept or decline the invitation.
+
+Respond to invitation:
+{{ form_url }}
+
+Best regards,
+ARTPARK TIR Team
+{% endblock %}

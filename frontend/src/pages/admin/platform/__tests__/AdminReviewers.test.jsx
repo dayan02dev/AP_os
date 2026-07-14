@@ -275,33 +275,9 @@ describe("AdminReviewers (reviewer-mode)", () => {
   });
 });
 
-describe("AdminReviewers (jury-mode)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // jury mode still calls useAdminData (it mounts the hook regardless)
-    useAdminData.mockReturnValue({ data: null, loading: false, error: null, reload: vi.fn() });
-  });
-
-  it("renders PreviewBadge in jury mode", () => {
-    render(<AdminReviewers decisionMode="jury" />);
-    expect(screen.getByTestId("preview-badge")).toBeTruthy();
-  });
-
-  it("renders mock jury member names in jury mode", () => {
-    render(<AdminReviewers decisionMode="jury" />);
-    expect(screen.getByText("Anand Mahindra")).toBeTruthy();
-    expect(screen.getByText("Nandan Nilekani")).toBeTruthy();
-  });
-
-  it("does NOT call patchReviewer in jury mode", async () => {
-    render(<AdminReviewers decisionMode="jury" />);
-    const manageBtns = screen.getAllByText("Manage");
-    fireEvent.click(manageBtns[0]);
-    // Jury drawer has only a Close button (no Save changes)
-    expect(screen.queryByText("Save changes")).toBeNull();
-    expect(adminPlatformApi.patchReviewer).not.toHaveBeenCalled();
-  });
-});
+// NOTE: jury-mode is no longer rendered by AdminReviewers — the AdminPortal
+// routes decisionMode="jury" to the real AdminJury screen (see AdminJury.test.jsx).
+// The former mock jury-roster tests were removed with that mock.
 
 describe("genStrongPassword / pwValid helpers", () => {
   it("pwValid returns true for genStrongPassword output", () => {

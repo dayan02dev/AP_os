@@ -8,18 +8,16 @@
 //     where decision = BUTTON_TO_DECISION[buttonLabel].
 //     After success → onBack().
 //
-// Jury Scorecard + TIR Signal Profile are wrapped with <PreviewBadge/> and
-// only rendered when decisionMode === 'jury'.
+// Jury panel (decisionMode === 'jury') shows real pick data from the pipeline
+// row: assigned jurors + who picked the startup (v2: jurors pick, no scoring).
 //
 // IMPORTANT: Do NOT read window.OS_DATA.STARTUPS. All data comes from loadDetail.
-// Jury helpers use seeded math against s.id only — no OS_DATA reads.
 
 import React, { useState, useEffect, useCallback, useReducer, useMemo } from "react";
 import { loadDetail, useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 import { BUTTON_TO_DECISION, chipLabel } from "../../../../lib/adminDataAdapter";
-import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 import AiSections from "../../../../components/AiSections.jsx";
 import { Chip } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
@@ -433,140 +431,59 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
           {/* Comparative review model — real reviewer evaluations */}
           <ComparativeReviewModel startup={s} reviewersById={reviewersById} />
 
-          {/* Jury Scorecard + TIR Signal Profile — jury mode only, PreviewBadge'd */}
+          {/* Jury panel — real pick data (v2: jurors PICK startups, no scoring) */}
           {decisionMode === 'jury' && (() => {
-            const assigned = [
-              { id: 'j0', name: 'Jury Member A', org: '' },
-              { id: 'j1', name: 'Jury Member B', org: '' },
-            ];
-
-            const jMetrics = [
-              { key: 'problem', short: 'Problem statement' },
-              { key: 'solution', short: 'Solution depth' },
-              { key: 'tech', short: 'Technical depth' },
-              { key: 'founders', short: 'Founder profile' },
-              { key: 'commit', short: 'Commitment' },
-            ];
-            const recoLabel = {
-              yes: 'Approve', approve: 'Approve',
-              no: 'Pass', pass: 'Pass', reject: 'Pass',
-              maybe: 'Hold', waitlist: 'Hold',
-              interview: 'Interview',
-            };
-
+            const assignedNames = s.jury_assigned_names || [];
+            const pickedBy = s.picked_by || [];
             return (
-              <>
-                {/* Jury Scorecard */}
-                <div className="os-card" style={{ marginTop: 24, padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  <PreviewBadge />
-                  {isInJuryReview && (
-                    <div className="os-banner amber" style={{ borderRadius: 2 }}>
-                      <div>
-                        <div className="os-banner-title" style={{ color: '#9a6206' }}>{chipLabel(s.chip)}</div>
-                        <div className="os-banner-text" style={{ fontSize: 13 }}>This application has advanced to the jury round.</div>
-                      </div>
+              <div className="os-card" style={{ marginTop: 24, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {isInJuryReview && (
+                  <div className="os-banner amber" style={{ borderRadius: 2 }}>
+                    <div>
+                      <div className="os-banner-title" style={{ color: '#9a6206' }}>{chipLabel(s.chip)}</div>
+                      <div className="os-banner-text" style={{ fontSize: 13 }}>This application has advanced to the jury round.</div>
                     </div>
+                  </div>
+                )}
+                <div>
+                  <span className="cem-kicker">&sect; Jury</span>
+                  <h3 className="cem-title">Jury panel</h3>
+                </div>
+
+                {/* Assigned jurors */}
+                <div>
+                  <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 8 }}>Assigned jurors</div>
+                  {assignedNames.length ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {assignedNames.map((n, i) => (
+                        <span key={i} className="os-chip" style={{ fontSize: 12, padding: '2px 8px' }}>{n}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="os-text-soft" style={{ fontSize: 13 }}>No jurors assigned yet.</span>
                   )}
-                  <div>
-                    <span className="cem-kicker">&sect; Jury Evaluation</span>
-                    <h3 className="cem-title">Final Jury Panel</h3>
-                  </div>
-                  <div className="rv-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                    {assigned.map((j, ji) => {
-                      const scores = s.jury || {};
-                      const avg = jMetrics.reduce((sum, m) => sum + getJuryMetricScore(scores, m.key, s.id), 0) / jMetrics.length;
-                      const initials = j.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-                      const jReco = getJuryReco(scores, j.id, s.id).toLowerCase();
-                      const recoTone = (jReco === 'yes' || jReco === 'approve') ? 'green'
-                        : (jReco === 'no' || jReco === 'pass' || jReco === 'reject') ? 'red'
-                        : (jReco === 'interview') ? 'blue' : 'amber';
-                      const badgeLabel = recoLabel[jReco] || jReco;
-                      const juryNote = (scores && scores.notes) || (
-                        (jReco === 'yes' || jReco === 'approve') ? 'Strong overall candidate — recommend advancing to the cohort.'
-                        : (jReco === 'interview') ? 'Promising profile; recommend an interview to confirm execution capability.'
-                        : (jReco === 'no' || jReco === 'pass' || jReco === 'reject') ? 'Not convinced this is the right fit for the cohort at this stage.'
-                        : 'Solid potential; a few areas need further validation before a firm decision.'
-                      );
-
-                      return (
-                        <div key={j.id} className="rv-card">
-                          <div className="rv-card-head">
-                            <div className="rv-card-id">
-                              <span className="os-avatar" style={{ width: 38, height: 38, fontSize: 15, flexShrink: 0, background: 'var(--accent-soft)', color: 'var(--artblue)' }}>{initials}</span>
-                              <div style={{ minWidth: 0 }}>
-                                <div className="rv-card-name">{j.name}</div>
-                                <div className="rv-card-role">Panel evaluation</div>
-                              </div>
-                            </div>
-                            <span className={`os-chip ${recoTone}`} style={{ flexShrink: 0 }}>{(badgeLabel || '').toUpperCase()}</span>
-                          </div>
-
-                          <div className="rv-overall">
-                            <span className="rv-overall-label">Overall rating</span>
-                            <span className="rv-overall-num">{avg > 0 ? avg.toFixed(1) : '—'}</span>
-                          </div>
-
-                          <div className="rv-scores">
-                            {jMetrics.map(m => {
-                              const val = getJuryMetricScore(scores, m.key, s.id);
-                              const comment = getJuryMetricComment(j.id, m.key, s.id);
-                              return (
-                                <div key={m.key} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                                  <div className="rv-score">
-                                    <span className="rv-score-label">{m.short}</span>
-                                    <span className="rv-bar"><span className="rv-bar-fill" style={{ width: Math.max(0, Math.min(100, (val || 0) * 10)) + '%' }} /></span>
-                                    <span className="rv-score-num">{val != null ? val.toFixed(1) : '—'}</span>
-                                  </div>
-                                  {comment && <p className="rv-note-text" style={{ fontSize: 12.5, lineHeight: 1.55, margin: 0 }}>"{comment}"</p>}
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          <div className="rv-note">
-                            <span className="rv-block-label">Jury note</span>
-                            <p className="rv-note-text">{juryNote}</p>
-                          </div>
-
-                          <div className="rv-flags">
-                            <span className="rv-block-label">Flags raised (0)</span>
-                            <span className="rv-flags-empty">No flags raised.</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
 
-                {/* TIR Signal Profile Card */}
-                <div className="os-card" style={{ borderLeft: '4px solid #1f0a8a', marginTop: 16 }}>
-                  <PreviewBadge />
-                  <div className="os-card-title os-mb-sm" style={{ color: '#1f0a8a' }}>TIR Signal Profile</div>
-                  <div className="os-stack gap-sm">
-                    {METRICS.map(m => {
-                      const tirVal = getTIRSignalScore(s, m.key);
-                      return (
-                        <div key={m.key}>
-                          <div className="os-row between os-text-sm">
-                            <span className="os-text-soft" style={{ fontSize: 12.5 }}>{m.label}</span>
-                            <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{tirVal.toFixed(1)}</span>
-                          </div>
-                          <div style={{ height: 6, background: '#eef0f4', borderRadius: 999, overflow: 'hidden', marginTop: 5 }}>
-                            <div style={{ width: (tirVal * 10) + '%', height: '100%', background: '#1f0a8a', borderRadius: 999 }} />
-                          </div>
+                {/* Picked by */}
+                <div>
+                  <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 8 }}>Picked by</div>
+                  {pickedBy.length ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {pickedBy.map((p, i) => (
+                        <div key={p.juror_user_id || i} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>★ {p.name}</span>
+                          {p.note && <span style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--ink-soft)' }}>{p.note}</span>}
                         </div>
-                      );
-                    })}
-                    <hr className="os-divider" style={{ margin: '8px 0' }} />
-                    <div className="os-row between">
-                      <span className="os-text-xs os-text-dim os-uppercase" style={{ color: '#1f0a8a' }}>TIR Overall</span>
-                      <span className="os-num-big" style={{ fontSize: 24, fontFamily: 'var(--font-sans)', fontWeight: 800, color: '#1f0a8a' }}>
-                        {getTIRSignalOverall(s).toFixed(2)}
-                      </span>
+                      ))}
                     </div>
+                  ) : (
+                    <span className="os-text-soft" style={{ fontSize: 13 }}>No jurors have picked this startup yet.</span>
+                  )}
+                  <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 10 }}>
+                    {pickedBy.length} of {s.jury_assigned ?? 0} assigned jurors have picked
                   </div>
                 </div>
-              </>
+              </div>
             );
           })()}
         </div>

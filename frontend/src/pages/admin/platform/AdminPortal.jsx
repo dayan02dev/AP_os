@@ -391,12 +391,11 @@ function AdminApp() {
                 decisionMode={decisionMode}
               />
             )}
-            {page === 'reviewers'   && <AdminReviewers decisionMode={decisionMode} />}
+            {page === 'reviewers'   && (decisionMode === 'jury' ? <AdminJury /> : <AdminReviewers decisionMode={decisionMode} />)}
             {page === 'roles'       && <AdminRoles />}
-            {page === 'gate1'       && (decisionMode === 'jury' ? <AdminGate2 goDetail={goDetail} /> : <AdminGate1 goDetail={goDetail} />)}
+            {page === 'gate1'       && (decisionMode === 'jury' ? <AdminGate2 /> : <AdminGate1 goDetail={goDetail} />)}
             {page === 'psychometry' && <AdminPsychometry />}
             {page === 'aistatus'   && <AdminAIStatus />}
-            {page === 'gate2'       && <AdminGate2 goDetail={goDetail} />}
           </div>
         </div>
       </div>

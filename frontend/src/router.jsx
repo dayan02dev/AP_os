@@ -32,6 +32,7 @@ import SignUpPage from "./pages/SignUpPage.jsx";
 import SipAppRoute from "./pages/SipAppRoute.jsx";
 import SupportPage from "./pages/SupportPage.jsx";
 import MentorRespondForm from "./pages/MentorRespondForm.jsx";
+import JuryRespondForm from "./pages/JuryRespondForm.jsx";
 import ProfileCompletionPage from "./pages/ProfileCompletionPage.jsx";
 import TirAppGate from "./pages/TirAppGate.jsx";
 import VerifyPage from "./pages/VerifyPage.jsx";
@@ -40,6 +41,7 @@ import UserListPage from "./pages/admin/UserListPage.jsx";
 import UserDetailPage from "./pages/admin/UserDetailPage.jsx";
 import AdminAddUser from "./pages/admin/AdminAddUser.jsx";
 import ReviewerPortal from "./pages/reviewer/v2/ReviewerPortal.jsx";
+import JuryPortal from "./pages/jury/JuryPortal.jsx";
 import AdminPortal from "./pages/admin/platform/AdminPortal.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
 import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
@@ -188,6 +190,27 @@ function ReviewerRoute({ tab }) {
   return <ReviewerPortal tab={tab} />;
 }
 
+// Capability gate for /jury/*. ProtectedRoute enforces auth; this layer
+// enforces `view_assigned_jury_apps` (jury role). Mirrors ReviewerRoute.
+function JuryRoute({ tab }) {
+  const { user } = useAuth();
+  const roles = user?.roles || [];
+  if (!hasCapability(roles, "view_assigned_jury_apps")) {
+    return (
+      <div style={{ padding: 40, fontFamily: "system-ui" }}>
+        <h1>Access denied — jury role required</h1>
+        <p>
+          You need the <code>jury</code> role to view this page.
+        </p>
+        <p>
+          Your roles: <code>{roles.join(", ") || "(none)"}</code>
+        </p>
+      </div>
+    );
+  }
+  return <JuryPortal tab={tab} />;
+}
+
 const SECTION_SLUGS = [
   "basic",
   "problem",
@@ -215,6 +238,7 @@ export default function AppRoutes() {
       <Route path="/apply/verify" element={<VerifyPage />} />
       <Route path="/apply/support" element={<SupportPage />} />
       <Route path="/mentors/respond/:token" element={<MentorRespondForm />} />
+      <Route path="/jury/respond/:token" element={<JuryRespondForm />} />
       <Route path="/apply/profile-completion/:token" element={<ProfileCompletionPage />} />
 
       {/* /apply itself is public — unauthed users see the welcome screen.
@@ -392,6 +416,43 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <ReviewerRoute tab="history" />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Jury Portal v2 (pick-3, read-only). Capability-gated to
+          `view_assigned_jury_apps`. Deep-linkable: My Applications
+          (/jury, /jury/queue) · My Picks (/jury/picks) · read-only detail
+          (/jury/eval/:track/:appId). No scoring surface anywhere. */}
+      <Route
+        path="/jury"
+        element={
+          <ProtectedRoute>
+            <JuryRoute tab="queue" />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jury/queue"
+        element={
+          <ProtectedRoute>
+            <JuryRoute tab="queue" />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jury/picks"
+        element={
+          <ProtectedRoute>
+            <JuryRoute tab="picks" />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jury/eval/:track/:appId"
+        element={
+          <ProtectedRoute>
+            <JuryRoute tab="eval" />
           </ProtectedRoute>
         }
       />

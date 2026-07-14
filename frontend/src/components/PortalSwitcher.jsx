@@ -14,6 +14,7 @@ import { useAuth } from "../hooks/useAuth.jsx";
 const PORTALS = [
   { key: "leadership", label: "Leadership", to: "/leadership" },
   { key: "reviewer", label: "Reviewer", to: "/reviewer" },
+  { key: "jury", label: "Jury Member", to: "/jury" },
   { key: "admin", label: "Admin", to: "/admin" },
 ];
 
