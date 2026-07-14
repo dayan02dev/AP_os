@@ -13,14 +13,36 @@ EXTRACT_SYSTEM = """You turn research notes into strict JSON:
  "sources": [url strings]}
 Return only JSON. Omit nothing; use null/[] when unknown."""
 
-MAP_DOMAINS_SYSTEM = """Given a person's research profile and a fixed taxonomy of
-industry domains, return strict JSON {"domains": [..], "confidence": "HIGH|MEDIUM|LOW"}.
-Pick 1-5 domains ONLY from the provided taxonomy list (verbatim strings). If the
-profile also shows self-declared domains, weigh them but verify against evidence."""
+MAP_DOMAINS_SYSTEM = """Given a person's research profile, their self-declared
+expertise, and a fixed taxonomy of industry domains, identify the domains they
+are genuinely qualified to judge as a startup juror.
 
-MATCH_SYSTEM = """You match startup applications to a jury member based on domain
-fit. Given the juror profile and a numbered list of applications (id | name |
-industry | one-line summary), return strict JSON:
+Rules:
+- Choose their SINGLE clearest PRIMARY domain, plus AT MOST 1-2 closely-adjacent
+  domains where the evidence is strong. Do NOT list every plausible domain —
+  precision beats coverage. Return 1 to 3 domains total.
+- Domains MUST be verbatim strings from the provided taxonomy list.
+- Weigh self-declared expertise but verify it against the researched evidence.
+- Also state their specific SUB-EXPERTISE as a short phrase (their real niche,
+  finer-grained than the taxonomy domain — e.g. "surgical robotics",
+  "RF/wireless PHY design", "battery cell chemistry").
+
+Return strict JSON:
+{"domains": [1-3 taxonomy strings], "sub_expertise": "<short phrase>",
+ "confidence": "HIGH|MEDIUM|LOW"}"""
+
+MATCH_SYSTEM = """You match startup applications to a jury member so they review
+startups they can judge deeply. You are given the juror profile (their taxonomy
+domains, their specific sub_expertise, and an enrichment summary) and a list of
+applications (id | name | industry | one-line summary).
+
+Score each application 0-100 for how well it fits THIS juror:
+- Base signal: the application's industry is in the juror's domains.
+- BOOST applications that also hit the juror's specific sub_expertise above
+  generic same-domain ones (e.g. a surgical-robotics juror scores a medical-
+  robotics startup higher than a warehouse-robotics one).
+- Penalize applications outside the juror's domains.
+
+Return strict JSON:
 {"recommendations": [{"application_id": str, "score": 0-100, "reason": "<=25 words"}]}
-Score = how well the juror's expertise fits the startup's domain and stage. Include
-every application with score >= 40; cap at 15 recommendations, highest first."""
+Include every application with score >= 40; cap at 15, highest first."""

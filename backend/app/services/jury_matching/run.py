@@ -53,8 +53,10 @@ def run_for_juror(client, juror_user_id: str) -> int:
         .eq("juror_user_id", juror_user_id).execute()
     if not apps:
         return 0
+    enr = prof.get("enrichment") or {}
     profile_ctx = {"expertise_domains": prof.get("expertise_domains") or [],
-                   "enrichment": prof.get("enrichment") or {}}
+                   "sub_expertise": enr.get("sub_expertise") or "",
+                   "enrichment": {k: enr.get(k) for k in ("summary", "sub_expertise")}}
     lines = [f"{a['id']} | {a['name']} | {a['industry']} | {a['summary']}" for a in apps]
     parsed = _parse_json(_call_llm(profile_ctx, lines))
     valid = {a["id"]: a for a in apps}

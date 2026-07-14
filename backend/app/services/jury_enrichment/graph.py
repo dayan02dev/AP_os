@@ -19,6 +19,7 @@ class JuryEnrichState(TypedDict, total=False):
     research: str
     profile: dict
     domains: list[str]
+    sub_expertise: str
     error: str
 
 
@@ -85,7 +86,8 @@ def _map_domains_node(state: JuryEnrichState) -> dict:
             json_mode=True)
         parsed = _parse_json(raw)
         domains = [d for d in (parsed.get("domains") or []) if d in taxonomy]
-        return {"domains": domains or (state.get("self_domains") or [])}
+        return {"domains": domains or (state.get("self_domains") or []),
+                "sub_expertise": parsed.get("sub_expertise") or ""}
     except Exception as exc:  # noqa: BLE001
         return {"domains": state.get("self_domains") or [], "error": str(exc)}
 

@@ -17,13 +17,14 @@ def test_graph_happy_path(monkeypatch):
         '{"summary":"Robotics professor","current_role":"Professor, IISc",'
         '"organizations":["IISc"],"education":["PhD"],"notable":[],"years_experience":15,'
         '"sources":["https://iisc.ac.in"]}',
-        '{"domains":["Robotics & Automation"],"confidence":"HIGH"}')
+        '{"domains":["Robotics & Automation"],"sub_expertise":"autonomous drones","confidence":"HIGH"}')
     monkeypatch.setattr(je_graph, "_post", post)
     out = je_graph.build_graph().invoke({
         "name": "Dr Rao", "self_domains": ["robotics"], "linkedin_url": None,
         "taxonomy": ["Robotics & Automation", "HealthTech"]})
     assert out["profile"]["summary"] == "Robotics professor"
     assert out["domains"] == ["Robotics & Automation"]
+    assert out["sub_expertise"] == "autonomous drones"
     assert calls[0]["model"].endswith(":online")     # research call is web-grounded
     assert calls[1]["json_mode"] and calls[2]["json_mode"]
 

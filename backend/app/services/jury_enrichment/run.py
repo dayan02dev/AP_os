@@ -43,6 +43,7 @@ def run_and_persist(juror_user_id: str, client=None) -> bool:
         enrichment = dict(out.get("profile") or {})
         enrichment["model"] = _MODEL
         enrichment["generated_at"] = datetime.now(UTC).isoformat()
+        enrichment["sub_expertise"] = out.get("sub_expertise") or ""
         if out.get("error"):
             enrichment["error"] = out["error"]
         client.table("jury_profiles").update({
