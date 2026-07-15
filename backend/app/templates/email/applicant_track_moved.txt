@@ -1,0 +1,8 @@
+{% extends "base.txt" %}
+{% block content %}Hi {{ applicant_name }},
+
+Your ARTPARK application has been moved from the {{ from_label }} track to the {{ to_label }} track. Your submitted answers carry over — there's nothing you need to do.
+
+We'll continue to send any further updates by email.
+
+— The ARTPARK team{% endblock %}

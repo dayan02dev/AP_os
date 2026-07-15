@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}An update on your ARTPARK application{% endblock %}
+{% block content %}
+<div style="font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#8a86a0;margin-bottom:10px;">Application update</div>
+<div style="font-family:'Trebuchet MS','Lucida Grande',Tahoma,sans-serif;font-weight:700;font-size:22px;line-height:1.25;letter-spacing:-0.01em;color:#242424;margin:0 0 14px;">Your application has moved to the {{ to_label }} track</div>
+<p style="margin:0 0 14px;">Hi {{ applicant_name }}, your ARTPARK application has been moved from the <strong>{{ from_label }}</strong> track to the <strong>{{ to_label }}</strong> track.</p>
+<p style="margin:0 0 14px;">Your submitted answers carry over — there's nothing you need to do. We'll send any further updates by email.</p>
+<p style="margin:24px 0 0;color:#5a5a66;">— The ARTPARK team</p>
+{% endblock %}

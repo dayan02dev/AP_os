@@ -366,6 +366,24 @@ class EmailService:
         )
         return self.send_raw([to], subject, html, text)
 
+    def send_track_moved(
+        self,
+        *,
+        to: str,
+        applicant_name: str,
+        from_label: str,
+        to_label: str,
+        application_ref: str = "",
+    ) -> dict[str, str]:
+        """Applicant-facing notice that their application was moved TIR<->VIP."""
+        html, text = self._render_pair(
+            "applicant_track_moved",
+            {"applicant_name": applicant_name or "there",
+             "from_label": from_label, "to_label": to_label,
+             "application_ref": application_ref},
+        )
+        return self.send_raw([to], "An update on your ARTPARK application", html, text)
+
     def send_reviewer_assigned(
         self,
         *,
