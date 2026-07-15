@@ -211,6 +211,10 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
 
   const onMoveTrack = async () => {
     if (!s) return;
+    if (!s.movedToTrack) {
+      const other = trackLabel(track === 'tir' ? 'sip' : 'tir');
+      if (!window.confirm(`Move this application to ${other} and email the applicant?`)) return;
+    }
     setMoveBusy(true);
     setBanner(null);
     try {
