@@ -13,6 +13,7 @@ from fastapi import HTTPException, status
 
 from ..supabase_client import get_admin_client
 from .audit import write_audit
+from .track_move_email import notify_applicant_moved
 
 _OTHER = {"tir": "sip", "sip": "tir"}
 
@@ -49,5 +50,16 @@ def move_track(*, track: str, application_id: str, actor_user_id: str,
         action_type="track_move", target_table=table, target_id=application_id,
         after={"moved_to_track": patch["moved_to_track"]},
     )
+
+    # Best-effort applicant email — only when MOVED (helper no-ops on move-back).
+    if patch["moved_to_track"]:
+        try:
+            notify_applicant_moved(
+                sb, track=track, moved_to_track=patch["moved_to_track"],
+                application_id=application_id,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
     return {"application_id": application_id, "track": track,
             "moved_to_track": patch["moved_to_track"]}

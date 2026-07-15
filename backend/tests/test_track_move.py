@@ -61,3 +61,21 @@ def test_invalid_track_422(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         track_move.move_track(track="bogus", application_id="a1", actor_user_id="u1")
     assert exc.value.status_code == 422
+
+
+def test_move_fires_applicant_email(monkeypatch):
+    sb = _patch(monkeypatch, [{"id": "a1", "moved_to_track": None}])  # not moved -> will move
+    calls = []
+    monkeypatch.setattr(track_move, "notify_applicant_moved",
+        lambda _sb, **kw: calls.append(kw))
+    track_move.move_track(track="tir", application_id="a1", actor_user_id="u1")
+    assert calls and calls[0]["moved_to_track"] == "sip"
+
+
+def test_move_back_does_not_email(monkeypatch):
+    sb = _patch(monkeypatch, [{"id": "a1", "moved_to_track": "sip"}])  # already moved -> move-back
+    calls = []
+    monkeypatch.setattr(track_move, "notify_applicant_moved",
+        lambda _sb, **kw: calls.append(kw))
+    track_move.move_track(track="tir", application_id="a1", actor_user_id="u1")
+    assert calls == []
