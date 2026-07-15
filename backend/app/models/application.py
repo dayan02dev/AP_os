@@ -98,10 +98,15 @@ SolutionStageValue = Literal[
     "Lab demos / proof-of-concept",
 ]
 
-ApplicationStatusValue = Literal[
-    "draft", "submitted", "under_review", "shortlisted",
-    "rejected", "accepted", "withdrawn",
-]
+# Applicant-facing READ type ONLY (ApplicationRead.status). Deliberately a
+# permissive `str`, not a Literal: the DB status advances through the full
+# state-machine set (evaluated, jury_review, on_hold, waitlisted, interview,
+# offered, onboarded, ai_screening, screening_failed, ...). A narrow Literal
+# here 500'd GET /applications/me/submitted for every reviewed/approved
+# applicant — the frontend surfaced that as the "applications closed" screen.
+# Keeping it `str` means a newly-added status can never again lock applicants
+# out of viewing their own submission. Mirrors DegreeValue/HearAboutValue = str.
+ApplicationStatusValue = str
 
 
 # ─── Update model (PATCH body) ───────────────────────────────────────
@@ -208,6 +213,29 @@ class ApplicationRead(ApplicationUpdate):
     edit_deadline: datetime | None = None
     edited_after_submit: bool = False
     last_edited_at: datetime | None = None
+
+
+def drop_string_length_caps(model_cls: type[BaseModel]) -> None:
+    """Strip min/max-length constraints from every field of a READ model.
+
+    A read model must never re-impose the input-side length caps: the row is
+    already stored (the DB CHECK from migration 019 guards length), but pre-cap
+    rows can hold essays longer than _MAX_LONG_TEXT. Re-validating those 500'd
+    the applicant's own GET /me/submitted — surfaced as the "applications
+    closed" screen. Stripping the caps here means an applicant can always load
+    their own submission regardless of answer length. Shared by the SIP read
+    model too."""
+    import annotated_types
+
+    for _f in model_cls.model_fields.values():
+        _f.metadata = [
+            m for m in _f.metadata
+            if not isinstance(m, (annotated_types.MaxLen, annotated_types.MinLen))
+        ]
+    model_cls.model_rebuild(force=True)
+
+
+drop_string_length_caps(ApplicationRead)
 
 
 # ─── Submission / completion helpers ─────────────────────────────────

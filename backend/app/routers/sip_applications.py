@@ -594,7 +594,14 @@ async def list_submitted_applications(current_user: dict = Depends(get_current_u
                       "Could not load past applications.")
     out = []
     for r in rows:
-        read = SipApplicationRead.model_validate(r)
+        # Per-row resilience: one unserializable row must never 500 the whole
+        # list (which would strand the applicant on the "closed" screen).
+        try:
+            read = SipApplicationRead.model_validate(r)
+        except Exception:
+            log.warning("sip list_submitted: skipping unserializable row",
+                        extra={"user_id": user_id, "application_id": r.get("id")})
+            continue
         read.editable = _is_editable(r)
         read.edit_deadline = edit_deadline_for("sip")
         out.append(read)

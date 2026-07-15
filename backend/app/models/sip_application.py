@@ -69,10 +69,12 @@ SipTractionValue = Literal[
     "Live paying customers — repeat revenue",
 ]
 
-ApplicationStatusValue = Literal[
-    "draft", "submitted", "under_review", "shortlisted",
-    "rejected", "accepted", "withdrawn",
-]
+# Applicant-facing READ type ONLY (SipApplicationRead.status). Permissive `str`,
+# not a Literal — the DB status advances through the full state-machine set
+# (evaluated, jury_review, ...). A narrow Literal here 500'd
+# GET /sip-applications/me/submitted for reviewed/approved VIP applicants,
+# which the frontend surfaced as the "applications closed" screen. Keep `str`.
+ApplicationStatusValue = str
 
 
 # ─── Update model (PATCH body) ───────────────────────────────────────
@@ -187,6 +189,14 @@ class SipApplicationRead(SipApplicationUpdate):
     edit_deadline: datetime | None = None
     edited_after_submit: bool = False
     last_edited_at: datetime | None = None
+
+
+# Strip length caps from the SIP read model too (same reason as TIR — a pre-cap
+# over-length essay must not 500 the applicant's own GET /me/submitted). Reuses
+# the TIR helper; application.py does not import this module, so no cycle.
+from .application import drop_string_length_caps as _drop_string_length_caps  # noqa: E402
+
+_drop_string_length_caps(SipApplicationRead)
 
 
 # ─── Submission / completion helpers ─────────────────────────────────
