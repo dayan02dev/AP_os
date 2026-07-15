@@ -101,6 +101,7 @@ async def get_application_content(
         "applicationId": reviewer_query._display_id(track, app_row),
         "track": track,
         "also_in_track": applications_query.also_in_track(app_row.get("basic_email"), track),
+        "moved_to_track": app_row.get("moved_to_track"),
         "application": app_row,
         "name": ai.get("project_name") or app_row.get("basic_org")
                 or app_row.get("basic_full_name") or "—",

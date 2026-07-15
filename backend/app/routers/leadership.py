@@ -261,6 +261,7 @@ async def list_applications(
             "display_seq":      r.get("display_seq"),
             "display_id":       stats.compose_display_id(track, r.get("display_seq")),
             "track":            track,
+            "moved_to_track":   r.get("moved_to_track"),
             "status":           r.get("status"),
             "project_name":     (
                                 r.get("basic_org") or r.get("basic_full_name")
@@ -364,6 +365,7 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
     return {
         "id":                   application_id,
         "track":                track,
+        "moved_to_track":       app_row.get("moved_to_track"),
         "display_seq":          app_row.get("display_seq"),
         "display_id":           stats.compose_display_id(track, app_row.get("display_seq")),
         "project_name":         (ai_screening or {}).get("project_name")

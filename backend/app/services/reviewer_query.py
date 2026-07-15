@@ -558,6 +558,7 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
             "assignmentId":  a["id"],
             "applicationId": _display_id(track, app_row),
             "track":         track,
+            "movedToTrack":  app_row.get("moved_to_track"),
             "name":          (ai_row or {}).get("project_name")
                              or app_row.get("basic_org")
                              or app_row.get("basic_full_name") or "—",
