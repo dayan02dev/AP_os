@@ -9,7 +9,7 @@
 
 import { useMemo, useState } from "react";
 import { LoadingState, ErrorState, Chip } from "./ui.jsx";
-import { relabelDisplayId } from "../../../lib/trackLabel.js";
+import { relabelDisplayId, trackLabel } from "../../../lib/trackLabel.js";
 
 // The queue is fetched once at the ReviewerPortal shell level and passed down
 // via `queueAsync` ({ data, loading, error, reload }) so the queue table and
@@ -271,6 +271,14 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
                   <div style={{ fontWeight: 600, color: "var(--ink)", fontSize: 13, lineHeight: 1.3 }}>{s.name}</div>
                   <div style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 3, fontFamily: "var(--font-code)" }}>
                     {relabelDisplayId(s.applicationId)} · {s.track === "tir" ? "TIR" : "VIP"}
+                    {s.movedToTrack && (
+                      <span title={`Moved to ${trackLabel(s.movedToTrack)}`}
+                        style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.04em',
+                          background: '#fff4d6', border: '1px solid #e6c34d', color: '#8a6d00',
+                          borderRadius: 999, padding: '1px 6px' }}>
+                        → {trackLabel(s.movedToTrack).toUpperCase()}
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td>

@@ -25,6 +25,7 @@ import { leadershipApi } from "../../lib/leadershipApi.js";
 import { labelFor } from "../../lib/statusMachine.js";
 import { printWithTitle } from "../../lib/printDocument.js";
 import { trackLabel } from "../../lib/trackLabel.js";
+import { moveBadgeText } from "../../lib/trackMove";
 import { schemaFor } from "./applicationSchemas.js";
 import ReviewHeader from "./review/ReviewHeader.jsx";
 import ReviewTabs from "./review/ReviewTabs.jsx";
@@ -248,6 +249,14 @@ export default function ReviewApplicationPage() {
         onExport={handleExportPdf}
         canExport={!!detail}
       />
+      {moveBadgeText(track, application?.moved_to_track) && (
+        <span style={{ marginLeft: 12, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em',
+          textTransform: 'uppercase', background: '#fff4d6', border: '1px solid #e6c34d',
+          color: '#8a6d00', borderRadius: 999, padding: '3px 11px', display: 'inline-flex',
+          alignItems: 'center', gap: 6, verticalAlign: 'middle' }}>
+          {moveBadgeText(track, application?.moved_to_track)}
+        </span>
+      )}
 
       <div className="review-body" data-aside-collapsed={asideCollapsed ? "true" : "false"}>
         <main className="review-main">

@@ -30,6 +30,7 @@ import ProfilePills from "../../../components/ProfilePills.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
 import { trackLabel } from "../../../lib/trackLabel.js";
+import { moveBadgeText } from "../../../lib/trackMove";
 import {
   LoadingState,
   ErrorState,
@@ -414,6 +415,13 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
           <h2 className="lp-section-title">
             {application.name} <span className="lp-muted">· scoring</span>
           </h2>
+          {moveBadgeText(content.track, content.moved_to_track) && (
+            <span style={{ marginLeft: 10, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
+              background: '#fff4d6', border: '1px solid #e6c34d', color: '#8a6d00',
+              borderRadius: 999, padding: '2px 9px' }}>
+              {moveBadgeText(content.track, content.moved_to_track)}
+            </span>
+          )}
           <div className="lp-section-sub">
             Read the application, then score each dimension 0–10. Notes are required to submit.
           </div>
