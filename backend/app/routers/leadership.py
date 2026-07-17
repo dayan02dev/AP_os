@@ -170,6 +170,7 @@ async def list_applications(
     ai_score_max: float | None = Query(default=None),
     ai_score_bucket: int | None = Query(default=None, ge=0, le=9),
     search: str | None = Query(default=None),
+    recommendation: str | None = Query(default=None, pattern="^(yes|maybe|no)$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
@@ -218,7 +219,7 @@ async def list_applications(
     pairs = [(r["track"], r["id"]) for r in rows]
     scores = applications_query.fetch_ai_scores_for(pairs)
     project_names = applications_query.fetch_project_names_for(pairs)
-    reviewer_scores = admin_query._fetch_reviewer_scores(pairs)
+    review_stats = admin_query._fetch_review_stats(pairs)
 
     filter_ai = (
         ai_score_min is not None
@@ -245,6 +246,16 @@ async def list_applications(
                     continue
             kept.append(r)
         rows = kept
+
+    # ─ 3b. Recommendation filter (≥1 reviewer gave `recommendation`) ────
+    if recommendation:
+        rows = [
+            r for r in rows
+            if admin_query.reco_matches(
+                (review_stats.get((r["track"], r["id"])) or {}).get("reco"),
+                recommendation,
+            )
+        ]
 
     # ─ 4. Total = post-filter, pre-pagination count ─────────────────────
     total = len(rows)
@@ -278,7 +289,12 @@ async def list_applications(
             "industry":         industries.get((track, r["id"])),
             "stage":            stats.derive_stage_label(r),
             "ai_score_overall": scores.get((track, r["id"])),
-            "reviewer_score":   reviewer_scores.get((track, r["id"])),
+            "reviewer_score":   (review_stats.get((track, r["id"])) or {}).get("score"),
+            "reviewers":        {
+                                    "submitted": (review_stats.get((track, r["id"])) or {}).get("submitted", 0),
+                                    "assigned":  (review_stats.get((track, r["id"])) or {}).get("assigned", 0),
+                                } if review_stats.get((track, r["id"])) else None,
+            "reco":             (review_stats.get((track, r["id"])) or {}).get("reco"),
             "submitted_at":     r.get("submitted_at"),
             "created_at":       r.get("created_at"),
             # Legacy fields the AppDrawer + existing tests still reference.

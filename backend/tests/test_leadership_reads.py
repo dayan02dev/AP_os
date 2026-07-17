@@ -870,9 +870,9 @@ def test_list_applications_sip_row_uses_basic_org_as_project_name(
         "fetch_project_names_for",
         lambda pairs: {p: "AI Project Name" for p in pairs},
     )
-    # Patch _fetch_reviewer_scores to return empty (not the real Supabase call).
+    # Patch _fetch_review_stats to return empty (not the real Supabase call).
     from app.services import admin_query as aq
-    monkeypatch.setattr(aq, "_fetch_reviewer_scores", lambda pairs: {})
+    monkeypatch.setattr(aq, "_fetch_review_stats", lambda pairs: {})
 
     app.dependency_overrides[get_current_user] = _override_user(["leadership"])
     res = client.get(
@@ -922,7 +922,12 @@ def test_list_applications_includes_reviewer_score(
         applications_query, "fetch_project_names_for", lambda pairs: {p: None for p in pairs}
     )
     from app.services import admin_query as aq
-    monkeypatch.setattr(aq, "_fetch_reviewer_scores", lambda pairs: {pairs[0]: 7.5})
+    monkeypatch.setattr(
+        aq,
+        "_fetch_review_stats",
+        lambda pairs: {pairs[0]: {"score": 7.5, "submitted": 1, "assigned": 1,
+                                  "reco": {"yes": 0, "maybe": 0, "no": 0}}},
+    )
 
     app.dependency_overrides[get_current_user] = _override_user(["leadership"])
     res = client.get(
@@ -967,7 +972,7 @@ def test_list_applications_reviewer_score_none_without_review(
         applications_query, "fetch_project_names_for", lambda pairs: {p: None for p in pairs}
     )
     from app.services import admin_query as aq
-    monkeypatch.setattr(aq, "_fetch_reviewer_scores", lambda pairs: {})
+    monkeypatch.setattr(aq, "_fetch_review_stats", lambda pairs: {})
 
     app.dependency_overrides[get_current_user] = _override_user(["leadership"])
     res = client.get(
