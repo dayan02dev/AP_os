@@ -23,6 +23,24 @@
   --r-sharp: 2px;
   --r-pill: 999px;
 
+  /* sizing/type/spacing scale (brand-neutral; carried from the mockup :root) */
+  --t-eyebrow: 11px;
+  --t-body-sm: 14px;
+  --t-body:    16px;
+  --t-body-lg: 18px;
+  --t-h4:      22px;
+  --t-h3:      28px;
+  --t-h2:      44px;
+  --t-h1:      72px;
+  --t-display: 96px;
+  --lh-tight:  1.08;
+  --lh-snug:   1.25;
+  --lh-body:   1.55;
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px; --s-5: 24px;
+  --s-6: 32px; --s-7: 48px; --s-8: 64px; --s-9: 96px; --s-10: 128px;
+  --container-w: 1180px;
+  --gutter: 24px;
+
   font-family: var(--font-body);
   color: var(--ink);
   background: var(--paper);
