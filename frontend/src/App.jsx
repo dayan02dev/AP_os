@@ -1011,26 +1011,51 @@ export default function App() {
                 ? collapseFromRow(viewingApp || lastSubmitted)
                 : answers;
             return (
-              <DoneScreen
-                answers={targetAnswers}
-                onRestart={() => navigate("/apply")}
-                submission={{
-                  id: target.id,
-                  ts: target.submitted_at
-                    ? new Date(target.submitted_at).getTime()
-                    : Date.now(),
-                  currentMilestone: target.current_milestone || "submitted",
-                  answers: targetAnswers,
-                  editable: target.editable ?? false,
-                  edit_deadline: target.edit_deadline ?? null,
-                }}
-                onBack={() => {
-                  setViewingApp(null);
-                  navigate("/apply");
-                }}
-                questionPrompts={QUESTION_PROMPTS}
-                onSave={saveSubmittedField}
-              />
+              <>
+                <DoneScreen
+                  answers={targetAnswers}
+                  onRestart={() => navigate("/apply")}
+                  submission={{
+                    id: target.id,
+                    ts: target.submitted_at
+                      ? new Date(target.submitted_at).getTime()
+                      : Date.now(),
+                    currentMilestone: target.current_milestone || "submitted",
+                    answers: targetAnswers,
+                    editable: target.editable ?? false,
+                    edit_deadline: target.edit_deadline ?? null,
+                  }}
+                  onBack={() => {
+                    setViewingApp(null);
+                    navigate("/apply");
+                  }}
+                  questionPrompts={QUESTION_PROMPTS}
+                  onSave={saveSubmittedField}
+                />
+                {["offered", "onboarded"].includes(target?.status) && (
+                  <div
+                    className="fp-cta"
+                    style={{
+                      marginTop: 20,
+                      padding: "16px 20px",
+                      border: "1px solid var(--accent, #3213b7)",
+                      borderRadius: 2,
+                      background: "rgba(50,19,183,0.05)",
+                    }}
+                  >
+                    <strong style={{ fontFamily: "var(--font-serif)" }}>
+                      You're in. 🎉
+                    </strong>
+                    <p style={{ margin: "6px 0 12px", color: "var(--ink-soft, #4a4a52)" }}>
+                      Your TIR residency portal is ready — sign your MOU and
+                      set up your cohort workspace.
+                    </p>
+                    <a className="btn btn-primary" href="/founder">
+                      Enter your Founder Portal →
+                    </a>
+                  </div>
+                )}
+              </>
             );
           })()}
           {phase === PHASES.PROFILE && user && (
