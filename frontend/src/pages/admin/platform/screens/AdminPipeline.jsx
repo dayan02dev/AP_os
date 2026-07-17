@@ -26,6 +26,7 @@ import { Chip } from "../ui.jsx";
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
 import { relabelDisplayId, trackLabel } from "../../../../lib/trackLabel.js";
 import { chipLabel, chipStatusId, chipTone } from "../../../../lib/adminDataAdapter";
+import { RecoCell } from "../../../../components/RecoCell";
 
 // Real industry chip counts from the loaded pipeline rows, scoped to the
 // selected track. Excludes hidden/archived rows and rows without an industry
@@ -130,7 +131,15 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   const [status, setStatus] = React.useState('all');
   const [industry, setIndustry] = React.useState('all');
   const [batchFilter, setBatchFilter] = React.useState('all');
+  const [recoFilter, setRecoFilter] = React.useState(null);
   const industries = React.useMemo(() => industryCountsFor(S, track), [S, track]);
+  const recoCounts = React.useMemo(() => {
+    const m = { yes: 0, maybe: 0, no: 0 };
+    S.forEach((s) => {
+      if (s.reco) ["yes", "maybe", "no"].forEach((k) => { if (s.reco[k] > 0) m[k] += 1; });
+    });
+    return m;
+  }, [S]);
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState([]);
 
@@ -186,6 +195,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     setStatus('all');
     setIndustry('all');
     setBatchFilter('all');
+    setRecoFilter(null);
   };
 
   const filtered = React.useMemo(() => S.filter(s => {
@@ -234,8 +244,10 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       if ((s.domain || '') !== industry) return false;
     }
 
+    if (recoFilter && !(s.reco && s.reco[recoFilter] > 0)) return false;
+
     return true;
-  }), [S, search, track, status, industry, batchFilter, decisionMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [S, search, track, status, industry, batchFilter, recoFilter, decisionMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleAll = () => {
     if (selectedIds.length === filtered.length && filtered.length > 0) {
@@ -267,6 +279,9 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       } else if (sortCol === 'rev') {
         valA = a.rev ? a.rev.overall ?? -1 : -1;
         valB = b.rev ? b.rev.overall ?? -1 : -1;
+      } else if (sortCol === 'reviewers') {
+        valA = a.reviewers ? a.reviewers.submitted : -1;
+        valB = b.reviewers ? b.reviewers.submitted : -1;
       } else if (sortCol === 'status') {
         valA = getFriendlyStatus(a) || '';
         valB = getFriendlyStatus(b) || '';
@@ -926,6 +941,20 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
               </div>
             </div>
 
+            {/* RECOMMENDATION */}
+            <div className="lp-filter-section">
+              <span className="lp-filter-label">RECOMMENDATION</span>
+              <div className="lp-filter-btns">
+                <button className={`lp-filter-btn${!recoFilter ? " active" : ""}`} onClick={() => setRecoFilter(null)}>All</button>
+                {[["yes", "Yes"], ["maybe", "Maybe"], ["no", "No"]].map(([v, label]) => (
+                  <button key={v} className={`lp-filter-btn${recoFilter === v ? " active" : ""}`}
+                    onClick={() => setRecoFilter(recoFilter === v ? null : v)}>
+                    {label}<span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{recoCounts[v]}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* BATCH (not shown in jury mode) */}
             {decisionMode !== 'jury' && (
               <div className="lp-filter-section">
@@ -1011,6 +1040,8 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
             {renderHeader('STAGE', 'stage')}
             {renderHeader('AI score', 'ai', true)}
             {renderHeader('Reviewer score', 'rev', true)}
+            {renderHeader('Reviewers', 'reviewers', true)}
+            <th>Reco</th>
             {renderHeader('STATUS', 'status')}
             {renderHeader(decisionMode === 'jury' ? 'ASSIGNED JURY' : 'BATCH', 'batch')}
             {renderHeader('SUBMITTED', 'sub')}
@@ -1070,6 +1101,12 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                     <span className="os-text-soft">—</span>
                   )}
                 </td>
+                <td className="num">
+                  {s.reviewers && (s.reviewers.assigned > 0 || s.reviewers.submitted > 0)
+                    ? <span className="os-mono">{s.reviewers.submitted} / {s.reviewers.assigned}</span>
+                    : <span className="os-text-soft">—</span>}
+                </td>
+                <td><RecoCell reco={s.reco} /></td>
                 <td>
                   <Chip tone={getChipTone(s)}>{getFriendlyStatus(s).toUpperCase()}</Chip>
                 </td>

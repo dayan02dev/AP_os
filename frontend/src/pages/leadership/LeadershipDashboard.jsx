@@ -17,6 +17,7 @@ import { fmtRelative } from "../../lib/timeFmt.js";
 import { trackLabel, relabelDisplayId } from "../../lib/trackLabel.js";
 import AppDrawer from "./components/AppDrawer.jsx";
 import PortalSwitcher from "../../components/PortalSwitcher.jsx";
+import { RecoCell } from "../../components/RecoCell.jsx";
 import { bucketFor } from "./components/statusBuckets.js";
 import "../../styles/admin.css";
 import "../../styles/leadership.css";
@@ -202,6 +203,7 @@ export default function LeadershipDashboard() {
   // exactly — bucket i covers scores [i, i+1), bucket 9 also catches 10.
   // Set by clicking a histogram bar; the click also flips view to Applications.
   const [scoreBucket, setScoreBucket] = useState(null);
+  const [recoFilter, setRecoFilter] = useState(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [offset, setOffset] = useState(0);
@@ -284,6 +286,7 @@ export default function LeadershipDashboard() {
       status: statusFilter || undefined,
       track: trackFilter ? trackFilter.toLowerCase() : undefined,
       ai_score_bucket: scoreBucket ?? undefined,
+      recommendation: recoFilter || undefined,
       search: search || undefined,
       limit: PAGE_SIZE,
       offset,
@@ -300,7 +303,7 @@ export default function LeadershipDashboard() {
         setAppsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [industry, statusFilter, trackFilter, scoreBucket, search, offset, refreshNonce]);
+  }, [industry, statusFilter, trackFilter, scoreBucket, recoFilter, search, offset, refreshNonce]);
 
   const filterAndShow = useCallback(
     (setter) => (val) => {
@@ -378,6 +381,7 @@ export default function LeadershipDashboard() {
     setStatusFilter(null);
     setTrackFilter(null);
     setScoreBucket(null);
+    setRecoFilter(null);
     setSearchInput("");
     setSearch("");
     setOffset(0);
@@ -396,6 +400,7 @@ export default function LeadershipDashboard() {
         status: statusFilter || undefined,
         track: trackFilter ? trackFilter.toLowerCase() : undefined,
         ai_score_bucket: scoreBucket ?? undefined,
+        recommendation: recoFilter || undefined,
         search: search || undefined,
       };
       const all = [];
@@ -426,15 +431,15 @@ export default function LeadershipDashboard() {
     } finally {
       setExporting(false);
     }
-  }, [industry, statusFilter, trackFilter, scoreBucket, search, statusLabelById]);
+  }, [industry, statusFilter, trackFilter, scoreBucket, recoFilter, search, statusLabelById]);
   const filtersActive = !!(
-    industry || statusFilter || trackFilter || scoreBucket !== null || search
+    industry || statusFilter || trackFilter || scoreBucket !== null || search || recoFilter
   );
   // Count of applied filters living inside the collapsible panel (Status /
   // AI score / Industry) — shown as a badge on the "Filters" toggle so it's
   // discoverable when the panel is closed.
   const advFilterCount =
-    (statusFilter ? 1 : 0) + (scoreBucket !== null ? 1 : 0) + (industry ? 1 : 0);
+    (statusFilter ? 1 : 0) + (scoreBucket !== null ? 1 : 0) + (industry ? 1 : 0) + (recoFilter ? 1 : 0);
 
   const handleSort = (col) => {
     if (sortCol === col) {
@@ -486,6 +491,12 @@ export default function LeadershipDashboard() {
       } else if (sortCol === "reviewer_score") {
         valA = a.reviewer_score != null ? a.reviewer_score : -1;
         valB = b.reviewer_score != null ? b.reviewer_score : -1;
+        if (valA < valB) return sortAsc ? -1 : 1;
+        if (valA > valB) return sortAsc ? 1 : -1;
+        return 0;
+      } else if (sortCol === "reviewers") {
+        valA = a.reviewers ? a.reviewers.submitted : -1;
+        valB = b.reviewers ? b.reviewers.submitted : -1;
         if (valA < valB) return sortAsc ? -1 : 1;
         if (valA > valB) return sortAsc ? 1 : -1;
         return 0;
@@ -1069,6 +1080,18 @@ export default function LeadershipDashboard() {
                 </div>
               </div>
             )}
+
+            <div className="filter-bar" style={{ marginBottom: "var(--s-5)" }}>
+              <span className="eyebrow" style={{ marginRight: "var(--s-3)" }}>Recommendation</span>
+              <div className="filter-chips">
+                <button type="button" className={`chip${!recoFilter ? " active" : ""}`}
+                  onClick={() => { setRecoFilter(null); setOffset(0); }}>All</button>
+                {[["yes", "Yes"], ["maybe", "Maybe"], ["no", "No"]].map(([v, label]) => (
+                  <button key={v} type="button" className={`chip${recoFilter === v ? " active" : ""}`}
+                    onClick={() => { setRecoFilter(recoFilter === v ? null : v); setOffset(0); }}>{label}</button>
+                ))}
+              </div>
+            </div>
             </>
             )}
 
@@ -1101,6 +1124,8 @@ export default function LeadershipDashboard() {
                     {renderAppsHeader("Stage", "stage")}
                     {renderAppsHeader("AI score", "ai_score", true)}
                     {renderAppsHeader("Reviewer score", "reviewer_score", true)}
+                    {renderAppsHeader("Reviewers", "reviewers", true)}
+                    <th>Reco</th>
                     {renderAppsHeader("Status", "status")}
                     {renderAppsHeader("Submitted", "submitted")}
                     <th className="lp-id-col" onClick={() => handleSort("id")} style={{ cursor: "pointer", userSelect: "none" }}>
@@ -1156,6 +1181,12 @@ export default function LeadershipDashboard() {
                           : <span style={{ color: "var(--ink-dim)" }}>—</span>
                         }
                       </td>
+                      <td className="num">
+                        {a.reviewers && (a.reviewers.assigned > 0 || a.reviewers.submitted > 0)
+                          ? <span style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}>{a.reviewers.submitted} / {a.reviewers.assigned}</span>
+                          : <span style={{ color: "var(--ink-dim)" }}>—</span>}
+                      </td>
+                      <td><RecoCell reco={a.reco} /></td>
                       <td>
                         <StatusCell
                           statusId={a.status}
