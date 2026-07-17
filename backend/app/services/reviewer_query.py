@@ -569,6 +569,7 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
             "ai":            _ai_block(ai_row),
             "reviewStatus":  _review_status(my_review),
             "myScore":       _weighted_overall(my_review) if my_review else None,
+            "myReco":        (my_review or {}).get("recommendation"),
             "editWindowExpiresAt": (my_review or {}).get("locked_at"),
         })
     out.sort(key=lambda x: x.get("due") or "9999")
