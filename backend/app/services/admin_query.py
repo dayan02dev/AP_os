@@ -183,35 +183,37 @@ def _fetch_batches(
 # ─── Pipeline list ──────────────────────────────────────────────────────
 
 
-def _fetch_reviewer_scores(
+def _fetch_review_stats(
     pairs: list[tuple[str, str]],
-) -> dict[tuple[str, str], float | None]:
-    """Weight-adjusted mean of submitted reviewers' weighted-overall, per app.
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Per (track, application_id): reviewer score + counts + recommendation tally.
 
-    Keyed by ``(track, application_id)`` to match ``fetch_pipeline``'s row key.
-    Weight = ``reviewer_profiles.weight`` (default ``1.0``). Reviews with any
-    missing dimension (``_weighted_overall`` → None) and drafts (no
-    ``submitted_at``) are skipped. Apps with no scorable review are omitted
-    (callers default to None). Bounded by PostgREST's 1000-row default — fine
-    at Phase-1 scale.
+    One paginated pass over `reviews` + `reviewer_assignments`, keyed by
+    ``(track, application_id)`` to match ``fetch_pipeline``/the leadership list.
+
+    Returns, per key that has ANY submitted review or active assignment:
+        {"score":     weighted mean of submitted, fully-scored reviews (or None),
+         "submitted": distinct reviewers with a submitted review,
+         "assigned":  distinct active assignments (declined_at/reassigned_to NULL),
+         "reco":      {"yes": n, "maybe": n, "no": n} over submitted reviews}
+
+    `score` reuses the old weight-adjusted mean (drafts + any-missing-dimension
+    reviews skipped). Counts/tally are independent of the score skip: every
+    submitted review counts, even one whose weighted-overall can't compute.
+    Reads are paginated (`_fetch_all`) so counts stay correct past PostgREST's
+    ~1000-row default cap.
     """
     if not pairs:
         return {}
     sb = get_admin_client()
     want = set(pairs)  # {(track, id)}
+
     try:
-        reviews = (sb.table("reviews").select("*").execute().data) or []
+        rp_rows = _fetch_all(lambda: sb.table("reviewer_profiles").select("*"))
     except Exception as exc:
-        log.warning("admin_query._fetch_reviewer_scores reviews failed",
-                    extra={"err": str(exc)})
-        return {}
-    try:
-        rp_rows = (sb.table("reviewer_profiles").select("*").execute().data) or []
-    except Exception as exc:
-        log.warning("admin_query._fetch_reviewer_scores profiles failed",
+        log.warning("admin_query._fetch_review_stats profiles failed",
                     extra={"err": str(exc)})
         rp_rows = []
-
     weight_of: dict[str, float] = {}
     for rp in rp_rows:
         rid = rp.get("reviewer_user_id")
@@ -219,6 +221,21 @@ def _fetch_reviewer_scores(
             w = rp.get("weight")
             weight_of[rid] = float(w) if w is not None else 1.0
 
+    try:
+        reviews = _fetch_all(lambda: sb.table("reviews").select("*"))
+    except Exception as exc:
+        log.warning("admin_query._fetch_review_stats reviews failed",
+                    extra={"err": str(exc)})
+        return {}
+    try:
+        assigns = _fetch_all(lambda: sb.table("reviewer_assignments").select("*"))
+    except Exception as exc:
+        log.warning("admin_query._fetch_review_stats assignments failed",
+                    extra={"err": str(exc)})
+        assigns = []
+
+    submitted: dict[tuple[str, str], set] = {}
+    reco: dict[tuple[str, str], dict[str, int]] = {}
     num: dict[tuple[str, str], float] = {}
     den: dict[tuple[str, str], float] = {}
     for r in reviews:
@@ -227,14 +244,59 @@ def _fetch_reviewer_scores(
         key = (r.get("application_track"), r.get("application_id"))
         if key not in want:
             continue
+        rid = r.get("reviewer_user_id")
+        submitted.setdefault(key, set()).add(rid)
+        rec = r.get("recommendation")
+        bucket = reco.setdefault(key, {"yes": 0, "maybe": 0, "no": 0})
+        if rec in bucket:
+            bucket[rec] += 1
         wo = reviewer_query._weighted_overall(r)
         if wo is None:
             continue
-        w = weight_of.get(r.get("reviewer_user_id"), 1.0)
+        w = weight_of.get(rid, 1.0)
         num[key] = num.get(key, 0.0) + w * wo
         den[key] = den.get(key, 0.0) + w
 
-    return {key: round(num[key] / den[key], 1) for key in num if den.get(key)}
+    assigned: dict[tuple[str, str], set] = {}
+    for a in assigns:
+        if a.get("declined_at") is not None or a.get("reassigned_to") is not None:
+            continue
+        key = (a.get("application_track"), a.get("application_id"))
+        if key not in want:
+            continue
+        assigned.setdefault(key, set()).add(a.get("reviewer_user_id"))
+
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    for key in want:
+        sub = len(submitted.get(key, ()))
+        asg = len(assigned.get(key, ()))
+        if sub == 0 and asg == 0:
+            continue
+        score = round(num[key] / den[key], 1) if den.get(key) else None
+        out[key] = {
+            "score":     score,
+            "submitted": sub,
+            "assigned":  asg,
+            "reco":      reco.get(key, {"yes": 0, "maybe": 0, "no": 0}),
+        }
+    return out
+
+
+def _fetch_reviewer_scores(
+    pairs: list[tuple[str, str]],
+) -> dict[tuple[str, str], float | None]:
+    """Back-compat: just the weighted score per app (omitting Nones), keyed
+    (track, application_id). Existing callers/tests rely on this shape."""
+    return {
+        key: v["score"]
+        for key, v in _fetch_review_stats(pairs).items()
+        if v["score"] is not None
+    }
+
+
+def reco_matches(reco: dict | None, want: str) -> bool:
+    """True iff at least one reviewer gave the `want` recommendation."""
+    return bool(reco) and reco.get(want, 0) > 0
 
 
 def _parse_exclude_status(exclude_status: Any) -> set[str]:
