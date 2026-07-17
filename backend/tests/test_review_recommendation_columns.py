@@ -222,3 +222,16 @@ def test_leadership_list_recommendation_filter(monkeypatch):
     ids = {a["id"] for a in res["applications"]}
     assert ids == {"A"}          # only app A has a YES
     assert res["total"] == 1
+
+
+def test_admin_pipeline_attaches_reviewers_and_reco(monkeypatch):
+    sb = _leadership_backend()  # reuse the seeded TIR apps + reviews/assignments
+    monkeypatch.setattr(admin_query, "get_admin_client", lambda: sb)
+    monkeypatch.setattr(applications_query, "get_admin_client", lambda: sb)
+    res = admin_query.fetch_pipeline({"track": "tir"})
+    by_id = {a["id"]: a for a in res["applications"]}
+    assert by_id["A"]["reviewers"] == {"submitted": 1, "assigned": 2}
+    assert by_id["A"]["reco"] == {"yes": 1, "maybe": 0, "no": 0}
+    assert by_id["A"]["reviewer_score"] == 8.0
+    assert by_id["B"]["reviewers"] == {"submitted": 1, "assigned": 1}
+    assert by_id["B"]["reco"] == {"yes": 0, "maybe": 0, "no": 1}

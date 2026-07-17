@@ -348,7 +348,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     decisions = _fetch_latest_decisions(pairs)
     meta = _fetch_admin_meta(pairs)
     batches = _fetch_batches(pairs)
-    reviewer_scores = _fetch_reviewer_scores(pairs)
+    review_stats = _fetch_review_stats(pairs)
     jury_metrics = _fetch_jury_v2_metrics(pairs)
 
     # Reviewer-flag aggregation: union of flags across all submitted reviews
@@ -481,7 +481,12 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
             "isArchived":       is_archived,
             "batch":            (batch_list[0]["name"] if batch_list else None),
             "batches":          batch_list,
-            "reviewer_score":   reviewer_scores.get(key),
+            "reviewer_score":   (review_stats.get(key) or {}).get("score"),
+            "reviewers":        {
+                                    "submitted": (review_stats.get(key) or {}).get("submitted", 0),
+                                    "assigned":  (review_stats.get(key) or {}).get("assigned", 0),
+                                } if review_stats.get(key) else None,
+            "reco":             (review_stats.get(key) or {}).get("reco"),
             "submitted_at":     r.get("submitted_at"),
             "flags":            flags_by_key.get(key, []),
             "moved_to_track":   r.get("moved_to_track"),
