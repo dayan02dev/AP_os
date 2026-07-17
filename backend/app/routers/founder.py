@@ -279,3 +279,19 @@ async def del_proc(row_id: str, ctx: Annotated[dict, Depends(require_founder_acc
     sb = get_admin_client()
     _owned_or_404(sb, "founder_procurement_items", row_id, ctx["application_id"])
     sb.table("founder_procurement_items").delete().eq("id", row_id).execute()
+
+
+@router.get("/expense")
+async def get_expense(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    return founder_query.expense_bundle(
+        ctx["application_id"], float(ctx["app"].get("grant_amount") or 0)
+    )
+
+
+@router.get("/dashboard")
+async def get_dashboard(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    mou_signed = founder_query.fetch_mou(ctx["application_id"]) is not None
+    return founder_query.dashboard_bundle(
+        ctx["application_id"], ctx["status"],
+        float(ctx["app"].get("grant_amount") or 0), mou_signed,
+    )

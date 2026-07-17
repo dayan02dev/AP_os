@@ -115,3 +115,37 @@ def test_cannot_edit_another_apps_row(client, monkeypatch, _clear):
     app.dependency_overrides[get_current_user] = _override_user("u1")
     r = client.patch("/founder/team/row-other", json={"monthly_cost": 1})
     assert r.status_code == 404
+
+
+def test_expense_bundle_totals_and_budget(client, monkeypatch, _clear):
+    _install(monkeypatch, {
+        "tir_applications": [{"id": "app1", "user_id": "u1", "status": "onboarded",
+                              "grant_amount": 2500000, "submitted_at": "2026-07-01"}],
+        "founder_bom_items": [{"id": "b1", "application_id": "app1", "qty": 6, "unit_cost": 8500}],
+        "founder_equipment_items": [{"id": "e1", "application_id": "app1", "cost": 220000}],
+        "founder_procurement_items": [
+            {"id": "p1", "application_id": "app1", "estimate": 8500, "quote": 8200, "status": "quoted"},
+            {"id": "p2", "application_id": "app1", "estimate": 15500, "quote": 0, "status": "estimate"},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    body = client.get("/founder/expense").json()
+    assert body["totals"]["bom_total"] == 51000
+    assert body["totals"]["equipment_total"] == 220000
+    assert body["budget_drawn"] == 8200          # only committed (quoted) counts
+    assert body["budget_pct"] == 0               # 8200 / 2.5M rounds to 0
+
+
+def test_dashboard_onboarding_pct(client, monkeypatch, _clear):
+    _install(monkeypatch, {
+        "tir_applications": [{"id": "app1", "user_id": "u1", "status": "onboarded",
+                              "grant_amount": 2500000, "submitted_at": "2026-07-01"}],
+        "founder_team_members": [{"id": "m1", "application_id": "app1", "monthly_cost": 180000}],
+        "founder_bom_items": [], "founder_equipment_items": [], "founder_procurement_items": [],
+        "founder_mou": [{"application_id": "app1", "signed_pdf_path": "x"}],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    body = client.get("/founder/dashboard").json()
+    assert body["onboarding_pct"] == 100
+    assert body["payroll_monthly"] == 180000
+    assert body["payroll_annual"] == 2160000

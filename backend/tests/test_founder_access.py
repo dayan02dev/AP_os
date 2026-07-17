@@ -22,8 +22,12 @@ def _override_user(user_id: str):
 
 def _install(monkeypatch, tables: dict) -> FakeSupabase:
     from app.routers import founder as founder_router
+    from app.services import founder_query
     fake = FakeSupabase(tables)
     monkeypatch.setattr(founder_router, "get_admin_client", lambda: fake)
+    # /founder/me (Task 8) also reads via founder_query.fetch_mou, which uses
+    # its own get_admin_client() reference — patch it too or it hits the network.
+    monkeypatch.setattr(founder_query, "get_admin_client", lambda: fake)
     return fake
 
 
