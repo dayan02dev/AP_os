@@ -90,6 +90,8 @@ export function adaptPipelineRow(row) {
     picks_ready: Boolean(row.picks_ready),
     gate2_decision: row.gate2_decision ?? null,
     recommendation: row.recommendation || null,
+    reviewers: row.reviewers || null,
+    reco: row.reco || null,
   };
 }
 
