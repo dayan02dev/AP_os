@@ -59,3 +59,8 @@ tiktoken<0.12
 
 # MOU signed-PDF generation (Founder Portal, Wave 1).
 reportlab==4.2.*
+# reportlab pulls Pillow; pin to the last version shipping a manylinux2014
+# (glibc 2.17) aarch64 wheel. Newer Pillow (12.x) publishes manylinux_2_28-only
+# wheels, which the SAM AL2 arm64 build container can't use → it falls back to
+# the sdist and the container build fails. Lift once SAM moves to AL2023.
+pillow==10.4.0
