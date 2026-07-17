@@ -33,3 +33,9 @@ def test_decode_signature_png_strips_data_url():
 def test_decode_signature_png_rejects_non_png():
     with pytest.raises(ValueError):
         founder_mou.decode_signature_png("data:image/gif;base64,AAAA")
+
+
+def test_decode_signature_png_accepts_uppercase_mime():
+    upper = _PNG.replace("image/png", "image/PNG")
+    raw = founder_mou.decode_signature_png(upper)
+    assert raw[:8] == b"\x89PNG\r\n\x1a\n"

@@ -41,7 +41,7 @@ def decode_signature_png(data_url: str) -> bytes:
     payload = data_url
     if data_url.startswith("data:"):
         header, _, b64 = data_url.partition(",")
-        if "image/png" not in header:
+        if "image/png" not in header.lower():
             raise ValueError("signature must be a PNG data URL")
         payload = b64
     raw = base64.b64decode(payload)
@@ -150,13 +150,26 @@ def sign_and_onboard(*, application_id: str, user_id: str, signer_name: str,
         "signed_pdf_path": pdf_path,
         "template_version": TEMPLATE_VERSION,
     }
-    sb.table("founder_mou").insert(row).execute()
+    try:
+        sb.table("founder_mou").insert(row).execute()
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 — unique-violation on concurrent double-submit
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail={"code": "mou_already_signed"},
+        ) from exc
 
-    # 3) ONLY NOW flip status (state machine validates offered→onboarded)
-    state_machine.apply_status_change(
-        application_id, "tir", to_status="onboarded",
-        changed_by=user_id, reason="MOU signed",
+    # 3) flip status only if still 'offered' (idempotent for already-onboarded apps)
+    current = (
+        sb.table("tir_applications").select("status")
+        .eq("id", application_id).limit(1).execute().data or []
     )
+    if current and current[0].get("status") == "offered":
+        state_machine.apply_status_change(
+            application_id, "tir", to_status="onboarded",
+            changed_by=user_id, reason="MOU signed",
+        )
     return row
 
 
