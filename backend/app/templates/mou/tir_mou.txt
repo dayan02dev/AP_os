@@ -1,0 +1,20 @@
+MEMORANDUM OF UNDERSTANDING — ARTPARK Technology Innovator in Residence
+
+Parties: ARTPARK (AI & Robotics Technology Park, IISc Bangalore) and {founder_name} ("the Innovator"), in respect of the venture "{venture}".
+
+1. Purpose. This MOU records the terms on which the Innovator joins the ARTPARK TIR residency.
+
+2. Term. Six (6) months from the commencement date, extendable by mutual agreement.
+
+3. Support & funding. ARTPARK will provide a non-dilutive first cheque of Rs. 25,00,000 to the Innovator, together with access to IISc laboratory, sensor and manufacturing infrastructure and a pod of technical mentors, on the terms described in the schedules to this MOU.
+
+4. Milestones & stage gates. The Innovator will work to the agreed evidence bar at each stage gate; mentor sign-off is required to draw successive funding tranches.
+
+5. Obligations of ARTPARK. ARTPARK will disburse funding in agreed tranches, provide access to facilities and mentors, and support the Innovator in preparing for follow-on investment and partnerships.
+
+6. Obligations of the Innovator. The Innovator will pursue the venture in good faith, maintain accurate expense and procurement records in the ARTPARK portal, and comply with lab and safety policies.
+
+7. Intellectual property. IP created by the Innovator remains with the Innovator, subject to the ESOP grant annexure and the schedules to this MOU.
+
+Signed by the Innovator: {founder_name}
+Date: {date}
