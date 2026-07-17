@@ -55,6 +55,7 @@ from .routers import (
     support,
     waitlist,
 )
+from .routers import founder as founder_router
 from .utils.logging import configure_logging, request_id_var
 from .utils.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
 from .utils.rate_limit import limiter
@@ -156,6 +157,7 @@ app.include_router(milestone_files.router)
 app.include_router(evidence_files.router)
 app.include_router(resume.router)
 app.include_router(application_templates.router)
+app.include_router(founder_router.router)
 # SIP track
 app.include_router(sip_applications.router)
 app.include_router(sip_milestone_files.router)
