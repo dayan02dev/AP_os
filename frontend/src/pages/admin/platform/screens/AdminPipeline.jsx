@@ -188,7 +188,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     );
   };
 
-  const hasFilters = search !== '' || track !== 'all' || status !== 'all' || industry !== 'all' || batchFilter !== 'all';
+  const hasFilters = search !== '' || track !== 'all' || status !== 'all' || industry !== 'all' || batchFilter !== 'all' || !!recoFilter;
   const clearAll = () => {
     setSearch('');
     setTrack('all');
@@ -306,6 +306,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   if (status !== 'all') activeChips.push({ label: 'Status · ' + ((STATUSES.find(x => x.id === status) || {}).label || status), clear: () => setStatus('all') });
   if (industry !== 'all') activeChips.push({ label: industry, clear: () => setIndustry('all') });
   if (batchFilter !== 'all') activeChips.push({ label: 'Batch · ' + batchFilter, clear: () => setBatchFilter('all') });
+  if (recoFilter) activeChips.push({ label: 'Reco · ' + recoFilter, clear: () => setRecoFilter(null) });
   const activeCount = activeChips.length;
 
   // ── Mutations ──────────────────────────────────────────────────────────────

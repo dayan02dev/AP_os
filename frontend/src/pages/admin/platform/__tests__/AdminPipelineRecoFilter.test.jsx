@@ -39,4 +39,12 @@ describe("AdminPipeline reco column + filter", () => {
     expect(screen.getByText("AppA")).toBeTruthy();
     expect(screen.queryByText("AppB")).not.toBeInTheDocument(); // AppB has no YES
   });
+
+  it("surfaces the applied reco filter as a removable active pill", () => {
+    render(<AdminPipeline goDetail={() => {}} decisionMode="reviewer" />);
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Yes\b/ }));
+    // Active-filter bar (gated by hasFilters/activeChips) now shows a Reco pill.
+    expect(screen.getByText(/Reco · yes/)).toBeTruthy();
+  });
 });
