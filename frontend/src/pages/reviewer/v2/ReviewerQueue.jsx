@@ -10,6 +10,7 @@
 import { useMemo, useState } from "react";
 import { LoadingState, ErrorState, Chip } from "./ui.jsx";
 import { relabelDisplayId, trackLabel } from "../../../lib/trackLabel.js";
+import { RecoBadge, RECO_LABEL } from "../../../components/RecoCell.jsx";
 
 // The queue is fetched once at the ReviewerPortal shell level and passed down
 // via `queueAsync` ({ data, loading, error, reload }) so the queue table and
@@ -20,6 +21,7 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
   const [statusFilter, setStatusFilter] = useState("all");
   const [stageFilter, setStageFilter] = useState("all");
   const [domainFilter, setDomainFilter] = useState(initialDomain);
+  const [recoFilter, setRecoFilter] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
 
   const [sortCol, setSortCol] = useState(null);
@@ -43,6 +45,7 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
     if (statusFilter !== "all" && s.reviewStatus !== statusFilter) return false;
     if (stageFilter !== "all" && s.stage !== stageFilter) return false;
     if (domainFilter !== "all" && s.industry !== domainFilter) return false;
+    if (recoFilter !== "all" && (s.myReco || "none") !== recoFilter) return false;
     return true;
   });
 
@@ -98,6 +101,13 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
         if (valA < valB) return sortAsc ? -1 : 1;
         if (valA > valB) return sortAsc ? 1 : -1;
         return 0;
+      } else if (sortCol === "myReco") {
+        const rank = { yes: 3, maybe: 2, no: 1 };
+        valA = rank[a.myReco] || 0;
+        valB = rank[b.myReco] || 0;
+        if (valA < valB) return sortAsc ? -1 : 1;
+        if (valA > valB) return sortAsc ? 1 : -1;
+        return 0;
       } else if (sortCol === "status") {
         valA = a.reviewStatus || "";
         valB = b.reviewStatus || "";
@@ -134,20 +144,27 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
     m[s.reviewStatus] = (m[s.reviewStatus] || 0) + 1;
     return m;
   }, {});
+  const recoCounts = allQueue.reduce((m, s) => {
+    const k = s.myReco || "none";
+    m[k] = (m[k] || 0) + 1;
+    return m;
+  }, {});
 
   const hasFilters =
-    search || track !== "all" || statusFilter !== "all" || stageFilter !== "all" || domainFilter !== "all";
+    search || track !== "all" || statusFilter !== "all" || stageFilter !== "all" || domainFilter !== "all" || recoFilter !== "all";
   const activeFilterCount =
     (track !== "all" ? 1 : 0) +
     (statusFilter !== "all" ? 1 : 0) +
     (stageFilter !== "all" ? 1 : 0) +
-    (domainFilter !== "all" ? 1 : 0);
+    (domainFilter !== "all" ? 1 : 0) +
+    (recoFilter !== "all" ? 1 : 0);
   const clearAll = () => {
     setSearch("");
     setTrack("all");
     setStatusFilter("all");
     setStageFilter("all");
     setDomainFilter("all");
+    setRecoFilter("all");
   };
 
   return (
@@ -246,6 +263,25 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
                 ))}
               </div>
             </div>
+
+            <div className="lp-filter-section">
+              <span className="lp-filter-label">MY RECO</span>
+              <div className="lp-filter-btns">
+                <button className={`lp-filter-btn${recoFilter === "all" ? " active" : ""}`} onClick={() => setRecoFilter("all")}>
+                  All
+                </button>
+                {["yes", "maybe", "no"].map((v) => (
+                  <button
+                    key={v}
+                    className={`lp-filter-btn${recoFilter === v ? " active" : ""}`}
+                    onClick={() => setRecoFilter(v)}
+                  >
+                    {RECO_LABEL[v].charAt(0) + RECO_LABEL[v].slice(1).toLowerCase()}
+                    <span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{recoCounts[v] || 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </>
         )}
       </div>
@@ -259,7 +295,8 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
               {renderHeader("Industry", "industry", false, { width: "16%" })}
               {renderHeader("Stage", "stage", false, { width: "9%" })}
               {renderHeader("AI Score", "ai", true, { width: "11%" })}
-              {renderHeader("My Score", "myScore", true, { width: "11%" })}
+              {renderHeader("My Score", "myScore", true, { width: "10%" })}
+              {renderHeader("My Reco", "myReco", false, { width: "8%" })}
               {renderHeader("Status", "status", false, { width: "10%" })}
               {renderHeader("ID", "id", false, { width: "5%" })}
             </tr>
@@ -321,6 +358,7 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
                     <span style={{ color: "var(--ink-dim)" }}>—</span>
                   )}
                 </td>
+                <td><RecoBadge value={s.myReco} /></td>
                 <td>
                   {s.reviewStatus === "submitted" && <Chip tone="green">Submitted</Chip>}
                   {s.reviewStatus === "draft" && <Chip tone="amber">Draft</Chip>}
@@ -331,21 +369,21 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
             ))}
             {loading && (
               <tr>
-                <td colSpan="8" style={{ padding: "40px 0" }}>
+                <td colSpan="9" style={{ padding: "40px 0" }}>
                   <LoadingState label="Loading your queue…" />
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr>
-                <td colSpan="8" style={{ padding: "40px 0" }}>
+                <td colSpan="9" style={{ padding: "40px 0" }}>
                   <ErrorState error={error} onRetry={reload} />
                 </td>
               </tr>
             )}
             {!loading && !error && filtered.length === 0 && (
               <tr>
-                <td colSpan="8" style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-dim)", fontSize: 13 }}>
+                <td colSpan="9" style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-dim)", fontSize: 13 }}>
                   {allQueue.length === 0 ? "No applications assigned." : "No startups match the current filters."}
                 </td>
               </tr>

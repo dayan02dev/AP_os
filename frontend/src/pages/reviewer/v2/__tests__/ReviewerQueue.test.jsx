@@ -65,3 +65,30 @@ describe("ReviewerQueue filters toggle", () => {
     expect(screen.getByText("STATUS")).toBeInTheDocument();
   });
 });
+
+describe("ReviewerQueue My Reco column + filter", () => {
+  const rows = [
+    { id: "a", applicationId: "TIR-1", track: "tir", name: "AppA", founders: [],
+      industry: "Robotics", stage: "Lab", ai: { overall: 7 }, myScore: 8, myReco: "yes", reviewStatus: "submitted", due: null },
+    { id: "b", applicationId: "TIR-2", track: "tir", name: "AppB", founders: [],
+      industry: "Robotics", stage: "Lab", ai: { overall: 5 }, myScore: 4, myReco: "no", reviewStatus: "submitted", due: null },
+    { id: "c", applicationId: "TIR-3", track: "tir", name: "AppC", founders: [],
+      industry: "Robotics", stage: "Lab", ai: { overall: 5 }, myScore: null, myReco: null, reviewStatus: "not-started", due: null },
+  ];
+  const mk = (data) => ({ data, loading: false, error: null, reload: () => {} });
+
+  it("renders a My Reco header and the reviewer's recommendation chips", () => {
+    render(<ReviewerQueue onOpen={() => {}} queueAsync={mk(rows)} />);
+    expect(screen.getByRole("columnheader", { name: /My Reco/i })).toBeTruthy();
+    expect(screen.getByText("YES")).toBeTruthy();
+    expect(screen.getByText("NO")).toBeTruthy();
+  });
+
+  it("filters the queue to a chosen recommendation", () => {
+    render(<ReviewerQueue onOpen={() => {}} queueAsync={mk(rows)} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Yes\b/ }));
+    expect(screen.getByText("AppA")).toBeTruthy();
+    expect(screen.queryByText("AppB")).not.toBeInTheDocument();
+  });
+});
