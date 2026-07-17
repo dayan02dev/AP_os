@@ -88,3 +88,30 @@ def test_me_reports_mou_signed_and_unlocked(client, monkeypatch, _clear):
     body = r.json()
     assert body["mou_signed"] is True
     assert body["locked"] == {"cohort": False, "dashboard": False}
+
+
+def test_team_crud_roundtrip(client, monkeypatch, _clear):
+    fake = _install(monkeypatch, {
+        "tir_applications": [{"id": "app1", "user_id": "u1", "status": "onboarded",
+                              "grant_amount": 2500000, "submitted_at": "2026-07-01"}],
+        "founder_team_members": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post("/founder/team", json={"name": "Arjun", "title": "CTO",
+                                           "employment_type": "full-time", "monthly_cost": 170000})
+    assert r.status_code == 200, r.text
+    rid = r.json()["id"]
+    assert client.get("/founder/team").json()[0]["name"] == "Arjun"
+    assert client.patch(f"/founder/team/{rid}", json={"monthly_cost": 175000}).status_code == 200
+    assert client.delete(f"/founder/team/{rid}").status_code == 204
+
+
+def test_cannot_edit_another_apps_row(client, monkeypatch, _clear):
+    _install(monkeypatch, {
+        "tir_applications": [{"id": "app1", "user_id": "u1", "status": "onboarded",
+                              "grant_amount": 2500000, "submitted_at": "2026-07-01"}],
+        "founder_team_members": [{"id": "row-other", "application_id": "app-OTHER", "name": "X"}],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.patch("/founder/team/row-other", json={"monthly_cost": 1})
+    assert r.status_code == 404

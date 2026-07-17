@@ -14,7 +14,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi import status as http_status
 
 from ..deps import get_current_user
-from ..models.founder import MouSignRequest
+from ..models.founder import (
+    ApproachIn,
+    BomItemIn,
+    BomItemPatch,
+    EquipmentItemIn,
+    EquipmentItemPatch,
+    MouSignRequest,
+    ProcurementItemIn,
+    ProcurementItemPatch,
+    TeamMemberIn,
+    TeamMemberPatch,
+)
 from ..services import founder_mou, founder_query
 from ..supabase_client import get_admin_client
 
@@ -143,3 +154,128 @@ async def mou_signed_url(ctx: Annotated[dict, Depends(require_founder_access)]) 
             detail={"code": "mou_not_signed"},
         )
     return {"url": url}
+
+
+def _owned_or_404(sb, table: str, row_id: str, application_id: str) -> dict:
+    rows = (
+        sb.table(table).select("*").eq("id", row_id)
+        .eq("application_id", application_id).limit(1).execute().data or []
+    )
+    if not rows:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                            detail={"code": "not_found"})
+    return rows[0]
+
+
+# ── Organization / team ───────────────────────────────────────────────────
+@router.get("/team")
+async def list_team(ctx: Annotated[dict, Depends(require_founder_access)]) -> list[dict]:
+    return founder_query.fetch_team(ctx["application_id"])
+
+
+@router.post("/team")
+async def add_team(body: TeamMemberIn, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    sb = get_admin_client()
+    row = {**body.model_dump(), "application_id": ctx["application_id"]}
+    return sb.table("founder_team_members").insert(row).execute().data[0]
+
+
+@router.patch("/team/{row_id}")
+async def edit_team(row_id: str, body: TeamMemberPatch,
+                    ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    sb = get_admin_client()
+    _owned_or_404(sb, "founder_team_members", row_id, ctx["application_id"])
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    return sb.table("founder_team_members").update(patch).eq("id", row_id).execute().data[0]
+
+
+@router.delete("/team/{row_id}", status_code=http_status.HTTP_204_NO_CONTENT, response_model=None)
+async def del_team(row_id: str, ctx: Annotated[dict, Depends(require_founder_access)]) -> None:
+    sb = get_admin_client()
+    _owned_or_404(sb, "founder_team_members", row_id, ctx["application_id"])
+    sb.table("founder_team_members").delete().eq("id", row_id).execute()
+
+
+# ── Approach (hats) — single upsert row ───────────────────────────────────
+@router.get("/approach")
+async def get_approach(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    return founder_query.fetch_approach(ctx["application_id"])
+
+
+@router.put("/approach")
+async def put_approach(body: ApproachIn, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    sb = get_admin_client()
+    row = {**body.model_dump(), "application_id": ctx["application_id"]}
+    return sb.table("founder_approach").upsert(row, on_conflict="application_id").execute().data[0]
+
+
+# ── BOM ───────────────────────────────────────────────────────────────────
+@router.post("/bom")
+async def add_bom(body: BomItemIn, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    sb = get_admin_client()
+    return sb.table("founder_bom_items").insert(
+        {**body.model_dump(), "application_id": ctx["application_id"]}).execute().data[0]
+
+
+@router.patch("/bom/{row_id}")
+async def edit_bom(row_id: str, body: BomItemPatch,
+                   ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    sb = get_admin_client()
+    _owned_or_404(sb, "founder_bom_items", row_id, ctx["application_id"])
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    return sb.table("founder_bom_items").update(patch).eq("id", row_id).execute().data[0]
+
+
+@router.delete("/bom/{row_id}", status_code=http_status.HTTP_204_NO_CONTENT, response_model=None)
+async def del_bom(row_id: str, ctx: Annotated[dict, Depends(require_founder_access)]) -> None:
+    sb = get_admin_client()
+    _owned_or_404(sb, "founder_bom_items", row_id, ctx["application_id"])
+    sb.table("founder_bom_items").delete().eq("id", row_id).execute()
+
+
+# ── Equipment ─────────────────────────────────────────────────────────────
+@router.post("/equipment")
+async def add_equipment(body: EquipmentItemIn, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    sb = get_admin_client()
+    return sb.table("founder_equipment_items").insert(
+        {**body.model_dump(), "application_id": ctx["application_id"]}).execute().data[0]
+
+
+@router.patch("/equipment/{row_id}")
+async def edit_equipment(row_id: str, body: EquipmentItemPatch,
+                         ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    sb = get_admin_client()
+    _owned_or_404(sb, "founder_equipment_items", row_id, ctx["application_id"])
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    return sb.table("founder_equipment_items").update(patch).eq("id", row_id).execute().data[0]
+
+
+@router.delete("/equipment/{row_id}", status_code=http_status.HTTP_204_NO_CONTENT, response_model=None)
+async def del_equipment(row_id: str, ctx: Annotated[dict, Depends(require_founder_access)]) -> None:
+    sb = get_admin_client()
+    _owned_or_404(sb, "founder_equipment_items", row_id, ctx["application_id"])
+    sb.table("founder_equipment_items").delete().eq("id", row_id).execute()
+
+
+# ── Procurement ───────────────────────────────────────────────────────────
+@router.post("/procurement")
+async def add_proc(body: ProcurementItemIn, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    sb = get_admin_client()
+    return sb.table("founder_procurement_items").insert(
+        {**body.model_dump(), "application_id": ctx["application_id"]}).execute().data[0]
+
+
+@router.patch("/procurement/{row_id}")
+async def edit_proc(row_id: str, body: ProcurementItemPatch,
+                    ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    sb = get_admin_client()
+    _owned_or_404(sb, "founder_procurement_items", row_id, ctx["application_id"])
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    return sb.table("founder_procurement_items").update(patch).eq("id", row_id).execute().data[0]
+
+
+@router.delete("/procurement/{row_id}", status_code=http_status.HTTP_204_NO_CONTENT, response_model=None)
+async def del_proc(row_id: str, ctx: Annotated[dict, Depends(require_founder_access)]) -> None:
+    sb = get_admin_client()
+    _owned_or_404(sb, "founder_procurement_items", row_id, ctx["application_id"])
+    sb.table("founder_procurement_items").delete().eq("id", row_id).execute()
