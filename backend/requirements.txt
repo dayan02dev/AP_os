@@ -56,3 +56,6 @@ langchain-openai==0.2.*
 # that satisfies the AL2 toolchain. Lift the cap once SAM moves
 # to an AL2023 build container or tiktoken adds manylinux2014.
 tiktoken<0.12
+
+# MOU signed-PDF generation (Founder Portal, Wave 1).
+reportlab==4.2.*
