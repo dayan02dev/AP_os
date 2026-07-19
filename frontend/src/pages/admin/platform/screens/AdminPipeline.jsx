@@ -26,7 +26,7 @@ import { Chip } from "../ui.jsx";
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
 import { relabelDisplayId, trackLabel } from "../../../../lib/trackLabel.js";
 import { chipLabel, chipStatusId, chipTone } from "../../../../lib/adminDataAdapter";
-import { RecoCell } from "../../../../components/RecoCell";
+import { RecoCell, aggregateReco } from "../../../../components/RecoCell";
 
 // Real industry chip counts from the loaded pipeline rows, scoped to the
 // selected track. Excludes hidden/archived rows and rows without an industry
@@ -134,10 +134,8 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   const [recoFilter, setRecoFilter] = React.useState(null);
   const industries = React.useMemo(() => industryCountsFor(S, track), [S, track]);
   const recoCounts = React.useMemo(() => {
-    const m = { yes: 0, maybe: 0, no: 0 };
-    S.forEach((s) => {
-      if (s.reco) ["yes", "maybe", "no"].forEach((k) => { if (s.reco[k] > 0) m[k] += 1; });
-    });
+    const m = { yes: 0, maybe: 0, no: 0, none: 0 };
+    S.forEach((s) => { m[aggregateReco(s.reco) || "none"] += 1; });
     return m;
   }, [S]);
   const [filtersOpen, setFiltersOpen] = React.useState(false);
@@ -244,7 +242,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       if ((s.domain || '') !== industry) return false;
     }
 
-    if (recoFilter && !(s.reco && s.reco[recoFilter] > 0)) return false;
+    if (recoFilter && (aggregateReco(s.reco) || "none") !== recoFilter) return false;
 
     return true;
   }), [S, search, track, status, industry, batchFilter, recoFilter, decisionMode]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -306,7 +304,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   if (status !== 'all') activeChips.push({ label: 'Status · ' + ((STATUSES.find(x => x.id === status) || {}).label || status), clear: () => setStatus('all') });
   if (industry !== 'all') activeChips.push({ label: industry, clear: () => setIndustry('all') });
   if (batchFilter !== 'all') activeChips.push({ label: 'Batch · ' + batchFilter, clear: () => setBatchFilter('all') });
-  if (recoFilter) activeChips.push({ label: 'Reco · ' + recoFilter, clear: () => setRecoFilter(null) });
+  if (recoFilter) activeChips.push({ label: 'Reco · ' + (recoFilter === 'none' ? '—' : recoFilter), clear: () => setRecoFilter(null) });
   const activeCount = activeChips.length;
 
   // ── Mutations ──────────────────────────────────────────────────────────────
@@ -947,7 +945,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
               <span className="lp-filter-label">RECOMMENDATION</span>
               <div className="lp-filter-btns">
                 <button className={`lp-filter-btn${!recoFilter ? " active" : ""}`} onClick={() => setRecoFilter(null)}>All</button>
-                {[["yes", "Yes"], ["maybe", "Maybe"], ["no", "No"]].map(([v, label]) => (
+                {[["yes", "Yes"], ["maybe", "Maybe"], ["no", "No"], ["none", "—"]].map(([v, label]) => (
                   <button key={v} className={`lp-filter-btn${recoFilter === v ? " active" : ""}`}
                     onClick={() => setRecoFilter(recoFilter === v ? null : v)}>
                     {label}<span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{recoCounts[v]}</span>
@@ -1107,7 +1105,10 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                     ? <span className="os-mono">{s.reviewers.submitted} / {s.reviewers.assigned}</span>
                     : <span className="os-text-soft">—</span>}
                 </td>
-                <td><RecoCell reco={s.reco} /></td>
+                <td onClick={e => e.stopPropagation()}>
+                  <RecoCell reco={s.reco}
+                    onSelect={(v) => setRecoFilter((prev) => (prev === v ? null : v))} />
+                </td>
                 <td>
                   <Chip tone={getChipTone(s)}>{getFriendlyStatus(s).toUpperCase()}</Chip>
                 </td>

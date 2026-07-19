@@ -25,26 +25,46 @@ vi.mock("../../../../hooks/useAdminData", () => ({
 import { AdminPipeline } from "../screens/AdminPipeline.jsx";
 
 describe("AdminPipeline reco column + filter", () => {
-  it("shows the Reviewers + Reco columns", () => {
+  it("shows the Reviewers column and ONE aggregate reco chip per row", () => {
     render(<AdminPipeline goDetail={() => {}} decisionMode="reviewer" />);
     expect(screen.getByText("2 / 3")).toBeTruthy();
-    expect(screen.getByText("2Y")).toBeTruthy();
+    expect(screen.getByText("YES")).toBeTruthy();   // A: 2Y1N -> majority yes
+    expect(screen.getByText("NO")).toBeTruthy();    // B: 1N unanimous
+    expect(screen.queryByText("2Y")).not.toBeInTheDocument();
   });
 
-  it("filters to a chosen recommendation (>=1 semantics)", () => {
-    // AppA reco {yes:2,no:1}; AppB reco {no:1}. Filtering by "Yes" keeps only AppA.
+  it("filters by AGGREGATE verdict from the panel", () => {
+    // A verdict=yes, B verdict=no. Panel "Yes" keeps only A.
     render(<AdminPipeline goDetail={() => {}} decisionMode="reviewer" />);
     fireEvent.click(screen.getByRole("button", { name: /^Filters/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Yes\b/ }));
     expect(screen.getByText("AppA")).toBeTruthy();
-    expect(screen.queryByText("AppB")).not.toBeInTheDocument(); // AppB has no YES
+    expect(screen.queryByText("AppB")).not.toBeInTheDocument();
+  });
+
+  it("clicking a reco cell applies that verdict filter (and clicking again clears it)", () => {
+    render(<AdminPipeline goDetail={() => {}} decisionMode="reviewer" />);
+    fireEvent.click(screen.getByRole("button", { name: /Filter by reco: no/i }));
+    expect(screen.getByText("AppB")).toBeTruthy();
+    expect(screen.queryByText("AppA")).not.toBeInTheDocument();
+    // toggle off: the surviving row's cell is the same button
+    fireEvent.click(screen.getByRole("button", { name: /Filter by reco: no/i }));
+    expect(screen.getByText("AppA")).toBeTruthy();
+  });
+
+  it("the — panel bucket filters apps with no reviews", () => {
+    render(<AdminPipeline goDetail={() => {}} decisionMode="reviewer" />);
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^—/ }));
+    // Neither mock row lacks reviews -> empty table
+    expect(screen.queryByText("AppA")).not.toBeInTheDocument();
+    expect(screen.queryByText("AppB")).not.toBeInTheDocument();
   });
 
   it("surfaces the applied reco filter as a removable active pill", () => {
     render(<AdminPipeline goDetail={() => {}} decisionMode="reviewer" />);
     fireEvent.click(screen.getByRole("button", { name: /^Filters/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Yes\b/ }));
-    // Active-filter bar (gated by hasFilters/activeChips) now shows a Reco pill.
     expect(screen.getByText(/Reco · yes/)).toBeTruthy();
   });
 });
