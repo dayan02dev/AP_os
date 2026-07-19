@@ -294,9 +294,25 @@ def _fetch_reviewer_scores(
     }
 
 
-def reco_matches(reco: dict | None, want: str) -> bool:
-    """True iff at least one reviewer gave the `want` recommendation."""
-    return bool(reco) and reco.get(want, 0) > 0
+def reco_verdict(reco: dict | None) -> str | None:
+    """Aggregate a {yes,maybe,no} submitted-review tally into one verdict.
+
+    Mirrors frontend RecoCell.aggregateReco — keep the two in sync.
+    Strict majority (> half of all submitted reviews) -> "yes"/"no";
+    anything else with >=1 review -> "maybe"; no reviews -> None.
+    """
+    t = reco or {}
+    yes = int(t.get("yes") or 0)
+    maybe = int(t.get("maybe") or 0)
+    no = int(t.get("no") or 0)
+    total = yes + maybe + no
+    if total == 0:
+        return None
+    if yes * 2 > total:
+        return "yes"
+    if no * 2 > total:
+        return "no"
+    return "maybe"
 
 
 def _parse_exclude_status(exclude_status: Any) -> set[str]:

@@ -1,6 +1,6 @@
 """Tests for the review-recommendation columns feature (2026-07-17).
 
-Covers the shared _fetch_review_stats aggregator, the reco_matches filter
+Covers the shared _fetch_review_stats aggregator, the reco_verdict aggregate
 helper, the _fetch_reviewer_scores back-compat wrapper, the admin pipeline +
 leadership list field attachment/filtering, and the reviewer queue myReco.
 """
@@ -111,12 +111,17 @@ def test_review_stats_omits_apps_with_no_reviews_or_assignments(monkeypatch):
     assert ("tir", "ZZZ") not in out
 
 
-def test_reco_matches_semantics():
-    assert admin_query.reco_matches({"yes": 2, "maybe": 0, "no": 1}, "yes") is True
-    assert admin_query.reco_matches({"yes": 2, "maybe": 0, "no": 1}, "no") is True
-    assert admin_query.reco_matches({"yes": 2, "maybe": 0, "no": 1}, "maybe") is False
-    assert admin_query.reco_matches(None, "yes") is False
-    assert admin_query.reco_matches({}, "yes") is False
+def test_reco_verdict_semantics():
+    v = admin_query.reco_verdict
+    assert v({"yes": 4, "maybe": 1, "no": 0}) == "yes"    # majority beats a maybe
+    assert v({"yes": 3, "maybe": 2, "no": 0}) == "yes"
+    assert v({"yes": 2, "maybe": 1, "no": 0}) == "yes"
+    assert v({"yes": 2, "maybe": 1, "no": 2}) == "maybe"  # no majority
+    assert v({"yes": 1, "maybe": 0, "no": 1}) == "maybe"  # tie
+    assert v({"yes": 1, "maybe": 0, "no": 2}) == "no"
+    assert v({"yes": 0, "maybe": 1, "no": 0}) == "maybe"
+    assert v(None) is None                                 # no reviews -> None ("—")
+    assert v({}) is None
 
 
 def test_reviewer_scores_wrapper_backcompat(monkeypatch):
@@ -215,12 +220,30 @@ def test_leadership_list_attaches_reviewers_and_reco(monkeypatch):
     assert by_id["B"]["reco"] == {"yes": 0, "maybe": 0, "no": 1}
 
 
-def test_leadership_list_recommendation_filter(monkeypatch):
+def test_leadership_list_recommendation_filter_aggregate(monkeypatch):
+    # A: 1 yes (unanimous -> "yes"); B: 1 no (unanimous -> "no").
     sb = _leadership_backend()
     lr = _patch_leadership(monkeypatch, sb)
     res = asyncio.run(lr.list_applications(track="tir", recommendation="yes"))
     ids = {a["id"] for a in res["applications"]}
-    assert ids == {"A"}          # only app A has a YES
+    assert ids == {"A"}
+    assert res["total"] == 1
+
+    res = asyncio.run(lr.list_applications(track="tir", recommendation="no"))
+    assert {a["id"] for a in res["applications"]} == {"B"}
+
+
+def test_leadership_list_recommendation_none_matches_unreviewed(monkeypatch):
+    # App C has no reviews at all -> verdict None -> matched by "none".
+    sb = _leadership_backend()
+    sb.tables["tir_applications"].append(
+        {"id": "C", "track": "tir", "status": "under_review", "display_seq": 26003,
+         "basic_full_name": "Cara V", "basic_org": "Gamma", "basic_email": "c@x.io",
+         "submitted_at": "2026-07-03T00:00:00Z"})
+    lr = _patch_leadership(monkeypatch, sb)
+    res = asyncio.run(lr.list_applications(track="tir", recommendation="none"))
+    ids = {a["id"] for a in res["applications"]}
+    assert ids == {"C"}
     assert res["total"] == 1
 
 

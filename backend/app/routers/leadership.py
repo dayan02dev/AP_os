@@ -170,7 +170,7 @@ async def list_applications(
     ai_score_max: float | None = Query(default=None),
     ai_score_bucket: int | None = Query(default=None, ge=0, le=9),
     search: str | None = Query(default=None),
-    recommendation: str | None = Query(default=None, pattern="^(yes|maybe|no)$"),
+    recommendation: str | None = Query(default=None, pattern="^(yes|maybe|no|none)$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
@@ -247,14 +247,15 @@ async def list_applications(
             kept.append(r)
         rows = kept
 
-    # ─ 3b. Recommendation filter (≥1 reviewer gave `recommendation`) ────
+    # ─ 3b. Recommendation filter (aggregate verdict == `recommendation`;
+    #      "none" matches apps with no submitted reviews) ────────────────
     if recommendation:
+        want = None if recommendation == "none" else recommendation
         rows = [
             r for r in rows
-            if admin_query.reco_matches(
-                (review_stats.get((r["track"], r["id"])) or {}).get("reco"),
-                recommendation,
-            )
+            if admin_query.reco_verdict(
+                (review_stats.get((r["track"], r["id"])) or {}).get("reco")
+            ) == want
         ]
 
     # ─ 4. Total = post-filter, pre-pagination count ─────────────────────
