@@ -1,12 +1,12 @@
 // Concise reviewer-recommendation cell for the staff pipeline tables (leadership,
 // admin) plus a single-value badge for the reviewer queue's "My Reco".
-//   RecoCell  — a {yes,maybe,no} tally → one chip when unanimous, "2Y 1N" when mixed, "—" when empty.
+//   RecoCell  — a {yes,maybe,no} tally → ONE aggregate verdict chip (majority wins;
+//               "—" when no reviews); optional onSelect turns it into a filter button.
 //   RecoBadge — a single "yes"|"maybe"|"no" value → one chip, or "—" when null.
 import React from "react";
 
 export const RECO_ORDER = ["yes", "maybe", "no"];
 export const RECO_LABEL = { yes: "YES", maybe: "MAYBE", no: "NO" };
-export const RECO_LETTER = { yes: "Y", maybe: "M", no: "N" };
 export const RECO_COLOR = { yes: "#1a7f4b", maybe: "#a86b00", no: "#b42318" };
 
 // Mirrors backend admin_query.reco_verdict — keep the two in sync.
@@ -44,20 +44,21 @@ export function RecoBadge({ value }) {
   return <span style={chipStyle(RECO_COLOR[value])}>{RECO_LABEL[value]}</span>;
 }
 
-export function RecoCell({ reco }) {
-  const t = reco || {};
-  const parts = RECO_ORDER
-    .map((k) => ({ key: k, n: Number(t[k] || 0) }))
-    .filter((p) => p.n > 0);
-  if (parts.length === 0) return <Dash />;
-  if (parts.length === 1) return <RecoBadge value={parts[0].key} />;
+export function RecoCell({ reco, onSelect }) {
+  const verdict = aggregateReco(reco);
+  const title = recoTitle(reco) || undefined;
+  const content = verdict
+    ? <span title={title} style={chipStyle(RECO_COLOR[verdict])}>{RECO_LABEL[verdict]}</span>
+    : <Dash />;
+  if (!onSelect) return content;
   return (
-    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-      {parts.map((p) => (
-        <span key={p.key} style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: RECO_COLOR[p.key] }}>
-          {p.n}{RECO_LETTER[p.key]}
-        </span>
-      ))}
-    </span>
+    <button
+      type="button"
+      aria-label={`Filter by reco: ${verdict || "none"}`}
+      onClick={(e) => { e.stopPropagation(); onSelect(verdict || "none"); }}
+      style={{ background: "none", border: 0, padding: 0, cursor: "pointer", font: "inherit" }}
+    >
+      {content}
+    </button>
   );
 }

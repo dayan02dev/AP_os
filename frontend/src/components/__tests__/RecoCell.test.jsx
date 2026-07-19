@@ -1,21 +1,43 @@
 import React from "react";
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { RecoCell, RecoBadge, aggregateReco, recoTitle } from "../RecoCell.jsx";
 
 describe("RecoCell", () => {
+  const wrap = (ui) => render(<table><tbody><tr><td>{ui}</td></tr></tbody></table>);
+
   it("renders a dash for no reviews", () => {
-    render(<table><tbody><tr><td><RecoCell reco={{ yes: 0, maybe: 0, no: 0 }} /></td></tr></tbody></table>);
+    wrap(<RecoCell reco={{ yes: 0, maybe: 0, no: 0 }} />);
     expect(screen.getByText("—")).toBeTruthy();
   });
-  it("renders a single chip when unanimous", () => {
-    render(<table><tbody><tr><td><RecoCell reco={{ yes: 3, maybe: 0, no: 0 }} /></td></tr></tbody></table>);
+  it("renders ONE aggregate chip for a mixed tally (majority wins)", () => {
+    wrap(<RecoCell reco={{ yes: 2, maybe: 0, no: 1 }} />);
     expect(screen.getByText("YES")).toBeTruthy();
+    expect(screen.queryByText("2Y")).not.toBeInTheDocument();
   });
-  it("renders a compact tally when reviewers differ", () => {
-    render(<table><tbody><tr><td><RecoCell reco={{ yes: 2, maybe: 0, no: 1 }} /></td></tr></tbody></table>);
-    expect(screen.getByText("2Y")).toBeTruthy();
-    expect(screen.getByText("1N")).toBeTruthy();
+  it("renders MAYBE when there is no majority", () => {
+    wrap(<RecoCell reco={{ yes: 1, maybe: 0, no: 1 }} />);
+    expect(screen.getByText("MAYBE")).toBeTruthy();
+  });
+  it("exposes the vote breakdown as a tooltip", () => {
+    wrap(<RecoCell reco={{ yes: 2, maybe: 0, no: 1 }} />);
+    expect(screen.getByTitle("2 yes · 1 no")).toBeTruthy();
+  });
+  it("calls onSelect with the verdict when clicked", () => {
+    const onSelect = vi.fn();
+    wrap(<RecoCell reco={{ yes: 2, maybe: 0, no: 1 }} onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole("button", { name: /Filter by reco: yes/i }));
+    expect(onSelect).toHaveBeenCalledWith("yes");
+  });
+  it("calls onSelect with 'none' when the dash cell is clicked", () => {
+    const onSelect = vi.fn();
+    wrap(<RecoCell reco={{ yes: 0, maybe: 0, no: 0 }} onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole("button", { name: /Filter by reco: none/i }));
+    expect(onSelect).toHaveBeenCalledWith("none");
+  });
+  it("is inert without onSelect (no button role)", () => {
+    wrap(<RecoCell reco={{ yes: 2, maybe: 0, no: 1 }} />);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });
 
