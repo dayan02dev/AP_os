@@ -1086,7 +1086,7 @@ export default function LeadershipDashboard() {
               <div className="filter-chips">
                 <button type="button" className={`chip${!recoFilter ? " active" : ""}`}
                   onClick={() => { setRecoFilter(null); setOffset(0); }}>All</button>
-                {[["yes", "Yes"], ["maybe", "Maybe"], ["no", "No"]].map(([v, label]) => (
+                {[["yes", "Yes"], ["maybe", "Maybe"], ["no", "No"], ["none", "—"]].map(([v, label]) => (
                   <button key={v} type="button" className={`chip${recoFilter === v ? " active" : ""}`}
                     onClick={() => { setRecoFilter(recoFilter === v ? null : v); setOffset(0); }}>{label}</button>
                 ))}
@@ -1186,7 +1186,10 @@ export default function LeadershipDashboard() {
                           ? <span style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}>{a.reviewers.submitted} / {a.reviewers.assigned}</span>
                           : <span style={{ color: "var(--ink-dim)" }}>—</span>}
                       </td>
-                      <td><RecoCell reco={a.reco} /></td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <RecoCell reco={a.reco}
+                          onSelect={(v) => { setRecoFilter(recoFilter === v ? null : v); setOffset(0); }} />
+                      </td>
                       <td>
                         <StatusCell
                           statusId={a.status}

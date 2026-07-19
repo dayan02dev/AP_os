@@ -32,13 +32,32 @@ import LeadershipDashboard from "../LeadershipDashboard.jsx";
 describe("Leadership Reviewers + Reco columns", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("renders Reviewers (submitted/assigned) and a Reco tally", async () => {
+  it("renders Reviewers (submitted/assigned) and ONE aggregate Reco chip", async () => {
     render(<MemoryRouter><LeadershipDashboard /></MemoryRouter>);
-    // Default view is "dashboard"; the applications table renders only under the
-    // Applications tab (view === "applications"). Click it to reveal the table.
     fireEvent.click(screen.getByRole("button", { name: /Applications/i }));
     await waitFor(() => expect(screen.getByText("2 / 3")).toBeTruthy());
-    expect(screen.getByText("2Y")).toBeTruthy();
-    expect(screen.getByText("1N")).toBeTruthy();
+    expect(screen.getByText("YES")).toBeTruthy();       // 2Y1N -> majority yes
+    expect(screen.queryByText("2Y")).not.toBeInTheDocument();
+  });
+
+  it("clicking the reco cell requests that verdict from the API", async () => {
+    const { leadershipApi } = await import("../../../lib/leadershipApi.js");
+    render(<MemoryRouter><LeadershipDashboard /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: /Applications/i }));
+    await waitFor(() => expect(screen.getByText("YES")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Filter by reco: yes/i }));
+    await waitFor(() => {
+      const calls = leadershipApi.listApplications.mock.calls;
+      expect(calls[calls.length - 1][0]).toMatchObject({ recommendation: "yes", offset: 0 });
+    });
+  });
+
+  it("offers a — bucket in the Recommendation filter chips", async () => {
+    render(<MemoryRouter><LeadershipDashboard /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: /Applications/i }));
+    await waitFor(() => expect(screen.getByText("YES")).toBeTruthy());
+    // The Recommendation chip row lives inside the collapsible Filters panel.
+    fireEvent.click(screen.getByRole("button", { name: /Filters/i }));
+    expect(screen.getAllByRole("button", { name: "—" }).length).toBeGreaterThan(0);
   });
 });
