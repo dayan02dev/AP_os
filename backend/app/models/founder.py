@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-EmploymentType = Literal["full-time", "contract", "intern"]
+EmploymentType = Literal["full-time", "part-time", "contract", "advisor", "intern"]
 ProcurementStatus = Literal["estimate", "quoted", "po", "received"]
 ProcurementCategory = Literal["BOM", "Equipment", "Other", "Service"]
 

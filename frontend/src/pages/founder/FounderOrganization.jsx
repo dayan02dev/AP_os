@@ -238,8 +238,9 @@ function TeamStep({ team, onAdd, onChange, onRemove, onNext }) {
                 onChange={(e) => onChange(m.id, "employment_type", e.target.value)}
               >
                 <option value="full-time">Full-time</option>
+                <option value="part-time">Part-time</option>
                 <option value="contract">Contract</option>
-                <option value="intern">Intern</option>
+                <option value="advisor">Advisor</option>
               </select>
             </div>
             <div className="fj-gt-money">

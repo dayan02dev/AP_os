@@ -59,3 +59,12 @@ create table if not exists public.founder_review (
   updated_at      timestamptz not null default now()
 );
 alter table public.founder_review enable row level security;
+
+-- Widen team employment_type to the 4 values the design uses (Full-time /
+-- Part-time / Contract / Advisor); keep 'intern' for back-compat with any
+-- existing 037-era rows. Additive.
+alter table public.founder_team_members
+  drop constraint if exists founder_team_members_employment_type_check;
+alter table public.founder_team_members
+  add constraint founder_team_members_employment_type_check
+  check (employment_type in ('full-time','part-time','contract','advisor','intern'));
