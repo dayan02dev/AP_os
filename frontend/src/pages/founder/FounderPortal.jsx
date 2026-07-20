@@ -35,11 +35,11 @@ const NAV = [
     { sec: "dashboard", num: "•", label: "Process dashboard", to: "/founder/dashboard" },
   ]},
   { group: "Founders resources", items: [
-    { sec: "store", num: "01", label: "Procurement store", to: "/founder/store" },
-    { sec: "fundraising", num: "02", label: "Fundraising & connects", to: "/founder/fundraising" },
-    { sec: "partners", num: "03", label: "Corporate partners", to: "/founder/partners" },
-    { sec: "assets", num: "04", label: "Book ARTPARK assets", to: "/founder/assets" },
-    { sec: "support", num: "05", label: "IT & Facilities support", to: "/founder/support" },
+    { sec: "store", num: "01", label: "Art Infra", to: "/founder/store" },
+    { sec: "fundraising", num: "02", label: "ArtConnect", to: "/founder/fundraising" },
+    { sec: "partners", num: "03", label: "ArtPartners", to: "/founder/partners" },
+    { sec: "assets", num: "04", label: "Art Assets", to: "/founder/assets" },
+    { sec: "support", num: "05", label: "Art Support", to: "/founder/support" },
   ]},
 ];
 
