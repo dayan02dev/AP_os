@@ -105,6 +105,7 @@ def expense_bundle(application_id: str, grant: float) -> dict:
     equip = fetch_equipment(application_id)
     proc = fetch_procurement(application_id)
     drawn = proc_committed(proc)
+    open_count = sum(1 for p in proc if p.get("status") not in _COMMITTED)
     return {
         "bom": bom,
         "equipment": equip,
@@ -116,6 +117,9 @@ def expense_bundle(application_id: str, grant: float) -> dict:
             "proc_estimate": proc_estimate(proc),
             "proc_quoted": proc_quoted(proc),
             "proc_committed": drawn,
+            "proc_open_count": open_count,
+            "proc_committed_count": len(proc) - open_count,
+            "proc_variance": proc_quoted(proc) - proc_estimate(proc),
         },
         "grant_amount": grant,
         "budget_drawn": drawn,
