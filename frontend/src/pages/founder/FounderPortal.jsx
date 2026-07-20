@@ -10,6 +10,11 @@ import FounderOrganization from "./FounderOrganization.jsx";
 import FounderExpense from "./FounderExpense.jsx";
 import FounderDashboard from "./FounderDashboard.jsx";
 import FounderLocked from "./FounderLocked.jsx";
+import FounderStore from "./FounderStore.jsx";
+import FounderFundraising from "./FounderFundraising.jsx";
+import FounderPartners from "./FounderPartners.jsx";
+import FounderAssets from "./FounderAssets.jsx";
+import FounderSupport from "./FounderSupport.jsx";
 import "../../styles/founder-portal.css";
 
 // Founder nav — grafted onto the applicant `.eir-os-side` sidebar language so
@@ -28,6 +33,13 @@ const NAV = [
   ]},
   { group: "Dashboard reporting", locked: "dashboard", items: [
     { sec: "dashboard", num: "•", label: "Process dashboard", to: "/founder/dashboard" },
+  ]},
+  { group: "Founders resources", items: [
+    { sec: "store", num: "01", label: "Procurement store", to: "/founder/store" },
+    { sec: "fundraising", num: "02", label: "Fundraising & connects", to: "/founder/fundraising" },
+    { sec: "partners", num: "03", label: "Corporate partners", to: "/founder/partners" },
+    { sec: "assets", num: "04", label: "Book ARTPARK assets", to: "/founder/assets" },
+    { sec: "support", num: "05", label: "IT & Facilities support", to: "/founder/support" },
   ]},
 ];
 
@@ -180,6 +192,11 @@ export default function FounderPortal({ tab = "application" }) {
       case "org": return <FounderOrganization />;
       case "expense": return <FounderExpense />;
       case "dashboard": return <FounderDashboard />;
+      case "store": return <FounderStore />;
+      case "fundraising": return <FounderFundraising />;
+      case "partners": return <FounderPartners />;
+      case "assets": return <FounderAssets />;
+      case "support": return <FounderSupport />;
       default: return <FounderApplication me={me} />;
     }
   };

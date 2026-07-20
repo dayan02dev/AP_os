@@ -368,13 +368,20 @@ export default function AppRoutes() {
       {/* Founder Portal (post-onboarding). Auth-gated only — FounderRoute
           wraps ProtectedRoute internally; the server `/founder/me` 403 is the
           real access gate, shown inside FounderPortal. Deep-linkable:
-          /founder (application) · mou · approach · org · expense · dashboard. */}
+          /founder (application) · mou · approach · org · expense · dashboard ·
+          store · fundraising · partners · assets · support. */}
       <Route path="/founder" element={<FounderRoute tab="application" />} />
       <Route path="/founder/mou" element={<FounderRoute tab="mou" />} />
       <Route path="/founder/approach" element={<FounderRoute tab="approach" />} />
       <Route path="/founder/org" element={<FounderRoute tab="org" />} />
       <Route path="/founder/expense" element={<FounderRoute tab="expense" />} />
       <Route path="/founder/dashboard" element={<FounderRoute tab="dashboard" />} />
+      {/* Founders resources — not MOU-gated, available once in the portal. */}
+      <Route path="/founder/store" element={<FounderRoute tab="store" />} />
+      <Route path="/founder/fundraising" element={<FounderRoute tab="fundraising" />} />
+      <Route path="/founder/partners" element={<FounderRoute tab="partners" />} />
+      <Route path="/founder/assets" element={<FounderRoute tab="assets" />} />
+      <Route path="/founder/support" element={<FounderRoute tab="support" />} />
 
       {/* Legacy admin user-management shell (Session 3). Gated to `manage_users`.
           Kept intact under /admin/users* so user CRUD is unaffected.
