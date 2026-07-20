@@ -1148,3 +1148,61 @@
   .founder-portal .fj-hats-grid { grid-template-columns: 1fr; }
   .founder-portal .fj-proc-tiles { grid-template-columns: 1fr 1fr; }
 }
+
+/* ======================================================================
+   Residency dashboard (FounderDashboard.jsx / CR-FE3). Ported 1:1 from
+   TIR Onboarding.dc.html's showDashboard block's inline styles. */
+.founder-portal .fj-dash { max-width: 1000px; display: flex; flex-direction: column; }
+.founder-portal .fj-dash-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+.founder-portal .fj-dash-header .fj-h1 { margin: 16px 0 0; font-size: 38px; line-height: 1.12; }
+.founder-portal .fj-dash-sub { font-size: 14px; color: var(--ink-soft); margin-top: 6px; }
+.founder-portal .fj-dash-week { text-align: right; }
+.founder-portal .fj-dash-week-label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; color: var(--artblue); text-transform: uppercase; font-weight: 700; }
+.founder-portal .fj-dash-week-sub { font-size: 13px; color: var(--ink-dim); }
+
+.founder-portal .fj-dash-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 34px; }
+
+.founder-portal .fj-dash-two { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; margin-top: 20px; }
+.founder-portal .fj-dash-card { padding: 24px 26px; border-color: var(--line); margin-top: 20px; }
+.founder-portal .fj-dash-two .fj-dash-card { margin-top: 0; }
+.founder-portal .fj-dash-card-title { font-family: var(--font-display); font-weight: 700; font-size: 17px; margin-bottom: 16px; }
+.founder-portal .fj-dash-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.founder-portal .fj-dash-card-head .fj-dash-card-title { margin-bottom: 0; }
+.founder-portal .fj-dash-link { font-size: 13px; color: var(--artblue); text-decoration: none; font-weight: 600; }
+.founder-portal .fj-dash-link:hover { text-decoration: underline; }
+
+.founder-portal .fj-dash-exp-list { display: flex; flex-direction: column; }
+.founder-portal .fj-dash-exp-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.founder-portal .fj-dash-exp-row:last-child { border-bottom: none; }
+.founder-portal .fj-dash-exp-dot { width: 9px; height: 9px; border-radius: 999px; flex: none; }
+.founder-portal .fj-dash-exp-short { flex: 1; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.founder-portal .fj-dash-exp-status { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-soft); white-space: nowrap; }
+.founder-portal .fj-dash-exp-range { font-size: 12px; color: var(--ink-dim); white-space: nowrap; width: 96px; text-align: right; }
+
+.founder-portal .fj-dash-feed-list { display: flex; flex-direction: column; gap: 14px; }
+.founder-portal .fj-dash-feed-row { display: flex; gap: 12px; }
+.founder-portal .fj-dash-feed-dot { width: 7px; height: 7px; border-radius: 999px; flex: none; margin-top: 6px; }
+.founder-portal .fj-dash-feed-text { font-size: 14px; line-height: 1.4; }
+.founder-portal .fj-dash-feed-meta { font-size: 12px; color: var(--ink-dim); margin-top: 2px; }
+
+.founder-portal .fj-dash-expense-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.founder-portal .fj-dash-mini-tile { border: 1px solid var(--line); padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; }
+.founder-portal .fj-dash-mini-label { font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-dim); font-weight: 600; }
+.founder-portal .fj-dash-mini-value { font-family: var(--font-display); font-weight: 700; font-size: 22px; }
+.founder-portal .fj-dash-mini-sub { font-size: 12px; color: var(--ink-dim); }
+
+.founder-portal .fj-dash-drawn { margin-top: 20px; }
+.founder-portal .fj-dash-drawn-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.founder-portal .fj-dash-drawn-label { font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-soft); font-weight: 700; }
+.founder-portal .fj-dash-drawn-value { font-size: 13px; color: var(--ink-dim); }
+.founder-portal .fj-dash-drawn-value strong { color: var(--ink); font-family: var(--font-display); }
+
+.founder-portal .fj-dash-proc-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.founder-portal .fj-dash-proc-text { font-size: 13px; color: var(--ink-soft); }
+.founder-portal .fj-dash-proc-text strong { color: var(--ink); font-family: var(--font-display); }
+
+@media (max-width: 960px) {
+  .founder-portal .fj-dash-tiles { grid-template-columns: 1fr 1fr; }
+  .founder-portal .fj-dash-two { grid-template-columns: 1fr; }
+  .founder-portal .fj-dash-expense-tiles { grid-template-columns: 1fr 1fr; }
+}
