@@ -41,11 +41,15 @@
   --container-w: 1180px;
   --gutter: 24px;
 
+  /* Chrome (topbar/sidebar/layout) now comes from the applicant `.eir-*`
+     system in styles.css; `.founder-portal` is only the CONTENT wrapper inside
+     `.eir-os-pane`, so it must NOT impose a full-page shell of its own. */
   font-family: var(--font-body);
   color: var(--ink);
-  background: var(--paper);
-  min-height: 100vh;
 }
+
+/* Content wrapper sits inside the applicant pane. */
+.founder-portal.founder-content { display: block; }
 
 .founder-portal html { -webkit-text-size-adjust: 100%; }
 .founder-portal h1, .founder-portal h2, .founder-portal h3, .founder-portal h4 {

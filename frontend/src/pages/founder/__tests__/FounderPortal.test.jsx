@@ -4,7 +4,9 @@ import { MemoryRouter } from "react-router-dom";
 import FounderPortal from "../FounderPortal.jsx";
 import { founderApi } from "../../../lib/founderApi.js";
 
-vi.mock("../../../components/PortalSwitcher.jsx", () => ({ default: () => null }));
+vi.mock("../../../hooks/useAuth.jsx", () => ({
+  useAuth: () => ({ user: { email: "founder@x.com", roles: [] }, logout: () => Promise.resolve() }),
+}));
 
 describe("FounderPortal shell", () => {
   beforeEach(() => vi.restoreAllMocks());
