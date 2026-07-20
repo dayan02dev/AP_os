@@ -1061,3 +1061,90 @@
   .founder-portal .fj-gantt { flex-direction: column; }
   .founder-portal .fj-gantt-rail { width: auto; border-right: none; border-bottom: 1px solid var(--line); }
 }
+
+/* ======================================================================
+   Organization 3-step wizard (Team / Roles / BOM & equipment) + Procurement
+   page. Ported 1:1 from TIR Onboarding.dc.html's showOrgTeam/showOrgRoles/
+   showOrgBom/showProcurement inline styles. `.fj-gt` is a generic grid-table
+   shell — each table sets its own column widths via the `--gt-cols` custom
+   property (inline style) since Team/BOM/Equipment/Procurement each have a
+   different column layout. */
+
+/* -- generic grid table (Team / BOM / Equipment / Procurement) -------- */
+.founder-portal .fj-gt { border: 1px solid var(--line); margin-top: 12px; }
+.founder-portal .fj-gt-head,
+.founder-portal .fj-gt-row,
+.founder-portal .fj-gt-foot { display: grid; grid-template-columns: var(--gt-cols); }
+.founder-portal .fj-gt-head {
+  background: var(--paper-soft); border-bottom: 1px solid var(--line);
+  font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; color: var(--ink-soft);
+}
+.founder-portal .fj-gt-head > div { padding: 12px 12px; }
+.founder-portal .fj-gt-head > div:first-child { padding: 12px 16px; }
+.founder-portal .fj-gt-row { border-bottom: 1px solid var(--line); align-items: center; }
+.founder-portal .fj-gt-row:last-child { border-bottom: none; }
+.founder-portal .fj-gt-row > div { padding: 8px 10px; }
+.founder-portal .fj-gt-row > div:first-child { padding: 8px 16px; }
+.founder-portal .fj-gt-foot { background: var(--paper-soft); font-family: var(--font-display); font-weight: 700; }
+.founder-portal .fj-gt-foot > div:first-child { padding: 12px 16px; font-size: 13px; }
+.founder-portal .fj-gt-foot > div:not(:first-child) { padding: 12px 12px; font-size: 14px; }
+.founder-portal .fj-gt-input {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 2px;
+  padding: 6px 8px; font: inherit; font-size: 13.5px; background: #fff;
+}
+.founder-portal .fj-gt-input:focus { outline: none; border-color: var(--artblue); }
+.founder-portal .fj-gt-input.bare { border: none; padding: 8px 4px; font-size: 14.5px; background: transparent; }
+.founder-portal .fj-gt-money { display: flex; align-items: center; gap: 5px; }
+.founder-portal .fj-gt-rupee { font-size: 13px; color: var(--ink-dim); flex: none; }
+.founder-portal .fj-gt-line { font-size: 13.5px; font-weight: 600; }
+.founder-portal .fj-gt-remove { text-align: center; }
+.founder-portal .fj-gt-remove a { color: var(--accent-coral); text-decoration: none; font-size: 18px; font-weight: 700; }
+.founder-portal .fj-gt-lead { display: flex; align-items: center; gap: 3px; }
+.founder-portal .fj-gt-lead .fj-gt-input { width: auto; flex: 1; min-width: 0; }
+.founder-portal .fj-gt-lead span { font-size: 11px; color: var(--ink-dim); flex: none; }
+
+/* -- Team step meta / add links ---------------------------------------- */
+.founder-portal .fj-org-meta { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 16px; font-size: 13px; color: var(--ink-soft); }
+.founder-portal .fj-org-meta strong { color: var(--ink); }
+.founder-portal .fj-org-subhead { font-family: var(--font-display); font-weight: 700; font-size: 16px; margin-top: 34px; }
+.founder-portal .fj-add-row.sm { margin-top: 12px; padding: 10px 16px; }
+
+/* -- Roles step: hat cards ---------------------------------------------- */
+.founder-portal .fj-hats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 32px; }
+.founder-portal .card.fj-hat-card { padding: 0; border-color: var(--line-strong); border-top-width: 3px; display: flex; flex-direction: column; }
+.founder-portal .fj-hat-top { padding: 20px 22px 18px; display: flex; flex-direction: column; gap: 8px; }
+.founder-portal .fj-hat-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.founder-portal .fj-hat-title { font-family: var(--font-display); font-weight: 700; font-size: 19px; }
+.founder-portal .fj-hat-roles { font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 700; }
+.founder-portal .fj-hat-desc { font-size: 13.5px; color: var(--ink-soft); line-height: 1.5; margin: 0; }
+.founder-portal .fj-hat-owner { padding: 0 22px 20px; display: flex; flex-direction: column; gap: 7px; }
+.founder-portal .fj-hat-owner-label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; color: var(--ink-soft); }
+.founder-portal .fj-hat-owner select { font: inherit; font-size: 14px; padding: 9px 10px; border: 1px solid var(--line-strong); border-radius: 2px; background: #fff; }
+
+/* -- BOM & equipment step: one-time capital total card ------------------ */
+.founder-portal .fj-capital-total {
+  margin-top: 30px; padding: 22px 26px; display: flex; align-items: center;
+  justify-content: space-between; gap: 20px; flex-wrap: wrap;
+}
+.founder-portal .fj-capital-total-label { display: flex; flex-direction: column; gap: 4px; }
+.founder-portal .fj-capital-total-eyebrow { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #aafcf0; font-weight: 600; }
+.founder-portal .fj-capital-total-value { font-family: var(--font-display); font-weight: 700; font-size: 26px; color: #fff; }
+.founder-portal .fj-capital-total-note { font-size: 13px; color: rgba(255, 255, 255, 0.7); max-width: 340px; }
+
+/* -- Procurement page ----------------------------------------------------- */
+.founder-portal .fj-proc-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 30px; }
+.founder-portal .fj-proc-scroll { border: 1px solid var(--line); margin-top: 24px; overflow-x: auto; }
+.founder-portal .fj-proc-scroll .fj-gt { border: none; margin-top: 0; min-width: 1000px; }
+.founder-portal .fj-proc-status { font-weight: 600; }
+.founder-portal .fj-proc-actions { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 16px; }
+.founder-portal .fj-sync-row {
+  font-family: var(--font-display); font-weight: 600; font-size: 14px; color: var(--ink);
+  text-decoration: none; border: 1px solid var(--line-strong); padding: 12px 18px; border-radius: 2px;
+}
+.founder-portal .fj-sync-row:hover { border-color: var(--ink); color: var(--ink); }
+
+@media (max-width: 960px) {
+  .founder-portal .fj-gt-head, .founder-portal .fj-gt-row, .founder-portal .fj-gt-foot { grid-template-columns: 1fr; }
+  .founder-portal .fj-hats-grid { grid-template-columns: 1fr; }
+  .founder-portal .fj-proc-tiles { grid-template-columns: 1fr 1fr; }
+}
