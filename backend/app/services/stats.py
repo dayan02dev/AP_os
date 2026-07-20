@@ -441,22 +441,50 @@ def _track_table(track: str) -> str:
     return f"{track}_applications"
 
 
-def count_apps_by_status(track: str, status: str) -> int:
-    """count(*) of applications on `track` with the given status.
+def _other_track(track: str) -> str:
+    return "sip" if track == "tir" else "tir"
 
-    Uses supabase-py's `.select("id", count="exact")` which translates to a
-    PostgREST HEAD-style count, not a row scan. Returns 0 on query error so
-    one failing cell doesn't take down the whole dashboard.
+
+def _base_count(table: str, *, status: str | None, non_draft: bool,
+                moved_to: str | None) -> int:
+    """One HEAD-style count on `table` with the given status filter. When
+    `moved_to` is set, also require ``moved_to_track == moved_to`` (uses only
+    ``.eq``, which every backend — real and the test double — honours)."""
+    q = get_admin_client().table(table).select("id", count="exact")
+    if status is not None:
+        q = q.eq("status", status)
+    if non_draft:
+        q = q.neq("status", "draft")
+    if moved_to is not None:
+        q = q.eq("moved_to_track", moved_to)
+    return (q.execute().count or 0)
+
+
+def _effective_count(track: str, *, status: str | None, non_draft: bool) -> int:
+    """count(*) of rows whose EFFECTIVE track is `track`, under the track-move
+    overlay. Computed with only ``.eq`` filters (no ``IS NULL``) so it's
+    backend-agnostic:  rows here that were NOT moved away
+    (= all here − moved-to-other) + rows in the other table moved into here.
+    """
+    other = _other_track(track)
+    here_all = _base_count(_track_table(track), status=status,
+                           non_draft=non_draft, moved_to=None)
+    moved_away = _base_count(_track_table(track), status=status,
+                             non_draft=non_draft, moved_to=other)
+    moved_in = _base_count(_track_table(other), status=status,
+                           non_draft=non_draft, moved_to=track)
+    return (here_all - moved_away) + moved_in
+
+
+def count_apps_by_status(track: str, status: str) -> int:
+    """count(*) of applications whose EFFECTIVE track is `track` with `status`.
+
+    Track-move overlay: native rows here not moved away, plus rows in the other
+    table moved into this track. Returns 0 on error so one failing cell doesn't
+    take down the whole dashboard.
     """
     try:
-        res = (
-            get_admin_client()
-            .table(_track_table(track))
-            .select("id", count="exact")
-            .eq("status", status)
-            .execute()
-        )
-        return res.count or 0
+        return _effective_count(track, status=status, non_draft=False)
     except Exception as exc:
         log.warning(
             "stats.count_apps_by_status failed",
@@ -466,16 +494,9 @@ def count_apps_by_status(track: str, status: str) -> int:
 
 
 def count_apps_total(track: str) -> int:
-    """count(*) of all non-draft applications on `track`."""
+    """count(*) of all non-draft applications whose EFFECTIVE track is `track`."""
     try:
-        res = (
-            get_admin_client()
-            .table(_track_table(track))
-            .select("id", count="exact")
-            .neq("status", "draft")
-            .execute()
-        )
-        return res.count or 0
+        return _effective_count(track, status=None, non_draft=True)
     except Exception as exc:
         log.warning(
             "stats.count_apps_total failed",

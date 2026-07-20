@@ -482,10 +482,15 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
                 or r.get("basic_full_name")
             )
 
+        # `r["track"]` is the NATIVE track (used for every child-table key
+        # above); `eff` is the effective/display track under the track-move
+        # overlay (moved_to_track wins).
+        eff = applications_query.effective_track(r)
         item = {
             "id":               r["id"],
-            "applicationId":    stats.compose_display_id(r["track"], r.get("display_seq")),
-            "track":            r["track"],
+            "applicationId":    stats.compose_display_id(eff, r.get("display_seq")),
+            "track":            eff,
+            "native_track":     r["track"],
             "name":             name,
             "founder":          r.get("basic_full_name"),
             "industry":         (ind or {}).get("label"),
@@ -588,13 +593,17 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
 
     app_row_with_track = {**app_row, "track": track}
     also_track = applications_query.also_in_track(app_row.get("basic_email"), track)
+    # `track` is native (drove every child fetch above); `eff` is the display
+    # track under the track-move overlay.
+    eff = applications_query.effective_track(app_row_with_track)
     return {
         "id":                   application_id,
-        "track":                track,
+        "track":                eff,
+        "native_track":         track,
         "also_in_track":        also_track,
         "moved_to_track":       app_row.get("moved_to_track"),
         "display_seq":          app_row.get("display_seq"),
-        "display_id":           stats.compose_display_id(track, app_row.get("display_seq")),
+        "display_id":           stats.compose_display_id(eff, app_row.get("display_seq")),
         "project_name":         (ai_screening or {}).get("project_name")
                                 or stats.derive_project_name(app_row),
         "founder": {

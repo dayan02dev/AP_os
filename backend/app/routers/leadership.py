@@ -267,12 +267,19 @@ async def list_applications(
 
     applications = []
     for r in page:
+        # `track` is the NATIVE track — used for every child-table lookup
+        # (ai_screening/reviews/industry are keyed by native application_track)
+        # and for content-derived fields. `eff` is the effective/display track
+        # under the track-move overlay (moved_to_track wins), used only for the
+        # track label + display_id the portal shows.
         track = r["track"]
+        eff = applications_query.effective_track(r)
         applications.append({
             "id":               r["id"],
             "display_seq":      r.get("display_seq"),
-            "display_id":       stats.compose_display_id(track, r.get("display_seq")),
-            "track":            track,
+            "display_id":       stats.compose_display_id(eff, r.get("display_seq")),
+            "track":            eff,
+            "native_track":     track,
             "moved_to_track":   r.get("moved_to_track"),
             "status":           r.get("status"),
             "project_name":     (
@@ -379,12 +386,16 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
                 ai_screening.get("sections"), ai_screening.get("founder_check")),
         }
 
+    # `track` is native (drives the child fetches above); `eff` is the display
+    # track under the track-move overlay.
+    eff = applications_query.effective_track(app_row_with_track)
     return {
         "id":                   application_id,
-        "track":                track,
+        "track":                eff,
+        "native_track":         track,
         "moved_to_track":       app_row.get("moved_to_track"),
         "display_seq":          app_row.get("display_seq"),
-        "display_id":           stats.compose_display_id(track, app_row.get("display_seq")),
+        "display_id":           stats.compose_display_id(eff, app_row.get("display_seq")),
         "project_name":         (ai_screening or {}).get("project_name")
                                 or stats.derive_project_name(app_row),
         "founder": {

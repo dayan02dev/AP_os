@@ -155,24 +155,20 @@ def fetch_app_ids_by_project_name(track: str, needle: str, *, cap: int = 1000) -
         return []
 
 
-def fetch_apps_for_track(
+def _other_track(track: str) -> str:
+    return "sip" if track == "tir" else "tir"
+
+
+def _query_track_table(
     track: str,
     *,
     status: str | None = None,
     search: str | None = None,
     limit: int = FETCH_CAP,
 ) -> list[dict[str, Any]]:
-    """Return non-draft applications on `track` with DB-applicable filters.
-
-    `status` and `search` are pushed to PostgREST. Industry and AI-score
-    filtering happens in Python over the returned rows because:
-      - industry is keyword-classified, not a stored column
-      - AI score lives on a different table; pushing it down here would
-        require a cross-table join that PostgREST doesn't express cleanly.
-
-    Adds `track` to each row so the caller can build the merged list without
-    a second pass.
-    """
+    """Raw single-table fetch of non-draft rows on `track` with DB-applicable
+    filters, each stamped with its NATIVE ``track``. No track-move overlay —
+    callers compose the effective-track view from these."""
     try:
         q = (
             get_admin_client()
@@ -211,7 +207,7 @@ def fetch_apps_for_track(
         rows = res.data or []
     except Exception as exc:
         log.warning(
-            "applications_query.fetch_apps_for_track failed",
+            "applications_query._query_track_table failed",
             extra={"track": track, "err": str(exc)},
         )
         return []
@@ -219,6 +215,51 @@ def fetch_apps_for_track(
     for r in rows:
         r["track"] = track
     return rows
+
+
+def fetch_apps_for_track(
+    track: str,
+    *,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = FETCH_CAP,
+) -> list[dict[str, Any]]:
+    """Return non-draft applications whose EFFECTIVE track is `track`.
+
+    Track-move overlay (2026-07-20): a moved application is treated as the
+    OTHER track everywhere it's listed/filtered/counted, while the row stays in
+    its physical (native) table. So the effective membership of `track` is:
+
+      - native rows in ``{track}_applications`` NOT moved away
+        (``moved_to_track`` is falsy), plus
+      - rows in the OTHER table MOVED INTO this track
+        (``moved_to_track == track``).
+
+    Each returned row keeps ``r["track"]`` = its NATIVE track so the caller's
+    child-table lookups (reviews, ai_screening, decisions — all keyed by the
+    native ``application_track``) stay correct. The caller derives the display/
+    effective track as ``r.get("moved_to_track") or r["track"]``.
+
+    Partitioning on ``moved_to_track`` happens in Python so this is backend-
+    agnostic (works with the in-memory test double, whose ``.is_``/``.neq`` are
+    no-ops). ``status``/``search`` are still pushed to PostgREST.
+    """
+    other = _other_track(track)
+    native = [
+        r for r in _query_track_table(track, status=status, search=search, limit=limit)
+        if not r.get("moved_to_track")
+    ]
+    moved_in = [
+        r for r in _query_track_table(other, status=status, search=search, limit=limit)
+        if r.get("moved_to_track") == track
+    ]
+    return native + moved_in
+
+
+def effective_track(row: dict[str, Any]) -> str | None:
+    """Display/filter track for a row under the track-move overlay:
+    ``moved_to_track`` when the app has been moved, else its native ``track``."""
+    return row.get("moved_to_track") or row.get("track")
 
 
 def fetch_ai_scores_for(

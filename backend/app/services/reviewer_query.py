@@ -553,6 +553,12 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
         stage_info = stats.derive_stage_label({**app_row, "track": track})
         stage = stage_info.get("label") if stage_info else None
 
+        # Reviewer queue stays on the NATIVE track: a reviewer's assignment is
+        # intrinsically the track it was created on, and the review/content
+        # write-paths key off it. The existing "MOVED · TIR → VIP" badge
+        # (driven by movedToTrack) conveys the reclassification. The admin &
+        # leadership portals — which have track FILTERS — honour the effective
+        # track; see applications_query.fetch_apps_for_track.
         out.append({
             "id":            a["application_id"],
             "assignmentId":  a["id"],

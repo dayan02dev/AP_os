@@ -40,6 +40,15 @@ from ..supabase_client import get_admin_client
 router = APIRouter(prefix="/admin/platform", tags=["admin-platform"])
 
 
+def _native_track(application_id: str, hint: str) -> str:
+    """Resolve the physical (native) track for an application id. Under the
+    track-move overlay the frontend passes the effective/display track, but
+    writes must target the table the row actually lives in. Falls back to the
+    URL `hint` if the probe can't locate the id (record_decision then 404s)."""
+    found = applications_query.find_application_with_track(application_id)
+    return found[0] if found else hint
+
+
 @router.get(
     "/applications",
     dependencies=[Depends(require_capability("view_all_apps"))],
@@ -121,6 +130,11 @@ async def decide(
         routed via decisions.record_gate2_decision which enforces its own
         rationale rule (required unless decision is 'offered').
     """
+    # Under the track-move overlay the frontend passes the EFFECTIVE track, but
+    # the application row + all its child tables (admin_decisions, status) live
+    # in the NATIVE table. Resolve the native track from the id so the write
+    # hits the right table; the URL track is only a hint.
+    track = _native_track(application_id, track)
     # Route to gate-2 when gate_stage is explicitly "gate2" OR when the
     # decision is "offered" (offered is a gate-2-only outcome; accepting it
     # on the gate-1 path would record the wrong gate_stage in admin_decisions).
@@ -157,7 +171,11 @@ async def move_track(
     application_id: str,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Toggle a reversible TIR<->VIP reclassification flag (admin only)."""
+    """Toggle a reversible TIR<->VIP reclassification flag (admin only).
+
+    The flag lives on the NATIVE application row, so resolve the native track
+    from the id (the URL track may be the effective/display track)."""
+    track = _native_track(application_id, track)
     return track_move.move_track(
         track=track, application_id=application_id,
         actor_user_id=user["user_id"], actor_role=actor_role_of(user),
