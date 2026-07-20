@@ -5,6 +5,14 @@ export function fmtINR(n) {
   return "₹" + v.toLocaleString("en-IN");
 }
 
+// Lakh formatter — matches the mockup's fmtL exactly (TIR Onboarding.dc.html
+// renderVals(): `v => "₹" + ((v||0)/100000).toFixed(2).replace(/\.?0+$/, "") + "L"`).
+// 540000 -> "₹5.4L", 923000 -> "₹9.23L", 0 -> "₹0L".
+export function fmtL(n) {
+  const v = (Number(n) || 0) / 100000;
+  return "₹" + v.toFixed(2).replace(/\.?0+$/, "") + "L";
+}
+
 export function sum(rows, field) {
   return (rows || []).reduce((a, r) => a + (Number(r?.[field]) || 0), 0);
 }

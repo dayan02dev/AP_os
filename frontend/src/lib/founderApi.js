@@ -35,6 +35,25 @@ export const founderApi = {
   // Dashboard
   getDashboard: () => api.get("/founder/dashboard"),
 
+  // Residency journey · Approach 6-step wizard
+  getExperiments: () => api.get("/founder/experiments"),
+  addExperiment: (track) => api.post("/founder/experiments", { track }),
+  patchExperiment: (id, patch) => api.patch(`/founder/experiments/${id}`, patch),
+  delExperiment: (id) => api.del(`/founder/experiments/${id}`),
+
+  getTasks: () => api.get("/founder/tasks"),
+  addTask: (task) => api.post("/founder/tasks", task),
+  patchTask: (id, patch) => api.patch(`/founder/tasks/${id}`, patch),
+  delTask: (id) => api.del(`/founder/tasks/${id}`),
+
+  getReview: () => api.get("/founder/review"),
+  submitReview: () => api.post("/founder/review/submit"),
+  advanceReview: () => api.post("/founder/review/advance"),
+
+  getMentors: () => api.get("/founder/mentors"),
+  getResidency: () => api.get("/founder/residency"),
+  syncProcurement: () => api.post("/founder/procurement/sync"),
+
   // Founders resources · Procurement store
   getStore: () => api.get("/founder/store"),
   addToCart: (productId, qty = 1) => api.post("/founder/store/cart", { product_id: productId, qty }),
