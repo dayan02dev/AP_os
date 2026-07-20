@@ -34,4 +34,29 @@ export const founderApi = {
 
   // Dashboard
   getDashboard: () => api.get("/founder/dashboard"),
+
+  // Founders resources · Procurement store
+  getStore: () => api.get("/founder/store"),
+  addToCart: (productId, qty = 1) => api.post("/founder/store/cart", { product_id: productId, qty }),
+  setCartQty: (productId, qty) => api.patch(`/founder/store/cart/${productId}`, { qty }),
+  removeCartItem: (productId) => api.del(`/founder/store/cart/${productId}`),
+  requestQuote: (productId) => api.post("/founder/store/quote-request", { product_id: productId }),
+  pushCartToProcurement: () => api.post("/founder/store/push-to-procurement"),
+
+  // Founders resources · Fundraising & connects
+  getFundraising: () => api.get("/founder/fundraising"),
+  toggleIntro: (investorId) => api.post("/founder/fundraising/intro", { investor_id: investorId }),
+
+  // Founders resources · Corporate partners
+  getPartners: () => api.get("/founder/partners"),
+  togglePartner: (partnerId) => api.post("/founder/partners/request", { partner_id: partnerId }),
+
+  // Founders resources · Book ARTPARK assets
+  getAssets: () => api.get("/founder/assets"),
+  createBooking: (assetId, date, slot) => api.post("/founder/assets/bookings", { asset_id: assetId, date, slot }),
+  deleteBooking: (id) => api.del(`/founder/assets/bookings/${id}`),
+
+  // Founders resources · IT & Facilities support
+  getSupport: () => api.get("/founder/support"),
+  createTicket: (payload) => api.post("/founder/support/tickets", payload),
 };

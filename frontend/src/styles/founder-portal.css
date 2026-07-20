@@ -705,3 +705,119 @@
 .founder-portal #printRoot h2 {font-family:var(--font-display);font-size:22px;margin:0 0 4px;}
 .founder-portal #printRoot h4 {font-family:var(--font-display);font-size:13px;margin:16px 0 4px;}
 .founder-portal #printRoot p {font-size:12.5px;color:#333;line-height:1.55;margin:0 0 5px;}
+
+/* ======================================================================
+   Founders resources — store / fundraising / partners / assets / support
+   Reuses the pcard/mini/modal/icard/tool/st/dot primitives already ported
+   above; this block fills the gaps (cart popover, form fields, list rows,
+   status-color modifiers) needed to wire real markup onto them. */
+.founder-portal .mt8 {margin-top:8px;}
+.founder-portal .cat {display:flex;gap:6px;flex-wrap:wrap;}
+.founder-portal .mini.block {display:block;width:100%;text-align:center;}
+.founder-portal .mini[disabled] {opacity:0.5;cursor:not-allowed;}
+
+/* status pill: colored dot + label, used by investors/assets/tickets */
+.founder-portal .st {color:var(--ink-dim);}
+.founder-portal .st .d {background:var(--ink-dim);}
+.founder-portal .st.amber {color:var(--accent-amber);}
+.founder-portal .st.amber .d {background:var(--accent-amber);}
+.founder-portal .st.green {color:var(--accent-green);}
+.founder-portal .st.green .d {background:var(--accent-green);}
+.founder-portal .st.blue {color:var(--artblue);}
+.founder-portal .st.blue .d {background:var(--artblue);}
+
+/* -- Procurement store: filters + product grid already covered by
+   .filters / .pgrid / .pcard / .ptag / .mini — just extend .pcard's
+   footer with the mockup's border-top rule. */
+.founder-portal .pcard .foot {border-top:1px solid var(--line);padding-top:12px;}
+
+/* cart button + popover */
+.founder-portal .cart-wrap {position:relative;flex:none;margin-top:6px;}
+.founder-portal .cart-btn {position:relative;display:inline-flex;align-items:center;gap:9px;font:inherit;font-family:var(--font-display);font-weight:700;font-size:13.5px;color:var(--ink);background:#fff;border:1px solid var(--line-strong);border-radius:2px;padding:11px 16px;cursor:pointer;}
+.founder-portal .cart-icon {display:inline-flex;align-items:center;justify-content:center;width:18px;height:16px;border:1.8px solid var(--ink);border-top:none;border-radius:0 0 3px 3px;position:relative;}
+.founder-portal .cart-icon::before {content:"";position:absolute;top:-8px;left:50%;transform:translateX(-50%);width:11px;height:8px;border:1.8px solid var(--ink);border-bottom:none;border-radius:6px 6px 0 0;}
+.founder-portal .cart-backdrop {position:fixed;inset:0;z-index:39;}
+.founder-portal .cart-pop {position:absolute;right:0;top:calc(100% + 8px);width:360px;max-width:88vw;padding:0;border-color:var(--line-strong);z-index:40;box-shadow:0 8px 30px rgba(36,36,36,0.14);}
+.founder-portal .cart-pop-head {padding:16px 20px;border-bottom:1px solid var(--line);background:var(--paper-soft);font-family:var(--font-display);font-weight:700;font-size:15px;}
+.founder-portal .cart-pop-body {padding:6px 20px;max-height:320px;overflow:auto;}
+.founder-portal .cart-pop-empty {padding:26px 0;font-size:13.5px;color:var(--ink-dim);text-align:center;}
+.founder-portal .cart-pop-item {display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);}
+.founder-portal .cart-pop-item:last-child {border-bottom:none;}
+.founder-portal .ci-info {flex:1;min-width:0;}
+.founder-portal .ci-name {font-size:13.5px;font-weight:600;line-height:1.3;}
+.founder-portal .ci-price {font-size:12px;color:var(--ink-dim);}
+.founder-portal .qty-step {display:flex;align-items:center;gap:6px;flex:none;}
+.founder-portal .qty-step button {width:22px;height:22px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line-strong);background:#fff;cursor:pointer;color:var(--ink);font-weight:700;font-size:13px;padding:0;border-radius:0;}
+.founder-portal .qty-step button:disabled {opacity:0.4;cursor:not-allowed;}
+.founder-portal .qty-step span {font-size:13px;min-width:16px;text-align:center;}
+.founder-portal .cart-pop-foot {padding:16px 20px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:12px;}
+.founder-portal .cart-pop-sub {display:flex;align-items:baseline;justify-content:space-between;}
+.founder-portal .cart-pop-sub span:first-child {font-size:13px;color:var(--ink-soft);}
+.founder-portal .cart-pop-sub .v {font-family:var(--font-display);font-weight:700;font-size:20px;}
+
+/* product modal — extends .modal-bg/.modal/.mhead/.mbody/.mcol-l/.mcol-r */
+.founder-portal .modal .mhead h2 {font-family:var(--font-display);font-weight:700;font-size:26px;line-height:1.15;margin:10px 0 6px;}
+.founder-portal .modal .mcol-l {display:flex;flex-direction:column;gap:22px;}
+.founder-portal .modal .mcol-r {background:var(--paper-soft);border-left:1px solid var(--line);display:flex;flex-direction:column;gap:18px;}
+.founder-portal .section-lbl {font-size:11px;letter-spacing:0.06em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:8px;}
+.founder-portal .spec-row .k {color:var(--ink-dim);flex:0 0 150px;}
+.founder-portal .spec-row .v {font-weight:600;flex:1;}
+.founder-portal .rev p {font-size:13.5px;line-height:1.55;color:var(--ink-soft);margin:6px 0 0;}
+.founder-portal .modal-price {font-family:var(--font-display);font-weight:700;font-size:26px;margin-top:4px;}
+.founder-portal .ds-list {display:flex;flex-direction:column;gap:8px;}
+.founder-portal .ds-row, .founder-portal .ds-row:hover {text-decoration:none;color:var(--artblue);font-weight:600;background:#fff;}
+.founder-portal .ds-row .ds-name {flex:1;min-width:0;}
+.founder-portal .tool, .founder-portal .tool:hover {text-decoration:none;color:inherit;}
+.founder-portal .tool {display:flex;flex-direction:column;gap:6px;height:100%;transition:border-color 120ms;}
+.founder-portal .tool:hover {border-color:var(--artblue);}
+.founder-portal .topen {font-size:12px;color:var(--artblue);font-weight:600;margin-top:4px;}
+
+/* fundraising & partners cards — extends .icards/.icard */
+.founder-portal .stats-row {display:flex;gap:28px;margin-top:24px;flex-wrap:wrap;font-size:13px;color:var(--ink-soft);}
+.founder-portal .stats-row strong {color:var(--ink);}
+.founder-portal .section-title {font-family:var(--font-display);font-weight:700;font-size:17px;}
+.founder-portal .sector {font-size:11px;letter-spacing:0.05em;text-transform:uppercase;font-weight:700;color:var(--ink-dim);}
+
+/* form fields — reused by "Book ARTPARK assets" + "Raise a support ticket" */
+.founder-portal .card-strong {border-color:var(--line-strong);display:flex;flex-direction:column;gap:14px;}
+.founder-portal .form-field {display:flex;flex-direction:column;gap:6px;}
+.founder-portal .form-field .lbl {font-size:11px;letter-spacing:0.05em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);}
+
+/* Book ARTPARK assets */
+.founder-portal .assets-layout {display:grid;grid-template-columns:1fr 360px;gap:24px;align-items:start;}
+.founder-portal .asset-list {display:flex;flex-direction:column;gap:12px;}
+.founder-portal .asset-row {padding:18px 22px;display:flex;align-items:center;gap:16px;}
+.founder-portal .asset-row .info {flex:1;min-width:0;}
+.founder-portal .asset-row .name {font-family:var(--font-display);font-weight:700;font-size:16px;}
+.founder-portal .asset-row .loc {font-size:13px;color:var(--ink-dim);}
+.founder-portal .asset-row .st {white-space:nowrap;}
+.founder-portal .assets-side {display:flex;flex-direction:column;gap:20px;position:sticky;top:24px;}
+.founder-portal .booking-list {display:flex;flex-direction:column;}
+.founder-portal .booking-row {display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);}
+.founder-portal .booking-row:last-child {border-bottom:none;}
+.founder-portal .booking-row .info {flex:1;min-width:0;}
+.founder-portal .booking-row .name {font-size:13.5px;font-weight:600;line-height:1.3;}
+.founder-portal .booking-row .meta {font-size:12px;color:var(--ink-dim);}
+.founder-portal .booking-row .st {font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;flex:none;}
+
+/* IT & Facilities support */
+.founder-portal .support-layout {display:grid;grid-template-columns:380px 1fr;gap:24px;align-items:start;}
+.founder-portal .ticket-list-head {padding:18px 24px;border-bottom:1px solid var(--line);font-family:var(--font-display);font-weight:700;font-size:16px;}
+.founder-portal .ticket-row {display:grid;grid-template-columns:96px 1fr 110px 130px;gap:12px;align-items:center;padding:14px 24px;border-bottom:1px solid var(--line);}
+.founder-portal .ticket-row:last-child {border-bottom:none;}
+.founder-portal .ticket-row .ref {font-family:var(--font-mono);font-size:12px;color:var(--ink-dim);font-weight:700;}
+.founder-portal .ticket-row .info {min-width:0;}
+.founder-portal .ticket-row .subject {font-size:14px;font-weight:600;line-height:1.3;}
+.founder-portal .ticket-row .area {font-size:12px;color:var(--ink-dim);}
+.founder-portal .priority {font-size:12px;font-weight:600;color:var(--ink-dim);}
+.founder-portal .priority.blue {color:var(--artblue);}
+.founder-portal .priority.amber {color:var(--accent-amber);}
+.founder-portal .priority.coral {color:var(--accent-coral);}
+.founder-portal .ticket-row .st {font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;}
+
+@media (max-width: 860px) {
+  .founder-portal .assets-layout, .founder-portal .support-layout {grid-template-columns:1fr;}
+  .founder-portal .assets-side {position:static;}
+  .founder-portal .pgrid, .founder-portal .icards {grid-template-columns:1fr;}
+  .founder-portal .ticket-row {grid-template-columns:1fr;}
+}
