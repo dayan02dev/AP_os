@@ -33,6 +33,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useAdminData, loadDetail } from "../../../../hooks/useAdminData";
 import { adminPlatformApi }  from "../../../../lib/adminPlatformApi";
 import { BUTTON_TO_DECISION } from "../../../../lib/adminDataAdapter";
+import { moveButtonLabel } from "../../../../lib/trackMove";
 import { PageHead, Chip, FlagDot } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import { LoadingState, ErrorState, EmptyState } from "../ui.jsx";
@@ -167,7 +168,7 @@ function Note({ note, onDismiss }) {
 // ══════════════════════════════════════════════════════════════════════════
 // VARIANT A · Status Stack (prototype: GateReviewStack)
 // ══════════════════════════════════════════════════════════════════════════
-function GateReviewStack({ items, reload }) {
+function GateReviewStack({ items, reload, goDetail }) {
   const [idx, setIdx]           = useState(0);
   const [decisions, setDecisions] = useState(() => {
     const init = {};
@@ -181,6 +182,7 @@ function GateReviewStack({ items, reload }) {
   });
   const [notes, setNotes]       = useState({});
   const [busy, setBusy]         = useState(false);
+  const [moveBusy, setMoveBusy] = useState(false);
   const [note, setNote]         = useState(null);
 
   const total   = items.length;
@@ -238,6 +240,28 @@ function GateReviewStack({ items, reload }) {
     }
   };
 
+  // Track-move (TIR<->VIP). The flag lives on the NATIVE application row; the
+  // row's `track` is the effective/display track under the overlay.
+  const onMove = async () => {
+    if (busy || moveBusy || !s) return;
+    const nat = s.nativeTrack || s.track;
+    if (!s.movedToTrack) {
+      const other = nat === "tir" ? "VIP" : "TIR";
+      if (!window.confirm(`Move this application to ${other} and email the applicant?`)) return;
+    }
+    setMoveBusy(true);
+    setNote(null);
+    try {
+      await adminPlatformApi.moveTrack(nat, s.id);
+      setNote({ kind: "ok", text: "Application track updated." });
+      await reload();
+    } catch (e) {
+      setNote({ kind: "error", text: `Move failed: ${e?.message || e}` });
+    } finally {
+      setMoveBusy(false);
+    }
+  };
+
   const decided = Object.keys(decisions).length;
   const counts  = { approve: 0, waitlist: 0, reject: 0 };
   Object.values(decisions).forEach(d => { if (counts[d] !== undefined) counts[d]++; });
@@ -284,7 +308,15 @@ function GateReviewStack({ items, reload }) {
             <div className="os-row gap-sm">
               <span className="os-mono os-text-xs os-text-dim">{safeIdx + 1}/{items.length}</span>
               <FlagDot tone={s.flag} />
-              <span style={{ fontSize: 22, fontFamily: "var(--font-serif)" }}>{s.name}</span>
+              <button
+                type="button"
+                onClick={() => goDetail && goDetail(s.id, s.track, "gate1")}
+                title="Open full application (AI summary & details)"
+                style={{ fontSize: 22, fontFamily: "var(--font-serif)", background: "none",
+                         border: 0, padding: 0, color: "var(--artblue)", cursor: "pointer",
+                         textAlign: "left", textDecoration: "underline", textUnderlineOffset: 3 }}>
+                {s.name}
+              </button>
               <span className="os-chip">{s.domain}</span>
               <span className="os-chip">{s.stage}</span>
             </div>
@@ -329,6 +361,14 @@ function GateReviewStack({ items, reload }) {
               value={notes[s.id] || ""}
               onChange={e => setNotes(prev => ({ ...prev, [s.id]: e.target.value }))}
             />
+            <button
+              type="button"
+              className="os-btn sm"
+              disabled={busy || moveBusy}
+              onClick={onMove}
+              style={{ marginTop: 12, width: "100%" }}>
+              {moveBusy ? "Moving…" : moveButtonLabel(s.nativeTrack || s.track, s.movedToTrack)}
+            </button>
           </div>
 
           <div className="os-card">
@@ -740,7 +780,7 @@ export default function AdminGate1({ goDetail }) {
       ) : error ? (
         <ErrorState error={error} onRetry={reload} />
       ) : variant === "stack" ? (
-        <GateReviewStack   key={"stack-"   + evalRows.length} items={evalRows} reload={reload} />
+        <GateReviewStack   key={"stack-"   + evalRows.length} items={evalRows} reload={reload} goDetail={goDetail} />
       ) : variant === "batch" ? (
         <GateReviewBatchDecision key={"batch-" + evalRows.length} items={evalRows} reload={reload} goDetail={goDetail} />
       ) : (

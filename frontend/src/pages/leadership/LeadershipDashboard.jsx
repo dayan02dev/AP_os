@@ -1151,11 +1151,12 @@ export default function LeadershipDashboard() {
                         <div className="lp-cell-sub">
                           {relabelDisplayId(a.display_id)} · {trackLabel(a.track)}
                           {a.moved_to_track && (
-                            <span className="os-chip" title={`Moved to ${trackLabel(a.moved_to_track)}`}
+                            <span className="os-chip"
+                              title={`Moved from ${trackLabel(a.native_track || a.track)}`}
                               style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.04em',
                                 background: '#fff4d6', border: '1px solid #e6c34d', color: '#8a6d00',
                                 borderRadius: 999, padding: '1px 6px', verticalAlign: 'middle' }}>
-                              → {trackLabel(a.moved_to_track).toUpperCase()}
+                              {trackLabel(a.native_track || a.track).toUpperCase()} →
                             </span>
                           )}
                         </div>

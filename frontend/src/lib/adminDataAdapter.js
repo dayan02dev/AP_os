@@ -65,6 +65,9 @@ export function adaptPipelineRow(row) {
     id: row.id,
     applicationId: row.applicationId,
     track: row.track,
+    // Native (physical) track for the track-move overlay: `track` above is the
+    // effective/display track, but move/decide calls target the native table.
+    nativeTrack: row.native_track || row.track,
     name: row.name,
     founders: row.founder ? [row.founder] : [],
     domain: row.industry || "—",
@@ -223,5 +226,6 @@ export function adaptDetail(d) {
     archived: !!d.meta?.is_archived,
     alsoInTrack: d.also_in_track || null,
     movedToTrack: d.moved_to_track || d.application?.moved_to_track || null,
+    nativeTrack: d.native_track || d.track,
   };
 }

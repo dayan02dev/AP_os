@@ -211,14 +211,17 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
 
   const onMoveTrack = async () => {
     if (!s) return;
+    // The move flag lives on the NATIVE application row; the `track` prop is the
+    // effective/display track under the track-move overlay.
+    const nat = s.nativeTrack || track;
     if (!s.movedToTrack) {
-      const other = trackLabel(track === 'tir' ? 'sip' : 'tir');
+      const other = trackLabel(nat === 'tir' ? 'sip' : 'tir');
       if (!window.confirm(`Move this application to ${other} and email the applicant?`)) return;
     }
     setMoveBusy(true);
     setBanner(null);
     try {
-      await adminPlatformApi.moveTrack(track, s.id);
+      await adminPlatformApi.moveTrack(nat, s.id);
       await doLoad();
       setBanner({ kind: 'ok', text: 'Application track updated.' });
     } catch (err) {
@@ -326,7 +329,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
                 {chipLabel(s.chip)}
               </span>
             )}
-            {moveBadgeText(track, s.movedToTrack) && (
+            {moveBadgeText(s.nativeTrack || track, s.movedToTrack) && (
               <span style={{
                 marginLeft: 12, fontSize: 10.5, fontWeight: 700,
                 letterSpacing: '0.06em', textTransform: 'uppercase',
@@ -335,7 +338,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
                 display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle',
               }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#8a6d00', flexShrink: 0 }} />
-                {moveBadgeText(track, s.movedToTrack)}
+                {moveBadgeText(s.nativeTrack || track, s.movedToTrack)}
               </span>
             )}
           </h2>
@@ -610,7 +613,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
               disabled={moveBusy}
               onClick={onMoveTrack}
             >
-              {moveBusy ? 'Moving…' : moveButtonLabel(track, s.movedToTrack)}
+              {moveBusy ? 'Moving…' : moveButtonLabel(s.nativeTrack || track, s.movedToTrack)}
             </button>
           </div>
         </div>

@@ -249,12 +249,12 @@ export default function ReviewApplicationPage() {
         onExport={handleExportPdf}
         canExport={!!detail}
       />
-      {moveBadgeText(track, application?.moved_to_track) && (
+      {moveBadgeText(application?.native_track || track, application?.moved_to_track) && (
         <span style={{ marginLeft: 12, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em',
           textTransform: 'uppercase', background: '#fff4d6', border: '1px solid #e6c34d',
           color: '#8a6d00', borderRadius: 999, padding: '3px 11px', display: 'inline-flex',
           alignItems: 'center', gap: 6, verticalAlign: 'middle' }}>
-          {moveBadgeText(track, application?.moved_to_track)}
+          {moveBadgeText(application?.native_track || track, application?.moved_to_track)}
         </span>
       )}
 
