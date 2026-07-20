@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 EmploymentType = Literal["full-time", "contract", "intern"]
 ProcurementStatus = Literal["estimate", "quoted", "po", "received"]
-ProcurementCategory = Literal["BOM", "Equipment", "Other"]
+ProcurementCategory = Literal["BOM", "Equipment", "Other", "Service"]
 
 _TEXT = 300
 _LONG = 2000
