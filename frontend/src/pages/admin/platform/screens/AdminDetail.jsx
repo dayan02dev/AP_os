@@ -18,11 +18,10 @@ import { loadDetail, useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 import { BUTTON_TO_DECISION, chipLabel } from "../../../../lib/adminDataAdapter";
-import AiSections from "../../../../components/AiSections.jsx";
 import { Chip } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import FullApplication from "../../../../components/FullApplication";
-import ProfilePills from "../../../../components/ProfilePills";
+import ApplicationSummaryCard from "./ApplicationSummaryCard";
 import { trackLabel } from "../../../../lib/trackLabel";
 import { moveButtonLabel, moveBadgeText } from "../../../../lib/trackMove";
 
@@ -371,69 +370,8 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
       <div className="os-grid-evaluation">
         {/* LEFT — application & score summaries */}
         <div className="os-stack">
-          {/* Application Details Card */}
-          <div className="os-card">
-            <div className="os-card-head">
-              <div className="os-card-title">Application · {s.name}</div>
-              <div className="os-row gap-sm" style={{ alignItems: "center" }}>
-                <ProfilePills
-                  alsoInTrack={s.alsoInTrack ? trackLabel(s.alsoInTrack) : null}
-                  resumeFile={s.application?.resume_file}
-                  linkedinUrl={s.application?.linkedin_url}
-                  onOpenResume={async () => {
-                    const rf = s.application.resume_file;
-                    const { url } = await leadershipApi.fileSignedUrl(s.id, rf.storage_path);
-                    window.open(url, "_blank", "noopener,noreferrer");
-                  }}
-                />
-                <Chip>{s.domain}</Chip>
-                <Chip>{s.stage}</Chip>
-                {s.trl && s.trl !== '—' && <Chip>TRL {s.trl}</Chip>}
-              </div>
-            </div>
-            <div className="os-stack">
-              {/* AI summary */}
-              {s.aiSummary && (
-                <div className="ps-ai-summary">
-                  <div className="ps-ai-label">AI summary</div>
-                  <p className="ps-ai-text">{s.aiSummary}</p>
-                </div>
-              )}
-
-              <AiSections variant="dropdown" sections={s.aiSections} />
-
-              {/* Problem & solution — collapsible bullet sections */}
-              {s.reviews && s.reviews.length > 0 && (
-                <div>
-                  <div className="ps-group-label">Reviewer Notes</div>
-                  <div className="ps-sections">
-                    {s.reviews.map((rv, i) => {
-                      const open = secOpen[`rev-${i}`] !== false;
-                      return (
-                        <div className={"ps-sec" + (open ? " is-open" : "")} key={i}>
-                          <button className="ps-sec-head" aria-expanded={open}
-                            onClick={() => setSecOpen(prev => ({ ...prev, [`rev-${i}`]: !open }))}>
-                            <span className="ps-sec-chev">{open ? '▾' : '▸'}</span>
-                            <span className="ps-sec-label">Reviewer {i + 1} · {rv.reco || '—'}</span>
-                            <span className="ps-sec-hint">{open ? '' : (rv.overall ? rv.overall.toFixed(1) : '—')}</span>
-                          </button>
-                          {open && rv.notes && (
-                            <ul className="ps-bullets"><li>{rv.notes}</li></ul>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <hr className="os-divider" />
-
-              <button className="os-btn secondary os-w-100" onClick={() => setViewApp(true)}>
-                View full application →
-              </button>
-            </div>
-          </div>
+          {/* Application Details Card (shared with the gate) */}
+          <ApplicationSummaryCard startup={s} onViewFullApplication={() => setViewApp(true)} />
 
           {/* Comparative review model — real reviewer evaluations */}
           <ComparativeReviewModel startup={s} reviewersById={reviewersById} />
