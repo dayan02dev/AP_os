@@ -11,7 +11,7 @@ const ROWS = [
     batches: [], sub: "2026-07-01", flags: [] },
   { id: "B", applicationId: "TIR-2", track: "tir", name: "AppB", chip: "IN REVIEW",
     founders: ["Bo"], domain: "Robotics", stage: "Lab", ai: { overall: 5 },
-    rev: { overall: 4 }, reviewers: { submitted: 1, assigned: 1 }, reco: { yes: 0, maybe: 0, no: 1 },
+    rev: { overall: 4 }, reviewers: { submitted: 2, assigned: 2 }, reco: { yes: 0, maybe: 0, no: 2 },
     batches: [], sub: "2026-07-02", flags: [] },
 ];
 
