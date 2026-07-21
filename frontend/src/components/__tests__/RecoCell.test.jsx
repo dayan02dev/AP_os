@@ -53,25 +53,31 @@ describe("RecoBadge", () => {
 });
 
 describe("aggregateReco", () => {
-  it("majority yes wins even with maybes present", () => {
-    expect(aggregateReco({ yes: 4, maybe: 1, no: 0 })).toBe("yes");
-    expect(aggregateReco({ yes: 3, maybe: 2, no: 0 })).toBe("yes");
-    expect(aggregateReco({ yes: 2, maybe: 1, no: 0 })).toBe("yes");
+  it("needs >= 2 reviews; 0 or 1 review -> null (—)", () => {
+    expect(aggregateReco({ yes: 0, maybe: 0, no: 0 })).toBeNull();
+    expect(aggregateReco({ yes: 1, maybe: 0, no: 0 })).toBeNull();
+    expect(aggregateReco({ yes: 0, maybe: 1, no: 0 })).toBeNull();
+    expect(aggregateReco({ yes: 0, maybe: 0, no: 1 })).toBeNull();
+    expect(aggregateReco(null)).toBeNull();
+    expect(aggregateReco({})).toBeNull();
   });
-  it("majority no wins", () => {
+  it(">= 2 yes (and < 2 no) -> yes", () => {
+    expect(aggregateReco({ yes: 2, maybe: 0, no: 0 })).toBe("yes");
+    expect(aggregateReco({ yes: 2, maybe: 3, no: 1 })).toBe("yes");
+    expect(aggregateReco({ yes: 4, maybe: 1, no: 0 })).toBe("yes");
+  });
+  it(">= 2 no (and < 2 yes) -> no", () => {
+    expect(aggregateReco({ yes: 0, maybe: 0, no: 2 })).toBe("no");
     expect(aggregateReco({ yes: 1, maybe: 0, no: 2 })).toBe("no");
   });
-  it("no majority / ties / maybe-heavy -> maybe", () => {
-    expect(aggregateReco({ yes: 2, maybe: 1, no: 2 })).toBe("maybe");
-    expect(aggregateReco({ yes: 1, maybe: 0, no: 1 })).toBe("maybe");
-    expect(aggregateReco({ yes: 0, maybe: 1, no: 0 })).toBe("maybe");
-    expect(aggregateReco({ yes: 1, maybe: 2, no: 0 })).toBe("maybe");
+  it("both sides >= 2 -> maybe (genuine split)", () => {
+    expect(aggregateReco({ yes: 2, maybe: 0, no: 2 })).toBe("maybe");
+    expect(aggregateReco({ yes: 3, maybe: 0, no: 2 })).toBe("maybe");
   });
-  it("no reviews -> null (also for missing/partial tallies)", () => {
-    expect(aggregateReco({ yes: 0, maybe: 0, no: 0 })).toBeNull();
-    expect(aggregateReco(null)).toBeNull();
-    expect(aggregateReco(undefined)).toBeNull();
-    expect(aggregateReco({})).toBeNull();
+  it(">= 2 reviews with no >=2 side -> maybe", () => {
+    expect(aggregateReco({ yes: 1, maybe: 0, no: 1 })).toBe("maybe");
+    expect(aggregateReco({ yes: 0, maybe: 2, no: 0 })).toBe("maybe");
+    expect(aggregateReco({ yes: 1, maybe: 2, no: 0 })).toBe("maybe");
   });
 });
 

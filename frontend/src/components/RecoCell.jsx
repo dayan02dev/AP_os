@@ -10,17 +10,17 @@ export const RECO_LABEL = { yes: "YES", maybe: "MAYBE", no: "NO" };
 export const RECO_COLOR = { yes: "#1a7f4b", maybe: "#a86b00", no: "#b42318" };
 
 // Mirrors backend admin_query.reco_verdict — keep the two in sync.
-// Strict majority (> half of all submitted reviews) -> "yes"/"no";
-// anything else with >=1 review -> "maybe"; no reviews -> null.
+// Needs >= 2 submitted reviews; then >=2 yes (and <2 no) -> "yes",
+// >=2 no (and <2 yes) -> "no", otherwise "maybe". <2 reviews -> null ("—").
 export function aggregateReco(reco) {
   const t = reco || {};
   const yes = Number(t.yes || 0);
   const maybe = Number(t.maybe || 0);
   const no = Number(t.no || 0);
   const total = yes + maybe + no;
-  if (total === 0) return null;
-  if (yes * 2 > total) return "yes";
-  if (no * 2 > total) return "no";
+  if (total < 2) return null;
+  if (yes >= 2 && no < 2) return "yes";
+  if (no >= 2 && yes < 2) return "no";
   return "maybe";
 }
 
