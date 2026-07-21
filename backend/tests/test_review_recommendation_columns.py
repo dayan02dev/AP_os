@@ -113,15 +113,22 @@ def test_review_stats_omits_apps_with_no_reviews_or_assignments(monkeypatch):
 
 def test_reco_verdict_semantics():
     v = admin_query.reco_verdict
-    assert v({"yes": 4, "maybe": 1, "no": 0}) == "yes"    # majority beats a maybe
-    assert v({"yes": 3, "maybe": 2, "no": 0}) == "yes"
-    assert v({"yes": 2, "maybe": 1, "no": 0}) == "yes"
-    assert v({"yes": 2, "maybe": 1, "no": 2}) == "maybe"  # no majority
-    assert v({"yes": 1, "maybe": 0, "no": 1}) == "maybe"  # tie
-    assert v({"yes": 1, "maybe": 0, "no": 2}) == "no"
-    assert v({"yes": 0, "maybe": 1, "no": 0}) == "maybe"
-    assert v(None) is None                                 # no reviews -> None ("—")
+    # < 2 reviews -> None ("—")
+    assert v(None) is None
     assert v({}) is None
+    assert v({"yes": 1, "maybe": 0, "no": 0}) is None
+    assert v({"yes": 0, "maybe": 1, "no": 0}) is None
+    # >= 2 yes (and < 2 no) -> yes
+    assert v({"yes": 2, "maybe": 0, "no": 0}) == "yes"
+    assert v({"yes": 2, "maybe": 3, "no": 1}) == "yes"
+    # >= 2 no (and < 2 yes) -> no
+    assert v({"yes": 1, "maybe": 0, "no": 2}) == "no"
+    # both sides >= 2 -> maybe (split)
+    assert v({"yes": 2, "maybe": 0, "no": 2}) == "maybe"
+    assert v({"yes": 3, "maybe": 0, "no": 2}) == "maybe"
+    # >= 2 reviews, no >=2 side -> maybe
+    assert v({"yes": 1, "maybe": 0, "no": 1}) == "maybe"
+    assert v({"yes": 0, "maybe": 2, "no": 0}) == "maybe"
 
 
 def test_reviewer_scores_wrapper_backcompat(monkeypatch):
@@ -220,30 +227,75 @@ def test_leadership_list_attaches_reviewers_and_reco(monkeypatch):
     assert by_id["B"]["reco"] == {"yes": 0, "maybe": 0, "no": 1}
 
 
+def _leadership_backend_multi():
+    """Leadership seed with enough reviews to exercise the >=2 rule:
+    A = 2 yes -> 'yes'; B = 2 no -> 'no'; C = 1 yes -> '—' (< 2 reviews)."""
+    return FakeSupabase({
+        "tir_applications": [
+            {"id": "A", "track": "tir", "status": "under_review", "display_seq": 26001,
+             "basic_full_name": "Asha R", "basic_org": "Acme", "basic_email": "a@x.io",
+             "submitted_at": "2026-07-01T00:00:00Z"},
+            {"id": "B", "track": "tir", "status": "under_review", "display_seq": 26002,
+             "basic_full_name": "Bo K", "basic_org": "Beta", "basic_email": "b@x.io",
+             "submitted_at": "2026-07-02T00:00:00Z"},
+            {"id": "C", "track": "tir", "status": "under_review", "display_seq": 26003,
+             "basic_full_name": "Cara V", "basic_org": "Gamma", "basic_email": "c@x.io",
+             "submitted_at": "2026-07-03T00:00:00Z"},
+        ],
+        "reviewer_profiles": [{"reviewer_user_id": "rv1", "weight": 1.0},
+                              {"reviewer_user_id": "rv2", "weight": 1.0}],
+        "reviews": [
+            {"application_id": "A", "application_track": "tir", "reviewer_user_id": "rv1",
+             "submitted_at": "2026-07-01T00:00:00Z", "recommendation": "yes",
+             "score_problem": 8, "score_solution": 8, "score_tech": 8,
+             "score_founders": 8, "score_commitment": 8},
+            {"application_id": "A", "application_track": "tir", "reviewer_user_id": "rv2",
+             "submitted_at": "2026-07-01T00:00:00Z", "recommendation": "yes",
+             "score_problem": 7, "score_solution": 7, "score_tech": 7,
+             "score_founders": 7, "score_commitment": 7},
+            {"application_id": "B", "application_track": "tir", "reviewer_user_id": "rv1",
+             "submitted_at": "2026-07-02T00:00:00Z", "recommendation": "no",
+             "score_problem": 4, "score_solution": 4, "score_tech": 4,
+             "score_founders": 4, "score_commitment": 4},
+            {"application_id": "B", "application_track": "tir", "reviewer_user_id": "rv2",
+             "submitted_at": "2026-07-02T00:00:00Z", "recommendation": "no",
+             "score_problem": 3, "score_solution": 3, "score_tech": 3,
+             "score_founders": 3, "score_commitment": 3},
+            {"application_id": "C", "application_track": "tir", "reviewer_user_id": "rv1",
+             "submitted_at": "2026-07-03T00:00:00Z", "recommendation": "yes",
+             "score_problem": 9, "score_solution": 9, "score_tech": 9,
+             "score_founders": 9, "score_commitment": 9},
+        ],
+        "reviewer_assignments": [
+            {"application_id": "A", "application_track": "tir", "reviewer_user_id": "rv1",
+             "declined_at": None, "reassigned_to": None},
+            {"application_id": "A", "application_track": "tir", "reviewer_user_id": "rv2",
+             "declined_at": None, "reassigned_to": None},
+            {"application_id": "B", "application_track": "tir", "reviewer_user_id": "rv1",
+             "declined_at": None, "reassigned_to": None},
+            {"application_id": "B", "application_track": "tir", "reviewer_user_id": "rv2",
+             "declined_at": None, "reassigned_to": None},
+            {"application_id": "C", "application_track": "tir", "reviewer_user_id": "rv1",
+             "declined_at": None, "reassigned_to": None},
+        ],
+    })
+
+
 def test_leadership_list_recommendation_filter_aggregate(monkeypatch):
-    # A: 1 yes (unanimous -> "yes"); B: 1 no (unanimous -> "no").
-    sb = _leadership_backend()
+    sb = _leadership_backend_multi()
     lr = _patch_leadership(monkeypatch, sb)
     res = asyncio.run(lr.list_applications(track="tir", recommendation="yes"))
-    ids = {a["id"] for a in res["applications"]}
-    assert ids == {"A"}
-    assert res["total"] == 1
-
+    assert {a["id"] for a in res["applications"]} == {"A"}
     res = asyncio.run(lr.list_applications(track="tir", recommendation="no"))
     assert {a["id"] for a in res["applications"]} == {"B"}
 
 
-def test_leadership_list_recommendation_none_matches_unreviewed(monkeypatch):
-    # App C has no reviews at all -> verdict None -> matched by "none".
-    sb = _leadership_backend()
-    sb.tables["tir_applications"].append(
-        {"id": "C", "track": "tir", "status": "under_review", "display_seq": 26003,
-         "basic_full_name": "Cara V", "basic_org": "Gamma", "basic_email": "c@x.io",
-         "submitted_at": "2026-07-03T00:00:00Z"})
+def test_leadership_list_recommendation_none_matches_under_two_reviews(monkeypatch):
+    # C has only 1 review -> verdict None -> matched by "none".
+    sb = _leadership_backend_multi()
     lr = _patch_leadership(monkeypatch, sb)
     res = asyncio.run(lr.list_applications(track="tir", recommendation="none"))
-    ids = {a["id"] for a in res["applications"]}
-    assert ids == {"C"}
+    assert {a["id"] for a in res["applications"]} == {"C"}
     assert res["total"] == 1
 
 

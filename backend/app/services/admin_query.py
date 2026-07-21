@@ -298,19 +298,19 @@ def reco_verdict(reco: dict | None) -> str | None:
     """Aggregate a {yes,maybe,no} submitted-review tally into one verdict.
 
     Mirrors frontend RecoCell.aggregateReco — keep the two in sync.
-    Strict majority (> half of all submitted reviews) -> "yes"/"no";
-    anything else with >=1 review -> "maybe"; no reviews -> None.
+    Needs >= 2 submitted reviews; then >=2 yes (and <2 no) -> "yes",
+    >=2 no (and <2 yes) -> "no", otherwise "maybe". <2 reviews -> None ("—").
     """
     t = reco or {}
     yes = int(t.get("yes") or 0)
     maybe = int(t.get("maybe") or 0)
     no = int(t.get("no") or 0)
     total = yes + maybe + no
-    if total == 0:
+    if total < 2:
         return None
-    if yes * 2 > total:
+    if yes >= 2 and no < 2:
         return "yes"
-    if no * 2 > total:
+    if no >= 2 and yes < 2:
         return "no"
     return "maybe"
 
