@@ -30,6 +30,14 @@ vi.mock("../screens/ComparativeReviewModel", () => ({
       : <div>No reviewer evaluations submitted yet.</div>
   ),
 }));
+vi.mock("../screens/ApplicationSummaryCard", () => ({
+  default: ({ startup, onViewFullApplication }) => (
+    <div>
+      <div>SUMMARY:{startup?.name}</div>
+      <button onClick={onViewFullApplication}>View full application →</button>
+    </div>
+  ),
+}));
 vi.mock("../ui.jsx", () => ({
   LoadingState: ({ label }) => <div>{label}</div>,
   ErrorState:   ({ error }) => <div>{String(error)}</div>,
@@ -89,6 +97,18 @@ describe("AdminGate1 smoke", () => {
     await waitFor(() => expect(loadDetail).toHaveBeenCalled());
     // falls back to AI score, shows the empty consensus, no crash
     expect(screen.getByText("No reviewer evaluations submitted yet.")).toBeTruthy();
+  });
+
+  it("stack variant renders the ApplicationSummaryCard for the current app", async () => {
+    const { useAdminData, loadDetail } = await import("../../../../hooks/useAdminData");
+    useAdminData.mockReturnValue({
+      data: { startups: [{ id: "app-1", name: "Acme AI", track: "tir", status: "evaluated",
+        chip: "EVALUATED", reviewers: { submitted: 2, assigned: 2 }, reco: { yes: 2, maybe: 0, no: 0 } }],
+        total: 1 }, loading: false, error: null, reload: vi.fn(),
+    });
+    loadDetail.mockResolvedValue({ aiSummary: "S", aiSections: {}, reviews: [] });
+    render(<AdminGate1 goDetail={vi.fn()} />);
+    expect(await screen.findByText("SUMMARY:Acme AI")).toBeTruthy();
   });
 });
 

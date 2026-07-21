@@ -36,6 +36,7 @@ import { BUTTON_TO_DECISION } from "../../../../lib/adminDataAdapter";
 import { moveButtonLabel } from "../../../../lib/trackMove";
 import { PageHead, Chip, FlagDot } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
+import ApplicationSummaryCard from "./ApplicationSummaryCard";
 import { LoadingState, ErrorState, EmptyState } from "../ui.jsx";
 
 // ── Decision wiring ────────────────────────────────────────────────────────
@@ -308,15 +309,7 @@ function GateReviewStack({ items, reload, goDetail }) {
             <div className="os-row gap-sm">
               <span className="os-mono os-text-xs os-text-dim">{safeIdx + 1}/{items.length}</span>
               <FlagDot tone={s.flag} />
-              <button
-                type="button"
-                onClick={() => goDetail && goDetail(s.id, s.track, "gate1")}
-                title="Open full application (AI summary & details)"
-                style={{ fontSize: 22, fontFamily: "var(--font-serif)", background: "none",
-                         border: 0, padding: 0, color: "var(--artblue)", cursor: "pointer",
-                         textAlign: "left", textDecoration: "underline", textUnderlineOffset: 3 }}>
-                {s.name}
-              </button>
+              <span style={{ fontSize: 22, fontFamily: "var(--font-serif)" }}>{s.name}</span>
               <span className="os-chip">{s.domain}</span>
               <span className="os-chip">{s.stage}</span>
             </div>
@@ -327,7 +320,13 @@ function GateReviewStack({ items, reload, goDetail }) {
           </div>
 
           <div style={{ padding: "0 0 20px 0" }}>
-            <ComparativeReviewModel startup={sH} />
+            <ApplicationSummaryCard
+              startup={sH}
+              onViewFullApplication={() => goDetail && goDetail(s.id, s.track, "gate1")}
+            />
+            <div style={{ marginTop: 16 }}>
+              <ComparativeReviewModel startup={sH} />
+            </div>
           </div>
         </div>
 
