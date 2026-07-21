@@ -18,7 +18,6 @@ import { loadDetail, useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 import { BUTTON_TO_DECISION, chipLabel } from "../../../../lib/adminDataAdapter";
-import { Chip } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import FullApplication from "../../../../components/FullApplication";
 import ApplicationSummaryCard from "./ApplicationSummaryCard";
@@ -126,7 +125,6 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [secOpen, setSecOpen] = useState({});
   const [viewApp, setViewApp] = useState(false);
 
   // Decision panel
