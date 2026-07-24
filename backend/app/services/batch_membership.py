@@ -218,19 +218,22 @@ def remove_reviewer_from_batch(
 ) -> dict[str, Any]:
     """Remove a reviewer's membership in a batch. For each app in that batch,
     drop the reviewer's assignment UNLESS another of the app's batches still
-    supplies them, or they have a submitted review."""
+    supplies them.
+
+    A submitted review does NOT protect the assignment (2026-07-25): the review
+    row lives in `reviews` and is kept, so the reviewer's scores/comments/reco
+    still show in every portal — but the assignment is detached so the app
+    stops counting under this reviewer's batch and the batch reads as
+    unassigned for them. `skipped_submitted` stays in the response (always 0)
+    for contract stability."""
     sb.table("batch_reviewers").delete().eq("batch_id", batch_id).eq(
         "reviewer_user_id", reviewer_id
     ).execute()
 
     removed = 0
-    skipped = 0
     for (aid, track) in apps_in_batch(sb, batch_id):
         others = app_batch_ids(sb, aid, track) - {batch_id}
         if reviewer_id in reviewers_via_batches(sb, others):
-            continue
-        if has_submitted_review(sb, aid, track, reviewer_id):
-            skipped += 1
             continue
         res = (
             sb.table("reviewer_assignments")
@@ -241,4 +244,4 @@ def remove_reviewer_from_batch(
             .execute()
         )
         removed += len(res.data or [])
-    return {"removed": removed, "skipped_submitted": skipped}
+    return {"removed": removed, "skipped_submitted": 0}

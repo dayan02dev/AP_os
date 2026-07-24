@@ -110,6 +110,53 @@ def test_remove_reviewer_from_batch_smart():
     assert res2["removed"] == 1
 
 
+def test_remove_reviewer_from_batch_drops_reviewed_app_but_keeps_review():
+    # Removing a batch from a reviewer must detach their assignment even for an
+    # app they already submitted a review for — and the review row is kept.
+    sb = _seed()
+    bm.add_apps_to_batch(sb, "B", [("app1", "tir")], actor="admin")
+    sb.tables["reviews"].append(
+        {
+            "application_id": "app1",
+            "application_track": "tir",
+            "reviewer_user_id": "r2",
+            "submitted_at": "2026-07-01T00:00:00Z",
+            "status": "submitted",
+        }
+    )
+    res = bm.remove_reviewer_from_batch(sb, "B", "r2", actor="admin")
+    assigned = {a["reviewer_user_id"] for a in sb.tables["reviewer_assignments"]}
+    assert "r2" not in assigned            # assignment removed despite the review
+    assert res["removed"] == 1
+    assert res["skipped_submitted"] == 0   # nothing is skipped for a submitted review anymore
+    # the review row is preserved (scores/comments still shown everywhere)
+    assert any(
+        r["reviewer_user_id"] == "r2" and r["application_id"] == "app1"
+        for r in sb.tables["reviews"]
+    )
+
+
+def test_remove_reviewer_from_batch_multibatch_guard_still_holds():
+    # The multi-batch guard is unchanged: if another of the app's batches still
+    # supplies the reviewer, the assignment is kept — even with a submitted review.
+    sb = _seed()
+    bm.add_apps_to_batch(sb, "A", [("app1", "tir")], actor="admin")
+    bm.add_apps_to_batch(sb, "B", [("app1", "tir")], actor="admin")
+    sb.tables["reviews"].append(
+        {
+            "application_id": "app1",
+            "application_track": "tir",
+            "reviewer_user_id": "shared",
+            "submitted_at": "2026-07-01T00:00:00Z",
+            "status": "submitted",
+        }
+    )
+    res = bm.remove_reviewer_from_batch(sb, "B", "shared", actor="admin")
+    assigned = {a["reviewer_user_id"] for a in sb.tables["reviewer_assignments"]}
+    assert "shared" in assigned            # still supplied by Batch A
+    assert res["removed"] == 0
+
+
 def test_reject_detaches_all_batch_links():
     """Gate-1 reject must clear ALL of a multi-batch app's batch links + every
     reviewer assignment (reviews are kept)."""
