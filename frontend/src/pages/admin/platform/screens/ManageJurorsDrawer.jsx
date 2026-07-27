@@ -12,10 +12,9 @@
 // v2 edits vs the port: candidates limited to JURY REVIEW; recommended-first
 // ordering + score badge; remove-error code app_already_decided → Final-Gate
 // frozen message; a green ★ picked chip on picked rows.
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
 import { leadershipApi } from "../../../../lib/leadershipApi";
-import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 
 // jurorApplications rows are adapted without a chip; derive a display label
 // from the raw status ("jury_review" → "JURY REVIEW").
@@ -60,18 +59,36 @@ export function ManageJurorsDrawer({ juror, onClose, onChanged }) {
     });
   }, [pipeline.data, assignedIds, search]);
 
+  const suggestions = useMemo(
+    () => candidates.filter(c => c.recommendation?.score != null),
+    [candidates]);
+  const [checked, setChecked] = useState(null);   // Set<id> | null (uninitialised)
+  useEffect(() => {
+    if (checked === null && suggestions.length)
+      setChecked(new Set(suggestions.map(s => s.id)));
+  }, [suggestions, checked]);
+  const toggleCheck = (id) => setChecked(prev => {
+    const next = new Set(prev || []);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const selectedCount = checked ? suggestions.filter(s => checked.has(s.id)).length : 0;
+
   const reload = () => { apps.reload(); onChanged && onChanged(); };
 
-  const handleAutoAssignJuror = async () => {
-    setAutoBusy(true);
+  const handleAssignSelected = async () => {
+    const picks = suggestions.filter(s => checked?.has(s.id));
+    if (!picks.length) return;
+    setAutoBusy(true); setErr(null); setNotice(null);
     try {
-      await adminPlatformApi.autoAssignJury(juror.id);
+      for (const appRow of picks) {
+        await leadershipApi.assignJurors(appRow.id, appRow.track, { juror_user_ids: [juror.id] });
+      }
+      setChecked(null);
       reload();
     } catch (e) {
-      setErr(e?.details?.message || e?.message || "Auto-assign failed.");
-    } finally {
-      setAutoBusy(false);
-    }
+      setErr(e?.details?.message || e?.message || "Assign failed.");
+    } finally { setAutoBusy(false); }
   };
 
   const handleAssign = async () => {
@@ -169,10 +186,35 @@ export function ManageJurorsDrawer({ juror, onClose, onChanged }) {
                 Assign Application
               </button>
             </div>
-            <button className="os-btn secondary sm" style={{ marginTop: 8 }}
-              onClick={handleAutoAssignJuror} disabled={autoBusy}>
-              {autoBusy ? "Assigning…" : "Auto-assign matches"}
-            </button>
+            {suggestions.length > 0 && (
+              <div style={{ marginTop: 12, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+                <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 8 }}>
+                  Suggested matches (AI)
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
+                  {suggestions.map(s => (
+                    <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Suggest ${s.name}`}
+                        checked={!!checked?.has(s.id)}
+                        onChange={() => toggleCheck(s.id)}
+                      />
+                      <span style={{ flex: 1 }}>{s.name} <span className="os-text-soft">({s.domain || "—"})</span></span>
+                      <span className="os-chip purple" style={{ fontSize: 11, padding: "1px 6px", fontWeight: 700 }}>★{Math.round(s.recommendation.score)}</span>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  className="os-btn secondary sm"
+                  style={{ marginTop: 10 }}
+                  onClick={handleAssignSelected}
+                  disabled={autoBusy || selectedCount === 0}
+                >
+                  {autoBusy ? "Assigning…" : `Assign selected (${selectedCount})`}
+                </button>
+              </div>
+            )}
           </div>
 
           {err && (
