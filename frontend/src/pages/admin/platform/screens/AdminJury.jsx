@@ -501,15 +501,14 @@ export function AdminJury() {
     }
   };
 
-  const handleAutoAssign = async () => {
-    if (!window.confirm("Assign each juror their AI-matched applications? You can still adjust afterwards.")) return;
+  const handleRefreshSuggestions = async () => {
     setAutoAssigning(true); setAutoMsg(null);
     try {
-      const r = await adminPlatformApi.autoAssignJury();
-      setAutoMsg(`Assigned ${r.assigned} application(s) across ${r.jurors} juror(s).`);
-      reloadAll();
+      const r = await adminPlatformApi.recomputeRecommendations();   // no id → all jurors
+      const n = Array.isArray(r?.queued) ? r.queued.length : 0;
+      setAutoMsg(`Refreshing AI suggestions for ${n} juror(s) — open a juror to review & assign.`);
     } catch (e) {
-      setAutoMsg(e?.message || "Auto-assign failed.");
+      setAutoMsg(e?.message || "Couldn't refresh suggestions.");
     } finally {
       setAutoAssigning(false);
     }
@@ -529,10 +528,9 @@ export function AdminJury() {
         title="Jury <em>selection</em>"
         sub="Invite jury members, track background enrichment, and see who each juror picked to mentor."
         actions={[
-          <button key="auto" className="os-btn secondary" onClick={handleAutoAssign}
-            disabled={autoAssigning || !jurors.some(j => j.matchedAt)}
-            title={jurors.some(j => j.matchedAt) ? "" : "No AI matches yet — run Recompute first"}>
-            {autoAssigning ? "Assigning…" : "Auto-assign from AI matches"}
+          <button key="auto" className="os-btn secondary" onClick={handleRefreshSuggestions}
+            disabled={autoAssigning}>
+            {autoAssigning ? "Refreshing…" : "Refresh AI suggestions"}
           </button>,
           <button key="inv" className="os-btn" style={{ background: "#3213b7", color: "#fff" }} onClick={() => setShowInvite(true)}>Invite member</button>,
         ]}

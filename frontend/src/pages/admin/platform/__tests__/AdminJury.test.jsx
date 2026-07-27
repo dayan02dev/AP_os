@@ -184,26 +184,23 @@ describe("AdminJury v2 — applications tab", () => {
   });
 });
 
-describe("AdminJury v2 — auto-assign", () => {
+describe("AdminJury v2 — refresh suggestions", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("Auto-assign button calls autoAssignJury and reloads", async () => {
-    adminPlatformApi.autoAssignJury = vi.fn().mockResolvedValue(
-      { assigned: 4, jurors: 2, per_juror: {}, skipped_already: 0, skipped_not_jury_review: 0 });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    const { jurorsRet } = setup({
-      jurors: [{ ...JUROR_DONE, matchedAt: "2026-07-14T00:00:00Z" }],
-    });
-    render(<AdminJury />);
-    fireEvent.click(screen.getByText(/Auto-assign from AI matches/i));
-    await waitFor(() => expect(adminPlatformApi.autoAssignJury).toHaveBeenCalled());
-    expect(jurorsRet.reload).toHaveBeenCalled();
-  });
-
-  it("disables the button when no juror has matchedAt", () => {
+  it("Refresh AI suggestions recomputes for all jurors (no juror id) and does not assign", async () => {
+    adminPlatformApi.recomputeRecommendations.mockResolvedValue({ queued: ["j1", "j2"] });
     setup({ jurors: [JUROR_DONE] });
     render(<AdminJury />);
-    expect(screen.getByText(/Auto-assign from AI matches/i).closest("button")).toBeDisabled();
+    fireEvent.click(screen.getByText(/Refresh AI suggestions/i));
+    await waitFor(() =>
+      expect(adminPlatformApi.recomputeRecommendations).toHaveBeenCalledWith());
+    expect(adminPlatformApi.autoAssignJury).not.toHaveBeenCalled();
+  });
+
+  it("is enabled even when no juror has matchedAt yet", () => {
+    setup({ jurors: [JUROR_DONE] });
+    render(<AdminJury />);
+    expect(screen.getByText(/Refresh AI suggestions/i).closest("button")).not.toBeDisabled();
   });
 });
 
