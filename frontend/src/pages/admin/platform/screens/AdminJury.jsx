@@ -453,7 +453,7 @@ function ApplicationsTable({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function AdminJury() {
+export function AdminJury({ go } = {}) {
   const [tab, setTab] = useState("applications");
   const [showInvite, setShowInvite] = useState(false);
 
@@ -522,6 +522,11 @@ export function AdminJury() {
   return (
     <div className="dash-scroll">
       <style dangerouslySetInnerHTML={{ __html: DRAWER_STYLES }} />
+
+      {go && (
+        <button className="os-btn ghost sm" style={{ marginBottom: 12 }}
+          onClick={() => go("dashboard")}>← Dashboard</button>
+      )}
 
       <PageHead
         eyebrow="A-6 · JURY MANAGEMENT"

@@ -392,7 +392,7 @@ function AdminApp() {
                 decisionMode={decisionMode}
               />
             )}
-            {page === 'reviewers'   && (decisionMode === 'jury' ? <AdminJury /> : <AdminReviewers decisionMode={decisionMode} />)}
+            {page === 'reviewers'   && (decisionMode === 'jury' ? <AdminJury go={setPage} /> : <AdminReviewers decisionMode={decisionMode} />)}
             {page === 'roles'       && <AdminRoles />}
             {page === 'gate1'       && (decisionMode === 'jury' ? <AdminGate2 /> : <AdminGate1 goDetail={goDetail} />)}
             {page === 'psychometry' && <AdminPsychometry />}

@@ -144,6 +144,14 @@ describe("AdminJury v2 — roster tab", () => {
     expect(screen.getByText("Dr. Rao")).toBeTruthy();
     expect(screen.getByText("rao@x.com")).toBeTruthy();
   });
+
+  it("shows a Dashboard back button that calls go('dashboard')", () => {
+    const go = vi.fn();
+    setup({ jurors: [JUROR_DONE] });
+    render(<AdminJury go={go} />);
+    fireEvent.click(screen.getByText(/← Dashboard/));
+    expect(go).toHaveBeenCalledWith("dashboard");
+  });
 });
 
 describe("AdminJury v2 — applications tab", () => {
