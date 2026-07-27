@@ -127,7 +127,7 @@ export default function JuryAppView({
             {aiBlock && aiBlock.overall != null && (
               <div className="os-row between" style={{ alignItems: "center", marginTop: 4 }}>
                 <span className="os-text-xs os-text-dim os-uppercase">AI overall</span>
-                <span className="os-num-big" style={{ fontSize: 28, fontWeight: 800, color: "#2f6f62" }}>
+                <span className="os-num-big" style={{ fontSize: 28, fontWeight: 800, color: "#3213b7" }}>
                   {Number(aiBlock.overall).toFixed(1)}
                 </span>
               </div>

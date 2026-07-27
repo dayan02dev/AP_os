@@ -3,12 +3,12 @@
    under .jry-portal so the green jury accents never leak into the reviewer or
    admin shells that share reviewer-portal.css.
 
-   Accent: ARTPARK jury green #1a6b3a (topbar avatar / live dot / pill). */
+   Accent: ARTPARK purple #3213b7 (design-system --accent). */
 
 :root {
-  --jry-green: #1a6b3a;
-  --jry-green-soft: #eaf4ee;
-  --jry-green-line: #b9dcc6;
+  --jry-green: #3213b7;
+  --jry-green-soft: #efecfb;
+  --jry-green-line: #d9d2f7;
 }
 
 /* ── Green topbar accents ─────────────────────────────────────────────── */

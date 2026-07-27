@@ -162,7 +162,7 @@ export default function JuryQueue({ onOpen, initialDomain = "all", queueAsync, p
                     {s.ai && s.ai.overall != null ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ display: "inline-block", width: 48, height: 4, background: "#ececf0", borderRadius: 2, overflow: "hidden", flexShrink: 0 }}>
-                          <span style={{ display: "block", width: Math.max(0, Math.min(100, (s.ai.overall / 10) * 100)) + "%", height: "100%", background: "#2f6f62", borderRadius: 2 }} />
+                          <span style={{ display: "block", width: Math.max(0, Math.min(100, (s.ai.overall / 10) * 100)) + "%", height: "100%", background: "#3213b7", borderRadius: 2 }} />
                         </span>
                         <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--ink)", flexShrink: 0, whiteSpace: "nowrap" }}>
                           {Number(s.ai.overall).toFixed(1)}

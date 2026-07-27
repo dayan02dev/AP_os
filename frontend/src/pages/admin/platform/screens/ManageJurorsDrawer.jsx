@@ -250,7 +250,7 @@ export function ManageJurorsDrawer({ juror, onClose, onChanged }) {
                       <td>
                         <span className="os-chip">{statusChip(a)}</span>
                         {a.picked && (
-                          <span className="os-chip green" style={{ marginLeft: 4, fontSize: 10, padding: "1px 6px", fontWeight: 700 }}>★ picked</span>
+                          <span className="os-chip purple" style={{ marginLeft: 4, fontSize: 10, padding: "1px 6px", fontWeight: 700 }}>★ picked</span>
                         )}
                       </td>
                       <td>

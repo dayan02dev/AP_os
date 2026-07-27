@@ -29,7 +29,7 @@ const DRAWER_STYLES = `
 const ENRICHMENT_META = {
   pending: { label: "Queued", tone: "amber" },
   running: { label: "Enriching…", tone: "amber" },
-  done:    { label: "Enriched", tone: "green" },
+  done:    { label: "Enriched", tone: "purple" },
   failed:  { label: "Failed", tone: "red" },
 };
 
@@ -38,7 +38,7 @@ const ENRICHMENT_META = {
 // per-row result chips. No password — credentials are emailed on accept.
 
 const RESULT_META = {
-  invited:         { label: "Invited", tone: "green" },
+  invited:         { label: "Invited", tone: "purple" },
   already_invited: { label: "Already invited", tone: "amber" },
   error:           { label: "Error", tone: "red" },
 };
@@ -433,7 +433,7 @@ function ApplicationsTable({
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                       {(s.picked_by || []).length
                         ? s.picked_by.map((p, i) => (
-                            <span key={(p.juror_user_id || p.name) + i} className="os-chip green" title={p.note || ""} style={{ fontSize: 11, padding: "2px 6px", fontWeight: 600 }}>★ {p.name}</span>
+                            <span key={(p.juror_user_id || p.name) + i} className="os-chip purple" title={p.note || ""} style={{ fontSize: 11, padding: "2px 6px", fontWeight: 600 }}>★ {p.name}</span>
                           ))
                         : <span className="os-text-soft">—</span>}
                     </div>

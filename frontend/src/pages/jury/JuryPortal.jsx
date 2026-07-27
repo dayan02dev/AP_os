@@ -68,7 +68,7 @@ function JuryTopbar({ tab }) {
         <div className="lp-topbar-user" style={{ cursor: "default" }}>
           <div
             className="os-avatar"
-            style={{ width: 28, height: 28, fontSize: 11, flexShrink: 0, background: "#1a6b3a", color: "#fff" }}
+            style={{ width: 28, height: 28, fontSize: 11, flexShrink: 0, background: "#3213b7", color: "#fff" }}
           >
             {initials}
           </div>
