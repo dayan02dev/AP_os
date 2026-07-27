@@ -142,13 +142,22 @@ async def put_selections(body: SelectionsPut,
             "message": "Picks on decided applications are frozen."})
 
     now = datetime.now(UTC).isoformat()
-    for key in current_keys - new_keys:   # removals
-        sb.table("jury_selections").delete().eq("juror_user_id", juror_id) \
-            .eq("application_id", key[0]).eq("application_track", key[1]).execute()
-    for s in body.selections:             # upsert kept + new
-        sb.table("jury_selections").upsert({
+    try:
+        rows = [{
             "juror_user_id": juror_id, "application_id": s.application_id,
             "application_track": s.application_track, "note": s.note,
             "submitted_at": now, "updated_at": now,
-        }, on_conflict="application_id,application_track,juror_user_id").execute()
+        } for s in body.selections]
+        sb.table("jury_selections").upsert(
+            rows, on_conflict="application_id,application_track,juror_user_id").execute()
+        for key in current_keys - new_keys:   # drop de-selected picks
+            sb.table("jury_selections").delete().eq("juror_user_id", juror_id) \
+                .eq("application_id", key[0]).eq("application_track", key[1]).execute()
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("jury selection write failed", extra={"juror": juror_id})
+        raise HTTPException(status_code=500, detail={
+            "code": "selection_write_failed",
+            "message": "Couldn't save your picks — please try again."})
     return {"selections": jury_query.fetch_my_selections(juror_id), "submitted_at": now}

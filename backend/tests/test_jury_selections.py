@@ -97,6 +97,37 @@ def _sel(app_id, note=None):
     return {"application_id": app_id, "application_track": "tir", "note": note}
 
 
+class _BoomOnSelectionWrite(FakeSupabase):
+    """FakeSupabase whose jury_selections upsert/delete raise, to prove the
+    endpoint returns a handled JSON error instead of a CORS-less 500."""
+    def table(self, name):
+        q = super().table(name)
+        if name == "jury_selections":
+            orig = q.execute
+            def _execute():
+                if q._mode in ("upsert", "delete"):
+                    raise RuntimeError("db down")
+                return orig()
+            q.execute = _execute
+        return q
+
+
+def test_put_write_failure_returns_json_error(client, monkeypatch, _clear_overrides):
+    from app.routers import jury as jury_router
+    from app.services import applications_query, jury_query
+    fake = _BoomOnSelectionWrite({"jury_assignments": list(_ALL_ASSIGNMENTS),
+                                  "jury_selections": []})
+    monkeypatch.setattr(jury_query, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(jury_router, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(applications_query, "get_admin_client", lambda: fake)
+    app.dependency_overrides[get_current_user] = _override_user(J1)
+
+    r = _put(client, [_sel("a1"), _sel("a2"), _sel("a3")])
+    assert r.status_code == 500, r.text
+    assert r.json()["detail"]["code"] == "selection_write_failed"
+    assert [row for row in fake.tables["jury_selections"] if row.get("juror_user_id") == J1] == []
+
+
 # ─── exactly-3 ──────────────────────────────────────────────────────────────
 
 
