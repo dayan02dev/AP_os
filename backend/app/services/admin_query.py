@@ -1056,9 +1056,16 @@ def fetch_juror_applications(user_id: str) -> dict[str, Any]:
     if not pairs:
         return {"applications": []}
 
-    project_names = applications_query.fetch_project_names_for(pairs)
-    industries = applications_query.fetch_industry_for_pairs(pairs)
-    batches = _fetch_batches(pairs)
+    def _safe(fn, default):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 — degrade, never 500 the drawer
+            log.warning("juror apps: enrichment lookup failed", extra={"err": str(exc)})
+            return default
+
+    project_names = _safe(lambda: applications_query.fetch_project_names_for(pairs), {})
+    industries = _safe(lambda: applications_query.fetch_industry_for_pairs(pairs), {})
+    batches = _safe(lambda: _fetch_batches(pairs), {})
 
     # App rows (status + project fallback), one paged query per track.
     app_rows: dict[tuple[str, str], dict] = {}
@@ -1088,27 +1095,35 @@ def fetch_juror_applications(user_id: str) -> dict[str, Any]:
 
     out: list[dict[str, Any]] = []
     for a in active:
-        key = (a["application_track"], a["application_id"])
-        r = app_rows.get(key) or {}
-        if a["application_track"] == "sip":
-            project = r.get("basic_org") or r.get("basic_full_name")
-        else:
-            project = (
-                project_names.get(key)
-                or stats.derive_project_name(r)
-                or r.get("basic_org")
-                or r.get("basic_full_name")
-            )
-        out.append({
-            "id":            a["application_id"],
-            "track":         a["application_track"],
-            "project":       project,
-            "industry":      (industries.get(key) or {}).get("label"),
-            "status":        r.get("status"),
-            "batch":         (batches.get(key) or {}).get("name"),
-            "picked":        key in picked_keys,
-            "assignment_id": a.get("id"),
-        })
+        try:
+            key = (a["application_track"], a["application_id"])
+            r = app_rows.get(key) or {}
+            if a["application_track"] == "sip":
+                project = r.get("basic_org") or r.get("basic_full_name")
+            else:
+                project = (
+                    project_names.get(key)
+                    or _safe(lambda rr=r: stats.derive_project_name(rr), None)
+                    or r.get("basic_org")
+                    or r.get("basic_full_name")
+                )
+            out.append({
+                "id":            a["application_id"],
+                "track":         a["application_track"],
+                "project":       project,
+                "industry":      (industries.get(key) or {}).get("label"),
+                "status":        r.get("status"),
+                "batch":         next((b["name"] for b in (batches.get(key) or [])), None),
+                "picked":        key in picked_keys,
+                "assignment_id": a.get("id"),
+            })
+        except Exception as exc:  # noqa: BLE001 — one bad row must not sink the list
+            log.warning("juror apps: row build failed", extra={"err": str(exc)})
+            out.append({
+                "id": a.get("application_id"), "track": a.get("application_track"),
+                "project": None, "industry": None, "status": None,
+                "batch": None, "picked": False, "assignment_id": a.get("id"),
+            })
     out.sort(key=lambda i: (i.get("project") or "").lower())
     return {"applications": out}
 

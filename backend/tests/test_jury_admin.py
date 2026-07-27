@@ -294,6 +294,38 @@ def test_juror_applications_with_picked_flags(client, monkeypatch, _clear_overri
     assert "assignment_id" in apps[A1]
 
 
+def test_juror_applications_renders_batched_row(client, monkeypatch, _clear_overrides):
+    """A sparse TIR application that HAS a batch link must render FULLY — the
+    batch name populated, not a degraded-blank row. `_fetch_batches` returns a
+    LIST per (track, id) after the multi-batch migration, so the per-row build
+    must use the list accessor; the older `.get("name")`-on-a-list would throw
+    and blank the whole row."""
+    tables = _base_tables()
+    tables["jury_assignments"] = [{
+        "id": "ja1", "juror_user_id": "adm-juror",
+        "application_id": "bad1", "application_track": "tir",
+        "assigned_at": "2026-07-01T00:00:00Z",
+    }]
+    tables["tir_applications"] = [{"id": "bad1"}]  # deliberately sparse
+    tables["jury_selections"] = []
+    tables["application_batches"] = [
+        {"application_id": "bad1", "application_track": "tir", "batch_id": "b1"},
+    ]
+    tables["batches"] = [{"id": "b1", "name": "Batch One"}]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
+
+    r = client.get("/admin/platform/jurors/adm-juror/applications")
+    assert r.status_code == 200, r.text
+    apps = r.json()["applications"]
+    assert len(apps) == 1
+    assert apps[0]["id"] == "bad1"
+    assert apps[0]["track"] == "tir"
+    assert apps[0]["picked"] is False
+    # The row renders FULLY: the batch name is populated (not degraded-blank).
+    assert apps[0]["batch"] == "Batch One"
+
+
 # ─── PATCH /admin/platform/jurors/{uid} ─────────────────────────────────
 
 
