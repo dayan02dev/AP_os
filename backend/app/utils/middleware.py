@@ -28,6 +28,7 @@ from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
 from .logging import method_var, path_var, request_id_var
@@ -130,3 +131,26 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if "server" in h:
             del h["server"]
         return response
+
+
+class CorsSafeErrorMiddleware(BaseHTTPMiddleware):
+    """Catch unhandled exceptions and return a JSON 500.
+
+    Registered as the INNERMOST app middleware, so its response travels back
+    out through CORSMiddleware (which sits outside it) and picks up
+    Access-Control-Allow-Origin. Starlette's built-in ServerErrorMiddleware is
+    outside CORS, so without this a bare exception yields a CORS-less 500 that
+    the browser reports as 'Failed to fetch'. HTTPExceptions are already handled
+    upstream (ExceptionMiddleware) and never reach here.
+    """
+
+    async def dispatch(self, request: Request, call_next) -> Any:
+        try:
+            return await call_next(request)
+        except Exception:
+            log.exception("unhandled error", extra={"path": request.url.path})
+            return JSONResponse(
+                status_code=500,
+                content={"error": {"code": "internal_error",
+                                   "message": "Internal server error"}},
+            )

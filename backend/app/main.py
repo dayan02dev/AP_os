@@ -56,7 +56,11 @@ from .routers import (
     waitlist,
 )
 from .utils.logging import configure_logging, request_id_var
-from .utils.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
+from .utils.middleware import (
+    CorsSafeErrorMiddleware,
+    RequestContextMiddleware,
+    SecurityHeadersMiddleware,
+)
 from .utils.rate_limit import limiter
 
 # ─── Logging ────────────────────────────────────────────────────
@@ -125,6 +129,11 @@ app = FastAPI(
 # Rate limiting — attach the limiter + 429 handler + middleware.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Innermost: convert unhandled exceptions to a JSON 500 that still flows back
+# out through CORS below (so cross-origin callers get a real error, not a
+# browser 'Failed to fetch').
+app.add_middleware(CorsSafeErrorMiddleware)
 
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(SlowAPIMiddleware)
