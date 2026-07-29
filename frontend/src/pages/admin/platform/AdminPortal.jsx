@@ -25,6 +25,7 @@ import AdminGate1 from "./screens/AdminGate1";
 import { AdminReviewers } from "./screens/AdminReviewers";
 import { AdminGate2 } from "./screens/AdminGate2";
 import { AdminJury } from "./screens/AdminJury";
+import { AdminIiscRoster } from "./screens/AdminIiscRoster";
 import { AdminPsychometry } from "./screens/AdminPsychometry";
 import { AdminAIStatus } from "./screens/AdminAIStatus";
 import { AdminRoles } from "./screens/AdminRoles";
@@ -254,7 +255,7 @@ export function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBa
   // Badges come from real /stats data (passed down from AdminApp). A null
   // badge renders as no badge at all (see render below) — we never show a
   // fabricated number.
-  const tabs = [
+  let tabs = [
     { id:'dashboard',    label:'Dashboard',    sub:'OVERVIEW · PIPELINE',       badge:null },
     {
       id:'reviewers',
@@ -273,6 +274,14 @@ export function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBa
       badge: decisionMode === 'jury' ? null : (reviewBadge == null ? null : String(reviewBadge))
     },
   ];
+  if (decisionMode === 'jury') {
+    // Jury mode: drop the reviewer-pipeline tabs, add the candidate-pool roster
+    // right after Dashboard.
+    tabs = tabs.filter(t => t.id !== 'pipeline' && t.id !== 'rejected');
+    const afterDash = tabs.findIndex(t => t.id === 'dashboard') + 1;
+    tabs.splice(afterDash, 0,
+      { id:'iisc_roster', label:'IISc Jury Roster', sub:'CANDIDATE POOL', badge:null });
+  }
 
   return (
     <div className="lp-tabs">
@@ -295,6 +304,13 @@ function AdminApp() {
   const [selectedTrack, setSelectedTrack] = React.useState(null);
   const [backPage, setBackPage] = React.useState('pipeline');
   const [decisionMode, setDecisionMode] = React.useState('reviewer');
+
+  // Keep `page` valid for the current decision mode: the IISc roster only
+  // exists in jury mode; Applications/Rejected are hidden in jury mode.
+  React.useEffect(() => {
+    if (decisionMode === 'jury' && (page === 'pipeline' || page === 'rejected')) setPage('dashboard');
+    if (decisionMode === 'reviewer' && page === 'iisc_roster') setPage('dashboard');
+  }, [decisionMode]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Global re-render hook: any component (e.g. the Settings panel) can call
   // window.__osDataBump() after mutating OS_DATA to refresh the whole admin tree live.
@@ -393,6 +409,7 @@ function AdminApp() {
               />
             )}
             {page === 'reviewers'   && (decisionMode === 'jury' ? <AdminJury go={setPage} /> : <AdminReviewers decisionMode={decisionMode} />)}
+            {page === 'iisc_roster' && decisionMode === 'jury' && <AdminIiscRoster go={setPage} />}
             {page === 'roles'       && <AdminRoles />}
             {page === 'gate1'       && (decisionMode === 'jury' ? <AdminGate2 /> : <AdminGate1 goDetail={goDetail} />)}
             {page === 'psychometry' && <AdminPsychometry />}
