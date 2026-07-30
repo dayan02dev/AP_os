@@ -63,12 +63,48 @@ describe("AdminIiscRoster", () => {
     expect(screen.getByText("Dr. Joint Dup")).toBeTruthy();
   });
 
+  // Assert on the recommended-apps CELL, not the row's concatenated textContent:
+  // the count sits between two other words there, so a /\b1\b/ style match on the
+  // whole row is meaningless.
+  const recoCountOf = (name) => {
+    const cells = screen.getByText(name).closest("tr").querySelectorAll("td");
+    return cells[cells.length - 2].textContent.trim();   // last col is the Invite button
+  };
+
   it("recommends jury-selected apps by matched domain (AI prof → 1, Health prof → 1)", async () => {
     await renderRoster();
-    const aiRow = screen.getByText("Dr. AI One").closest("tr");
-    expect(aiRow.textContent).toMatch(/\b1\b/);
-    const healthRow = screen.getByText("Dr. Health Two").closest("tr");
-    expect(healthRow.textContent).toMatch(/\b1\b/);
+    expect(recoCountOf("Dr. AI One")).toBe("1");
+    expect(recoCountOf("Dr. Health Two")).toBe("1");
+  });
+
+  it("shows 0 for a professor whose domains match no jury-selected app", async () => {
+    await renderRoster();
+    // Dr. Joint Dup is robotics-only; neither seeded app is a robotics app.
+    expect(recoCountOf("Dr. Joint Dup")).toBe("0");
+  });
+
+  it("lists division as its own column and keeps the department chip", async () => {
+    await renderRoster();
+    const row = screen.getByText("Dr. AI One").closest("tr");
+    expect(row.textContent).toContain("CSA");
+    expect(row.textContent).toContain("Electrical Sciences");
+  });
+
+  it("sorts by ARTPARK match with Yes ahead of Partial", async () => {
+    await renderRoster();
+    fireEvent.click(screen.getByText(/ARTPARK MATCH/i));
+    const names = Array.from(document.querySelectorAll("tbody tr"))
+      .map((tr) => tr.querySelector(".startup").textContent);
+    expect(names[0]).toContain("Dr. AI One");        // Yes
+    expect(names[names.length - 1]).toContain("Dr. Health Two");  // Partial
+  });
+
+  it("Clear filters restores the full list", async () => {
+    await renderRoster();
+    fireEvent.change(screen.getByLabelText("Domain"), { target: { value: "health" } });
+    expect(screen.queryByText("Dr. AI One")).toBeNull();
+    fireEvent.click(screen.getByText("Clear filters"));
+    expect(screen.getByText("Dr. AI One")).toBeTruthy();
   });
 
   it("domain filter narrows to matching professors", async () => {
@@ -104,12 +140,100 @@ describe("AdminIiscRoster", () => {
     expect(btn.disabled).toBe(true);
   });
 
-  it("opens a detail drawer with fields, profile link, and recommended apps", async () => {
+});
+
+// The detail is a FULL PAGE now, not a drawer: it replaces the list rather than
+// overlaying it, so the other professors must be gone while it is open.
+describe("AdminIiscRoster — full-page professor detail", () => {
+  const openFirst = async () => {
     await renderRoster();
     fireEvent.click(screen.getByText("Dr. AI One"));
-    expect(screen.getByText(/does AI/)).toBeTruthy();
-    const link = screen.getByText(/View profile/i).closest("a");
+  };
+
+  it("replaces the list instead of overlaying it", async () => {
+    await openFirst();
+    expect(screen.getByText("Academic jury roster")).toBeTruthy();   // breadcrumb
+    expect(screen.getByText("← Back to roster")).toBeTruthy();
+    // The other rows are gone — this is a page, not a drawer over the table.
+    expect(screen.queryByText("Dr. Health Two")).toBeNull();
+    expect(screen.queryByText("Dr. Joint Dup")).toBeNull();
+  });
+
+  it("shows the scraped detail fields, the match reasoning and the profile link", async () => {
+    await openFirst();
+    expect(screen.getByText("ML")).toBeTruthy();               // research domain
+    expect(screen.getByText("deep learning")).toBeTruthy();    // subdomain chip
+    expect(screen.getByText("big paper")).toBeTruthy();        // notable work
+    expect(screen.getByText(/does AI/)).toBeTruthy();          // reasoning
+    const link = screen.getByText(/View IISc profile/i).closest("a");
     expect(link.getAttribute("href")).toBe("https://x/1");
+  });
+
+  it("renders a stat row and the matched-domain fit table with full labels", async () => {
+    await openFirst();
+    expect(screen.getByText("Matched domains")).toBeTruthy();
+    expect(screen.getByText("Recommended apps")).toBeTruthy();
+    // Scope to the fit table: the AI label also appears as an app's industry.
+    const fitTable = screen.getByText("ARTPARK industry").closest("table");
+    expect(fitTable.textContent).toContain("Artificial Intelligence / Foundational Models");
+    expect(fitTable.textContent).toContain("Robotics & Automation");
+    // Per-domain app counts: ai has the one AI startup, robotics has none.
+    const cells = (tok) => Array.from(fitTable.querySelectorAll("tbody tr"))
+      .find((tr) => tr.textContent.startsWith(tok)).querySelectorAll("td");
+    expect(cells("ai")[2].textContent.trim()).toBe("1");
+    expect(cells("robotics")[2].textContent.trim()).toBe("0");
+  });
+
+  it("lists the recommended jury-selected applications", async () => {
+    await openFirst();
     expect(screen.getByText("AI Startup")).toBeTruthy();
+    expect(screen.queryByText("Not Jury")).toBeNull();     // SHORTLISTED, not jury_review
+    expect(screen.queryByText("Health Startup")).toBeNull(); // wrong domain for this prof
+  });
+
+  it("walks to the next professor and back again", async () => {
+    await openFirst();
+    expect(screen.getByText("1 of 3")).toBeTruthy();
+    fireEvent.click(screen.getByText("Next professor →"));
+    expect(screen.getByText("2 of 3")).toBeTruthy();
+    expect(screen.getByText(/does health/)).toBeTruthy();
+    fireEvent.click(screen.getByText("← Prev professor"));
+    expect(screen.getByText("1 of 3")).toBeTruthy();
+  });
+
+  it("hides Prev on the first professor and Next on the last", async () => {
+    await openFirst();
+    expect(screen.queryByText("← Prev professor")).toBeNull();
+    fireEvent.click(screen.getByText("Next professor →"));
+    fireEvent.click(screen.getByText("Next professor →"));
+    expect(screen.getByText("3 of 3")).toBeTruthy();
+    expect(screen.queryByText("Next professor →")).toBeNull();
+  });
+
+  it("returns to the list with filters still applied", async () => {
+    await renderRoster();
+    fireEvent.change(screen.getByLabelText("Domain"), { target: { value: "health" } });
+    fireEvent.click(screen.getByText("Dr. Health Two"));
+    expect(screen.getByText("1 of 1 (filtered)")).toBeTruthy();
+    fireEvent.click(screen.getByText("← Back to roster"));
+    // Back on the list, still narrowed to the health domain.
+    expect(screen.getByText("Dr. Health Two")).toBeTruthy();
+    expect(screen.queryByText("Dr. AI One")).toBeNull();
+  });
+
+  it("invites from the detail page", async () => {
+    await openFirst();
+    fireEvent.click(screen.getByText("Invite to jury"));
+    expect(screen.getByDisplayValue("Dr. AI One")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Invite email"), { target: { value: "a@iisc.ac.in" } });
+    fireEvent.click(screen.getByText("Send invite"));
+    await waitFor(() => expect(adminPlatformApi.createJuryInvites).toHaveBeenCalledWith(
+      [{ name: "Dr. AI One", email: "a@iisc.ac.in" }]));
+  });
+
+  it("disables the invite button for someone already on the jury", async () => {
+    mockData({ jurors: [{ id: "j1", name: "Dr. AI One" }] });
+    await openFirst();
+    expect(screen.getByText("Already invited").disabled).toBe(true);
   });
 });
