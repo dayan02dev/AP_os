@@ -50,6 +50,20 @@ else
   sam build --config-env staging
 fi
 
+# Same dotenv strip as deploy-prod.sh — `sam build` copies the whole backend/
+# into the artifact, dotenv files included, which would put Supabase and API
+# keys inside the deployed code package and the SAM S3 bucket. Every value is
+# passed as a Lambda env var below instead.
+echo "→ Stripping dotenv files from the build artifact…"
+_stripped=0
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  rm -f "$f"
+  echo "   removed ${f#.aws-sam/build/}"
+  _stripped=$((_stripped + 1))
+done < <(find .aws-sam/build \( -name '.env' -o -name '.env.*' \) 2>/dev/null)
+echo "   ${_stripped} file(s) removed"
+
 echo "→ Deploying to AWS ap-south-1 (stack: artpark-eir-api-staging)…"
 sam deploy \
   --config-env staging \

@@ -56,6 +56,23 @@ else
   sam build --config-env production
 fi
 
+# ── Strip dotenv files out of the build artifact ────────────────────
+# `sam build` copies the whole CodeUri (backend/) into .aws-sam/build, which
+# sweeps up backend/.env.prod — i.e. the prod service-role key, ADMIN_API_KEY,
+# Resend and OpenRouter keys end up inside the deployed code package AND in the
+# SAM-managed S3 bucket, readable by anyone holding lambda:GetFunction or read
+# on that bucket. Nothing needs them there: every value is handed to the
+# function as a Lambda env var via --parameter-overrides below.
+echo "→ Stripping dotenv files from the build artifact…"
+_stripped=0
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  rm -f "$f"
+  echo "   removed ${f#.aws-sam/build/}"
+  _stripped=$((_stripped + 1))
+done < <(find .aws-sam/build \( -name '.env' -o -name '.env.*' \) 2>/dev/null)
+echo "   ${_stripped} file(s) removed"
+
 echo "→ Deploying to AWS ap-south-1 (stack: artpark-eir-api-production)…"
 sam deploy \
   --config-env production \
