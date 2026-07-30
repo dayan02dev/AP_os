@@ -114,7 +114,15 @@ function downloadCsv(rows) {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnly = false, heading }) {
+// `lockTrack` ("tir" | "sip") hard-scopes the list to one EFFECTIVE track and
+// hides the track switcher. Do NOT use the server-side `track` filter for this:
+// that one selects by NATIVE track (which table the row is read from), while a
+// row's displayed `track` is the effective one under the track-move overlay. A
+// TIR app moved to VIP would land in the wrong bucket, and a VIP app moved to
+// TIR would vanish from both. Filtering client-side on the effective track is
+// the only split that agrees with what the row claims to be.
+export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnly = false, heading,
+  lockTrack = null }) {
   const { data, loading, error, reload } = useAdminData("pipeline", baseFilter);
   const S = data?.startups || [];
 
@@ -127,7 +135,10 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   }, [batchData]);
 
   const [search, setSearch] = React.useState('');
-  const [track, setTrack] = React.useState('all');
+  const [trackState, setTrack] = React.useState('all');
+  // A locked track always wins, so "Clear filters" can't widen the list past
+  // the tab's own scope.
+  const track = lockTrack || trackState;
   const [status, setStatus] = React.useState('all');
   const [industry, setIndustry] = React.useState('all');
   const [batchFilter, setBatchFilter] = React.useState('all');
@@ -186,7 +197,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     );
   };
 
-  const hasFilters = search !== '' || track !== 'all' || status !== 'all' || industry !== 'all' || batchFilter !== 'all' || !!recoFilter;
+  const hasFilters = search !== '' || (!lockTrack && track !== 'all') || status !== 'all' || industry !== 'all' || batchFilter !== 'all' || !!recoFilter;
   const clearAll = () => {
     setSearch('');
     setTrack('all');
@@ -846,17 +857,19 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
               onChange={e => setSearch(e.target.value)}
             />
           </div>
-          <div className="lp-track-group">
-            {[['all', 'All tracks'], ['tir', 'TIR'], ['sip', 'VIP']].map(([v, label]) => (
-              <button
-                key={v}
-                className={`lp-track-btn${track === v ? ' active' : ''}`}
-                onClick={() => setTrack(v)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {!lockTrack && (
+            <div className="lp-track-group">
+              {[['all', 'All tracks'], ['tir', 'TIR'], ['sip', 'VIP']].map(([v, label]) => (
+                <button
+                  key={v}
+                  className={`lp-track-btn${track === v ? ' active' : ''}`}
+                  onClick={() => setTrack(v)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div style={{ flex: 1 }} />
 

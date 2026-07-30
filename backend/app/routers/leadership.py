@@ -65,6 +65,15 @@ async def get_stats() -> dict:
         for status_id, label in stats.PHASE_1_STATUSES
     ]
 
+    # Same numbers split by track. Additive — `status_counts` above is
+    # unchanged — and consumed by the admin tab badges, which need TIR and VIP
+    # counts separately (the jury stage now has one tab per track).
+    status_counts_by_track = [
+        {"id": status_id, "label": label,
+         **{track: per_status_per_track[status_id].get(track, 0) for track in stats.TRACKS}}
+        for status_id, label in stats.PHASE_1_STATUSES
+    ]
+
     # ─── Totals card ──────────────────────────────────────────────────
     profiles_signed_up = stats.count_profiles()
     tir_count = stats.count_apps_total("tir")
@@ -134,6 +143,7 @@ async def get_stats() -> dict:
         "totals":            totals,
         "funnel":            funnel,
         "status_counts":     status_counts,
+        "status_counts_by_track": status_counts_by_track,
         # Full list of AI overall scores (0–10) across all screened apps so
         # the dashboard can render the score-distribution histogram from the
         # complete set, not a capped page of the applications list.

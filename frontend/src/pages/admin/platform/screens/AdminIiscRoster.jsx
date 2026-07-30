@@ -1,4 +1,6 @@
-// AdminIiscRoster — A-7 · IISC JURY ROSTER (jury-mode candidate pool).
+// AdminIiscRoster — A-7 · ACADEMIC JURY ROSTER (jury-mode candidate pool).
+// (Component/file name kept as AdminIiscRoster — the data source is still the
+// scraped IISc faculty list; only the user-visible labels say "Academic".)
 //
 // Reads the static /iisc_professors.json (809 scraped IISc professors),
 // renders a design-system table with filters + a detail drawer, recommends
@@ -122,8 +124,8 @@ export function AdminIiscRoster({ go } = {}) {
         <button className="os-btn ghost sm" style={{ marginBottom: 12 }} onClick={() => go("dashboard")}>← Dashboard</button>
       )}
       <PageHead
-        eyebrow="A-7 · IISC JURY ROSTER"
-        title="IISc jury <em>roster</em>"
+        eyebrow="A-7 · ACADEMIC JURY ROSTER"
+        title="Academic jury <em>roster</em>"
         sub="All IISc professors we scraped, scored against ARTPARK's domains. Open a professor for detail, see the jury-selected applications that match their expertise, and send an invite."
       />
 

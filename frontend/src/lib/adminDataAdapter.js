@@ -103,6 +103,9 @@ export function adaptStats(api) {
     totals: api.totals || {},
     funnel: api.funnel || {},
     statusCounts: api.status_counts || [],
+    // Same counts split per track ([{id, label, tir, sip}]) — drives the
+    // per-track jury tab badges. Empty on older backends.
+    statusCountsByTrack: api.status_counts_by_track || [],
     aiScores: api.ai_score_overalls || [],
     decisions: api.decisions || {},
   };

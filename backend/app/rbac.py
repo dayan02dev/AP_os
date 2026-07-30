@@ -54,6 +54,7 @@ ROLE_CAPABILITIES: dict[str, Set[str]] = {
         "export_data",
         "view_audit_log",
         "decide_application",
+        "manage_ic_documents",
     },
     "admin": {
         "manage_users",
@@ -72,6 +73,7 @@ ROLE_CAPABILITIES: dict[str, Set[str]] = {
         "manage_batches",
         "manage_reviewers_roster",
         "view_stats",
+        "manage_ic_documents",
     },
 }
 

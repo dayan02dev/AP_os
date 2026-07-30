@@ -38,6 +38,7 @@ from .routers import (
     auth,
     evidence_files,
     health,
+    ic_documents,
     jury,
     jury_invites,
     leadership,
@@ -185,6 +186,7 @@ app.include_router(reviewer.router)
 app.include_router(mentors.router)
 app.include_router(jury_invites.router)
 app.include_router(jury.router)
+app.include_router(ic_documents.router)
 
 log.info(
     "app ready",

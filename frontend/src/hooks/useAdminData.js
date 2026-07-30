@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { adminPlatformApi } from "../lib/adminPlatformApi";
+import { icDocumentsApi } from "../lib/icDocumentsApi";
 import {
   adaptPipelineRow, adaptStats, adaptDetail, adaptReviewer,
   adaptReviewerApplication, adaptCalibrationRow, adaptAuditEntry, adaptBatch,
@@ -40,6 +41,15 @@ const LOADERS = {
   jurorApplications: async ({ userId }) => {
     const r = await adminPlatformApi.getJurorApplications(userId);
     return { applications: (r.applications || []).map(adaptJurorApplication) };
+  },
+  // IC documents, keyed by "<track>:<application_id>" for O(1) row lookup.
+  icDocuments: async ({ track } = {}) => {
+    const r = await icDocumentsApi.list(track);
+    const byKey = {};
+    for (const d of r.documents || []) {
+      if (d && d.application_id) byKey[`${d.track}:${d.application_id}`] = d;
+    }
+    return { documents: r.documents || [], byKey };
   },
 };
 

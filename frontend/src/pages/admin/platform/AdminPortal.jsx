@@ -26,6 +26,7 @@ import { AdminReviewers } from "./screens/AdminReviewers";
 import { AdminGate2 } from "./screens/AdminGate2";
 import { AdminJury } from "./screens/AdminJury";
 import { AdminIiscRoster } from "./screens/AdminIiscRoster";
+import { AdminJuryVipSelected } from "./screens/AdminJuryVipSelected";
 import { AdminPsychometry } from "./screens/AdminPsychometry";
 import { AdminAIStatus } from "./screens/AdminAIStatus";
 import { AdminRoles } from "./screens/AdminRoles";
@@ -48,7 +49,8 @@ function AdminTopbar({ page, decisionMode, setPage }) {
     roles:'USER ROLES',
     gate1: decisionMode === 'jury' ? 'FINAL GATE' : 'ADMIN REVIEW',
     psychometry:'PSYCHOMETRY',
-    jury:'JURY MGMT', gate2:'GATE 2 FINAL', audit:'AUDIT LOG', analytics:'ANALYTICS',
+    jury_tir:'JURY TIR SELECTED', jury_vip:'JURY VIP SELECTED',
+    gate2:'GATE 2 FINAL', audit:'AUDIT LOG', analytics:'ANALYTICS',
   };
   const crumb = crumbMap[page] || 'DASHBOARD';
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -251,7 +253,8 @@ function AdminCohortHeader({ page, setPage, decisionMode, setDecisionMode }) {
   );
 }
 
-export function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBadge, reviewBadge, juryBadge }) {
+export function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBadge, reviewBadge,
+  juryTirBadge, juryVipBadge }) {
   // Badges come from real /stats data (passed down from AdminApp). A null
   // badge renders as no badge at all (see render below) — we never show a
   // fabricated number.
@@ -265,8 +268,12 @@ export function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBa
     },
     { id:'pipeline',     label:'Applications', sub:'ALL SUBMISSIONS',            badge: appsBadge == null ? null : String(appsBadge) },
     { id:'rejected',     label:'Rejected Applications', sub:'REJECTED BY ADMIN', badge: rejectedBadge == null ? null : String(rejectedBadge) },
-    { id:'jury',         label:'Jury Selected', sub:'SELECTED FOR JURY',
-      badge: juryBadge == null ? null : String(juryBadge) },
+    // The jury stage is split per track: TIR runs the full jury round (pick-3 →
+    // Final Gate), VIP only carries the IC document + its signature.
+    { id:'jury_tir',     label:'Jury TIR Selected', sub:'SELECTED FOR JURY · TIR',
+      badge: juryTirBadge == null ? null : String(juryTirBadge) },
+    { id:'jury_vip',     label:'Jury VIP Selected', sub:'IC UPLOAD · SIGNATURE',
+      badge: juryVipBadge == null ? null : String(juryVipBadge) },
     {
       id:'gate1',
       label: decisionMode === 'jury' ? 'Final Gate' : 'Admin Review',
@@ -280,7 +287,7 @@ export function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBa
     tabs = tabs.filter(t => t.id !== 'pipeline' && t.id !== 'rejected');
     const afterDash = tabs.findIndex(t => t.id === 'dashboard') + 1;
     tabs.splice(afterDash, 0,
-      { id:'iisc_roster', label:'IISc Jury Roster', sub:'CANDIDATE POOL', badge:null });
+      { id:'iisc_roster', label:'Academic Jury Roster', sub:'CANDIDATE POOL', badge:null });
   }
 
   return (
@@ -320,7 +327,8 @@ function AdminApp() {
   // Real tab-badge counts from /stats. While loading (or if the field is
   // absent) we pass null so NO badge shows rather than a fabricated number.
   const { data: statsData, loading: statsLoading } = useAdminData('stats');
-  const { appsBadge, rejectedBadge, juryBadge } = pipelineBadges(statsData, statsLoading);
+  const { appsBadge, rejectedBadge, juryTirBadge, juryVipBadge } =
+    pipelineBadges(statsData, statsLoading);
   // "Admin Review" = apps evaluated by reviewers and awaiting an admin decision.
   const evaluatedEntry = (statsData?.statusCounts || []).find(s => s.id === 'evaluated');
   const reviewBadge = statsLoading ? null : (evaluatedEntry ? evaluatedEntry.n : null);
@@ -390,14 +398,20 @@ function AdminApp() {
               appsBadge={appsBadge}
               rejectedBadge={rejectedBadge}
               reviewBadge={reviewBadge}
-              juryBadge={juryBadge}
+              juryTirBadge={juryTirBadge}
+              juryVipBadge={juryVipBadge}
             />
           )}
           <div className="lp-tab-content">
             {page === 'dashboard'   && <AdminDashboard go={setPage} decisionMode={decisionMode} />}
             {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ exclude_status: 'rejected,jury_review' }} />}
             {page === 'rejected'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ status: 'rejected' }} readOnly heading="Rejected applications" />}
-            {page === 'jury'        && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ status: 'jury_review' }} readOnly heading="Jury selected applications" />}
+            {/* TIR keeps the existing jury flow verbatim — the same read-only
+                jury-selected list, scoped to the EFFECTIVE TIR track via
+                lockTrack (not the server's native-track filter). */}
+            {page === 'jury_tir'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ status: 'jury_review' }} lockTrack="tir" readOnly heading="Jury TIR selected applications" />}
+            {/* VIP has no jury round: IC document upload + digital signature. */}
+            {page === 'jury_vip'    && <AdminJuryVipSelected go={setPage} />}
             {page === 'detail'      && (
               <AdminDetail
                 startupId={selectedStartupId}
