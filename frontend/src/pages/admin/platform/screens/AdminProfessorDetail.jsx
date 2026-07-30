@@ -9,8 +9,9 @@
 // string each; they are split into real lists here, which is most of the reason
 // this reads better than the drawer did.
 
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 
+import { academicProfilesApi } from "../../../../lib/academicProfilesApi";
 import { TOKEN_TO_LABEL } from "../../../../lib/artparkDomains";
 import { Stat } from "../shell/osAtoms";
 
@@ -46,6 +47,201 @@ export function splitList(value) {
   }
   out.push(buf);
   return out.map((s) => s.trim()).filter((s) => s && s !== "—");
+}
+
+// ── Live enrichment from the professor's own faculty page ──────────────────
+//
+// Cached server-side per URL, so this fetches once per professor ever. It is
+// NOT auto-triggered: 809 professors × (page fetch + LLM) is real money and real
+// outbound traffic, so an admin asks for it on the one profile they care about.
+function ProfilePageDetails({ prof }) {
+  const url = prof.profile_url;
+  const [state, setState] = useState({ loading: true, row: null, enrichable: true, err: null });
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!url) { setState({ loading: false, row: null, enrichable: false, err: null }); return; }
+    setState((s) => ({ ...s, loading: true, err: null }));
+    try {
+      const r = await academicProfilesApi.get(url);
+      setState({ loading: false, row: r?.profile || null, enrichable: r?.enrichable !== false, err: null });
+    } catch (e) {
+      setState({ loading: false, row: null, enrichable: true, err: e?.message || "Couldn't load." });
+    }
+  }, [url]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const run = async (force) => {
+    setBusy(true);
+    try {
+      const r = await academicProfilesApi.enrich(url, prof.name, force);
+      setState((s) => ({ ...s, row: r?.profile || null, err: null }));
+    } catch (e) {
+      setState((s) => ({ ...s, err: e?.details?.message || e?.message || "Enrichment failed." }));
+    } finally { setBusy(false); }
+  };
+
+  const row = state.row;
+  const ex = row?.status === "done" ? (row.extracted || {}) : null;
+  const nothingFound = ex && !hasAnything(ex);
+
+  return (
+    <Section label="From their profile page">
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div className="os-row gap-sm" style={{ alignItems: "center", flexWrap: "wrap" }}>
+          {row?.status === "done" && (
+            <span className="os-chip purple" style={{ fontSize: 10.5, fontWeight: 700 }}>FETCHED</span>
+          )}
+          {row?.status === "failed" && (
+            <span className="os-chip red" style={{ fontSize: 10.5, fontWeight: 700 }}>FAILED</span>
+          )}
+          <span className="os-text-xs os-text-dim">
+            {!state.enrichable
+              ? "This professor's page isn't in the roster allow-list, so it can't be fetched."
+              : row?.fetched_at
+                ? `Read from ${new URL(url).hostname} · ${String(row.fetched_at).slice(0, 10)}`
+                : "Not fetched yet — reads their faculty page and extracts the details."}
+          </span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            {state.enrichable && (
+              <button
+                className="os-btn sm"
+                style={row ? undefined : { background: "#3213b7", color: "#fff" }}
+                disabled={busy || state.loading}
+                onClick={() => run(Boolean(row))}
+              >
+                {busy ? "Reading page…" : row ? "Re-fetch" : "Fetch details"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {state.loading && <span className="os-text-soft os-text-sm">Checking…</span>}
+
+        {state.err && (
+          <div style={{ color: "var(--bad)", fontSize: 13, fontWeight: 600, padding: "8px 12px", background: "var(--bad-soft)", borderRadius: 4 }}>
+            {state.err}
+          </div>
+        )}
+
+        {row?.status === "failed" && (
+          <div style={{ fontSize: 13, color: "var(--ink-soft)", padding: "8px 12px", background: "var(--bg-soft)", borderRadius: 4 }}>
+            {row.error || "Couldn't read that page."}
+            {row.http_status ? ` (HTTP ${row.http_status})` : ""}
+          </div>
+        )}
+
+        {nothingFound && (
+          <div className="os-text-soft os-text-sm">
+            That page had no extractable details — it may be a stub or an image-only page.
+          </div>
+        )}
+
+        {ex && !nothingFound && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {ex.summary && (
+              <div style={{ fontSize: 13.5, lineHeight: 1.55, color: "var(--ink)" }}>{ex.summary}</div>
+            )}
+
+            {(ex.emails?.length || ex.phone || ex.position || ex.lab?.name) && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12 }}>
+                {ex.position && <KV label="Position">{ex.position}</KV>}
+                {ex.emails?.length > 0 && (
+                  <KV label={ex.emails.length > 1 ? "Emails" : "Email"}>
+                    {ex.emails.map((e) => (
+                      <div key={e}><a href={`mailto:${e}`} className="os-mono" style={{ fontSize: 12.5 }}>{e}</a></div>
+                    ))}
+                  </KV>
+                )}
+                {ex.phone && <KV label="Phone"><span className="os-mono" style={{ fontSize: 12.5 }}>{ex.phone}</span></KV>}
+                {ex.lab?.name && (
+                  <KV label="Lab">
+                    {ex.lab.url
+                      ? <a href={ex.lab.url} target="_blank" rel="noopener noreferrer">{ex.lab.name} ↗</a>
+                      : ex.lab.name}
+                  </KV>
+                )}
+              </div>
+            )}
+
+            {ex.research_interests?.length > 0 && (
+              <KV label={`Research interests (${ex.research_interests.length})`}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 2 }}>
+                  {ex.research_interests.map((t, i) => (
+                    <span key={i} className="os-chip" style={{ fontSize: 11.5, padding: "3px 9px" }}>{t}</span>
+                  ))}
+                </div>
+              </KV>
+            )}
+
+            {ex.education?.length > 0 && (
+              <KV label="Education"><BulletList items={ex.education} /></KV>
+            )}
+
+            {ex.publications?.length > 0 && (
+              <KV label={`Selected publications (${ex.publications.length})`}>
+                <table className="os-table" style={{ marginTop: 4 }}>
+                  <thead>
+                    <tr><th>Title</th><th style={{ width: "28%" }}>Venue</th><th className="num" style={{ width: 70 }}>Year</th></tr>
+                  </thead>
+                  <tbody>
+                    {ex.publications.map((p, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 500 }}>{p.title}</td>
+                        <td className="os-text-soft">{p.venue || "—"}</td>
+                        <td className="num os-mono">{p.year || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </KV>
+            )}
+
+            {ex.awards?.length > 0 && (
+              <KV label={`Awards & honours (${ex.awards.length})`}><BulletList items={ex.awards} /></KV>
+            )}
+
+            {ex.links?.length > 0 && (
+              <KV label="Links">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 2 }}>
+                  {ex.links.map((l) => (
+                    <a key={l.url} className="os-btn ghost sm" href={l.url} target="_blank"
+                      rel="noopener noreferrer" style={{ textDecoration: "none" }}>
+                      {l.label} ↗
+                    </a>
+                  ))}
+                </div>
+              </KV>
+            )}
+
+            <div className="os-text-xs os-text-dim">
+              Extracted from the page text by {row.model || "AI"} — treat as a reading aid, not a verified record.
+            </div>
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function KV({ label, children }) {
+  return (
+    <div>
+      <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 13.5, lineHeight: 1.5, color: "var(--ink)" }}>{children}</div>
+    </div>
+  );
+}
+
+/** Mirror of the backend's is_empty — an all-empty extraction is not data. */
+export function hasAnything(ex) {
+  if (!ex) return false;
+  return Boolean(
+    ex.emails?.length || ex.phone || ex.position || ex.lab?.name ||
+    ex.education?.length || ex.research_interests?.length ||
+    ex.publications?.length || ex.awards?.length || ex.links?.length || ex.summary,
+  );
 }
 
 function Section({ label, children, count }) {
@@ -224,6 +420,9 @@ export function AdminProfessorDetail({
             )}
           </div>
         </Section>
+
+        {/* ── Live detail read off their own faculty page ─────────────────── */}
+        <ProfilePageDetails prof={prof} />
 
         {/* ── ARTPARK domain fit ─────────────────────────────────────────── */}
         <Section label="ARTPARK domain fit">

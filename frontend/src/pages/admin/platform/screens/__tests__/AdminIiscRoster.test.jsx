@@ -3,6 +3,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 vi.mock("../../../../../hooks/useAdminData", () => ({ useAdminData: vi.fn() }));
+// The detail page mounts the profile-page enrichment card; stub the network so
+// these tests stay about the roster and the page, not enrichment.
+vi.mock("../../../../../lib/academicProfilesApi", () => ({
+  academicProfilesApi: {
+    get: vi.fn().mockResolvedValue({ profile: null, enrichable: true }),
+    enrich: vi.fn(),
+  },
+}));
 vi.mock("../../../../../lib/adminPlatformApi", () => ({
   adminPlatformApi: { createJuryInvites: vi.fn().mockResolvedValue({ results: [{ email: "x@y.com", status: "invited" }] }) },
 }));

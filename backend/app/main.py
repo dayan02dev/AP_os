@@ -29,6 +29,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from .config import settings
 from .routers import (
+    academic_profiles,
     admin,
     admin_platform,
     admin_users,
@@ -187,6 +188,7 @@ app.include_router(mentors.router)
 app.include_router(jury_invites.router)
 app.include_router(jury.router)
 app.include_router(ic_documents.router)
+app.include_router(academic_profiles.router)
 
 log.info(
     "app ready",
