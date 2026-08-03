@@ -1,6 +1,6 @@
-// AdminJuryVipSelected — "Jury VIP Selected" (jury-mode tab).
+// AdminJuryVipSelected — "VIP Selected" (jury-mode tab).
 //
-// VIP (sip) applications sitting in JURY REVIEW. Unlike Jury TIR Selected there
+// VIP (sip) applications sitting in JURY REVIEW. Unlike TIR Selected there
 // is NO jury round here: no juror assignment, no picks, no Final Gate stack.
 // Each application gets exactly two actions on the right:
 //

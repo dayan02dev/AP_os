@@ -3,7 +3,7 @@
 // statusCounts entries are { id, n }. Returns nulls while loading so no
 // fabricated number is shown.
 //
-// The jury stage has one tab per track (Jury TIR Selected / Jury VIP Selected),
+// The jury stage has one tab per track (TIR Selected / VIP Selected),
 // so jury_review is also split using `statusCountsByTrack` ([{id, tir, sip}]).
 // If the backend hasn't got that field yet, the per-track badges come back null
 // (no badge) while the combined `juryBadge` still works.

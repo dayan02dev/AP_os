@@ -1,4 +1,4 @@
-// Investment Committee (IC) document API — admin "Jury VIP Selected" section.
+// Investment Committee (IC) document API — admin "VIP Selected" section.
 //
 //   GET  /admin/platform/ic-documents?track=sip                 current docs
 //   POST /admin/platform/ic-documents/{track}/{id}              upload IC PDF

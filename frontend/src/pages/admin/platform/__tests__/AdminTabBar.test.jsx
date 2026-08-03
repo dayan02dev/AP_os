@@ -86,7 +86,7 @@ describe("AdminTabBar — jury selected split per track", () => {
   });
 });
 
-// The Jury TIR tab is AdminPipeline with lockTrack="tir". The scoping must use
+// The TIR Selected tab is AdminPipeline with lockTrack="tir". The scoping must use
 // the EFFECTIVE track so moved apps land in exactly one of the two tabs.
 describe("AdminPipeline lockTrack — effective-track scoping", () => {
   it("keeps effective-TIR rows, including one moved VIP→TIR", () => {
