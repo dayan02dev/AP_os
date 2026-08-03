@@ -26,6 +26,14 @@ const MATCH_TONE = { Yes: "purple", Partial: "amber", No: "" };
 const MATCH_RANK = { Yes: 0, Partial: 1, No: 2 };
 const norm = (s) => (s || "").toLowerCase().replace(/\./g, "").replace(/-/g, " ").replace(/\s+/g, " ").trim();
 
+// TEMPORARY TEST ROW: the FIRST entry of public/iisc_professors.json is a
+// synthetic "udayan" row carrying an `email`, used to exercise the real invite
+// path (createJuryInvites -> jury_invite template -> Resend) without mailing an
+// actual professor. It is the ONLY row with an email, so a mis-click on a real
+// professor can never be misrouted to it. `isTestRow` drives the amber TEST
+// badge below. To remove: delete that one object from the JSON (search
+// "isTestRow"); the two guards here are inert without it.
+
 export function AdminIiscRoster({ go } = {}) {
   const [profs, setProfs] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
@@ -235,6 +243,17 @@ export function AdminIiscRoster({ go } = {}) {
                     <td>
                       <div className="startup">
                         {p.name || "—"}
+                        {/* TEST ROW badge — remove with the isTestRow row in iisc_professors.json. */}
+                        {p.isTestRow && (
+                          <span
+                            className="os-chip"
+                            title={`Test row — invites go to ${p.email}`}
+                            style={{
+                              marginLeft: 6, fontSize: 9, padding: "1px 5px", fontWeight: 700,
+                              background: "#fff4d6", border: "1px solid #e6c34d", color: "#8a6d00",
+                            }}
+                          >TEST</span>
+                        )}
                         {p.duplicate_joint_appointment === "Yes" && (
                           <span className="os-chip" style={{ marginLeft: 6, fontSize: 9, padding: "1px 5px", fontWeight: 700 }}>JOINT</span>
                         )}
@@ -295,15 +314,10 @@ export function AdminIiscRoster({ go } = {}) {
   );
 }
 
-// TESTING DEFAULT — the scraped roster carries no email addresses, so the
-// invite field is normally blank and the admin types one in. Pre-filling this
-// lets us exercise the real send path (jury_invite template → Resend) end to
-// end without mailing an actual professor. REMOVE THIS CONSTANT (and revert
-// the useState below to "") before the roster goes live.
-export const TEST_INVITE_EMAIL = "udayanpawar03@gmail.com";
-
 function InviteModal({ prof, onClose, onDone }) {
-  const [email, setEmail] = useState(TEST_INVITE_EMAIL);
+  // Only the isTestRow entry carries an `email`; real professors start blank so a
+  // mis-click can never silently mail the test address.
+  const [email, setEmail] = useState(prof.email || "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   const [result, setResult] = useState(null);
