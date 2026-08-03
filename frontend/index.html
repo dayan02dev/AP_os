@@ -26,6 +26,39 @@
     "bg": "auto"
   }/*EDITMODE-END*/;
 </script>
+
+<script>
+  // ── Deploy self-heal: recover from a stale-HTML / missing-asset mismatch ──
+  //
+  // Vercel's production alias serves ONLY the current deployment's /assets/.
+  // Promoting a build swaps that whole set, so the previous build's hashed
+  // files stop resolving (verified: the prior bundle 404s on the alias right
+  // after a promote). Our HTML is `max-age=0, must-revalidate` but is still
+  // edge-cached, so a browser can hold an app.html that points at assets which
+  // no longer exist. The entry module then 404s, nothing mounts, and EVERY
+  // route renders as a blank white page — which is exactly what took prod down
+  // on 2026-08-03. A hard refresh fixes it per-user; this fixes it for everyone.
+  //
+  // Resource load errors don't bubble, so we listen in the CAPTURE phase. A
+  // timestamp in sessionStorage bounds us to one reload per minute per tab, so
+  // a genuinely-missing asset degrades to the same blank page rather than an
+  // infinite reload loop.
+  (function () {
+    var KEY = "__ap_asset_reload_at";
+    var COOLDOWN_MS = 60000;
+    window.addEventListener("error", function (e) {
+      var el = e && e.target;
+      if (!el || (el.tagName !== "SCRIPT" && el.tagName !== "LINK")) return;
+      var src = el.src || el.href || "";
+      if (src.indexOf("/assets/") === -1) return;
+      var last = 0;
+      try { last = +(sessionStorage.getItem(KEY) || 0); } catch (_) { return; }
+      if (Date.now() - last < COOLDOWN_MS) return;
+      try { sessionStorage.setItem(KEY, String(Date.now())); } catch (_) {}
+      location.reload();
+    }, true);
+  })();
+</script>
 </head>
 <body>
 <div id="root"></div>
