@@ -366,9 +366,9 @@ export function AdminJuryVipSelected({ go } = {}) {
       )}
 
       <PageHead
-        eyebrow="JURY VIP SELECTED"
-        title="Jury VIP <em>selected</em>"
-        sub="VIP applications in jury review. No jury round here — upload the Investment Committee document and sign it."
+        eyebrow="VIP SELECTED"
+        title="VIP <em>selected</em>"
+        sub="Selected VIP applications. Upload the Investment Committee document and sign it."
       />
 
       <div className="os-row gap-sm" style={{ flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>

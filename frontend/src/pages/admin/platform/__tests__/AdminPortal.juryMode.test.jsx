@@ -52,26 +52,26 @@ describe("AdminPortal — jury decision mode", () => {
   // Same missing-import trap as AdminJury above: AdminJuryVipSelected only ever
   // renders behind a tab click, so vite build cannot catch an unimported
   // component — this navigates there for real.
-  it("renders the Jury VIP Selected screen without crashing", () => {
+  it("renders the VIP Selected screen without crashing", () => {
     render(<AdminPortalDefault />);
     fireEvent.click(screen.getByText("Jury Decision"));
-    fireEvent.click(screen.getByText("Jury VIP Selected"));
+    fireEvent.click(screen.getByText("VIP Selected"));
     expect(screen.getByText("No VIP applications in jury review.")).toBeInTheDocument();
     expect(screen.getByLabelText("Search VIP applications")).toBeInTheDocument();
   });
 
-  it("renders the Jury TIR Selected list on its own tab", () => {
+  it("renders the TIR Selected list on its own tab", () => {
     render(<AdminPortalDefault />);
     fireEvent.click(screen.getByText("Jury Decision"));
-    fireEvent.click(screen.getByText("Jury TIR Selected"));
-    expect(screen.getByText(/Jury TIR selected applications/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("TIR Selected"));
+    expect(screen.getByText(/TIR selected applications/i)).toBeInTheDocument();
   });
 
   it("offers both jury tabs and no combined Jury Selected tab", () => {
     render(<AdminPortalDefault />);
     fireEvent.click(screen.getByText("Jury Decision"));
-    expect(screen.getByText("Jury TIR Selected")).toBeInTheDocument();
-    expect(screen.getByText("Jury VIP Selected")).toBeInTheDocument();
+    expect(screen.getByText("TIR Selected")).toBeInTheDocument();
+    expect(screen.getByText("VIP Selected")).toBeInTheDocument();
     expect(screen.queryByText("Jury Selected")).toBeNull();
   });
 });

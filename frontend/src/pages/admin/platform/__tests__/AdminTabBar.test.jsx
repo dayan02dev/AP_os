@@ -40,7 +40,7 @@ describe("AdminTabBar — jury vs reviewer tabs", () => {
     expect(screen.queryByText("Applications")).toBeNull();
     expect(screen.queryByText("Rejected Applications")).toBeNull();
     const labels = screen.getAllByText(
-      /Dashboard|Academic Jury Roster|Jury|Jury TIR Selected|Jury VIP Selected|Final Gate/)
+      /Dashboard|Academic Jury Roster|Jury|TIR Selected|VIP Selected|Final Gate/)
       .map(n => n.textContent);
     expect(labels[0]).toBe("Dashboard");
     expect(labels[1]).toBe("Academic Jury Roster");
@@ -54,17 +54,17 @@ describe("AdminTabBar — jury vs reviewer tabs", () => {
 });
 
 describe("AdminTabBar — jury selected split per track", () => {
-  it("shows Jury TIR Selected and Jury VIP Selected side by side, not a combined tab", () => {
+  it("shows TIR Selected and VIP Selected side by side, not a combined tab", () => {
     render(<AdminTabBar {...base} decisionMode="jury" />);
-    expect(screen.getByText("Jury TIR Selected")).toBeTruthy();
-    expect(screen.getByText("Jury VIP Selected")).toBeTruthy();
+    expect(screen.getByText("TIR Selected")).toBeTruthy();
+    expect(screen.getByText("VIP Selected")).toBeTruthy();
     expect(screen.queryByText("Jury Selected")).toBeNull();
   });
 
   it("keeps the split in reviewer mode too", () => {
     render(<AdminTabBar {...base} decisionMode="reviewer" />);
-    expect(screen.getByText("Jury TIR Selected")).toBeTruthy();
-    expect(screen.getByText("Jury VIP Selected")).toBeTruthy();
+    expect(screen.getByText("TIR Selected")).toBeTruthy();
+    expect(screen.getByText("VIP Selected")).toBeTruthy();
   });
 
   it("renders each track's badge independently", () => {
@@ -81,7 +81,7 @@ describe("AdminTabBar — jury selected split per track", () => {
   it("selects the clicked jury tab by id", () => {
     const setPage = vi.fn();
     render(<AdminTabBar {...base} setPage={setPage} decisionMode="jury" />);
-    screen.getByText("Jury VIP Selected").click();
+    screen.getByText("VIP Selected").click();
     expect(setPage).toHaveBeenCalledWith("jury_vip");
   });
 });
@@ -90,7 +90,7 @@ describe("AdminTabBar — jury selected split per track", () => {
 // the EFFECTIVE track so moved apps land in exactly one of the two tabs.
 describe("AdminPipeline lockTrack — effective-track scoping", () => {
   it("keeps effective-TIR rows, including one moved VIP→TIR", () => {
-    render(<AdminPipeline lockTrack="tir" readOnly heading="Jury TIR selected applications" />);
+    render(<AdminPipeline lockTrack="tir" readOnly heading="TIR selected applications" />);
     expect(screen.getByText("Native TIR")).toBeTruthy();
     expect(screen.getByText("Moved To TIR")).toBeTruthy();
   });

@@ -49,7 +49,7 @@ function AdminTopbar({ page, decisionMode, setPage }) {
     roles:'USER ROLES',
     gate1: decisionMode === 'jury' ? 'FINAL GATE' : 'ADMIN REVIEW',
     psychometry:'PSYCHOMETRY',
-    jury_tir:'JURY TIR SELECTED', jury_vip:'JURY VIP SELECTED',
+    jury_tir:'TIR SELECTED', jury_vip:'VIP SELECTED',
     gate2:'GATE 2 FINAL', audit:'AUDIT LOG', analytics:'ANALYTICS',
   };
   const crumb = crumbMap[page] || 'DASHBOARD';
@@ -270,9 +270,9 @@ export function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBa
     { id:'rejected',     label:'Rejected Applications', sub:'REJECTED BY ADMIN', badge: rejectedBadge == null ? null : String(rejectedBadge) },
     // The jury stage is split per track: TIR runs the full jury round (pick-3 →
     // Final Gate), VIP only carries the IC document + its signature.
-    { id:'jury_tir',     label:'Jury TIR Selected', sub:'SELECTED FOR JURY · TIR',
+    { id:'jury_tir',     label:'TIR Selected', sub:'SELECTED · TIR',
       badge: juryTirBadge == null ? null : String(juryTirBadge) },
-    { id:'jury_vip',     label:'Jury VIP Selected', sub:'IC UPLOAD · SIGNATURE',
+    { id:'jury_vip',     label:'VIP Selected', sub:'IC UPLOAD · SIGNATURE',
       badge: juryVipBadge == null ? null : String(juryVipBadge) },
     {
       id:'gate1',
@@ -409,7 +409,7 @@ function AdminApp() {
             {/* TIR keeps the existing jury flow verbatim — the same read-only
                 jury-selected list, scoped to the EFFECTIVE TIR track via
                 lockTrack (not the server's native-track filter). */}
-            {page === 'jury_tir'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ status: 'jury_review' }} lockTrack="tir" readOnly heading="Jury TIR selected applications" />}
+            {page === 'jury_tir'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ status: 'jury_review' }} lockTrack="tir" readOnly heading="TIR selected applications" />}
             {/* VIP has no jury round: IC document upload + digital signature. */}
             {page === 'jury_vip'    && <AdminJuryVipSelected go={setPage} />}
             {page === 'detail'      && (

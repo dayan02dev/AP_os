@@ -766,15 +766,28 @@
 }
 
 /* ── Tab bar ─────────────────────────────────────────────── */
+/* Scrolls on its own rather than widening the page — see the matching note
+   in admin-portal.css. Shared by the reviewer AND jury portals (JuryPortal
+   imports this stylesheet). */
 .rv-portal .lp-tabs {
   display: flex; gap: 48px; padding: 0 40px; flex-shrink: 0;
   border-bottom: 1px solid #e3e3e8; background: #fff;
+  overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin; scrollbar-color: #c8c8d0 transparent;
 }
+.rv-portal .lp-tabs::-webkit-scrollbar { height: 6px; }
+.rv-portal .lp-tabs::-webkit-scrollbar-track { background: transparent; }
+.rv-portal .lp-tabs::-webkit-scrollbar-thumb {
+  background: #d6d6dd; border-radius: 999px;
+}
+.rv-portal .lp-tabs:hover::-webkit-scrollbar-thumb { background: #c8c8d0; }
 .rv-portal .lp-tab {
   display: flex; flex-direction: column; gap: 5px;
   padding: 16px 0 14px; cursor: pointer;
   border-bottom: 2px solid transparent; margin-bottom: -1px;
   user-select: none;
+  flex: 0 0 auto;
 }
 .rv-portal .lp-tab:hover .lp-tab-label { color: #242424; }
 .rv-portal .lp-tab.active { border-bottom-color: #3213b7; }
@@ -782,6 +795,7 @@
   display: flex; align-items: center; gap: 10px;
   font-family: var(--font-sans); font-size: 22px; font-weight: 500;
   letter-spacing: -0.01em; color: #4a4a52; -webkit-font-smoothing: antialiased;
+  white-space: nowrap;
 }
 .rv-portal .lp-tab.active .lp-tab-label { color: #242424; font-weight: 700; }
 .rv-portal .lp-tab-badge {

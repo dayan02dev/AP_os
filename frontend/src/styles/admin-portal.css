@@ -2042,6 +2042,12 @@
   -webkit-font-smoothing: antialiased;
 }
 /* ── Tab bar ─────────────────────────────────────────────── */
+/* The tab strip scrolls horizontally on its own — it must never widen the
+   page. In jury mode there are 6 tabs with long labels ("Academic Jury
+   Roster"), which used to overflow the viewport and drag the WHOLE layout
+   left/right. `overflow-x: auto` confines that scroll to this strip;
+   `overflow-y: hidden` stops the active tab's -1px bottom border from
+   provoking a vertical scrollbar inside it. */
 .adm-portal .lp-tabs {
   display: flex;
   gap: 48px;
@@ -2049,7 +2055,20 @@
   flex-shrink: 0;
   border-bottom: 1px solid #e3e3e8;
   background: #fff;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #c8c8d0 transparent;
 }
+.adm-portal .lp-tabs::-webkit-scrollbar { height: 6px; }
+.adm-portal .lp-tabs::-webkit-scrollbar-track { background: transparent; }
+.adm-portal .lp-tabs::-webkit-scrollbar-thumb {
+  background: #d6d6dd;
+  border-radius: 999px;
+}
+.adm-portal .lp-tabs:hover::-webkit-scrollbar-thumb { background: #c8c8d0; }
 .adm-portal .lp-tab {
   display: flex;
   flex-direction: column;
@@ -2059,6 +2078,9 @@
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   user-select: none;
+  /* Never squash or wrap a tab to fit — the strip scrolls instead. This is
+     what stops "Academic Jury Roster" rendering as three stacked lines. */
+  flex: 0 0 auto;
 }
 .adm-portal .lp-tab:hover .lp-tab-label {
   color: #242424;
@@ -2076,6 +2098,7 @@
   letter-spacing: -0.01em;
   color: #6f6f78;
   -webkit-font-smoothing: antialiased;
+  white-space: nowrap;
 }
 .adm-portal .lp-tab.active .lp-tab-label {
   color: #242424;

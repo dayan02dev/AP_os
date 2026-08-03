@@ -295,8 +295,15 @@ export function AdminIiscRoster({ go } = {}) {
   );
 }
 
+// TESTING DEFAULT — the scraped roster carries no email addresses, so the
+// invite field is normally blank and the admin types one in. Pre-filling this
+// lets us exercise the real send path (jury_invite template → Resend) end to
+// end without mailing an actual professor. REMOVE THIS CONSTANT (and revert
+// the useState below to "") before the roster goes live.
+export const TEST_INVITE_EMAIL = "udayanpawar03@gmail.com";
+
 function InviteModal({ prof, onClose, onDone }) {
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(TEST_INVITE_EMAIL);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   const [result, setResult] = useState(null);
@@ -322,6 +329,14 @@ function InviteModal({ prof, onClose, onDone }) {
           {result ? (
             <>
               <div className="os-text-sm">Invite to <b>{prof.name}</b>: <span className={"os-chip " + (result.status === "invited" ? "purple" : result.status === "already_invited" ? "amber" : "")}>{result.status.replace(/_/g, " ")}</span></div>
+              {result.status === "already_invited" && (
+                <div className="os-text-xs os-text-dim">
+                  This address was already invited, so <b>no new email was sent</b> — the
+                  original invite link is still the valid one. To re-test delivery, use a
+                  different address (Gmail <code>+tag</code> aliases work) or delete the
+                  existing <code>jury_invites</code> row first.
+                </div>
+              )}
               <button className="os-btn" style={{ background: "#3213b7", color: "#fff" }} onClick={onDone}>Done</button>
             </>
           ) : (
