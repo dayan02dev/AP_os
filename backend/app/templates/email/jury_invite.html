@@ -1,18 +1,60 @@
 {% extends "base.html" %}
-{% block title %}Invitation: Join the ARTPARK TIR jury panel{% endblock %}
-{% block header_sublabel %}JURY PANEL{% endblock %}
+{% block title %}Invitation: Join the ARTPARK TIR 2026 jury &amp; mentor panel{% endblock %}
+{% block header_sublabel %}JURY &amp; MENTOR PANEL · TIR 2026{% endblock %}
 {% block content %}
-<p style="margin:0 0 14px 0;">Hi {{ jury_name }},</p>
-<p style="margin:0 0 14px 0;">ARTPARK invites you to join the jury panel for the 2026 Technology Innovator in Residence (TIR) cohort. You will be matched with a small set of deep-tech startups and asked to pick the three you would like to mentor.</p>
-<p style="margin:0 0 22px 0;">Please respond below to accept or decline the invitation.</p>
+<p style="margin:0 0 14px 0;">Dear {{ jury_name }},</p>
+
+<p style="margin:0 0 14px 0;">We are writing to invite you to join the jury and mentor panel for <strong>ARTPARK's Technology Innovators in Residence (TIR) programme, 2026 cohort</strong>.</p>
+
+<h2 style="margin:22px 0 8px 0;font-size:15px;font-weight:700;color:#242424;">About ARTPARK</h2>
+<p style="margin:0 0 14px 0;">ARTPARK (AI &amp; Robotics Technology Park) is a not-for-profit innovation hub at the Indian Institute of Science, Bengaluru. We back deep-tech translation — taking research in AI, robotics, novel materials, sensors and cyber-physical systems out of the laboratory and into products that work in the real world. Since 2020 we have incubated <strong>34 companies with a cumulative valuation exceeding ₹1,300 Cr</strong>.</p>
+
+<h2 style="margin:22px 0 8px 0;font-size:15px;font-weight:700;color:#242424;">What the TIR programme is</h2>
+<p style="margin:0 0 14px 0;">TIR is our pre-company track, built for researchers and technologists who hold lab-proven, differentiated IP but have not yet started up. Over a six-month residency at ARTPARK's IISc facilities, they mature that technology from <strong>TRL&nbsp;3 (lab-validated) to TRL&nbsp;4 (ARTPARK-demonstrated)</strong> while finding a real market for it.</p>
+<ul style="margin:0 0 14px 0;padding-left:20px;">
+  <li style="margin-bottom:6px;"><strong>₹25 lakh kickoff grant at 0% equity</strong> for the initial six months.</li>
+  <li style="margin-bottom:6px;"><strong>Up to ₹2 Cr follow-on</strong> through ARTPARK's Venture Incubation Programme for those who progress.</li>
+  <li style="margin-bottom:6px;"><strong>Full-time space and lab access</strong> at ARTPARK@IISc, alongside IISc research groups.</li>
+  <li style="margin-bottom:6px;">Work spans manufacturing, space, health, agriculture, defence and other critical sectors.</li>
+</ul>
+<p style="margin:0 0 14px 0;">This is a high-rigor, rolling cohort. Teams that do not show the necessary technical and intellectual grit exit, making room for new innovations every six months.</p>
+
+<h2 style="margin:22px 0 8px 0;font-size:15px;font-weight:700;color:#242424;">What we are asking of you</h2>
+<p style="margin:0 0 14px 0;">The role has two distinct phases, and we want to be completely transparent about both before you decide.</p>
+
+<p style="margin:0 0 6px 0;"><strong>Phase 1 — Evaluation (short, time-boxed).</strong></p>
+<ul style="margin:0 0 14px 0;padding-left:20px;">
+  <li style="margin-bottom:6px;">You receive a small, curated set of applications matched to your domain — not the whole pile.</li>
+  <li style="margin-bottom:6px;">You review them in our online jury portal, where each application comes with the founder's full submission, an AI-generated summary and independent reviewer scores.</li>
+  <li style="margin-bottom:6px;">You then <strong>select the three ventures you would most like to mentor</strong>.</li>
+</ul>
+
+<p style="margin:0 0 6px 0;"><strong>Phase 2 — Mentorship (the substantive commitment).</strong></p>
+<ul style="margin:0 0 14px 0;padding-left:20px;">
+  <li style="margin-bottom:6px;">You mentor the startups you personally chose — you are never assigned a team you did not pick.</li>
+  <li style="margin-bottom:6px;"><strong>A baseline of one day per month per startup</strong>; more is entirely optional and up to you.</li>
+  <li style="margin-bottom:6px;"><strong>Capped at three startups</strong> per mentor, so the commitment stays predictable.</li>
+  <li style="margin-bottom:6px;">Guidance is scientific, technical and commercial — helping founders de-risk the technology and find product-market fit.</li>
+</ul>
+
+<h2 style="margin:22px 0 8px 0;font-size:15px;font-weight:700;color:#242424;">Monthly honorarium</h2>
+<p style="margin:0 0 14px 0;">This is a <strong>paid engagement</strong>. Mentors on the panel receive a <strong>monthly honorarium</strong> for the duration of the mentorship, in recognition of the time and expertise involved. If you accept, the response form will ask for the bank details we need to process that payment. Those details are stored securely, used only for disbursement, and are never shared outside ARTPARK's finance process.</p>
+<p style="margin:0 0 22px 0;">If you would prefer to contribute without an honorarium, you can say so on the form and simply skip the bank section.</p>
+
+<h2 style="margin:22px 0 8px 0;font-size:15px;font-weight:700;color:#242424;">Next step</h2>
+<p style="margin:0 0 18px 0;">The form below takes about three minutes. It asks whether you would like to join, a little about your domain expertise so we can match you well, and — if you accept — your honorarium and payment preferences. There is no obligation, and declining is entirely fine.</p>
 
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px 0;">
   <tr>
     <td bgcolor="#3213b7" style="border-radius:4px;background-color:#3213b7;">
-      <a href="{{ form_url }}" target="_blank" style="display:inline-block;padding:13px 28px;font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:4px;">Respond to invitation</a>
+      <a href="{{ form_url }}" target="_blank" style="display:inline-block;padding:13px 28px;font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:4px;">Respond to the invitation</a>
     </td>
   </tr>
 </table>
 
-<p style="margin:0 0 6px 0;">Best regards,<br/>ARTPARK TIR Team</p>
+<p style="margin:0 0 14px 0;font-size:13px;color:#6f6f78;">If the button does not work, paste this link into your browser:<br/><a href="{{ form_url }}" style="color:#3213b7;word-break:break-all;">{{ form_url }}</a></p>
+
+<p style="margin:0 0 14px 0;">We would be genuinely honoured to have your expertise shaping this cohort. If you have questions before deciding, simply reply to this email.</p>
+
+<p style="margin:0 0 6px 0;">Warm regards,<br/><strong>The ARTPARK TIR Team</strong><br/>ARTPARK @ IISc, Bengaluru</p>
 {% endblock %}

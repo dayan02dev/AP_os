@@ -32,6 +32,26 @@ function RadioYesNo({ name, value, onChange }) {
   );
 }
 
+// Shell MUST live at module scope. Declaring it inside the component body gives
+// it a fresh identity on every render, so React unmounts and remounts the whole
+// subtree on each keystroke — the input loses focus after one character and the
+// field appears "untypeable". Same bug was in JuryRespondForm.
+function Shell({ children }) {
+  return (
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="logos">
+          <img src="/assets/artpark-logo.png" alt="ARTPARK" className="artpark" />
+        </div>
+        <div className="spacer" />
+      </header>
+      <main className="app-main" style={{ margin: "0 auto" }}>
+        <div className="form-page-narrow">{children}</div>
+      </main>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Main page                                                             */
 /* ------------------------------------------------------------------ */
@@ -129,28 +149,6 @@ export default function MentorRespondForm() {
     } catch (err) {
       setFormError(err?.message || "Submission failed. Please try again.");
     }
-  }
-
-  /* ---------------------------------------------------------------- */
-  /* Shell — shared header + centered card                             */
-  /* ---------------------------------------------------------------- */
-
-  function Shell({ children }) {
-    return (
-      <div className="app-shell">
-        <header className="app-header">
-          <div className="logos">
-            <img src="/assets/artpark-logo.png" alt="ARTPARK" className="artpark" />
-          </div>
-          <div className="spacer" />
-        </header>
-        <main className="app-main" style={{ margin: "0 auto" }}>
-          <div className="form-page-narrow">
-            {children}
-          </div>
-        </main>
-      </div>
-    );
   }
 
   /* ---------------------------------------------------------------- */

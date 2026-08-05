@@ -1,13 +1,90 @@
 {% extends "base.txt" %}
-{% block content %}Hi {{ jury_name }},
+{% block content %}Dear {{ jury_name }},
 
-ARTPARK invites you to join the jury panel for the 2026 Technology Innovator in Residence (TIR) cohort. You will be matched with a small set of deep-tech startups and asked to pick the three you would like to mentor.
+We are writing to invite you to join the jury and mentor panel for ARTPARK's
+Technology Innovators in Residence (TIR) programme, 2026 cohort.
 
-Please respond below to accept or decline the invitation.
 
-Respond to invitation:
+ABOUT ARTPARK
+-------------
+ARTPARK (AI & Robotics Technology Park) is a not-for-profit innovation hub at
+the Indian Institute of Science, Bengaluru. We back deep-tech translation --
+taking research in AI, robotics, novel materials, sensors and cyber-physical
+systems out of the laboratory and into products that work in the real world.
+Since 2020 we have incubated 34 companies with a cumulative valuation
+exceeding Rs 1,300 Cr.
+
+
+WHAT THE TIR PROGRAMME IS
+-------------------------
+TIR is our pre-company track, built for researchers and technologists who hold
+lab-proven, differentiated IP but have not yet started up. Over a six-month
+residency at ARTPARK's IISc facilities, they mature that technology from TRL 3
+(lab-validated) to TRL 4 (ARTPARK-demonstrated) while finding a real market
+for it.
+
+  * Rs 25 lakh kickoff grant at 0% equity for the initial six months.
+  * Up to Rs 2 Cr follow-on through ARTPARK's Venture Incubation Programme
+    for those who progress.
+  * Full-time space and lab access at ARTPARK@IISc, alongside IISc research
+    groups.
+  * Work spans manufacturing, space, health, agriculture, defence and other
+    critical sectors.
+
+This is a high-rigor, rolling cohort. Teams that do not show the necessary
+technical and intellectual grit exit, making room for new innovations every
+six months.
+
+
+WHAT WE ARE ASKING OF YOU
+-------------------------
+The role has two distinct phases, and we want to be completely transparent
+about both before you decide.
+
+Phase 1 -- Evaluation (short, time-boxed)
+  * You receive a small, curated set of applications matched to your domain --
+    not the whole pile.
+  * You review them in our online jury portal, where each application comes
+    with the founder's full submission, an AI-generated summary and
+    independent reviewer scores.
+  * You then select the three ventures you would most like to mentor.
+
+Phase 2 -- Mentorship (the substantive commitment)
+  * You mentor the startups you personally chose -- you are never assigned a
+    team you did not pick.
+  * A baseline of one day per month per startup; more is entirely optional
+    and up to you.
+  * Capped at three startups per mentor, so the commitment stays predictable.
+  * Guidance is scientific, technical and commercial -- helping founders
+    de-risk the technology and find product-market fit.
+
+
+MONTHLY HONORARIUM
+------------------
+This is a paid engagement. Mentors on the panel receive a monthly honorarium
+for the duration of the mentorship, in recognition of the time and expertise
+involved. If you accept, the response form will ask for the bank details we
+need to process that payment. Those details are stored securely, used only for
+disbursement, and are never shared outside ARTPARK's finance process.
+
+If you would prefer to contribute without an honorarium, you can say so on the
+form and simply skip the bank section.
+
+
+NEXT STEP
+---------
+The form below takes about three minutes. It asks whether you would like to
+join, a little about your domain expertise so we can match you well, and -- if
+you accept -- your honorarium and payment preferences. There is no obligation,
+and declining is entirely fine.
+
+Respond to the invitation:
 {{ form_url }}
 
-Best regards,
-ARTPARK TIR Team
+We would be genuinely honoured to have your expertise shaping this cohort. If
+you have questions before deciding, simply reply to this email.
+
+Warm regards,
+The ARTPARK TIR Team
+ARTPARK @ IISc, Bengaluru
 {% endblock %}

@@ -143,6 +143,43 @@ def _ensure_jury_account(
     return user_id, True, temp_password
 
 
+def _record_response(admin: Any, invite: dict, payload: Any, request: Request) -> None:
+    """Persist the full response to jury_responses (migration 039).
+
+    Best-effort: the juror's accept/decline is already recorded on jury_invites,
+    so a failure here must never 500 the form or block account setup. Upserts on
+    invite_id so a retried submit updates in place. Bank details land in the
+    jsonb column and are never read back out by any endpoint.
+    """
+    bank = payload.bank_details.model_dump(exclude_none=True) if payload.bank_details else None
+    row = {
+        "invite_id":           invite["id"],
+        "accepted":            bool(payload.accept),
+        "full_name":           payload.full_name or invite.get("name"),
+        "affiliation":         payload.affiliation,
+        "designation":         payload.designation,
+        "expertise_domains":   [d.strip() for d in payload.expertise_domains if d and d.strip()],
+        "linkedin_url":        payload.linkedin_url,
+        "contact_email":       payload.contact_email or invite.get("email"),
+        "contact_phone":       payload.contact_phone,
+        "mentoring_opt_in":    payload.mentoring_opt_in,
+        "max_startups":        payload.max_startups,
+        "honorarium_opt_in":   payload.honorarium_opt_in,
+        # Only store bank details when they actually opted in — otherwise a
+        # half-filled block from a toggled-off section would be retained.
+        "bank_details":        bank if payload.honorarium_opt_in else None,
+        "notes":               payload.notes,
+        "future_comms_opt_in": payload.future_comms_opt_in,
+        "user_agent":          (request.headers.get("user-agent") or "")[:500] or None,
+        "submitted_at":        datetime.now(UTC).isoformat(),
+    }
+    try:
+        admin.table("jury_responses").upsert(row, on_conflict="invite_id").execute()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("jury_responses write failed (best-effort)",
+                    extra={"invite_id": invite["id"], "err": str(exc)})
+
+
 def _grant_jury_role(admin: Any, user_id: str, granted_by: str | None) -> None:
     current = (admin.table("user_roles").select("role")
                .eq("user_id", user_id).execute().data or [])
@@ -168,6 +205,7 @@ async def submit_jury_response(
             return {"status": "already_responded"}
         admin.table("jury_invites").update(
             {"status": "declined", "responded_at": now}).eq("id", invite["id"]).execute()
+        _record_response(admin, invite, payload, request)
         return {"status": "ok"}
 
     # ACCEPT — steps below are idempotent so a repeat POST is a safe retry.
@@ -194,6 +232,9 @@ async def submit_jury_response(
         "linkedin_url": payload.linkedin_url,
         "enrichment_status": "pending", "updated_at": now,
     }, on_conflict="juror_user_id").execute()
+
+    # Full response incl. honorarium + bank details (best-effort, never fatal).
+    _record_response(admin, invite, payload, request)
 
     # Always email the login id + password on first accept (new OR existing
     # account) — an external juror has no other way to learn their credentials.
