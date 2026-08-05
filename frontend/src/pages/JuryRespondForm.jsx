@@ -72,7 +72,7 @@ function EngagementSummary() {
         </li>
         <li style={{ marginBottom: "var(--s-3)" }}>
           <strong>Mentor.</strong> You guide the startups you personally chose. Baseline
-          is <strong>one day per month per startup</strong>, capped at three startups —
+          is <strong>one day per week per startup</strong>, capped at three startups —
           never a team you did not pick.
         </li>
         <li>
@@ -392,7 +392,7 @@ export default function JuryRespondForm() {
             <div className="section-head" style={{ marginTop: "var(--s-5)" }}>
               <span className="eyebrow">Mentorship</span>
               <h2>Your commitment</h2>
-              <p>Baseline is one day per month per startup, capped at three.</p>
+              <p>Baseline is one day per week per startup, capped at three.</p>
             </div>
 
             <div className="form-row">

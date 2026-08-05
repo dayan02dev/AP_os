@@ -80,7 +80,7 @@ describe("JuryRespondForm — load states", () => {
 
     await waitFor(() => screen.getByText(JOIN_Q));
     expect(screen.getByText(/pick the three ventures you would most like to mentor/i)).toBeInTheDocument();
-    expect(screen.getByText(/one day per month per startup/i)).toBeInTheDocument();
+    expect(screen.getByText(/one day per week per startup/i)).toBeInTheDocument();
     expect(screen.getByText(/monthly honorarium/i)).toBeInTheDocument();
   });
 

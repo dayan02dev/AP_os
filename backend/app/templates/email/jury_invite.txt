@@ -52,7 +52,7 @@ Phase 1 -- Evaluation (short, time-boxed)
 Phase 2 -- Mentorship (the substantive commitment)
   * You mentor the startups you personally chose -- you are never assigned a
     team you did not pick.
-  * A baseline of one day per month per startup; more is entirely optional
+  * A baseline of one day per week per startup; more is entirely optional
     and up to you.
   * Capped at three startups per mentor, so the commitment stays predictable.
   * Guidance is scientific, technical and commercial -- helping founders
