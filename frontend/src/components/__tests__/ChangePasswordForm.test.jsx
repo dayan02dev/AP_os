@@ -1,12 +1,12 @@
 // Staff password self-service.
 //
 // Reviewers and jury members are onboarded with a temp password an admin can
-// read, so two things have to hold: they can replace it themselves from any
-// staff portal, and until they do, the portal pushes them to.
+// read, so they need a way to replace it themselves from any staff portal —
+// on their own schedule, without being interrupted at sign-in.
 //
-// Covered here: the form's validation gate + the exact call it makes; the
-// settings entry point in the Reviewer/Jury topbars; and needsPasswordSetup,
-// which is what the router gate and the sign-in redirect both key off.
+// Covered here: the form's validation gate + the exact call it makes, and the
+// Settings entry point in the Reviewer/Jury topbars. Choosing a password is
+// OPT-IN — nothing forces it at sign-in (pages/__tests__/staffPortalAccess).
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -21,7 +21,6 @@ vi.mock("../../hooks/useAuth.jsx", () => ({
 
 import ChangePasswordForm from "../ChangePasswordForm.jsx";
 import AccountSettingsButton from "../AccountSettingsButton.jsx";
-import { needsPasswordSetup } from "../../lib/landing.js";
 
 const STRONG = "Str0ng!Pass";
 
@@ -119,23 +118,5 @@ describe("AccountSettingsButton (Reviewer / Jury topbars)", () => {
     fireEvent.click(screen.getByLabelText("Close settings"));
     expect(screen.queryByLabelText("New password")).toBeNull();
     expect(setPassword).not.toHaveBeenCalled();
-  });
-});
-
-describe("needsPasswordSetup", () => {
-  it("is true only for an explicit password_set:false (still on the temp password)", () => {
-    expect(needsPasswordSetup({ password_set: false })).toBe(true);
-  });
-
-  it("is false once the user has chosen their own password", () => {
-    expect(needsPasswordSetup({ password_set: true })).toBe(false);
-  });
-
-  it("never locks anyone out when the flag is absent or the user is unresolved", () => {
-    // A degraded /auth/me payload must not strand a reviewer outside their
-    // portal — fail OPEN here; the backend is still the authority.
-    expect(needsPasswordSetup({})).toBe(false);
-    expect(needsPasswordSetup(null)).toBe(false);
-    expect(needsPasswordSetup(undefined)).toBe(false);
   });
 });

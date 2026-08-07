@@ -24,19 +24,3 @@ export function isApplyHiddenFor(roles) {
   const r = Array.isArray(roles) ? roles : [];
   return r.includes("leadership") || r.includes("admin");
 }
-
-// True when this account must choose its own password before it can use a
-// staff portal.
-//
-// Reviewers and jury members are onboarded with a system-generated temporary
-// password emailed to them (admin_users.create_user / jury_invites accept), so
-// the credential they first sign in with is one an admin can read. The backend
-// stamps `app_metadata.password_set = true` only in POST /auth/set-password,
-// and surfaces it as `password_set` on /auth/me — so a false here means
-// "still on the issued temp password".
-//
-// Deliberately checks for an explicit `false`: an older/degraded /auth/me
-// payload that omits the field must NOT lock anybody out of their portal.
-export function needsPasswordSetup(user) {
-  return user?.password_set === false;
-}

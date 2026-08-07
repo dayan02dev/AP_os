@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
-import { isApplyHiddenFor, landingPathFor, needsPasswordSetup } from "../lib/landing.js";
+import { isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { usePageTheme } from "../hooks/usePageTheme.jsx";
@@ -53,14 +53,6 @@ export default function SignInPage() {
     setLoading(true);
     try {
       const me = await signInWithPassword(trimmedEmail, password);
-      // Still on the temp password an admin/invite issued → send them straight
-      // to set-password. RequirePasswordSetup in router.jsx is the backstop for
-      // deep links and already-open sessions; going directly here avoids a
-      // pointless portal flash on the sign-in path.
-      if (needsPasswordSetup(me)) {
-        navigate("/apply/set-password", { replace: true });
-        return;
-      }
       // Role-first redirect: leadership/admin/reviewer go to their dashboards;
       // applicants (no special role) get the track-aware /apply or /apply-sip.
       // Honour ?next= only when it points at a known protected surface AND the
