@@ -521,16 +521,31 @@ class EmailService:
             reply_to=reply_to,
         )
 
+    # Signature block on the jury invite. Overridable per-call so the mail can
+    # go out under a named person rather than the team alias.
+    JURY_INVITE_SENDER_NAME = "ARTPARK TIR Team"
+    JURY_INVITE_SENDER_TITLE = "ARTPARK @ IISc, Bengaluru"
+
     def send_jury_invite(
         self, *, to: str, jury_name: str, form_url: str, reply_to: str | None = None,
+        sender_name: str | None = None, sender_title: str | None = None,
     ) -> dict[str, str]:
-        """Branded invitation to join the ARTPARK jury, with a tokenised accept link."""
+        """Branded invitation to mentor TIR startups, with a tokenised link."""
         html, text = self._render_pair(
-            "jury_invite", {"jury_name": jury_name, "form_url": form_url},
+            "jury_invite",
+            {
+                "jury_name": jury_name,
+                "form_url": form_url,
+                "sender_name": sender_name or self.JURY_INVITE_SENDER_NAME,
+                "sender_title": sender_title or self.JURY_INVITE_SENDER_TITLE,
+            },
         )
         return self.send_raw(
             to=[to],
-            subject="Invitation: Join the ARTPARK TIR jury panel",
+            subject=(
+                "Invitation: Mentor our next-generation deep-tech startups "
+                "(ARTPARK TIR Program)"
+            ),
             html=html, text=text, reply_to=reply_to,
         )
 

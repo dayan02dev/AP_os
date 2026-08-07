@@ -209,7 +209,12 @@ class TestCreateJuryInvites:
         assert row["email"] == "rao@x.com" and len(row["token"]) >= 24
         assert ses_mock.called
         sent = ses_mock.call_args.kwargs.get("json") or ses_mock.call_args[1]["json"]
-        assert "jury" in sent["subject"].lower() or "Jury" in sent["subject"]
+        # Subject is framed around MENTORING (the substantive ask), not the word
+        # "jury" — the invite is written as a personal letter, not a panel notice.
+        assert sent["subject"] == (
+            "Invitation: Mentor our next-generation deep-tech startups "
+            "(ARTPARK TIR Program)"
+        )
 
     def test_dedupe_returns_same_link(self, client, install_db, ses_mock, admin_user):
         install_db.seed(

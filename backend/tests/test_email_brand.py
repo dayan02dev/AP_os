@@ -99,14 +99,35 @@ def test_daily_digest_lists_all_reviewers():
 
 
 def test_header_has_logo_and_colour_locked_band():
-    """New shell header: ARTPARK+IISc logo image on white + colour-locked band."""
+    """Shell header: IISc + ARTPARK logos on white, then the colour-locked band."""
     html = _render_html("reviewer_invite", {
         "reviewer_name": "Vikram", "login_email": "vikram@x.in",
         "temp_password": "Pass-F5FY3U", "inbox_url": "https://apply.artpark.info/reviewer",
     })
     assert "<img" in html                                      # logo is an image now
-    assert "email-assets/artpark-iisc-logo.png" in html        # the hosted logo asset
+    # Two separate hosted assets — IISc sits to the LEFT of ARTPARK and is
+    # rendered taller (56px vs 40px). Order in the markup is the visual order.
+    assert "email-assets/iisc-logo.png" in html
+    assert "email-assets/artpark-logo.png" in html
+    assert html.index("iisc-logo.png") < html.index("artpark-logo.png")
+    assert 'height="56"' in html and 'height="40"' in html
     assert 'bgcolor="#3213b7"' in html                         # bulletproof band bg (mobile dark-mode lock)
     assert 'name="color-scheme"' in html                       # color-scheme meta present
     assert 'content="light only"' in html                      # locked to light
     assert "Reviewer invitation" in html                       # context label via header_sublabel
+
+
+def test_jury_invite_drops_the_topic_band_but_keeps_the_logos():
+    """The jury invite is a plain-letter mail: logo row only, no purple topic
+    band. Every other template keeps its band (asserted above)."""
+    html = _render_html("jury_invite", {
+        "jury_name": "Prof. Rao", "form_url": "https://apply.artpark.info/jury/respond/tok",
+        "sender_name": "ARTPARK TIR Team", "sender_title": "ARTPARK @ IISc, Bengaluru",
+    })
+    assert "email-assets/iisc-logo.png" in html
+    # #c9bdf5 is the band's sublabel colour and appears nowhere else, so it is
+    # the precise marker for "band present". Asserting on bgcolor="#3213b7"
+    # would be wrong — the CTA button shares that value.
+    assert "#c9bdf5" not in html
+    assert "JURY &amp; MENTOR PANEL" not in html
+    assert "background-color:#3213b7" in html   # ...but the CTA button keeps brand purple
