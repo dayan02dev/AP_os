@@ -1,5 +1,5 @@
 // AdminJuryVipSelected tests — the VIP jury tab: application list + the two
-// actions (IC Upload, Sign IC form). There is deliberately NO jury round here,
+// actions (Memo Upload, Approve). There is deliberately NO jury round here,
 // so the screen must never surface picks/jurors/Final-Gate affordances.
 //
 // Seams mocked: hooks/useAdminData (data), lib/icDocumentsApi (network),
@@ -128,8 +128,8 @@ describe("AdminJuryVipSelected — application list", () => {
   it("shows the two IC actions and NO jury-round affordances", () => {
     wire();
     render(<AdminJuryVipSelected />);
-    expect(screen.getAllByText("IC Upload").length).toBe(2);
-    expect(screen.getAllByText("Sign IC form").length).toBe(2);
+    expect(screen.getAllByText("Memo Upload").length).toBe(2);
+    expect(screen.getAllByText("Approve").length).toBe(2);
     // No pick / juror / final-gate surface on this screen.
     expect(screen.queryByText(/pick/i)).toBeNull();
     expect(screen.queryByText(/juror/i)).toBeNull();
@@ -139,11 +139,11 @@ describe("AdminJuryVipSelected — application list", () => {
   it("disables Sign until a document exists, and enables it once uploaded", () => {
     wire({ docs: [DOC_UNSIGNED] });
     render(<AdminJuryVipSelected />);
-    const signButtons = screen.getAllByText("Sign IC form");
+    const signButtons = screen.getAllByText("Approve");
     // app-1 has a doc → enabled; app-2 has none → disabled.
     expect(signButtons[0].disabled).toBe(false);
     expect(signButtons[1].disabled).toBe(true);
-    expect(signButtons[1].getAttribute("title")).toMatch(/upload the ic document first/i);
+    expect(signButtons[1].getAttribute("title")).toMatch(/upload the memo first/i);
   });
 
   it("shows the signed chip with signer and timestamp", () => {
@@ -151,8 +151,8 @@ describe("AdminJuryVipSelected — application list", () => {
     render(<AdminJuryVipSelected />);
     expect(screen.getByText("✓ SIGNED")).toBeTruthy();
     expect(screen.getByText(/Nirav Sanghavi · 30 Jul 2026 14:12 IST/)).toBeTruthy();
-    expect(screen.getByText("Re-sign")).toBeTruthy();
-    expect(screen.getByText("Replace IC")).toBeTruthy();
+    expect(screen.getByText("Re-approve")).toBeTruthy();
+    expect(screen.getByText("Replace Memo")).toBeTruthy();
   });
 
   it("labels an undocumented application as Not uploaded", () => {
@@ -210,13 +210,13 @@ describe("AdminJuryVipSelected — application list", () => {
   });
 });
 
-// ── IC Upload ───────────────────────────────────────────────────────────────
+// ── Memo Upload ───────────────────────────────────────────────────────────────
 
-describe("AdminJuryVipSelected — IC Upload", () => {
+describe("AdminJuryVipSelected — Memo Upload", () => {
   it("uploads a PDF for the chosen application and reloads", async () => {
     wire();
     render(<AdminJuryVipSelected />);
-    fireEvent.click(screen.getAllByText("IC Upload")[0]);
+    fireEvent.click(screen.getAllByText("Memo Upload")[0]);
 
     fireEvent.change(screen.getByLabelText("IC document PDF"), {
       target: { files: [pdf("minutes.pdf")] },
@@ -234,7 +234,7 @@ describe("AdminJuryVipSelected — IC Upload", () => {
   it("refuses a non-PDF before any network call", () => {
     wire();
     render(<AdminJuryVipSelected />);
-    fireEvent.click(screen.getAllByText("IC Upload")[0]);
+    fireEvent.click(screen.getAllByText("Memo Upload")[0]);
     fireEvent.change(screen.getByLabelText("IC document PDF"), {
       target: { files: [new File(["x"], "notes.docx", { type: "application/msword" })] },
     });
@@ -246,7 +246,7 @@ describe("AdminJuryVipSelected — IC Upload", () => {
   it("refuses a file over the 10 MiB cap before any network call", () => {
     wire();
     render(<AdminJuryVipSelected />);
-    fireEvent.click(screen.getAllByText("IC Upload")[0]);
+    fireEvent.click(screen.getAllByText("Memo Upload")[0]);
     const big = new File([new Uint8Array(2)], "big.pdf", { type: "application/pdf" });
     Object.defineProperty(big, "size", { value: 11 * 1024 * 1024 });
     fireEvent.change(screen.getByLabelText("IC document PDF"), { target: { files: [big] } });
@@ -257,14 +257,14 @@ describe("AdminJuryVipSelected — IC Upload", () => {
   it("warns that replacing archives the existing document", () => {
     wire({ docs: [DOC_SIGNED] });
     render(<AdminJuryVipSelected />);
-    fireEvent.click(screen.getByText("Replace IC"));
+    fireEvent.click(screen.getByText("Replace Memo"));
     expect(screen.getByText(/its signature will be archived with it/)).toBeTruthy();
   });
 
   it("uploads a moved app's IC document against its NATIVE track", async () => {
     wire({ startups: [MOVED_TO_VIP] });
     render(<AdminJuryVipSelected />);
-    fireEvent.click(screen.getByText("IC Upload"));
+    fireEvent.click(screen.getByText("Memo Upload"));
     fireEvent.change(screen.getByLabelText("IC document PDF"), { target: { files: [pdf()] } });
     fireEvent.click(screen.getByText("Upload"));
 
@@ -278,7 +278,7 @@ describe("AdminJuryVipSelected — IC Upload", () => {
     wire();
     icDocumentsApi.upload.mockRejectedValue({ details: { message: "Storage upload failed. Try again." } });
     render(<AdminJuryVipSelected />);
-    fireEvent.click(screen.getAllByText("IC Upload")[0]);
+    fireEvent.click(screen.getAllByText("Memo Upload")[0]);
     fireEvent.change(screen.getByLabelText("IC document PDF"), { target: { files: [pdf()] } });
     fireEvent.click(screen.getByText("Upload"));
     await waitFor(() =>
@@ -288,10 +288,10 @@ describe("AdminJuryVipSelected — IC Upload", () => {
 
 // ── Signing ─────────────────────────────────────────────────────────────────
 
-describe("AdminJuryVipSelected — Sign IC form", () => {
+describe("AdminJuryVipSelected — Approve", () => {
   const openSign = () => {
     render(<AdminJuryVipSelected />);
-    fireEvent.click(screen.getAllByText("Sign IC form")[0]);
+    fireEvent.click(screen.getAllByText("Approve")[0]);
   };
 
   it("prefills the signer name from the session and requires confirmation", () => {
@@ -299,9 +299,9 @@ describe("AdminJuryVipSelected — Sign IC form", () => {
     openSign();
     expect(screen.getByLabelText("Signer name").value).toBe("Nirav Sanghavi");
     // Not confirmed yet → cannot sign.
-    expect(screen.getByText("Sign & save").disabled).toBe(true);
+    expect(screen.getByText("Approve & save").disabled).toBe(true);
     fireEvent.click(screen.getByLabelText("Confirm signature"));
-    expect(screen.getByText("Sign & save").disabled).toBe(false);
+    expect(screen.getByText("Approve & save").disabled).toBe(false);
   });
 
   it("blocks signing with an empty name even when confirmed", () => {
@@ -309,7 +309,7 @@ describe("AdminJuryVipSelected — Sign IC form", () => {
     openSign();
     fireEvent.change(screen.getByLabelText("Signer name"), { target: { value: "  " } });
     fireEvent.click(screen.getByLabelText("Confirm signature"));
-    expect(screen.getByText("Sign & save").disabled).toBe(true);
+    expect(screen.getByText("Approve & save").disabled).toBe(true);
   });
 
   it("stamps the downloaded PDF and uploads the signed copy", async () => {
@@ -319,7 +319,7 @@ describe("AdminJuryVipSelected — Sign IC form", () => {
     });
     openSign();
     fireEvent.click(screen.getByLabelText("Confirm signature"));
-    fireEvent.click(screen.getByText("Sign & save"));
+    fireEvent.click(screen.getByText("Approve & save"));
 
     await waitFor(() => expect(icDocumentsApi.sign).toHaveBeenCalled());
     // Original pulled through a signed URL, then stamped, then stored.
@@ -339,7 +339,7 @@ describe("AdminJuryVipSelected — Sign IC form", () => {
     openSign();
     fireEvent.change(screen.getByLabelText("Signer name"), { target: { value: "Udita U" } });
     fireEvent.click(screen.getByLabelText("Confirm signature"));
-    fireEvent.click(screen.getByText("Sign & save"));
+    fireEvent.click(screen.getByText("Approve & save"));
 
     await waitFor(() => expect(stampSignature).toHaveBeenCalled());
     const opts = stampSignature.mock.calls[0][1];
@@ -351,7 +351,7 @@ describe("AdminJuryVipSelected — Sign IC form", () => {
   it("tells the signer when re-signing replaces an existing signature", () => {
     wire({ docs: [DOC_SIGNED] });
     render(<AdminJuryVipSelected />);
-    fireEvent.click(screen.getByText("Re-sign"));
+    fireEvent.click(screen.getByText("Re-approve"));
     expect(screen.getByText(/Signing again replaces that signature/)).toBeTruthy();
   });
 
@@ -360,7 +360,7 @@ describe("AdminJuryVipSelected — Sign IC form", () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: false });
     openSign();
     fireEvent.click(screen.getByLabelText("Confirm signature"));
-    fireEvent.click(screen.getByText("Sign & save"));
+    fireEvent.click(screen.getByText("Approve & save"));
 
     await waitFor(() =>
       expect(screen.getByText("Couldn't download the IC document to sign.")).toBeTruthy());

@@ -46,8 +46,27 @@ import AdminPortal from "./pages/admin/platform/AdminPortal.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
 import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
-import { isApplyHiddenFor, landingPathFor } from "./lib/landing.js";
+import { isApplyHiddenFor, landingPathFor, needsPasswordSetup } from "./lib/landing.js";
 import { hasCapability } from "./lib/rbac.js";
+
+// First-login password gate for every STAFF portal.
+//
+// Reviewers and jury members are onboarded with a temporary password we email
+// them, so until they replace it their account is protected only by a
+// credential an admin generated. This bounces them to the existing
+// set-password screen; on success SetPasswordPage lands them back on their own
+// portal via landingPathFor(roles), and `password_set` is true by then, so
+// there is no redirect loop.
+//
+// Applied INSIDE each capability wrapper rather than around them so an
+// unauthorised account still gets the "access denied" copy it always got.
+function RequirePasswordSetup({ children }) {
+  const { user } = useAuth();
+  if (needsPasswordSetup(user)) {
+    return <Navigate to="/apply/set-password" replace />;
+  }
+  return children;
+}
 
 // Capability gate for /leadership. ProtectedRoute already enforces auth;
 // this layer enforces the `view_stats` capability (leadership role).
@@ -67,7 +86,7 @@ function LeadershipRoute() {
       </div>
     );
   }
-  return <LeadershipDashboard />;
+  return <RequirePasswordSetup><LeadershipDashboard /></RequirePasswordSetup>;
 }
 
 // Capability gate for the per-application review surface. Same shape as
@@ -89,7 +108,7 @@ function LeadershipReviewRoute() {
       </div>
     );
   }
-  return <ReviewApplicationPage />;
+  return <RequirePasswordSetup><ReviewApplicationPage /></RequirePasswordSetup>;
 }
 
 // Bounces leadership and admins away from the applicant wizard. Unauthed
@@ -142,7 +161,7 @@ function AdminRoute() {
       </div>
     );
   }
-  return <AdminLayout />;
+  return <RequirePasswordSetup><AdminLayout /></RequirePasswordSetup>;
 }
 
 // Capability gate for the Admin Platform portal (/admin/*).
@@ -166,7 +185,7 @@ function AdminPlatformRoute() {
       </div>
     );
   }
-  return <AdminPortal />;
+  return <RequirePasswordSetup><AdminPortal /></RequirePasswordSetup>;
 }
 
 // Capability gate for /reviewer/*. ProtectedRoute enforces auth; this layer
@@ -187,7 +206,7 @@ function ReviewerRoute({ tab }) {
       </div>
     );
   }
-  return <ReviewerPortal tab={tab} />;
+  return <RequirePasswordSetup><ReviewerPortal tab={tab} /></RequirePasswordSetup>;
 }
 
 // Capability gate for /jury/*. ProtectedRoute enforces auth; this layer
@@ -208,7 +227,7 @@ function JuryRoute({ tab }) {
       </div>
     );
   }
-  return <JuryPortal tab={tab} />;
+  return <RequirePasswordSetup><JuryPortal tab={tab} /></RequirePasswordSetup>;
 }
 
 const SECTION_SLUGS = [

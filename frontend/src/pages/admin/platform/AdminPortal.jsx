@@ -31,6 +31,7 @@ import { AdminPsychometry } from "./screens/AdminPsychometry";
 import { AdminAIStatus } from "./screens/AdminAIStatus";
 import { AdminRoles } from "./screens/AdminRoles";
 import PortalSwitcher from "../../../components/PortalSwitcher.jsx";
+import ChangePasswordForm from "../../../components/ChangePasswordForm.jsx";
 
 function initialsFor(email) {
   const local = (email || '').split('@')[0] || '';
@@ -133,11 +134,16 @@ function AdminTopbar({ page, decisionMode, setPage }) {
             <div className="os-modal-head">
               <div>
                 <div style={{ fontFamily: 'var(--font-serif)', fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>Settings</div>
-                <div className="os-text-sm os-text-dim" style={{ marginTop: 2 }}>Restore archived or hidden applications</div>
+                <div className="os-text-sm os-text-dim" style={{ marginTop: 2 }}>Your password, and archived or hidden applications</div>
               </div>
               <button className="os-btn ghost sm" onClick={() => setSettingsOpen(false)}>Close</button>
             </div>
             <div className="os-modal-body os-stack" style={{ gap: 24 }}>
+              <div>
+                <div className="os-card-title os-mb-sm">Change password</div>
+                <ChangePasswordForm compact />
+              </div>
+              <hr className="os-divider" />
               <div>
                 <div className="os-card-title os-mb-sm">Archived applications ({archivedApps.length})</div>
                 {archivedApps.length === 0 ? (
@@ -272,7 +278,7 @@ export function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBa
     // Final Gate), VIP only carries the IC document + its signature.
     { id:'jury_tir',     label:'TIR Selected', sub:'SELECTED · TIR',
       badge: juryTirBadge == null ? null : String(juryTirBadge) },
-    { id:'jury_vip',     label:'VIP Selected', sub:'IC UPLOAD · SIGNATURE',
+    { id:'jury_vip',     label:'VIP Selected', sub:'SELECTED · VIP',
       badge: juryVipBadge == null ? null : String(juryVipBadge) },
     {
       id:'gate1',

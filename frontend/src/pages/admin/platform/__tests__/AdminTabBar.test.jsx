@@ -78,6 +78,16 @@ describe("AdminTabBar — jury selected split per track", () => {
     expect(container.querySelectorAll(".lp-tab-badge").length).toBe(0);
   });
 
+  it("labels the VIP Selected sub-title to match TIR Selected", () => {
+    // The two jury-stage tabs are a pair; VIP's sub-line used to describe its
+    // internals ("IC UPLOAD · SIGNATURE") while TIR's named the stage.
+    const { container } = render(<AdminTabBar {...base} decisionMode="jury" />);
+    const subs = [...container.querySelectorAll(".lp-tab-sub")].map(n => n.textContent);
+    expect(subs).toContain("SELECTED · TIR");
+    expect(subs).toContain("SELECTED · VIP");
+    expect(subs).not.toContain("IC UPLOAD · SIGNATURE");
+  });
+
   it("selects the clicked jury tab by id", () => {
     const setPage = vi.fn();
     render(<AdminTabBar {...base} setPage={setPage} decisionMode="jury" />);

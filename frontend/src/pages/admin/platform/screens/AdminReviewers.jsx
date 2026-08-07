@@ -17,6 +17,7 @@ import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { adminApi } from "../../../../lib/adminApi";
 import { PageHead } from "../shell/osAtoms";
 import { ManageApplicationsDrawer } from "./ManageApplicationsDrawer";
+import { RemoveMemberDialog, removalSummary } from "./RemoveMemberDialog";
 
 // Guaranteed policy-compliant temp password: >=10 chars with upper, lower,
 // digit, and symbol (mirrors the backend `_password_ok`). The legacy
@@ -57,7 +58,7 @@ export function formatLastActivity(value) {
 // ─── Manage / Edit drawer ────────────────────────────────────────────────────
 // Weight + domains + inline batch chip editor (reviewer-mode only).
 
-function ManageDrawer({ reviewer, allBatches, onClose, onSaved }) {
+function ManageDrawer({ reviewer, allBatches, onClose, onSaved, onRequestDelete }) {
   const [name, setName] = useState(reviewer.name || '');
   const [email, setEmail] = useState(reviewer.email || '');
   const [weight, setWeight] = useState(typeof reviewer.weight === 'number' ? reviewer.weight : 1.0);
@@ -208,16 +209,26 @@ function ManageDrawer({ reviewer, allBatches, onClose, onSaved }) {
           )}
         </div>
 
-        <div className="os-drawer-foot" style={{ padding: '16px 24px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end', gap: 12, background: 'var(--bg-soft)' }}>
-          <button className="os-btn secondary" onClick={onClose} disabled={saving}>Close</button>
+        <div className="os-drawer-foot" style={{ padding: '16px 24px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, background: 'var(--bg-soft)' }}>
           <button
-            className="os-btn"
-            style={{ background: 'var(--accent)', color: '#fff' }}
-            onClick={handleSave}
+            className="os-btn ghost"
+            style={{ color: '#d23b40', borderColor: '#f3c2c4' }}
+            onClick={() => onRequestDelete && onRequestDelete(reviewer)}
             disabled={saving}
           >
-            {saving ? 'Saving…' : 'Save changes'}
+            Delete reviewer
           </button>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button className="os-btn secondary" onClick={onClose} disabled={saving}>Close</button>
+            <button
+              className="os-btn"
+              style={{ background: 'var(--accent)', color: '#fff' }}
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -534,6 +545,18 @@ export function AdminReviewers() {
   const [appsTarget, setAppsTarget] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
   const [showEditPicker, setShowEditPicker] = useState(false);
+  // Delete flow: the drawers ask for it, RemoveMemberDialog confirms it.
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [removedNote, setRemovedNote] = useState(null);
+
+  const confirmDelete = async () => {
+    const res = await adminPlatformApi.deleteReviewer(deleteTarget.id);
+    setRemovedNote(removalSummary('reviewer', deleteTarget.name || deleteTarget.email, res));
+    setDeleteTarget(null);
+    setManageTarget(null);
+    setAppsTarget(null);
+    reload();
+  };
 
   // Drawer animation styles (injected once)
   const drawerStyles = `
@@ -555,6 +578,12 @@ export function AdminReviewers() {
           <button key="edit" className="os-btn ghost" onClick={() => setShowEditPicker(true)}>Edit reviewer</button>,
         ]}
       />
+      {removedNote && (
+        <div style={{ color: '#1d6b45', fontSize: 13, fontWeight: 600, padding: '8px 12px', background: '#e9f6ef', border: '1px solid #b7ddc8', borderRadius: 4, marginBottom: 16, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <span>{removedNote}</span>
+          <button className="os-btn sm ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => setRemovedNote(null)}>Dismiss</button>
+        </div>
+      )}
       {assignErr && (
         <div style={{ color: 'var(--bad)', fontSize: 13, fontWeight: 600, padding: '8px 12px', background: 'var(--bad-soft)', borderRadius: 4, marginBottom: 16, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           <span>{assignErr}</span>
@@ -709,6 +738,7 @@ export function AdminReviewers() {
           allBatches={allBatches}
           onClose={() => setManageTarget(null)}
           onSaved={() => { setManageTarget(null); reload(); }}
+          onRequestDelete={setDeleteTarget}
         />
       )}
 
@@ -718,6 +748,17 @@ export function AdminReviewers() {
           reviewer={appsTarget}
           onClose={() => setAppsTarget(null)}
           onChanged={reload}
+          onRequestDelete={setDeleteTarget}
+        />
+      )}
+
+      {/* Delete confirmation */}
+      {deleteTarget && (
+        <RemoveMemberDialog
+          kind="reviewer"
+          member={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={confirmDelete}
         />
       )}
 

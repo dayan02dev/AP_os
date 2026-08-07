@@ -14,7 +14,7 @@ import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 
 const RANDOM = "Random allotment";
 
-export function ManageApplicationsDrawer({ reviewer, onClose, onChanged }) {
+export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onRequestDelete }) {
   const apps = useAdminData("reviewerApplications", { userId: reviewer.id });
   const pipeline = useAdminData("pipeline", {});
   const [selRemove, setSelRemove] = useState(() => new Set());
@@ -321,7 +321,16 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged }) {
         </div>
 
         {/* Footer */}
-        <div style={{ padding: "16px 24px", borderTop: "1px solid var(--line)", display: "flex", justifyContent: "flex-end", gap: 12, background: "var(--bg-soft)" }}>
+        <div style={{ padding: "16px 24px", borderTop: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: "var(--bg-soft)" }}>
+          {onRequestDelete ? (
+            <button
+              className="os-btn ghost"
+              style={{ color: "#d23b40", borderColor: "#f3c2c4" }}
+              onClick={() => onRequestDelete(reviewer)}
+            >
+              Delete reviewer
+            </button>
+          ) : <span />}
           <button className="os-btn secondary" onClick={onClose}>Close</button>
         </div>
       </div>

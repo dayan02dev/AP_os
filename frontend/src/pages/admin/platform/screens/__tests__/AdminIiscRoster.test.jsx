@@ -129,6 +129,33 @@ describe("AdminIiscRoster", () => {
     expect(screen.queryByText("Dr. Joint Dup")).toBeNull();
   });
 
+  it("lets the admin correct the scraped name before sending the invite", async () => {
+    // Roster names are AI-parsed off faculty pages and are regularly wrong,
+    // so the field seeds from the roster but must be editable.
+    render(<AdminIiscRoster />);
+    fireEvent.click((await screen.findAllByText("Invite"))[0]);
+    const nameField = screen.getByLabelText("Invite name");
+    expect(nameField.value).toBe("Dr. AI One");
+    expect(nameField.readOnly).toBe(false);
+
+    fireEvent.change(nameField, { target: { value: "Prof. A. One" } });
+    fireEvent.change(screen.getByLabelText("Invite email"), { target: { value: "aione@iisc.ac.in" } });
+    fireEvent.click(screen.getByText("Send invite"));
+
+    await waitFor(() => expect(adminPlatformApi.createJuryInvites).toHaveBeenCalledWith(
+      [{ name: "Prof. A. One", email: "aione@iisc.ac.in" }]));
+  });
+
+  it("refuses to send an invite with the name blanked out", async () => {
+    render(<AdminIiscRoster />);
+    fireEvent.click((await screen.findAllByText("Invite"))[0]);
+    fireEvent.change(screen.getByLabelText("Invite name"), { target: { value: "  " } });
+    fireEvent.change(screen.getByLabelText("Invite email"), { target: { value: "a@iisc.ac.in" } });
+    fireEvent.click(screen.getByText("Send invite"));
+    await waitFor(() => expect(screen.getByText("Enter a name.")).toBeTruthy());
+    expect(adminPlatformApi.createJuryInvites).not.toHaveBeenCalled();
+  });
+
   it("Invite opens a name-prefilled modal and sends via createJuryInvites", async () => {
     await renderRoster();
     fireEvent.click(screen.getAllByText("Invite")[0]);

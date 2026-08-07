@@ -32,7 +32,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..deps import get_current_user
 from ..rbac import require_capability
-from ..services import admin_query, applications_query, decisions, track_move
+from ..services import (
+    admin_query,
+    applications_query,
+    decisions,
+    roster_removal,
+    track_move,
+)
 from ..services.assignment_email import notify_reviewers_assigned
 from ..services.audit import actor_role_of, write_audit
 from ..supabase_client import get_admin_client
@@ -850,6 +856,44 @@ async def update_reviewer_profile(
     return {"reviewer_user_id": user_id, **after}
 
 
+@router.delete(
+    "/reviewers/{user_id}",
+    dependencies=[Depends(require_capability("manage_reviewers_roster"))],
+)
+async def delete_reviewer(
+    user_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Remove a reviewer from the roster.
+
+    Revokes the `reviewer` role, releases EVERY application assigned to them
+    (that app stays with its other reviewers and its batch), drops their batch
+    memberships and roster profile — and KEEPS every review they submitted.
+    The auth account survives, so a person who also holds admin/leadership
+    keeps that access. See services/roster_removal for why we never delete the
+    auth user (ON DELETE CASCADE would take the reviews with it).
+    """
+    if user_id == user["user_id"]:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail={"code": "cannot_remove_self",
+                    "message": "You can't remove your own reviewer access here."},
+        )
+    result = roster_removal.remove_reviewer(
+        get_admin_client(), user_id, actor=user["user_id"],
+    )
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="reviewer.removed",
+        target_table="user_roles",
+        target_id=user_id,
+        before={"role": "reviewer"},
+        after=result,
+    )
+    return result
+
+
 # ─── Task 13: Reviewer-calibration analytics + admin dashboard stats ────────
 
 
@@ -962,6 +1006,11 @@ class JurorProfileBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     weight: float | None = Field(default=None, ge=0, le=10)
     expertise_domains: list[str] | None = None
+    # Identity lives on `profiles` (not jury_profiles) — same split as the
+    # reviewer roster patch, so an admin can correct a juror's display name or
+    # contact/login email from the roster drawer.
+    full_name: str | None = None
+    email: str | None = None
 
 
 @router.get(
@@ -991,10 +1040,12 @@ async def update_juror_profile(
     body: JurorProfileBody,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Edit a juror's roster details (weight, expertise_domains).
+    """Edit a juror's roster details.
 
-    Upserts jury_profiles keyed by juror_user_id — the juror already has a
-    profiles row from accept time, so identity fields are not touched here.
+    Splits across two tables exactly like the reviewer patch: weight +
+    expertise_domains live on ``jury_profiles``; the display name and contact
+    email live on ``profiles`` (and, for email, the auth user so the juror's
+    login stays consistent with what the roster shows).
     """
     fields: dict[str, Any] = {}
     if body.weight is not None:
@@ -1002,31 +1053,91 @@ async def update_juror_profile(
     if body.expertise_domains is not None:
         fields["expertise_domains"] = body.expertise_domains
 
-    if not fields:
+    profile_fields: dict[str, Any] = {}
+    if body.full_name is not None:
+        profile_fields["full_name"] = body.full_name.strip()
+    if body.email is not None:
+        profile_fields["email"] = body.email.strip()
+
+    if not fields and not profile_fields:
         raise HTTPException(
             status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": "no_fields", "message": "Provide at least one field."},
         )
 
     sb = get_admin_client()
-    sb.table("jury_profiles").upsert(
-        {
-            "juror_user_id": user_id,
-            "updated_at": datetime.now(UTC).isoformat(),
-            **fields,
-        },
-        on_conflict="juror_user_id",
-    ).execute()
+    if fields:
+        sb.table("jury_profiles").upsert(
+            {
+                "juror_user_id": user_id,
+                "updated_at": datetime.now(UTC).isoformat(),
+                **fields,
+            },
+            on_conflict="juror_user_id",
+        ).execute()
 
+    if profile_fields:
+        # UPDATE, not upsert: the juror already has a profiles row from accept
+        # time, and an upsert's INSERT path would trip the NOT NULL on `email`
+        # for a name-only edit (same trap the reviewer patch documents).
+        sb.table("profiles").update(profile_fields).eq("id", user_id).execute()
+        if "email" in profile_fields:
+            try:
+                sb.auth.admin.update_user_by_id(
+                    user_id,
+                    {"email": profile_fields["email"], "email_confirm": True},
+                )
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).warning(
+                    "juror email auth-sync failed for %s: %s", user_id, exc
+                )
+
+    after = {**fields, **profile_fields}
     write_audit(
         actor_user_id=user["user_id"],
         actor_role=actor_role_of(user),
         action_type="juror_profile_update",
         target_table="jury_profiles",
         target_id=user_id,
-        after=fields,
+        after=after,
     )
-    return {"juror_user_id": user_id, **fields}
+    return {"juror_user_id": user_id, **after}
+
+
+@router.delete(
+    "/jurors/{user_id}",
+    dependencies=[Depends(require_capability("manage_jury_roster"))],
+)
+async def delete_juror(
+    user_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Remove a jury member from the roster.
+
+    Revokes the `jury` role, releases every application assigned to them,
+    drops their picks + AI recommendations + roster profile, and clears the
+    `jury_invites` row so the same address can be invited again. The auth
+    account survives — a juror who is also admin/leadership keeps that access.
+    """
+    if user_id == user["user_id"]:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail={"code": "cannot_remove_self",
+                    "message": "You can't remove your own jury access here."},
+        )
+    result = roster_removal.remove_juror(
+        get_admin_client(), user_id, actor=user["user_id"],
+    )
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="juror.removed",
+        target_table="user_roles",
+        target_id=user_id,
+        before={"role": "jury"},
+        after=result,
+    )
+    return result
 
 
 # ─── Jury: expertise enrichment + recommendation matching (Task 5) ─────────

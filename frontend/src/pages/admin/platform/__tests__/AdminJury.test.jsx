@@ -22,6 +22,7 @@ vi.mock("../../../../lib/adminPlatformApi", () => ({
     enrichJuror: vi.fn().mockResolvedValue({ ok: true }),
     recomputeRecommendations: vi.fn().mockResolvedValue({ status: "queued" }),
     autoAssignJury: vi.fn(),
+    deleteJuror: vi.fn().mockResolvedValue({ assignments_removed: 0, picks_removed: 0 }),
   },
 }));
 
@@ -111,6 +112,15 @@ describe("AdminJury v2 — roster tab", () => {
     expect(screen.getByText("1 / 3")).toBeTruthy();          // picks for done juror
   });
 
+  it("keeps Manage and adds a Delete action per roster row", () => {
+    setup({ jurors: [JUROR_DONE, JUROR_PENDING] });
+    render(<AdminJury />);
+    fireEvent.click(screen.getByText("Jury Roster"));
+    expect(screen.getAllByText("Manage").length).toBe(2);
+    expect(screen.getByLabelText("Delete Anand Mahindra")).toBeTruthy();
+    expect(screen.getByLabelText("Delete Kiran Shaw")).toBeTruthy();
+  });
+
   it("Re-run on a failed juror calls enrichJuror", () => {
     setup({ jurors: [JUROR_FAILED] });
     render(<AdminJury />);
@@ -179,6 +189,22 @@ describe("AdminJury v2 — applications tab", () => {
     });
     await waitFor(() =>
       expect(useAdminData).toHaveBeenCalledWith("pipeline", { recommended_for: "j1" }));
+  });
+
+  it("is READ-ONLY: no per-application Manage button", () => {
+    // Assignment is managed from the Jury Roster tab, which owns a juror
+    // end-to-end. The Applications tab only identifies who an app sits with.
+    setup({ startups: [JURY_APP], jurors: [JUROR_DONE] });
+    render(<AdminJury />);
+    expect(screen.queryByText("Manage")).toBeNull();
+    expect(screen.queryByText(/Manage jurors for:/)).toBeNull();
+  });
+
+  it("still shows the assigned/picked columns it is there to report", () => {
+    setup({ startups: [JURY_APP] });
+    render(<AdminJury />);
+    expect(screen.getByText("Assigned jurors")).toBeTruthy();
+    expect(screen.getByText("Picked by")).toBeTruthy();
   });
 
   it("Recompute calls recomputeRecommendations for the selected juror", () => {

@@ -9,8 +9,9 @@
 //   Auto-queues enrichment for any juror still "pending" on mount.
 // Applications tab → useAdminData("pipeline", {recommended_for?}). JURY REVIEW
 //   rows only. Filter bar: search / track / Recommended-for (reloads pipeline
-//   with the param) + Recompute / Picked-by (client-side). Manage opens a
-//   juror-picker modal → ManageJurorsDrawer.
+//   with the param) + Recompute / Picked-by (client-side). READ-ONLY: it
+//   identifies which jurors an application sits with; changing that is done
+//   from the Jury Roster tab, which owns a juror end-to-end.
 
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -18,6 +19,7 @@ import { useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { PageHead } from "../shell/osAtoms";
 import { ManageJurorsDrawer } from "./ManageJurorsDrawer";
+import { RemoveMemberDialog, removalSummary } from "./RemoveMemberDialog";
 import { LoadingState, ErrorState } from "../ui.jsx";
 
 const DRAWER_STYLES = `
@@ -169,7 +171,7 @@ function JuryInviteModal({ onClose, onInvited }) {
 
 // ── Roster table ────────────────────────────────────────────────────────────
 
-function RosterTable({ jurors, pendingInvites, onManage, onReload }) {
+function RosterTable({ jurors, pendingInvites, onManage, onDelete, onReload }) {
   const [sortCol, setSortCol] = useState(null);
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -281,7 +283,17 @@ function RosterTable({ jurors, pendingInvites, onManage, onReload }) {
                   </td>
                   <td className="os-mono os-text-sm os-text-soft">{j.last || "—"}</td>
                   <td>
-                    <button className="os-btn sm secondary" onClick={() => onManage(j)}>Manage</button>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button className="os-btn sm secondary" onClick={() => onManage(j)}>Manage</button>
+                      <button
+                        className="os-btn sm ghost"
+                        style={{ color: "#d23b40", borderColor: "#f3c2c4" }}
+                        aria-label={`Delete ${j.name || j.email || "jury member"}`}
+                        onClick={() => onDelete(j)}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -324,7 +336,7 @@ function RosterTable({ jurors, pendingInvites, onManage, onReload }) {
 function ApplicationsTable({
   rows, jurors, search, setSearch, track, setTrack,
   recommendedFor, setRecommendedFor, pickedBy, setPickedBy,
-  onRecompute, recomputeMsg, onManageApp,
+  onRecompute, recomputeMsg,
 }) {
   const showReco = !!recommendedFor;
 
@@ -395,7 +407,6 @@ function ApplicationsTable({
                 {showReco && <th className="num">Fit</th>}
                 <th>Assigned jurors</th>
                 <th>Picked by</th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -438,9 +449,6 @@ function ApplicationsTable({
                         : <span className="os-text-soft">—</span>}
                     </div>
                   </td>
-                  <td>
-                    <button className="os-btn sm secondary" onClick={() => onManageApp(s)}>Manage</button>
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -466,10 +474,11 @@ export function AdminJury({ go } = {}) {
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [autoMsg, setAutoMsg] = useState(null);
 
-  // Drawer / juror-picker state.
+  // Roster drawer + delete state. (The Applications tab is read-only, so there
+  // is no per-application juror picker any more.)
   const [manageJuror, setManageJuror] = useState(null);   // juror object → drawer
-  const [pickerApp, setPickerApp] = useState(null);        // app row → juror picker
-  const [pickerSel, setPickerSel] = useState("");
+  const [deleteJuror, setDeleteJuror] = useState(null);   // juror object → confirm
+  const [removedNote, setRemovedNote] = useState(null);
 
   const jurorsData = useAdminData("jurors");
   const pipeline = useAdminData(
@@ -514,9 +523,12 @@ export function AdminJury({ go } = {}) {
     }
   };
 
-  const openPickerForApp = (appRow) => {
-    setPickerApp(appRow);
-    setPickerSel(jurors[0]?.id || "");
+  const confirmDelete = async () => {
+    const res = await adminPlatformApi.deleteJuror(deleteJuror.id);
+    setRemovedNote(removalSummary("jury", deleteJuror.name || deleteJuror.email, res));
+    setDeleteJuror(null);
+    setManageJuror(null);
+    reloadAll();
   };
 
   return (
@@ -547,6 +559,12 @@ export function AdminJury({ go } = {}) {
       </div>
 
       {autoMsg && <div className="os-text-sm os-text-soft os-mb-lg">{autoMsg}</div>}
+      {removedNote && (
+        <div style={{ color: "#1d6b45", fontSize: 13, fontWeight: 600, padding: "8px 12px", background: "#e9f6ef", border: "1px solid #b7ddc8", borderRadius: 4, marginBottom: 16, display: "flex", justifyContent: "space-between", gap: 12 }}>
+          <span>{removedNote}</span>
+          <button className="os-btn sm ghost" style={{ padding: "2px 8px", fontSize: 12 }} onClick={() => setRemovedNote(null)}>Dismiss</button>
+        </div>
+      )}
 
       {tab === "applications" && (
         pipeline.loading ? <LoadingState label="Loading applications…" />
@@ -559,7 +577,6 @@ export function AdminJury({ go } = {}) {
             recommendedFor={recommendedFor} setRecommendedFor={setRecommendedFor}
             pickedBy={pickedBy} setPickedBy={setPickedBy}
             onRecompute={handleRecompute} recomputeMsg={recomputeMsg}
-            onManageApp={openPickerForApp}
           />
       )}
 
@@ -570,6 +587,7 @@ export function AdminJury({ go } = {}) {
             jurors={jurors}
             pendingInvites={pendingInvites}
             onManage={(j) => setManageJuror(j)}
+            onDelete={(j) => setDeleteJuror(j)}
             onReload={reloadAll}
           />
       )}
@@ -587,57 +605,19 @@ export function AdminJury({ go } = {}) {
         <ManageJurorsDrawer
           juror={manageJuror}
           onClose={() => setManageJuror(null)}
-          onChanged={() => { setManageJuror(null); reloadAll(); }}
+          onChanged={reloadAll}
+          onRequestDelete={(j) => setDeleteJuror(j)}
         />
       )}
 
-      {/* Juror-picker modal (from the Applications table Manage button) */}
-      {pickerApp && (
-        <div
-          className="os-modal-backdrop"
-          onClick={() => setPickerApp(null)}
-          style={{ position: "fixed", inset: 0, background: "rgba(36,36,36,0.5)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
-        >
-          <div
-            className="os-modal"
-            onClick={e => e.stopPropagation()}
-            style={{ maxWidth: 440, width: "90vw", background: "var(--bg-paper)", border: "1px solid var(--line-strong)", borderRadius: 4, boxShadow: "0 20px 60px rgba(36,36,36,0.18)" }}
-          >
-            <div className="os-modal-head" style={{ padding: "16px 24px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontWeight: 600, fontSize: 16, color: "var(--ink)" }}>Manage jurors for: {pickerApp.name}</div>
-              <button className="os-btn sm ghost" onClick={() => setPickerApp(null)} style={{ padding: "2px 8px", fontSize: 18 }}>&times;</button>
-            </div>
-            <div className="os-modal-body" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-              {jurors.length === 0 ? (
-                <div className="os-text-soft" style={{ fontSize: 13 }}>No jury members in the roster yet.</div>
-              ) : (
-                <>
-                  <div>
-                    <label className="os-text-xs os-text-dim os-uppercase" style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>Select jury member to manage</label>
-                    <select className="os-select os-w-100" aria-label="Select juror" style={{ width: "100%" }} value={pickerSel} onChange={e => setPickerSel(e.target.value)}>
-                      {jurors.map(j => (
-                        <option key={j.id} value={j.id}>{j.name || j.email || j.id}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, paddingTop: 4 }}>
-                    <button className="os-btn secondary" onClick={() => setPickerApp(null)}>Cancel</button>
-                    <button
-                      className="os-btn"
-                      style={{ background: "#3213b7", color: "#fff" }}
-                      onClick={() => {
-                        const j = jurors.find(x => x.id === pickerSel);
-                        if (j) { setPickerApp(null); setManageJuror(j); }
-                      }}
-                    >
-                      Open Manage Drawer
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* Delete confirmation */}
+      {deleteJuror && (
+        <RemoveMemberDialog
+          kind="jury"
+          member={deleteJuror}
+          onClose={() => setDeleteJuror(null)}
+          onConfirm={confirmDelete}
+        />
       )}
     </div>
   );

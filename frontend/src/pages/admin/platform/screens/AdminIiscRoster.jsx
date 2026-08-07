@@ -26,14 +26,6 @@ const MATCH_TONE = { Yes: "purple", Partial: "amber", No: "" };
 const MATCH_RANK = { Yes: 0, Partial: 1, No: 2 };
 const norm = (s) => (s || "").toLowerCase().replace(/\./g, "").replace(/-/g, " ").replace(/\s+/g, " ").trim();
 
-// TEMPORARY TEST ROW: the FIRST entry of public/iisc_professors.json is a
-// synthetic "udayan" row carrying an `email`, used to exercise the real invite
-// path (createJuryInvites -> jury_invite template -> Resend) without mailing an
-// actual professor. It is the ONLY row with an email, so a mis-click on a real
-// professor can never be misrouted to it. `isTestRow` drives the amber TEST
-// badge below. To remove: delete that one object from the JSON (search
-// "isTestRow"); the two guards here are inert without it.
-
 export function AdminIiscRoster({ go } = {}) {
   const [profs, setProfs] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
@@ -243,17 +235,6 @@ export function AdminIiscRoster({ go } = {}) {
                     <td>
                       <div className="startup">
                         {p.name || "—"}
-                        {/* TEST ROW badge — remove with the isTestRow row in iisc_professors.json. */}
-                        {p.isTestRow && (
-                          <span
-                            className="os-chip"
-                            title={`Test row — invites go to ${p.email}`}
-                            style={{
-                              marginLeft: 6, fontSize: 9, padding: "1px 5px", fontWeight: 700,
-                              background: "#fff4d6", border: "1px solid #e6c34d", color: "#8a6d00",
-                            }}
-                          >TEST</span>
-                        )}
                         {p.duplicate_joint_appointment === "Yes" && (
                           <span className="os-chip" style={{ marginLeft: 6, fontSize: 9, padding: "1px 5px", fontWeight: 700 }}>JOINT</span>
                         )}
@@ -315,18 +296,22 @@ export function AdminIiscRoster({ go } = {}) {
 }
 
 function InviteModal({ prof, onClose, onDone }) {
-  // Only the isTestRow entry carries an `email`; real professors start blank so a
-  // mis-click can never silently mail the test address.
-  const [email, setEmail] = useState(prof.email || "");
+  // The roster name is AI-parsed off a faculty page and is regularly wrong
+  // (titles glued on, initials mangled), so it seeds an EDITABLE field — the
+  // invite email addresses the person by whatever the admin types here.
+  const [name, setName] = useState(prof.name || "");
+  const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   const [result, setResult] = useState(null);
   const send = async () => {
     const e = email.trim();
+    const n = name.trim();
+    if (!n) { setErr("Enter a name."); return; }
     if (!e) { setErr("Enter an email."); return; }
     setSaving(true); setErr(null);
     try {
-      const res = await adminPlatformApi.createJuryInvites([{ name: prof.name, email: e }]);
+      const res = await adminPlatformApi.createJuryInvites([{ name: n, email: e }]);
       setResult(res?.results?.[0] || { status: "invited" });
     } catch (ex) { setErr(ex?.message || "Invite failed."); setSaving(false); }
   };
@@ -342,7 +327,7 @@ function InviteModal({ prof, onClose, onDone }) {
         <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
           {result ? (
             <>
-              <div className="os-text-sm">Invite to <b>{prof.name}</b>: <span className={"os-chip " + (result.status === "invited" ? "purple" : result.status === "already_invited" ? "amber" : "")}>{result.status.replace(/_/g, " ")}</span></div>
+              <div className="os-text-sm">Invite to <b>{name.trim() || prof.name}</b>: <span className={"os-chip " + (result.status === "invited" ? "purple" : result.status === "already_invited" ? "amber" : "")}>{result.status.replace(/_/g, " ")}</span></div>
               {result.status === "already_invited" && (
                 <div className="os-text-xs os-text-dim">
                   This address was already invited, so <b>no new email was sent</b> — the
@@ -357,7 +342,13 @@ function InviteModal({ prof, onClose, onDone }) {
             <>
               <div>
                 <label className="os-text-xs os-text-dim os-uppercase" style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Name</label>
-                <input className="os-input os-w-100" aria-label="Invite name" value={prof.name} readOnly />
+                <input
+                  className="os-input os-w-100"
+                  aria-label="Invite name"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="Full name as it should appear in the invite"
+                />
               </div>
               <div>
                 <label className="os-text-xs os-text-dim os-uppercase" style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Email</label>

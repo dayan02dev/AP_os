@@ -69,6 +69,10 @@ export const adminPlatformApi = {
     api.post(`/admin/platform/reviewers/${encodeURIComponent(userId)}/applications/remove`, { items }),
   patchReviewer: (id, body) =>
     api.patch(`/admin/platform/reviewers/${id}`, body),
+  // De-roster a reviewer: revokes the role, releases THEIR assignments only,
+  // and keeps every review they submitted. See services/roster_removal.py.
+  deleteReviewer: (id) =>
+    api.del(`/admin/platform/reviewers/${encodeURIComponent(id)}`),
   rebalance: (body) => api.post(`/admin/platform/reviewers/rebalance`, body || {}),
 
   getAuditLog: (params) =>
@@ -84,6 +88,10 @@ export const adminPlatformApi = {
   getJurorApplications: (userId) =>
     api.get(`/admin/platform/jurors/${encodeURIComponent(userId)}/applications`),
   patchJuror: (id, body) => api.patch(`/admin/platform/jurors/${id}`, body),
+  // De-roster a jury member: revokes the role, releases their assignments +
+  // picks, and clears their invite so the address can be invited again.
+  deleteJuror: (id) =>
+    api.del(`/admin/platform/jurors/${encodeURIComponent(id)}`),
   createJuryInvites: (invites) =>
     api.post(`/admin/platform/jury/invites`, { invites }),
   enrichJuror: (userId) =>

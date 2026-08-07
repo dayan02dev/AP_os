@@ -4,8 +4,8 @@
 // is NO jury round here: no juror assignment, no picks, no Final Gate stack.
 // Each application gets exactly two actions on the right:
 //
-//   [ IC Upload ]    upload the Investment Committee / MOM PDF
-//   [ Sign IC form ] draw or type a signature; it is stamped into that PDF
+//   [ Memo Upload ] upload the Investment Committee / MOM PDF
+//   [ Approve ]     draw or type a signature; it is stamped into that PDF
 //
 // The stamp is produced in the browser (lib/pdfSign.js → pdf-lib) and uploaded
 // as the signed copy; the backend records WHO signed from the session, so the
@@ -50,7 +50,7 @@ function openInNewTab(url) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-// ── IC Upload modal ─────────────────────────────────────────────────────────
+// ── Memo Upload modal ─────────────────────────────────────────────────────────
 
 function IcUploadModal({ app, existing, onClose, onDone }) {
   const [file, setFile] = useState(null);
@@ -85,12 +85,12 @@ function IcUploadModal({ app, existing, onClose, onDone }) {
     <div className="os-modal-backdrop" onClick={onClose} style={backdropStyle}>
       <div className="os-modal" onClick={(e) => e.stopPropagation()} style={panelStyle(520)}>
         <div className="os-modal-head" style={headStyle}>
-          <div style={{ fontWeight: 600, fontSize: 16, color: "var(--ink)" }}>IC Upload</div>
+          <div style={{ fontWeight: 600, fontSize: 16, color: "var(--ink)" }}>Memo Upload</div>
           <button className="os-btn sm ghost" onClick={onClose} style={{ padding: "2px 8px", fontSize: 18 }}>&times;</button>
         </div>
         <div className="os-modal-body" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
           <div className="os-text-sm os-text-soft">
-            Upload the Investment Committee minutes (MOM) for <strong>{app.name}</strong>. PDF only, up to {MAX_MB} MiB.
+            Upload the Investment Committee memo (MOM) for <strong>{app.name}</strong>. PDF only, up to {MAX_MB} MiB.
           </div>
           {existing && (
             <div style={{ fontSize: 12.5, color: "var(--ink-soft)", background: "var(--bg-soft)", padding: "8px 12px", borderRadius: 4 }}>
@@ -193,7 +193,7 @@ function SignaturePad({ canvasRef, onDrawn }) {
   );
 }
 
-// ── Sign IC form modal ──────────────────────────────────────────────────────
+// ── Approve (sign memo) modal ──────────────────────────────────────────────────────
 
 function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
   const canvasRef = useRef(null);
@@ -248,7 +248,7 @@ function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
       <div className="os-modal" onClick={(e) => e.stopPropagation()} style={panelStyle(620)}>
         <div className="os-modal-head" style={headStyle}>
           <div>
-            <div style={{ fontWeight: 600, fontSize: 16, color: "var(--ink)" }}>Sign IC form</div>
+            <div style={{ fontWeight: 600, fontSize: 16, color: "var(--ink)" }}>Approve</div>
             <div className="os-text-xs os-text-soft" style={{ marginTop: 2 }}>
               {app.name} · {doc?.file_name}
             </div>
@@ -294,7 +294,7 @@ function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
               checked={confirmed}
               onChange={(e) => setConfirmed(e.target.checked)}
             />
-            I confirm this is my signature on the IC form.
+            I confirm this is my signature approving this memo.
           </label>
           {err && (
             <div style={{ color: "var(--bad)", fontSize: 13, fontWeight: 600, padding: "8px 12px", background: "var(--bad-soft)", borderRadius: 4 }}>{err}</div>
@@ -307,7 +307,7 @@ function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
               onClick={submit}
               disabled={!canSign}
             >
-              {busy ? "Signing…" : "Sign & save"}
+              {busy ? "Approving…" : "Approve & save"}
             </button>
           </div>
         </div>
@@ -368,7 +368,7 @@ export function AdminJuryVipSelected({ go } = {}) {
       <PageHead
         eyebrow="VIP SELECTED"
         title="VIP <em>selected</em>"
-        sub="Selected VIP applications. Upload the Investment Committee document and sign it."
+        sub="Selected VIP applications. Upload the Investment Committee memo and approve it."
       />
 
       <div className="os-row gap-sm" style={{ flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
@@ -469,16 +469,16 @@ export function AdminJuryVipSelected({ go } = {}) {
                     <td>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button className="os-btn sm secondary" onClick={() => setUploadFor(s)}>
-                          {doc ? "Replace IC" : "IC Upload"}
+                          {doc ? "Replace Memo" : "Memo Upload"}
                         </button>
                         <button
                           className="os-btn sm"
                           style={doc ? { background: "#3213b7", color: "#fff" } : undefined}
                           disabled={!doc}
-                          title={doc ? "" : "Upload the IC document first"}
+                          title={doc ? "" : "Upload the memo first"}
                           onClick={() => setSignFor(s)}
                         >
-                          {doc?.signed ? "Re-sign" : "Sign IC form"}
+                          {doc?.signed ? "Re-approve" : "Approve"}
                         </button>
                       </div>
                     </td>
@@ -497,7 +497,7 @@ export function AdminJuryVipSelected({ go } = {}) {
           onClose={() => setUploadFor(null)}
           onDone={() => {
             setUploadFor(null);
-            setNotice(`IC document uploaded for ${uploadFor.name}.`);
+            setNotice(`Memo uploaded for ${uploadFor.name}.`);
             reload();
           }}
         />
@@ -512,7 +512,7 @@ export function AdminJuryVipSelected({ go } = {}) {
           onClose={() => setSignFor(null)}
           onDone={() => {
             setSignFor(null);
-            setNotice(`IC form signed for ${signFor.name}.`);
+            setNotice(`Memo approved for ${signFor.name}.`);
             reload();
           }}
         />

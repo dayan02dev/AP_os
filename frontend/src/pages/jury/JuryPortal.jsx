@@ -21,6 +21,7 @@ import { useAsync } from "../../hooks/useAsync.js";
 import { juryApi } from "../../lib/juryApi.js";
 import { COHORT_LABEL, initialsOf } from "./ui.jsx";
 import PortalSwitcher from "../../components/PortalSwitcher.jsx";
+import AccountSettingsButton from "../../components/AccountSettingsButton.jsx";
 
 import JuryQueue from "./JuryQueue.jsx";
 import JuryAppView from "./JuryAppView.jsx";
@@ -74,6 +75,7 @@ function JuryTopbar({ tab }) {
           </div>
           <span>{email}</span>
         </div>
+        <AccountSettingsButton />
         <PortalSwitcher current="jury" />
         <button className="lp-signout" onClick={signOut}>SIGN OUT ↗</button>
       </div>

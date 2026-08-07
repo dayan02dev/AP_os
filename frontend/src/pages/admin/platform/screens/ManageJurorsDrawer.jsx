@@ -1,19 +1,26 @@
 // ManageJurorsDrawer — admin Jury "Manage" drawer (jury v2).
 //
-// View a juror's assigned applications (project/industry/status + a ★ picked
-// chip when the juror picked it), assign a new JURY REVIEW application, and
-// remove (unassign) individual apps.
+// The jury roster is the ONE place a juror is managed end-to-end (the
+// Applications tab is read-only — it identifies who is assigned, nothing more):
+//   1. Details    — edit name / email / weight / expertise domains
+//   2. Assignment — assign a JURY REVIEW application, or release one
+//   3. Delete     — de-roster them entirely (footer)
+//
+// Assigned applications show project/industry/status plus a ★ picked chip when
+// the juror picked that one.
 //
 // Reads:  GET /admin/platform/jurors/{id}/applications  (useAdminData "jurorApplications")
 //         GET /admin/platform/applications?recommended_for={id}
 //             (useAdminData "pipeline" — candidate picker, recommended-first)
 // Writes: POST/DELETE /leadership/applications/{id}/jurors (leadershipApi)
+//         PATCH  /admin/platform/jurors/{id}                (details)
 //
 // v2 edits vs the port: candidates limited to JURY REVIEW; recommended-first
 // ordering + score badge; remove-error code app_already_decided → Final-Gate
 // frozen message; a green ★ picked chip on picked rows.
 import React, { useState, useMemo, useEffect } from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
+import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 
 // jurorApplications rows are adapted without a chip; derive a display label
@@ -23,7 +30,7 @@ function statusChip(a) {
   return a.status ? String(a.status).replace(/_/g, " ").toUpperCase() : "—";
 }
 
-export function ManageJurorsDrawer({ juror, onClose, onChanged }) {
+export function ManageJurorsDrawer({ juror, onClose, onChanged, onRequestDelete }) {
   const apps = useAdminData("jurorApplications", { userId: juror.id });
   // Load the pipeline recommendations for THIS juror so eligible candidates can
   // be ordered best-fit-first with a score badge.
@@ -34,6 +41,38 @@ export function ManageJurorsDrawer({ juror, onClose, onChanged }) {
   const [err, setErr] = useState(null);
   const [notice, setNotice] = useState(null);
   const [autoBusy, setAutoBusy] = useState(false);
+
+  // ── Details (identity + roster settings) ──────────────────────────────
+  const [name, setName] = useState(juror.name || "");
+  const [email, setEmail] = useState(juror.email || "");
+  const [weight, setWeight] = useState(
+    typeof juror.weight === "number" ? juror.weight : 1.0);
+  const [domains, setDomains] = useState(
+    Array.isArray(juror.domains) ? juror.domains.join(", ") : (juror.domain || ""));
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [detailsMsg, setDetailsMsg] = useState(null);
+
+  const saveDetails = async () => {
+    setSavingDetails(true);
+    setDetailsMsg(null);
+    try {
+      const body = {
+        weight: Math.min(10, Math.max(0, parseFloat(weight) || 0)),
+        expertise_domains: domains.split(",").map(d => d.trim()).filter(Boolean),
+      };
+      // Identity fields only when actually changed — an email change also
+      // re-syncs the juror's login on the backend.
+      if (name.trim() && name.trim() !== (juror.name || "")) body.full_name = name.trim();
+      if (email.trim() && email.trim() !== (juror.email || "")) body.email = email.trim();
+      await adminPlatformApi.patchJuror(juror.id, body);
+      setDetailsMsg({ kind: "ok", text: "Details saved." });
+      onChanged && onChanged();
+    } catch (e) {
+      setDetailsMsg({ kind: "error", text: e?.details?.message || e?.message || "Save failed." });
+    } finally {
+      setSavingDetails(false);
+    }
+  };
 
   const assigned = apps.data?.applications ?? [];
   const assignedIds = useMemo(() => new Set(assigned.map(a => a.id)), [assigned]);
@@ -144,7 +183,7 @@ export function ManageJurorsDrawer({ juror, onClose, onChanged }) {
         {/* Header */}
         <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 600, color: "var(--ink)" }}>Manage Applications</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: "var(--ink)" }}>Manage jury member</div>
             <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 4 }}>
               Jury Member: <strong>{juror.name}</strong>{juror.domain ? ` · ${juror.domain}` : ""}
             </div>
@@ -154,6 +193,51 @@ export function ManageJurorsDrawer({ juror, onClose, onChanged }) {
 
         {/* Body */}
         <div style={{ padding: 24, flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Details — identity + roster settings */}
+          <div style={{ border: "1px solid var(--line)", borderRadius: 4, padding: 16 }}>
+            <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 12 }}>Details</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label className="os-text-xs os-text-dim os-uppercase" htmlFor="jur-name" style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Full name</label>
+                <input id="jur-name" className="os-input os-w-100" aria-label="Juror full name"
+                  value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Dr. R. Iyer" />
+              </div>
+              <div>
+                <label className="os-text-xs os-text-dim os-uppercase" htmlFor="jur-email" style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Email address</label>
+                <input id="jur-email" type="email" className="os-input os-w-100" aria-label="Juror email"
+                  value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.in" />
+              </div>
+              <div>
+                <label className="os-text-xs os-text-dim os-uppercase" htmlFor="jur-weight" style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Weight</label>
+                <input id="jur-weight" type="number" step="0.1" min="0" max="10" className="os-input os-w-100"
+                  aria-label="Juror weight" value={weight} onChange={e => setWeight(e.target.value)} />
+              </div>
+              <div>
+                <label className="os-text-xs os-text-dim os-uppercase" htmlFor="jur-domains" style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Domains (comma-separated)</label>
+                <input id="jur-domains" className="os-input os-w-100" aria-label="Juror domains"
+                  value={domains} onChange={e => setDomains(e.target.value)} placeholder="e.g. Robotics, AI" />
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 8 }}>
+              Changing the email also updates this jury member's login.
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
+              <button
+                className="os-btn sm"
+                style={{ background: "var(--accent)", color: "#fff" }}
+                onClick={saveDetails}
+                disabled={savingDetails}
+              >
+                {savingDetails ? "Saving…" : "Save details"}
+              </button>
+              {detailsMsg && (
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: detailsMsg.kind === "error" ? "var(--bad)" : "#1d6b45" }}>
+                  {detailsMsg.text}
+                </span>
+              )}
+            </div>
+          </div>
+
           {/* Assign new application */}
           <div style={{ background: "var(--bg-soft)", border: "1px solid var(--line)", borderRadius: 4, padding: 16 }}>
             <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 8 }}>Assign New Application</div>
@@ -272,7 +356,16 @@ export function ManageJurorsDrawer({ juror, onClose, onChanged }) {
         </div>
 
         {/* Footer */}
-        <div style={{ padding: "16px 24px", borderTop: "1px solid var(--line)", display: "flex", justifyContent: "flex-end", gap: 12, background: "var(--bg-soft)" }}>
+        <div style={{ padding: "16px 24px", borderTop: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: "var(--bg-soft)" }}>
+          {onRequestDelete ? (
+            <button
+              className="os-btn ghost"
+              style={{ color: "#d23b40", borderColor: "#f3c2c4" }}
+              onClick={() => onRequestDelete(juror)}
+            >
+              Delete jury member
+            </button>
+          ) : <span />}
           <button className="os-btn secondary" onClick={onClose}>Close</button>
         </div>
       </div>

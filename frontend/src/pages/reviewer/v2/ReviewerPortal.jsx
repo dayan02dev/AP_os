@@ -16,6 +16,7 @@ import { reviewerApi } from "../../../lib/reviewerApi.js";
 import { relabelDisplayId } from "../../../lib/trackLabel.js";
 import { COHORT_LABEL, initialsOf } from "./ui.jsx";
 import PortalSwitcher from "../../../components/PortalSwitcher.jsx";
+import AccountSettingsButton from "../../../components/AccountSettingsButton.jsx";
 
 import ReviewerDashboard from "./ReviewerDashboard.jsx";
 import ReviewerQueue from "./ReviewerQueue.jsx";
@@ -68,6 +69,7 @@ function ReviewerTopbar({ tab }) {
           </div>
           <span>{email}</span>
         </div>
+        <AccountSettingsButton />
         <PortalSwitcher current="reviewer" />
         <button className="lp-signout" onClick={signOut}>SIGN OUT ↗</button>
       </div>
