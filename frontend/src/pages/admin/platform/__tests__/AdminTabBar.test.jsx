@@ -31,7 +31,7 @@ vi.mock("../../../../hooks/useAdminData", () => ({
 }));
 
 const base = { page: "dashboard", setPage: vi.fn(), appsBadge: null,
-  rejectedBadge: null, reviewBadge: null, juryTirBadge: null, juryVipBadge: null };
+  rejectedBadge: null, reviewBadge: null, jurySelectedBadge: null };
 
 describe("AdminTabBar — jury vs reviewer tabs", () => {
   it("jury mode hides Applications + Rejected and shows Academic Jury Roster after Dashboard", () => {
@@ -53,46 +53,43 @@ describe("AdminTabBar — jury vs reviewer tabs", () => {
   });
 });
 
-describe("AdminTabBar — jury selected split per track", () => {
-  it("shows TIR Selected and VIP Selected side by side, not a combined tab", () => {
+describe("AdminTabBar — the merged Selected Applications tab", () => {
+  it("shows ONE tab for both tracks, not a tab each", () => {
     render(<AdminTabBar {...base} decisionMode="jury" />);
-    expect(screen.getByText("TIR Selected")).toBeTruthy();
-    expect(screen.getByText("VIP Selected")).toBeTruthy();
-    expect(screen.queryByText("Jury Selected")).toBeNull();
+    expect(screen.getByText("Selected Applications")).toBeTruthy();
+    expect(screen.queryByText("TIR Selected")).toBeNull();
+    expect(screen.queryByText("VIP Selected")).toBeNull();
   });
 
-  it("keeps the split in reviewer mode too", () => {
+  it("keeps the single tab in reviewer mode too", () => {
     render(<AdminTabBar {...base} decisionMode="reviewer" />);
-    expect(screen.getByText("TIR Selected")).toBeTruthy();
-    expect(screen.getByText("VIP Selected")).toBeTruthy();
+    expect(screen.getByText("Selected Applications")).toBeTruthy();
+    expect(screen.queryByText("TIR Selected")).toBeNull();
   });
 
-  it("renders each track's badge independently", () => {
-    render(<AdminTabBar {...base} decisionMode="jury" juryTirBadge={11} juryVipBadge={5} />);
-    expect(screen.getByText("11")).toBeTruthy();
-    expect(screen.getByText("5")).toBeTruthy();
+  it("labels the sub-line for both tracks", () => {
+    const { container } = render(<AdminTabBar {...base} decisionMode="jury" />);
+    const subs = [...container.querySelectorAll(".lp-tab-sub")].map(n => n.textContent);
+    expect(subs).toContain("TIR + VIP");
+    expect(subs).not.toContain("SELECTED · TIR");
+    expect(subs).not.toContain("SELECTED · VIP");
   });
 
-  it("shows no badge at all when a count is null", () => {
+  it("badges the combined count", () => {
+    render(<AdminTabBar {...base} decisionMode="jury" jurySelectedBadge={16} />);
+    expect(screen.getByText("16")).toBeTruthy();
+  });
+
+  it("shows no badge at all when the count is null", () => {
     const { container } = render(<AdminTabBar {...base} decisionMode="jury" />);
     expect(container.querySelectorAll(".lp-tab-badge").length).toBe(0);
   });
 
-  it("labels the VIP Selected sub-title to match TIR Selected", () => {
-    // The two jury-stage tabs are a pair; VIP's sub-line used to describe its
-    // internals ("IC UPLOAD · SIGNATURE") while TIR's named the stage.
-    const { container } = render(<AdminTabBar {...base} decisionMode="jury" />);
-    const subs = [...container.querySelectorAll(".lp-tab-sub")].map(n => n.textContent);
-    expect(subs).toContain("SELECTED · TIR");
-    expect(subs).toContain("SELECTED · VIP");
-    expect(subs).not.toContain("IC UPLOAD · SIGNATURE");
-  });
-
-  it("selects the clicked jury tab by id", () => {
+  it("selects the merged tab by its id", () => {
     const setPage = vi.fn();
     render(<AdminTabBar {...base} setPage={setPage} decisionMode="jury" />);
-    screen.getByText("VIP Selected").click();
-    expect(setPage).toHaveBeenCalledWith("jury_vip");
+    screen.getByText("Selected Applications").click();
+    expect(setPage).toHaveBeenCalledWith("jury_selected");
   });
 });
 

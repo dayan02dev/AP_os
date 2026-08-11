@@ -1,7 +1,10 @@
-// AdminJuryVipSelected — "VIP Selected" (jury-mode tab).
+// AdminSelectedApplications — the single "Selected Applications" tab.
 //
-// VIP (sip) applications sitting in JURY REVIEW. Unlike TIR Selected there
-// is NO jury round here: no juror assignment, no picks, no Final Gate stack.
+// Replaces the old TIR Selected + VIP Selected pair. Both tracks now sit in one
+// list (a TRACK chip per row says which), because the work at this stage is the
+// same either way: read the shortlist, attach the Investment Committee memo,
+// approve it.
+//
 // Each application gets exactly two actions on the right:
 //
 //   [ Memo Upload ] upload the Investment Committee / MOM PDF
@@ -10,6 +13,13 @@
 // The stamp is produced in the browser (lib/pdfSign.js → pdf-lib) and uploaded
 // as the signed copy; the backend records WHO signed from the session, so the
 // attribution can't be spoofed by the client.
+//
+// TIR used to render here as AdminPipeline (readOnly, lockTrack="tir") with a
+// dozen review-stage columns — reviewer score, reco, batch, status, submitted.
+// Those answer "should this advance?", which is already decided by the time an
+// application reaches this tab, so they are gone. What is left is what you need
+// to identify the application and act on its memo. The full record is still one
+// click away: the project name opens the application detail.
 
 import React, { useMemo, useRef, useState } from "react";
 
@@ -17,7 +27,7 @@ import { useAdminData } from "../../../../hooks/useAdminData";
 import { useAuth } from "../../../../hooks/useAuth.jsx";
 import { icDocumentsApi } from "../../../../lib/icDocumentsApi";
 import { stampSignature, formatSignedAt } from "../../../../lib/pdfSign";
-import { relabelDisplayId } from "../../../../lib/trackLabel.js";
+import { relabelDisplayId, trackLabel } from "../../../../lib/trackLabel.js";
 import { PageHead } from "../shell/osAtoms";
 import { LoadingState, ErrorState } from "../ui.jsx";
 
@@ -27,8 +37,8 @@ const MODAL_STYLES = `
 const MAX_MB = 10;
 const keyOf = (track, id) => `${track}:${id}`;
 // IC documents are keyed by the NATIVE track (where the application row lives),
-// while this screen's membership is decided by the EFFECTIVE track. For a moved
-// app those differ, so every IC read/write goes through nativeOf().
+// while a row's displayed track is the EFFECTIVE one. For a moved app those
+// differ, so every IC read/write goes through nativeOf().
 const nativeOf = (s) => (s?.nativeTrack || s?.track);
 
 const backdropStyle = {
@@ -102,7 +112,7 @@ function IcUploadModal({ app, existing, onClose, onDone }) {
           <input
             type="file"
             accept="application/pdf,.pdf"
-            aria-label="IC document PDF"
+            aria-label="Memo PDF"
             onChange={(e) => pick(e.target.files?.[0] || null)}
           />
           {file && (
@@ -258,7 +268,7 @@ function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
         <div className="os-modal-body" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
           {doc?.signed && (
             <div style={{ fontSize: 12.5, color: "var(--ink-soft)", background: "var(--bg-soft)", padding: "8px 12px", borderRadius: 4 }}>
-              Already signed by <strong>{doc.signer_name}</strong> on {formatSignedAt(doc.signed_at)}. Signing again replaces that signature.
+              Already approved by <strong>{doc.signer_name}</strong> on {formatSignedAt(doc.signed_at)}. Approving again replaces that signature.
             </div>
           )}
           <div>
@@ -318,16 +328,16 @@ function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
 
 // ── Screen ──────────────────────────────────────────────────────────────────
 
-export function AdminJuryVipSelected({ go } = {}) {
+export function AdminSelectedApplications({ go, goDetail } = {}) {
   const { user } = useAuth();
-  // Both tracks are fetched and split client-side on the EFFECTIVE track: the
-  // server's `track` filter keys off the NATIVE track, so under the track-move
-  // overlay a TIR app moved to VIP would never reach this screen (and a VIP app
-  // moved to TIR would wrongly stay on it).
   const pipeline = useAdminData("pipeline", { status: "jury_review" });
   const docs = useAdminData("icDocuments");
 
   const [search, setSearch] = useState("");
+  // Both tracks share the list; this narrows it. Filtering happens on the
+  // EFFECTIVE track (what the row claims to be) — the server's `track` filter
+  // keys off the NATIVE track, so a moved app would land in the wrong bucket.
+  const [track, setTrack] = useState("all");
   const [uploadFor, setUploadFor] = useState(null);
   const [signFor, setSignFor] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -335,13 +345,14 @@ export function AdminJuryVipSelected({ go } = {}) {
 
   const byKey = docs.data?.byKey || {};
 
+  const all = pipeline.data?.startups ?? [];
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (pipeline.data?.startups ?? [])
-      .filter((s) => s.track === "sip")
+    return all
+      .filter((s) => track === "all" || s.track === track)
       .filter((s) => !q || `${s.name || ""} ${s.domain || ""} ${(s.founders || []).join(" ")}`
         .toLowerCase().includes(q));
-  }, [pipeline.data, search]);
+  }, [all, search, track]);
 
   const reload = () => { docs.reload(); pipeline.reload(); };
 
@@ -366,22 +377,43 @@ export function AdminJuryVipSelected({ go } = {}) {
       )}
 
       <PageHead
-        eyebrow="VIP SELECTED"
-        title="VIP <em>selected</em>"
-        sub="Selected VIP applications. Upload the Investment Committee memo and approve it."
+        eyebrow="SELECTED APPLICATIONS"
+        title="Selected <em>applications</em>"
+        sub="Shortlisted TIR and VIP applications. Upload the Investment Committee memo and approve it."
       />
 
       <div className="os-row gap-sm" style={{ flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
         <input
           className="os-input"
-          aria-label="Search VIP applications"
+          aria-label="Search selected applications"
           placeholder="Search project, founder or industry…"
           style={{ minWidth: 240, fontSize: 13 }}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <div className="lp-track-group" style={{ display: "flex", background: "var(--bg-soft)", padding: 3, borderRadius: 2, border: "1px solid var(--line)" }}>
+          {[["all", "All tracks"], ["tir", "TIR"], ["sip", "VIP"]].map(([v, label]) => (
+            <button
+              key={v}
+              className={`lp-track-btn${track === v ? " active" : ""}`}
+              aria-pressed={track === v}
+              onClick={() => setTrack(v)}
+              style={{
+                background: track === v ? "#fff" : "transparent",
+                border: "none", height: 30, padding: "0 14px", cursor: "pointer",
+                fontFamily: "var(--font-sans)", fontSize: 13,
+                fontWeight: track === v ? 600 : 500,
+                color: track === v ? "var(--ink)" : "var(--ink-soft)",
+                borderRadius: 4,
+                boxShadow: track === v ? "0 1px 3px rgba(36,36,36,0.08)" : "none",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <span className="os-mono os-text-sm os-text-dim" style={{ marginLeft: "auto" }}>
-          {rows.length}{pipeline.data ? ` of ${(pipeline.data.startups || []).filter((s) => s.track === "sip").length}` : ""}
+          {rows.length}{pipeline.data ? ` of ${all.length}` : ""}
         </span>
       </div>
 
@@ -391,12 +423,14 @@ export function AdminJuryVipSelected({ go } = {}) {
       )}
 
       {pipeline.loading ? (
-        <LoadingState label="Loading VIP applications…" />
+        <LoadingState label="Loading selected applications…" />
       ) : pipeline.error ? (
         <ErrorState error={pipeline.error} onRetry={pipeline.reload} />
       ) : rows.length === 0 ? (
         <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--ink-soft)", border: "1px dashed var(--line)", borderRadius: 4 }}>
-          No VIP applications in jury review.
+          {track === "all"
+            ? "No selected applications yet."
+            : `No ${trackLabel(track)} applications in this list.`}
         </div>
       ) : (
         <div style={{ overflowX: "auto" }}>
@@ -404,9 +438,10 @@ export function AdminJuryVipSelected({ go } = {}) {
             <thead>
               <tr>
                 <th>Project</th>
+                <th>Track</th>
                 <th>Industry</th>
                 <th className="num">AI score</th>
-                <th>IC document</th>
+                <th>Memo</th>
                 <th style={{ textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
@@ -417,12 +452,34 @@ export function AdminJuryVipSelected({ go } = {}) {
                   <tr key={s.id}>
                     <td>
                       <div className="startup">
-                        {s.name}
+                        {goDetail ? (
+                          <a
+                            className="nm"
+                            style={{ cursor: "pointer" }}
+                            onClick={() => goDetail(s.id, s.track, "jury_selected")}
+                          >
+                            {s.name}
+                          </a>
+                        ) : s.name}
                         <small>
                           {relabelDisplayId(s.applicationId || "") || s.founders?.[0] || "—"}
                           {s.founders?.[0] ? ` · ${s.founders[0]}` : ""}
                         </small>
                       </div>
+                    </td>
+                    <td>
+                      <span
+                        className="os-chip"
+                        style={{
+                          fontSize: 11, fontWeight: 700, letterSpacing: "0.04em",
+                          padding: "2px 8px",
+                          background: s.track === "tir" ? "#eef2ff" : "#f3f0fd",
+                          border: `1px solid ${s.track === "tir" ? "#c7d2fe" : "#cfc4f5"}`,
+                          color: s.track === "tir" ? "#3730a3" : "#5b21b6",
+                        }}
+                      >
+                        {trackLabel(s.track)}
+                      </span>
                     </td>
                     <td className="os-text-soft">{s.domain || "—"}</td>
                     <td className="num">
@@ -442,12 +499,12 @@ export function AdminJuryVipSelected({ go } = {}) {
                             style={{ cursor: "pointer", fontSize: 12.5 }}
                             onClick={() => view(s, "original")}
                           >
-                            {doc.file_name || "IC document"}
+                            {doc.file_name || "Memo"}
                           </a>
                           {doc.signed ? (
                             <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                               <span className="os-chip purple" style={{ fontSize: 10, padding: "1px 6px", fontWeight: 700 }}>
-                                ✓ SIGNED
+                                ✓ APPROVED
                               </span>
                               <span className="os-text-soft" style={{ fontSize: 11 }}>
                                 {doc.signer_name} · {formatSignedAt(doc.signed_at)}
@@ -457,11 +514,11 @@ export function AdminJuryVipSelected({ go } = {}) {
                                 style={{ cursor: "pointer", fontSize: 11 }}
                                 onClick={() => view(s, "signed")}
                               >
-                                view signed
+                                view approved
                               </a>
                             </span>
                           ) : (
-                            <span className="os-text-soft" style={{ fontSize: 11 }}>Unsigned</span>
+                            <span className="os-text-soft" style={{ fontSize: 11 }}>Not approved</span>
                           )}
                         </div>
                       )}
@@ -521,4 +578,4 @@ export function AdminJuryVipSelected({ go } = {}) {
   );
 }
 
-export default AdminJuryVipSelected;
+export default AdminSelectedApplications;

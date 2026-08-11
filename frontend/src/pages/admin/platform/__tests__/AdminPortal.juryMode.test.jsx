@@ -49,29 +49,30 @@ describe("AdminPortal — jury decision mode", () => {
     expect(screen.getAllByText("Final Gate").length).toBeGreaterThan(0);
   });
 
-  // Same missing-import trap as AdminJury above: AdminJuryVipSelected only ever
-  // renders behind a tab click, so vite build cannot catch an unimported
+  // Same missing-import trap as AdminJury above: AdminSelectedApplications only
+  // ever renders behind a tab click, so vite build cannot catch an unimported
   // component — this navigates there for real.
-  it("renders the VIP Selected screen without crashing", () => {
+  it("renders the Selected Applications screen without crashing", () => {
     render(<AdminPortalDefault />);
     fireEvent.click(screen.getByText("Jury Decision"));
-    fireEvent.click(screen.getByText("VIP Selected"));
-    expect(screen.getByText("No VIP applications in jury review.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Search VIP applications")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Selected Applications"));
+    expect(screen.getByText("No selected applications yet.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Search selected applications")).toBeInTheDocument();
   });
 
-  it("renders the TIR Selected list on its own tab", () => {
+  it("offers ONE selected tab covering both tracks, not a tab per track", () => {
     render(<AdminPortalDefault />);
     fireEvent.click(screen.getByText("Jury Decision"));
-    fireEvent.click(screen.getByText("TIR Selected"));
-    expect(screen.getByText(/TIR selected applications/i)).toBeInTheDocument();
+    expect(screen.getByText("Selected Applications")).toBeInTheDocument();
+    expect(screen.queryByText("TIR Selected")).toBeNull();
+    expect(screen.queryByText("VIP Selected")).toBeNull();
   });
 
-  it("offers both jury tabs and no combined Jury Selected tab", () => {
+  it("offers the track switcher there so a single track can still be isolated", () => {
     render(<AdminPortalDefault />);
     fireEvent.click(screen.getByText("Jury Decision"));
-    expect(screen.getByText("TIR Selected")).toBeInTheDocument();
-    expect(screen.getByText("VIP Selected")).toBeInTheDocument();
-    expect(screen.queryByText("Jury Selected")).toBeNull();
+    fireEvent.click(screen.getByText("Selected Applications"));
+    expect(screen.getByRole("button", { name: "TIR" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "VIP" })).toBeInTheDocument();
   });
 });

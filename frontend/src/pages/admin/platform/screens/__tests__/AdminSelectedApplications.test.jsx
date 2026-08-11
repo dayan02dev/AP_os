@@ -1,6 +1,7 @@
-// AdminJuryVipSelected tests — the VIP jury tab: application list + the two
-// actions (Memo Upload, Approve). There is deliberately NO jury round here,
-// so the screen must never surface picks/jurors/Final-Gate affordances.
+// AdminSelectedApplications tests — the single "Selected Applications" tab:
+// BOTH tracks in one list + the two actions (Memo Upload, Approve). There is
+// deliberately no jury round on this screen, so it must never surface
+// picks/jurors/Final-Gate affordances.
 //
 // Seams mocked: hooks/useAdminData (data), lib/icDocumentsApi (network),
 // lib/pdfSign (the pdf-lib stamp — exercised on its own elsewhere),
@@ -8,7 +9,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 vi.mock("../../../../../hooks/useAdminData", () => ({
   useAdminData: vi.fn(),
@@ -35,7 +36,7 @@ vi.mock("../../../../../lib/pdfSign", () => ({
 import { useAdminData } from "../../../../../hooks/useAdminData";
 import { icDocumentsApi } from "../../../../../lib/icDocumentsApi";
 import { stampSignature } from "../../../../../lib/pdfSign";
-import { AdminJuryVipSelected } from "../AdminJuryVipSelected";
+import { AdminSelectedApplications } from "../AdminSelectedApplications";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -56,11 +57,19 @@ const MOVED_TO_VIP = {
   name: "Prithvi Aero", applicationId: "TIR-207", domain: "Defense & Aerospace",
   founders: ["Meera S"], ai: { overall: 9.0 }, chip: "JURY REVIEW",
 };
-// A natively-VIP application moved to TIR: it must NOT appear on this screen.
+// A natively-VIP application moved to TIR: it belongs here too, shown as TIR.
 const MOVED_TO_TIR = {
   id: "app-4", track: "tir", nativeTrack: "sip", movedToTrack: "tir",
   name: "Sindhu Marine", applicationId: "SIP-140", domain: "Other / Frontier",
   founders: ["Ravi K"], ai: { overall: 6.2 }, chip: "JURY REVIEW",
+};
+
+// A native TIR application in jury review — before the merge these had their
+// own tab with no memo column.
+const TIR_A = {
+  id: "app-5", track: "tir", nativeTrack: "tir",
+  name: "Anvaya Motors", applicationId: "TIR-26501", domain: "EV Mobility & Services",
+  founders: ["Asha P"], ai: { overall: 8.1 }, chip: "JURY REVIEW",
 };
 
 const DOC_UNSIGNED = {
@@ -109,17 +118,17 @@ const pdf = (name = "ic.pdf") =>
 
 // ── The list ────────────────────────────────────────────────────────────────
 
-describe("AdminJuryVipSelected — application list", () => {
-  it("lists the VIP applications in jury review", () => {
+describe("AdminSelectedApplications — application list", () => {
+  it("lists the applications in jury review", () => {
     wire();
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     expect(screen.getByText("Helios Robotics")).toBeTruthy();
     expect(screen.getByText("Kavach Health")).toBeTruthy();
   });
 
   it("fetches jury_review across BOTH tracks and splits on the effective track", () => {
     wire();
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     // No server-side `track` param: that filter keys off the NATIVE track and
     // would drop moved apps (see the overlay tests below).
     expect(useAdminData).toHaveBeenCalledWith("pipeline", { status: "jury_review" });
@@ -127,7 +136,7 @@ describe("AdminJuryVipSelected — application list", () => {
 
   it("shows the two IC actions and NO jury-round affordances", () => {
     wire();
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     expect(screen.getAllByText("Memo Upload").length).toBe(2);
     expect(screen.getAllByText("Approve").length).toBe(2);
     // No pick / juror / final-gate surface on this screen.
@@ -138,7 +147,7 @@ describe("AdminJuryVipSelected — application list", () => {
 
   it("disables Sign until a document exists, and enables it once uploaded", () => {
     wire({ docs: [DOC_UNSIGNED] });
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     const signButtons = screen.getAllByText("Approve");
     // app-1 has a doc → enabled; app-2 has none → disabled.
     expect(signButtons[0].disabled).toBe(false);
@@ -148,8 +157,8 @@ describe("AdminJuryVipSelected — application list", () => {
 
   it("shows the signed chip with signer and timestamp", () => {
     wire({ docs: [DOC_SIGNED] });
-    render(<AdminJuryVipSelected />);
-    expect(screen.getByText("✓ SIGNED")).toBeTruthy();
+    render(<AdminSelectedApplications />);
+    expect(screen.getByText("✓ APPROVED")).toBeTruthy();
     expect(screen.getByText(/Nirav Sanghavi · 30 Jul 2026 14:12 IST/)).toBeTruthy();
     expect(screen.getByText("Re-approve")).toBeTruthy();
     expect(screen.getByText("Replace Memo")).toBeTruthy();
@@ -157,37 +166,102 @@ describe("AdminJuryVipSelected — application list", () => {
 
   it("labels an undocumented application as Not uploaded", () => {
     wire({ docs: [] });
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     expect(screen.getAllByText("Not uploaded").length).toBe(2);
   });
 
   it("filters by search across project, founder and industry", () => {
     wire();
-    render(<AdminJuryVipSelected />);
-    fireEvent.change(screen.getByLabelText("Search VIP applications"), { target: { value: "kavach" } });
+    render(<AdminSelectedApplications />);
+    fireEvent.change(screen.getByLabelText("Search selected applications"), { target: { value: "kavach" } });
     expect(screen.queryByText("Helios Robotics")).toBeNull();
     expect(screen.getByText("Kavach Health")).toBeTruthy();
   });
 
-  it("renders an empty state when no VIP app is in jury review", () => {
+  it("renders an empty state when nothing is selected yet", () => {
     wire({ startups: [] });
-    render(<AdminJuryVipSelected />);
-    expect(screen.getByText("No VIP applications in jury review.")).toBeTruthy();
+    render(<AdminSelectedApplications />);
+    expect(screen.getByText("No selected applications yet.")).toBeTruthy();
+  });
+
+  // ── Merged tab: both tracks in one list ───────────────────────────────────
+
+  it("lists TIR and VIP together, each labelled by track", () => {
+    // This is the whole point of the merge: one tab, one list, a chip per row.
+    wire({ startups: [VIP_A, TIR_A] });
+    render(<AdminSelectedApplications />);
+
+    const vipRow = screen.getByText("Helios Robotics").closest("tr");
+    const tirRow = screen.getByText("Anvaya Motors").closest("tr");
+    expect(within(vipRow).getByText("VIP")).toBeTruthy();
+    expect(within(tirRow).getByText("TIR")).toBeTruthy();
+  });
+
+  it("carries the memo actions for TIR rows too, not just VIP", () => {
+    // TIR used to have no memo column at all — it rendered as a read-only
+    // AdminPipeline list.
+    wire({ startups: [TIR_A] });
+    render(<AdminSelectedApplications />);
+    const row = screen.getByText("Anvaya Motors").closest("tr");
+    expect(within(row).getByText("Memo Upload")).toBeTruthy();
+    expect(within(row).getByText("Approve")).toBeTruthy();
+  });
+
+  it("uploads a TIR memo against the TIR track", async () => {
+    wire({ startups: [TIR_A] });
+    render(<AdminSelectedApplications />);
+    fireEvent.click(screen.getByText("Memo Upload"));
+    fireEvent.change(screen.getByLabelText("Memo PDF"), { target: { files: [pdf()] } });
+    fireEvent.click(screen.getByText("Upload"));
+    await waitFor(() =>
+      expect(icDocumentsApi.upload).toHaveBeenCalledWith("tir", "app-5", expect.any(File)));
+  });
+
+  it("narrows to one track with the track switcher", () => {
+    wire({ startups: [VIP_A, TIR_A] });
+    render(<AdminSelectedApplications />);
+    expect(screen.getByText("Anvaya Motors")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "VIP" }));
+    expect(screen.queryByText("Anvaya Motors")).toBeNull();
+    expect(screen.getByText("Helios Robotics")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "TIR" }));
+    expect(screen.getByText("Anvaya Motors")).toBeTruthy();
+    expect(screen.queryByText("Helios Robotics")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "All tracks" }));
+    expect(screen.getByText("Anvaya Motors")).toBeTruthy();
+    expect(screen.getByText("Helios Robotics")).toBeTruthy();
+  });
+
+  it("opens the application detail from the project name", () => {
+    // The trimmed columns are fine because the full record is one click away.
+    const goDetail = vi.fn();
+    wire({ startups: [TIR_A] });
+    render(<AdminSelectedApplications goDetail={goDetail} />);
+    fireEvent.click(screen.getByText("Anvaya Motors"));
+    expect(goDetail).toHaveBeenCalledWith("app-5", "tir", "jury_selected");
   });
 
   // ── Track-move overlay ────────────────────────────────────────────────────
 
   it("includes a TIR application that was moved to VIP", () => {
     wire({ startups: [VIP_A, MOVED_TO_VIP] });
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     expect(screen.getByText("Prithvi Aero")).toBeTruthy();
   });
 
-  it("excludes a VIP application that was moved to TIR", () => {
+  it("includes a VIP application that was moved to TIR, shown as TIR", () => {
+    // Both tracks share this tab now, so a moved app is never dropped — but it
+    // must be labelled by its EFFECTIVE track, which is what it claims to be.
     wire({ startups: [VIP_A, MOVED_TO_TIR] });
-    render(<AdminJuryVipSelected />);
-    expect(screen.queryByText("Sindhu Marine")).toBeNull();
+    render(<AdminSelectedApplications />);
+    expect(screen.getByText("Sindhu Marine")).toBeTruthy();
     expect(screen.getByText("Helios Robotics")).toBeTruthy();
+    // Chip inside the row, not the track-filter button of the same name.
+    const row = screen.getByText("Sindhu Marine").closest("tr");
+    expect(within(row).getByText("TIR")).toBeTruthy();
   });
 
   it("matches a moved app's IC document on its NATIVE track key", () => {
@@ -196,15 +270,15 @@ describe("AdminJuryVipSelected — application list", () => {
       startups: [MOVED_TO_VIP],
       docs: [{ ...DOC_SIGNED, id: "d9", application_id: "app-3", track: "tir" }],
     });
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     // Resolved (not "Not uploaded"), so the native-track key was used.
-    expect(screen.getByText("✓ SIGNED")).toBeTruthy();
+    expect(screen.getByText("✓ APPROVED")).toBeTruthy();
     expect(screen.queryByText("Not uploaded")).toBeNull();
   });
 
   it("surfaces a pipeline load error with a retry", () => {
     wire({ pipelineState: { data: null, error: new Error("boom"), loading: false } });
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     fireEvent.click(screen.getByText("Retry"));
     expect(reloadPipeline).toHaveBeenCalled();
   });
@@ -212,13 +286,13 @@ describe("AdminJuryVipSelected — application list", () => {
 
 // ── Memo Upload ───────────────────────────────────────────────────────────────
 
-describe("AdminJuryVipSelected — Memo Upload", () => {
+describe("AdminSelectedApplications — Memo Upload", () => {
   it("uploads a PDF for the chosen application and reloads", async () => {
     wire();
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     fireEvent.click(screen.getAllByText("Memo Upload")[0]);
 
-    fireEvent.change(screen.getByLabelText("IC document PDF"), {
+    fireEvent.change(screen.getByLabelText("Memo PDF"), {
       target: { files: [pdf("minutes.pdf")] },
     });
     fireEvent.click(screen.getByText("Upload"));
@@ -233,9 +307,9 @@ describe("AdminJuryVipSelected — Memo Upload", () => {
 
   it("refuses a non-PDF before any network call", () => {
     wire();
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     fireEvent.click(screen.getAllByText("Memo Upload")[0]);
-    fireEvent.change(screen.getByLabelText("IC document PDF"), {
+    fireEvent.change(screen.getByLabelText("Memo PDF"), {
       target: { files: [new File(["x"], "notes.docx", { type: "application/msword" })] },
     });
     expect(screen.getByText("Only PDF files are accepted.")).toBeTruthy();
@@ -245,27 +319,27 @@ describe("AdminJuryVipSelected — Memo Upload", () => {
 
   it("refuses a file over the 10 MiB cap before any network call", () => {
     wire();
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     fireEvent.click(screen.getAllByText("Memo Upload")[0]);
     const big = new File([new Uint8Array(2)], "big.pdf", { type: "application/pdf" });
     Object.defineProperty(big, "size", { value: 11 * 1024 * 1024 });
-    fireEvent.change(screen.getByLabelText("IC document PDF"), { target: { files: [big] } });
+    fireEvent.change(screen.getByLabelText("Memo PDF"), { target: { files: [big] } });
     expect(screen.getByText(/the limit is 10 MiB/)).toBeTruthy();
     expect(icDocumentsApi.upload).not.toHaveBeenCalled();
   });
 
   it("warns that replacing archives the existing document", () => {
     wire({ docs: [DOC_SIGNED] });
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     fireEvent.click(screen.getByText("Replace Memo"));
     expect(screen.getByText(/its signature will be archived with it/)).toBeTruthy();
   });
 
   it("uploads a moved app's IC document against its NATIVE track", async () => {
     wire({ startups: [MOVED_TO_VIP] });
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     fireEvent.click(screen.getByText("Memo Upload"));
-    fireEvent.change(screen.getByLabelText("IC document PDF"), { target: { files: [pdf()] } });
+    fireEvent.change(screen.getByLabelText("Memo PDF"), { target: { files: [pdf()] } });
     fireEvent.click(screen.getByText("Upload"));
 
     await waitFor(() => expect(icDocumentsApi.upload).toHaveBeenCalled());
@@ -277,9 +351,9 @@ describe("AdminJuryVipSelected — Memo Upload", () => {
   it("shows a server error message instead of closing", async () => {
     wire();
     icDocumentsApi.upload.mockRejectedValue({ details: { message: "Storage upload failed. Try again." } });
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     fireEvent.click(screen.getAllByText("Memo Upload")[0]);
-    fireEvent.change(screen.getByLabelText("IC document PDF"), { target: { files: [pdf()] } });
+    fireEvent.change(screen.getByLabelText("Memo PDF"), { target: { files: [pdf()] } });
     fireEvent.click(screen.getByText("Upload"));
     await waitFor(() =>
       expect(screen.getByText("Storage upload failed. Try again.")).toBeTruthy());
@@ -288,9 +362,9 @@ describe("AdminJuryVipSelected — Memo Upload", () => {
 
 // ── Signing ─────────────────────────────────────────────────────────────────
 
-describe("AdminJuryVipSelected — Approve", () => {
+describe("AdminSelectedApplications — Approve", () => {
   const openSign = () => {
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     fireEvent.click(screen.getAllByText("Approve")[0]);
   };
 
@@ -348,11 +422,11 @@ describe("AdminJuryVipSelected — Approve", () => {
     expect(opts.signerEmail).toBe("nirav@artpark.in");
   });
 
-  it("tells the signer when re-signing replaces an existing signature", () => {
+  it("tells the signer when re-approving replaces an existing signature", () => {
     wire({ docs: [DOC_SIGNED] });
-    render(<AdminJuryVipSelected />);
+    render(<AdminSelectedApplications />);
     fireEvent.click(screen.getByText("Re-approve"));
-    expect(screen.getByText(/Signing again replaces that signature/)).toBeTruthy();
+    expect(screen.getByText(/Approving again replaces that signature/)).toBeTruthy();
   });
 
   it("reports a download failure without uploading anything", async () => {

@@ -292,12 +292,34 @@ def test_resign_overwrites_the_signed_copy(monkeypatch, _clear_overrides):
 
 
 def test_signing_a_tir_application_is_allowed(monkeypatch, _clear_overrides):
-    """The endpoint is track-agnostic even though only VIP surfaces it today."""
+    """TIR memos go through the SAME endpoint as VIP ones.
+
+    The merged "Selected Applications" tab surfaces memo upload + approve for
+    both tracks, so this is a live path now, not just a latent capability. No
+    schema change was needed: ic_documents already allows
+    `application_track in ('tir','sip')` and the `ic-documents` bucket is
+    track-agnostic (mig 037)."""
     _install(monkeypatch, _tables(tir_applications=[{"id": APP_ID, "status": "offered"}]))
     app.dependency_overrides[get_current_user] = _override_user(["admin"])
     r = _client().post(f"/admin/platform/ic-documents/tir/{APP_ID}",
                        files={"file": ("ic.pdf", PDF, "application/pdf")})
     assert r.status_code == 201
+    assert r.json()["document"]["track"] == "tir"
+
+
+def test_untracked_listing_returns_both_tracks(monkeypatch, _clear_overrides):
+    """The merged tab lists documents for BOTH tracks in one fetch — it calls
+    the listing with no `track` param, so the response must not be VIP-only."""
+    _install(monkeypatch, _tables(
+        ic_documents=[
+            {"id": "d-tir", "application_id": "a-tir", "application_track": "tir",
+             "file_name": "tir.pdf", "superseded_at": None},
+            {"id": "d-sip", "application_id": "a-sip", "application_track": "sip",
+             "file_name": "sip.pdf", "superseded_at": None},
+        ]))
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    docs = _client().get("/admin/platform/ic-documents").json()["documents"]
+    assert {d["track"] for d in docs} == {"tir", "sip"}
 
 
 def test_effective_track_caller_resolves_to_the_native_track(monkeypatch, _clear_overrides):
