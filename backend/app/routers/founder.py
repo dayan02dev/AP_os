@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi import status as http_status
 
+from ..config import settings
 from ..deps import get_current_user
 from ..models.founder import (
     ApproachIn,
@@ -45,8 +46,25 @@ async def require_founder_access(
 ) -> FounderContext:
     """Resolve the caller's most-recent offered/onboarded TIR application.
 
-    403 founder_access_denied if the user has no such application.
+    Two independent gates, both of which must pass:
+
+      1. Soft-launch allow-list. While FOUNDER_PORTAL_ALLOWLIST is non-empty,
+         only the listed emails may open the portal — even if an admin
+         advances someone else's application to 'offered'. Clearing the env
+         var opens the portal to every offered/onboarded founder, which is the
+         intended end state; we keep it set during the soft launch.
+      2. Ownership + status: the caller must own a TIR application whose
+         status is 'offered' or 'onboarded'.
+
+    403 founder_access_denied on either failure. The two cases return the same
+    code deliberately — a non-allow-listed founder shouldn't be able to tell
+    the portal exists.
     """
+    if not settings.founder_portal_allows(user.get("email")):
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail={"code": "founder_access_denied"},
+        )
     sb = get_admin_client()
     rows = (
         sb.table("tir_applications")
@@ -111,6 +129,10 @@ async def get_mou(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict
         "signed": mou is not None,
         "signed_at": (mou or {}).get("signed_at"),
         "signer_name": (mou or {}).get("signer_name"),
+        # Server-owned checklist — the browser renders exactly what we send
+        # here rather than holding its own copy of the wording.
+        "acknowledgements": founder_mou.ACKNOWLEDGEMENTS,
+        "accepted_acknowledgements": (mou or {}).get("acknowledgements") or [],
     }
 
 
@@ -136,6 +158,7 @@ async def sign_mou(
             founder_name=payload.signer_name,
             venture=_project_name(ctx["app"]),
             signature_png=payload.signature_png,
+            acknowledgements=payload.acknowledgements,
         )
     except ValueError as exc:
         raise HTTPException(

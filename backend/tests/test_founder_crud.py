@@ -14,6 +14,17 @@ _PNG = "data:image/png;base64," + base64.b64encode(base64.b64decode(
 )).decode()
 
 
+def _all_acks() -> list[str]:
+    from app.services import founder_mou
+    return list(founder_mou.REQUIRED_ACK_IDS)
+
+
+def _sign_body(**over) -> dict:
+    """A complete, valid sign payload — all four acknowledgements ticked."""
+    return {"signer_name": "Priya", "signature_png": _PNG,
+            "acknowledgements": _all_acks(), **over}
+
+
 class _Bucket:
     def upload(self, *a, **k): return {"path": a[0] if a else ""}
     def create_signed_url(self, path, expires_in): return {"signedURL": f"https://x/{path}"}
@@ -54,12 +65,14 @@ def test_sign_mou_flips_status_to_onboarded(client, monkeypatch, _clear):
         "application_status_log": [],
     })
     app.dependency_overrides[get_current_user] = _override_user("u1")
-    r = client.post("/founder/mou/sign", json={"signer_name": "Priya", "signature_png": _PNG})
+    r = client.post("/founder/mou/sign", json=_sign_body())
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "onboarded"
     # status actually mutated in the fake store
     assert fake.tables["tir_applications"][0]["status"] == "onboarded"
     assert fake.tables["founder_mou"] and fake.tables["founder_mou"][0]["signed_pdf_path"]
+    # the accepted acknowledgements are persisted on the row
+    assert fake.tables["founder_mou"][0]["acknowledgements"] == _all_acks()
 
 
 def test_sign_mou_twice_is_conflict(client, monkeypatch, _clear):
@@ -71,9 +84,56 @@ def test_sign_mou_twice_is_conflict(client, monkeypatch, _clear):
                          "signed_pdf_path": "app1/mou/signed.pdf", "signed_at": "2026-07-10"}],
     })
     app.dependency_overrides[get_current_user] = _override_user("u1")
-    r = client.post("/founder/mou/sign", json={"signer_name": "Priya", "signature_png": _PNG})
+    r = client.post("/founder/mou/sign", json=_sign_body())
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "mou_already_signed"
+
+
+# ── acknowledgement gate on the sign endpoint ─────────────────────────
+
+
+def _offered_tables() -> dict:
+    return {
+        "tir_applications": [{"id": "app1", "user_id": "u1", "status": "offered",
+                              "grant_amount": 2500000, "submitted_at": "2026-07-01"}],
+        "profiles": [{"id": "u1", "full_name": "Priya"}],
+        "founder_mou": [],
+        "application_status_log": [],
+    }
+
+
+def test_sign_without_acknowledgements_is_422(client, monkeypatch, _clear):
+    fake = _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post("/founder/mou/sign",
+                    json={"signer_name": "Priya", "signature_png": _PNG})
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "acknowledgements_required"
+    assert set(r.json()["detail"]["missing"]) == set(_all_acks())
+    # nothing was written and the status did NOT move
+    assert fake.tables["founder_mou"] == []
+    assert fake.tables["tir_applications"][0]["status"] == "offered"
+
+
+def test_sign_with_partial_acknowledgements_is_422(client, monkeypatch, _clear):
+    fake = _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    partial = [i for i in _all_acks() if i != "additional_funding_equity"]
+    r = client.post("/founder/mou/sign", json=_sign_body(acknowledgements=partial))
+    assert r.status_code == 422
+    assert r.json()["detail"]["missing"] == ["additional_funding_equity"]
+    assert fake.tables["tir_applications"][0]["status"] == "offered"
+
+
+def test_get_mou_serves_the_acknowledgement_checklist(client, monkeypatch, _clear):
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.get("/founder/mou")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert [a["id"] for a in body["acknowledgements"]] == _all_acks()
+    assert all(a["text"].strip() for a in body["acknowledgements"])
+    assert body["accepted_acknowledgements"] == []
 
 
 def test_me_reports_mou_signed_and_unlocked(client, monkeypatch, _clear):

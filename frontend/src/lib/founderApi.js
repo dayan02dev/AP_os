@@ -6,8 +6,12 @@ export const founderApi = {
 
   // MOU
   getMou: () => api.get("/founder/mou"),
-  signMou: (signerName, signaturePng) =>
-    api.post("/founder/mou/sign", { signer_name: signerName, signature_png: signaturePng }),
+  signMou: (signerName, signaturePng, acknowledgements = []) =>
+    api.post("/founder/mou/sign", {
+      signer_name: signerName,
+      signature_png: signaturePng,
+      acknowledgements,
+    }),
   mouSignedUrl: () => api.get("/founder/mou/signed-url"),
 
   // Approach

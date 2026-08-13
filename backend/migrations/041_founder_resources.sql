@@ -1,4 +1,4 @@
--- 038_founder_resources.sql — Founders Resources tabs (Wave 2 of the TIR
+-- 041_founder_resources.sql — Founders Resources tabs (Wave 2 of the TIR
 -- post-onboarding Founder Portal): procurement store, fundraising & connects,
 -- corporate partners, book ARTPARK assets, IT & Facilities support.
 --

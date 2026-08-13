@@ -16,5 +16,15 @@ Parties: ARTPARK (AI & Robotics Technology Park, IISc Bangalore) and {founder_na
 
 7. Intellectual property. IP created by the Innovator remains with the Innovator, subject to the ESOP grant annexure and the schedules to this MOU.
 
+8. Residency acknowledgements. The Innovator separately acknowledges each of the following as a condition of joining the residency. These are recorded individually at signing time and reproduced in the signed copy of this MOU:
+
+   (a) Full-time presence. ARTPARK Technology in Residence is a full time program requiring the Innovator to be full time present at the ARTPARK campus, unless agreed prior to application.
+
+   (b) First right of refusal. The ARTPARK Residency program provides ARTPARK the first right of refusal to investment at incubation / first investment.
+
+   (c) Expense account & procurement. The ARTPARK Residency program is an expense account, requiring the Innovator to work with the ARTPARK procurement team for expensing and managing it. At no point shall money be paid out to any accounts related to the company or any associated related parties.
+
+   (d) Additional funding & equity. Post the initial Rs. 25,00,000 provided as incubation support, any additional funding required to complete the six-month residency shall attract equity allocation to ARTPARK at the incubation stage, as agreed upon in the onboarding agreement.
+
 Signed by the Innovator: {founder_name}
 Date: {date}

@@ -22,8 +22,70 @@ from . import state_machine
 log = logging.getLogger(__name__)
 
 BUCKET = "tir-founder-docs"
-TEMPLATE_VERSION = "tir-mou-v1"
+# Bumped from v1 when the four residency acknowledgements became a required
+# part of signing. The version is stored on every founder_mou row, so rows
+# signed under v1 remain identifiable as "signed without acknowledgements".
+TEMPLATE_VERSION = "tir-mou-v2"
 _TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "mou" / "tir_mou.txt"
+
+# ── Residency acknowledgements ────────────────────────────────────────────
+# The four points every TIR founder must tick before the MOU can be signed.
+# This list is the SINGLE source of truth: the sign endpoint validates against
+# it, GET /mou serves it to the browser (the frontend renders whatever the
+# server sends rather than keeping its own copy), and render_signed_pdf()
+# stamps the accepted text into the signed PDF so the document itself records
+# exactly what was agreed. Adding an item here makes it immediately required.
+ACKNOWLEDGEMENTS: list[dict[str, str]] = [
+    {
+        "id": "full_time_presence",
+        "text": (
+            "I acknowledge that ARTPARK Technology in Residence is a full time "
+            "program requiring me to be full time present at ARTPARK campus "
+            "unless agreed prior to application."
+        ),
+    },
+    {
+        "id": "first_right_of_refusal",
+        "text": (
+            "I acknowledge that ARTPARK Residency program provides ARTPARK the "
+            "first right of refusal to investment at incubation / first "
+            "investment."
+        ),
+    },
+    {
+        "id": "expense_account_procurement",
+        "text": (
+            "I acknowledge that ARTPARK Residency program is an expense account "
+            "requiring us to work with ARTPARK procurement team for expensing "
+            "and managing it. At no point shall money be paid out to any "
+            "accounts related to the company or any associated related parties."
+        ),
+    },
+    {
+        "id": "additional_funding_equity",
+        "text": (
+            "I acknowledge that post the initial 25L as part of the incubation "
+            "support any additional funding required to complete the 6-month "
+            "residency shall attract equity allocation to ARTPARK at the "
+            "incubation stage as agreed upon in the onboarding agreement."
+        ),
+    },
+]
+
+REQUIRED_ACK_IDS: tuple[str, ...] = tuple(a["id"] for a in ACKNOWLEDGEMENTS)
+
+
+def missing_acknowledgements(accepted: list[str] | None) -> list[str]:
+    """Required ack ids the caller did NOT accept, in canonical order."""
+    got = {str(a) for a in (accepted or [])}
+    return [i for i in REQUIRED_ACK_IDS if i not in got]
+
+
+def acknowledgement_text(ack_id: str) -> str:
+    for a in ACKNOWLEDGEMENTS:
+        if a["id"] == ack_id:
+            return a["text"]
+    return ack_id
 
 
 def load_template() -> str:
@@ -51,7 +113,8 @@ def decode_signature_png(data_url: str) -> bytes:
 
 
 def render_signed_pdf(
-    *, founder_name: str, venture: str, signer_name: str, date_str: str, signature_png: str
+    *, founder_name: str, venture: str, signer_name: str, date_str: str, signature_png: str,
+    accepted_acks: list[str] | None = None,
 ) -> bytes:
     """Compose the MOU text + embedded signature image into a PDF (reportlab)."""
     from reportlab.lib.pagesizes import A4
@@ -75,6 +138,27 @@ def render_signed_pdf(
         c.setFont("Helvetica-Bold", 13) if line.strip().startswith("MEMORANDUM") else c.setFont("Helvetica", 9.5)
         c.drawString(x, y, line)
         y -= 5.4 * mm
+
+    # acknowledgements — stamped into the document so the signed PDF records
+    # exactly which points were accepted, not just that some were.
+    if accepted_acks:
+        y -= 4 * mm
+        if y < 70 * mm:
+            c.showPage()
+            y = height - 25 * mm
+        c.setFont("Helvetica-Bold", 9.5)
+        c.drawString(x, y, "Acknowledged by the Innovator:")
+        y -= 6 * mm
+        c.setFont("Helvetica", 8.5)
+        for ack_id in accepted_acks:
+            for i, line in enumerate(_wrap(acknowledgement_text(ack_id), 100)):
+                if y < 45 * mm:
+                    c.showPage()
+                    y = height - 25 * mm
+                    c.setFont("Helvetica", 8.5)
+                c.drawString(x + (0 if i else 0) + 4 * mm, y, ("[x] " if i == 0 else "    ") + line)
+                y -= 4.6 * mm
+            y -= 1.5 * mm
 
     # signature image
     y -= 6 * mm
@@ -116,8 +200,22 @@ def _upload(path: str, data: bytes, content_type: str) -> None:
 
 
 def sign_and_onboard(*, application_id: str, user_id: str, signer_name: str,
-                     founder_name: str, venture: str, signature_png: str) -> dict:
-    """Idempotent MOU sign. Returns the founder_mou row. 409 if already signed."""
+                     founder_name: str, venture: str, signature_png: str,
+                     acknowledgements: list[str] | None = None) -> dict:
+    """Idempotent MOU sign. Returns the founder_mou row. 409 if already signed.
+
+    Every acknowledgement in ACKNOWLEDGEMENTS must be accepted — checked here
+    (not only in the request model) so the rule holds for any future caller,
+    and checked BEFORE the already-signed lookup would matter for writes.
+    """
+    missing = missing_acknowledgements(acknowledgements)
+    if missing:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "acknowledgements_required", "missing": missing},
+        )
+    accepted = list(REQUIRED_ACK_IDS)
+
     sb = get_admin_client()
     existing = (
         sb.table("founder_mou").select("*").eq("application_id", application_id)
@@ -137,7 +235,7 @@ def sign_and_onboard(*, application_id: str, user_id: str, signer_name: str,
     _upload(sig_path, decode_signature_png(signature_png), "image/png")
     pdf = render_signed_pdf(
         founder_name=founder_name, venture=venture, signer_name=signer_name,
-        date_str=date_str, signature_png=signature_png,
+        date_str=date_str, signature_png=signature_png, accepted_acks=accepted,
     )
     _upload(pdf_path, pdf, "application/pdf")
 
@@ -149,6 +247,7 @@ def sign_and_onboard(*, application_id: str, user_id: str, signer_name: str,
         "signature_image_path": sig_path,
         "signed_pdf_path": pdf_path,
         "template_version": TEMPLATE_VERSION,
+        "acknowledgements": accepted,
     }
     try:
         sb.table("founder_mou").insert(row).execute()

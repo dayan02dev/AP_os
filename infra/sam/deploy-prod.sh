@@ -94,7 +94,8 @@ sam deploy \
     "ResendApiKey=${RESEND_API_KEY}" \
     "AwsRegionParam=ap-south-1" \
     "TirSubmissionsClosed=${TIR_SUBMISSIONS_CLOSED:-false}" \
-    "SipSubmissionsClosed=${SIP_SUBMISSIONS_CLOSED:-false}"
+    "SipSubmissionsClosed=${SIP_SUBMISSIONS_CLOSED:-false}" \
+    "FounderPortalAllowlist=${FOUNDER_PORTAL_ALLOWLIST:-}"
 
 echo ""
 echo "✓ Deploy complete. Stack outputs:"

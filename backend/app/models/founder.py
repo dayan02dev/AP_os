@@ -18,6 +18,11 @@ class MouSignRequest(BaseModel):
     signer_name: str = Field(min_length=1, max_length=200)
     # data URL: "data:image/png;base64,...."
     signature_png: str = Field(min_length=32, max_length=2_000_000)
+    # Ids of the residency acknowledgements the founder ticked. The canonical
+    # list lives in services/founder_mou.ACKNOWLEDGEMENTS; completeness is
+    # enforced there (sign_and_onboard) so the rule holds for every caller,
+    # not just this request shape.
+    acknowledgements: list[str] = Field(default_factory=list, max_length=32)
 
 
 class TeamMemberIn(BaseModel):

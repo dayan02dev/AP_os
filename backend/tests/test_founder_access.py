@@ -14,10 +14,33 @@ def _clear():
     app.dependency_overrides.clear()
 
 
-def _override_user(user_id: str):
+def _override_user(user_id: str, email: str | None = None):
     def _f():
-        return {"user_id": user_id, "email": f"{user_id}@x.com", "track": "tir", "roles": ["applicant"]}
+        return {
+            "user_id": user_id,
+            "email": f"{user_id}@x.com" if email is None else email,
+            "track": "tir",
+            "roles": ["applicant"],
+        }
     return _f
+
+
+@pytest.fixture
+def _allowlist(monkeypatch):
+    """Set FOUNDER_PORTAL_ALLOWLIST on the live settings object."""
+    from app.config import settings
+
+    def _set(value: str):
+        monkeypatch.setattr(settings, "founder_portal_allowlist", value)
+    return _set
+
+
+_OFFERED_APP = {
+    "tir_applications": [
+        {"id": "app1", "user_id": "u1", "status": "offered",
+         "grant_amount": 2500000, "submitted_at": "2026-07-01"},
+    ],
+}
 
 
 def _install(monkeypatch, tables: dict) -> FakeSupabase:
@@ -64,3 +87,57 @@ def test_other_users_app_is_not_visible(client, monkeypatch, _clear):
     app.dependency_overrides[get_current_user] = _override_user("u1")
     r = client.get("/founder/me")
     assert r.status_code == 403
+
+
+# ── soft-launch allow-list ────────────────────────────────────────────
+
+
+def test_allowlisted_email_gets_access(client, monkeypatch, _clear, _allowlist):
+    _allowlist("founder@artpark.in")
+    _install(monkeypatch, _OFFERED_APP)
+    app.dependency_overrides[get_current_user] = _override_user("u1", "founder@artpark.in")
+    r = client.get("/founder/me")
+    assert r.status_code == 200, r.text
+
+
+def test_allowlist_is_case_insensitive(client, monkeypatch, _clear, _allowlist):
+    _allowlist("Founder@ArtPark.IN")
+    _install(monkeypatch, _OFFERED_APP)
+    app.dependency_overrides[get_current_user] = _override_user("u1", "FOUNDER@artpark.in")
+    r = client.get("/founder/me")
+    assert r.status_code == 200, r.text
+
+
+def test_non_allowlisted_email_denied_even_when_offered(client, monkeypatch, _clear, _allowlist):
+    """The whole point of the soft-launch gate: an 'offered' application is
+    NOT sufficient while the allow-list is set."""
+    _allowlist("founder@artpark.in")
+    _install(monkeypatch, _OFFERED_APP)
+    app.dependency_overrides[get_current_user] = _override_user("u1", "someone.else@gmail.com")
+    r = client.get("/founder/me")
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "founder_access_denied"
+
+
+def test_empty_allowlist_allows_any_offered_founder(client, monkeypatch, _clear, _allowlist):
+    _allowlist("")
+    _install(monkeypatch, _OFFERED_APP)
+    app.dependency_overrides[get_current_user] = _override_user("u1", "anyone@gmail.com")
+    r = client.get("/founder/me")
+    assert r.status_code == 200, r.text
+
+
+def test_missing_email_denied_when_allowlist_set(client, monkeypatch, _clear, _allowlist):
+    _allowlist("founder@artpark.in")
+    _install(monkeypatch, _OFFERED_APP)
+    app.dependency_overrides[get_current_user] = _override_user("u1", "")
+    r = client.get("/founder/me")
+    assert r.status_code == 403
+
+
+def test_multi_entry_allowlist_parses(client, monkeypatch, _clear, _allowlist):
+    _allowlist(" a@x.com , founder@artpark.in ,, b@y.com ")
+    _install(monkeypatch, _OFFERED_APP)
+    app.dependency_overrides[get_current_user] = _override_user("u1", "founder@artpark.in")
+    r = client.get("/founder/me")
+    assert r.status_code == 200, r.text

@@ -1,5 +1,8 @@
--- 037_founder_portal.sql — TIR post-onboarding Founder Portal (Wave 1).
--- STAGING ONLY for now. All tables are TIR-scoped, keyed on tir_applications(id).
+-- 040_founder_portal.sql — TIR post-onboarding Founder Portal (Wave 1).
+-- All tables are TIR-scoped, keyed on tir_applications(id).
+-- Applied to PRODUCTION 2026-08-13 alongside 041/042. Portal reach is limited
+-- by two independent gates: an offered/onboarded status check and the
+-- FOUNDER_PORTAL_ALLOWLIST env allow-list (see routers/founder.py).
 -- RLS is enabled with NO policies: every access is backend-mediated via the
 -- service-role client (which bypasses RLS), and the /founder router enforces
 -- that application_id belongs to the current user.
@@ -16,7 +19,12 @@ create table if not exists public.founder_mou (
   signed_at             timestamptz not null default now(),
   signature_image_path  text,
   signed_pdf_path       text,
-  template_version      text not null default 'tir-mou-v1',
+  template_version      text not null default 'tir-mou-v2',
+  -- Ids of the residency acknowledgements ticked at signing time (canonical
+  -- list: services/founder_mou.ACKNOWLEDGEMENTS). Stored so we can prove what
+  -- was accepted even if the wording is later revised; the accepted TEXT is
+  -- additionally stamped into the signed PDF.
+  acknowledgements      jsonb not null default '[]'::jsonb,
   created_at            timestamptz not null default now()
 );
 alter table public.founder_mou enable row level security;

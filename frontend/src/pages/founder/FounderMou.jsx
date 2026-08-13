@@ -8,8 +8,16 @@ export default function FounderMou({ me, onSigned }) {
   const [signerName, setSignerName] = useState("");
   const [busy, setBusy] = useState(false);
   const [hasInk, setHasInk] = useState(false);
+  // Ticked acknowledgement ids. The list itself is server-owned (GET /mou)
+  // so the wording can be revised without a frontend deploy.
+  const [acked, setAcked] = useState([]);
   const canvasRef = useRef(null);
   const drawing = useRef(false);
+
+  const ackList = mou?.acknowledgements || [];
+  const allAcked = ackList.length > 0 && ackList.every((a) => acked.includes(a.id));
+  const toggleAck = (id) =>
+    setAcked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   useEffect(() => {
     founderApi.getMou().then((m) => { setMou(m); setSignerName(m.signer_name || ""); }).catch(setError);
@@ -43,11 +51,11 @@ export default function FounderMou({ me, onSigned }) {
   };
 
   const sign = async () => {
-    if (!signerName.trim() || !hasInk) return;
+    if (!signerName.trim() || !hasInk || !allAcked) return;
     setBusy(true); setError(null);
     try {
       const png = canvasRef.current.toDataURL("image/png");
-      await founderApi.signMou(signerName.trim(), png);
+      await founderApi.signMou(signerName.trim(), png, acked);
       const fresh = await founderApi.getMou();
       setMou(fresh);
       onSigned?.();
@@ -79,6 +87,29 @@ export default function FounderMou({ me, onSigned }) {
       ) : (
         <div className="panel" style={{ marginTop: 24 }}>
           <div className="panel-h">Sign to accept</div>
+
+          <fieldset className="mou-acks">
+            <legend className="lbl">
+              Acknowledgements — please confirm each of the following
+            </legend>
+            {ackList.map((a, i) => (
+              <label className="mou-ack" key={a.id}>
+                <input
+                  type="checkbox"
+                  checked={acked.includes(a.id)}
+                  onChange={() => toggleAck(a.id)}
+                />
+                <span className="mou-ack-num">{i + 1}.</span>
+                <span className="mou-ack-text">{a.text}</span>
+              </label>
+            ))}
+            {!allAcked && (
+              <div className="mou-ack-hint">
+                All {ackList.length} acknowledgements must be confirmed before you can sign.
+              </div>
+            )}
+          </fieldset>
+
           <label className="lbl">Full legal name</label>
           <input className="inp" value={signerName} onChange={(e) => setSignerName(e.target.value)} placeholder="Your full name" />
           <div className="sigpad" style={{ marginTop: 14, border: "1px solid var(--line-strong)", borderRadius: 2 }}>
@@ -87,7 +118,11 @@ export default function FounderMou({ me, onSigned }) {
           {error && <div style={{ color: "var(--accent-coral)", marginTop: 8 }}>{error.message}</div>}
           <div className="row-actions" style={{ marginTop: 14 }}>
             <button className="btn" onClick={clearPad} type="button">Clear</button>
-            <button className="btn btn-primary" onClick={sign} disabled={busy || !signerName.trim() || !hasInk}>
+            <button
+              className="btn btn-primary"
+              onClick={sign}
+              disabled={busy || !signerName.trim() || !hasInk || !allAcked}
+            >
               {busy ? "Signing…" : "Sign & submit"}
             </button>
           </div>

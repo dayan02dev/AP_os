@@ -149,6 +149,17 @@ class Settings(BaseSettings):
     # Flip via the SIP_SUBMISSIONS_CLOSED env var — no code change to reopen.
     sip_submissions_closed: bool = False
 
+    # ── Founder Portal soft-launch allow-list ───────────────────
+    # Comma-separated emails permitted to open the TIR post-onboarding
+    # Founder Portal. While non-empty this is a HARD gate layered on top of
+    # the offered/onboarded status check — an application advancing to
+    # 'offered' does NOT by itself grant portal access.
+    #
+    # Empty string (the default) disables the allow-list, i.e. every
+    # offered/onboarded founder gets in. That is the intended end state; we
+    # keep a value set during the soft launch. Matching is case-insensitive.
+    founder_portal_allowlist: str = ""
+
     # ─── Normalisers ────────────────────────────────────────────
     @field_validator("env")
     @classmethod
@@ -184,6 +195,28 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return self.frontend_origins
+
+    @property
+    def founder_portal_allowlist_emails(self) -> set[str]:
+        """Parsed, lowercased allow-list. Empty set = allow-list disabled."""
+        return {
+            e.strip().lower()
+            for e in self.founder_portal_allowlist.split(",")
+            if e.strip()
+        }
+
+    def founder_portal_allows(self, email: str | None) -> bool:
+        """True if `email` may open the Founder Portal.
+
+        An empty allow-list allows everyone (the gate is then purely the
+        offered/onboarded status check). A non-empty allow-list denies a
+        caller with no email at all, so a token missing the claim can never
+        slip past the soft-launch gate.
+        """
+        allowed = self.founder_portal_allowlist_emails
+        if not allowed:
+            return True
+        return bool(email) and email.strip().lower() in allowed
 
     @property
     def support_recipients_list(self) -> list[str]:

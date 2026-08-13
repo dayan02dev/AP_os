@@ -85,6 +85,15 @@ Parameters:
       "true" closes the SIP/VIP track to new intake (no new VIP account
       creation, no new draft, no submission). Existing VIP applicants keep
       sign-in / view / edit-window access; TIR is unaffected. Reversible.
+  FounderPortalAllowlist:
+    Type: String
+    Default: ""
+    Description: >-
+      Comma-separated emails allowed to open the TIR Founder Portal during the
+      soft launch. HARD gate on top of the offered/onboarded status check —
+      advancing an application to 'offered' does not by itself grant access.
+      Empty string disables the allow-list (every offered/onboarded founder
+      gets in), which is the intended end state.
 
 # ─── Globals: every function inherits these ──────────────────────────
 # arm64 + python3.11 + 1GB RAM is the sweet spot for FastAPI on Lambda:
@@ -130,6 +139,8 @@ Globals:
         TIR_SUBMISSIONS_CLOSED: !Ref TirSubmissionsClosed
         # SIP/VIP intake close — same semantics for the VIP track.
         SIP_SUBMISSIONS_CLOSED: !Ref SipSubmissionsClosed
+        # Founder Portal soft-launch allow-list (see the parameter above).
+        FOUNDER_PORTAL_ALLOWLIST: !Ref FounderPortalAllowlist
 
 Resources:
   # ── Lambda function ─────────────────────────────────────────────

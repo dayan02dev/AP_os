@@ -1,4 +1,4 @@
--- 039_founder_journey.sql — TIR Approach 6-step wizard: derisking
+-- 042_founder_journey.sql — TIR Approach 6-step wizard: derisking
 -- experiments, workplan tasks, and mentor review (residency dashboard reads
 -- these too). STAGING ONLY for now — RLS enabled, no policies; access is
 -- backend-mediated via the /founder router + service-role client (which
