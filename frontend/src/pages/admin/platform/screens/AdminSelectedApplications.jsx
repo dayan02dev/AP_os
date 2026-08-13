@@ -328,7 +328,9 @@ function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
 
 // ── Screen ──────────────────────────────────────────────────────────────────
 
-export function AdminSelectedApplications({ go, goDetail } = {}) {
+// No `go` prop: the portal tab strip directly above already carries a Dashboard
+// tab, so the in-page "← Dashboard" button was redundant and has been removed.
+export function AdminSelectedApplications({ goDetail } = {}) {
   const { user } = useAuth();
   const pipeline = useAdminData("pipeline", { status: "jury_review" });
   const docs = useAdminData("icDocuments");
@@ -369,12 +371,6 @@ export function AdminSelectedApplications({ go, goDetail } = {}) {
   return (
     <div className="dash-scroll">
       <style dangerouslySetInnerHTML={{ __html: MODAL_STYLES }} />
-
-      {go && (
-        <button className="os-btn ghost sm" style={{ marginBottom: 12 }} onClick={() => go("dashboard")}>
-          ← Dashboard
-        </button>
-      )}
 
       <PageHead
         eyebrow="SELECTED APPLICATIONS"

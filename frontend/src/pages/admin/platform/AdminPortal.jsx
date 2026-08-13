@@ -414,7 +414,7 @@ function AdminApp() {
             {page === 'rejected'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ status: 'rejected' }} readOnly heading="Rejected applications" />}
             {/* Both tracks, one list. Each row carries a TRACK chip and the
                 memo upload / approve actions. */}
-            {page === 'jury_selected' && <AdminSelectedApplications go={setPage} goDetail={goDetail} />}
+            {page === 'jury_selected' && <AdminSelectedApplications goDetail={goDetail} />}
             {page === 'detail'      && (
               <AdminDetail
                 startupId={selectedStartupId}
@@ -426,7 +426,7 @@ function AdminApp() {
               />
             )}
             {page === 'reviewers'   && (decisionMode === 'jury' ? <AdminJury /> : <AdminReviewers decisionMode={decisionMode} />)}
-            {page === 'iisc_roster' && decisionMode === 'jury' && <AdminIiscRoster go={setPage} />}
+            {page === 'iisc_roster' && decisionMode === 'jury' && <AdminIiscRoster />}
             {page === 'roles'       && <AdminRoles />}
             {page === 'gate1'       && (decisionMode === 'jury' ? <AdminGate2 /> : <AdminGate1 goDetail={goDetail} />)}
             {page === 'psychometry' && <AdminPsychometry />}

@@ -26,7 +26,9 @@ const MATCH_TONE = { Yes: "purple", Partial: "amber", No: "" };
 const MATCH_RANK = { Yes: 0, Partial: 1, No: 2 };
 const norm = (s) => (s || "").toLowerCase().replace(/\./g, "").replace(/-/g, " ").replace(/\s+/g, " ").trim();
 
-export function AdminIiscRoster({ go } = {}) {
+// No `go` prop: the portal tab strip directly above already carries a Dashboard
+// tab, so the in-page "← Dashboard" button was redundant and has been removed.
+export function AdminIiscRoster() {
   const [profs, setProfs] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -166,9 +168,6 @@ export function AdminIiscRoster({ go } = {}) {
   return (
     <div className="dash-scroll">
       <style dangerouslySetInnerHTML={{ __html: MODAL_STYLES }} />
-      {go && (
-        <button className="os-btn ghost sm" style={{ marginBottom: 12 }} onClick={() => go("dashboard")}>← Dashboard</button>
-      )}
       <PageHead
         eyebrow="A-7 · ACADEMIC JURY ROSTER"
         title="Academic jury <em>roster</em>"
