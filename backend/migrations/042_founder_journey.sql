@@ -1,9 +1,10 @@
 -- 042_founder_journey.sql — TIR Approach 6-step wizard: derisking
 -- experiments, workplan tasks, and mentor review (residency dashboard reads
--- these too). STAGING ONLY for now — RLS enabled, no policies; access is
--- backend-mediated via the /founder router + service-role client (which
--- bypasses RLS), and the router enforces application_id ↔ user_id ownership.
--- Same pattern as 037/038.
+-- these too). RLS enabled, no policies; access is backend-mediated via the
+-- /founder router + service-role client (which bypasses RLS), and the router
+-- enforces application_id ↔ user_id ownership. Same pattern as 040/041.
+
+begin;
 
 -- 1) Derisking experiments (technical + commercial assumption stacks).
 create table if not exists public.founder_experiments (
@@ -68,3 +69,5 @@ alter table public.founder_team_members
 alter table public.founder_team_members
   add constraint founder_team_members_employment_type_check
   check (employment_type in ('full-time','part-time','contract','advisor','intern'));
+
+commit;

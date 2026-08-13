@@ -7,6 +7,8 @@
 -- service-role client (which bypasses RLS), and the /founder router enforces
 -- that application_id belongs to the current user.
 
+begin;
+
 -- 1) Per-applicant grant amount (₹25,00,000 default).
 alter table public.tir_applications
   add column if not exists grant_amount numeric not null default 2500000;
@@ -107,3 +109,5 @@ values ('tir-founder-docs','tir-founder-docs', false, 10485760,
         array['image/png','application/pdf'])
 on conflict (id) do nothing;
 -- No storage.objects policies: service-role only (backend issues signed URLs).
+
+commit;

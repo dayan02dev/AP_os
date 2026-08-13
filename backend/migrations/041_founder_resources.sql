@@ -14,6 +14,8 @@
 -- These four tables hold only the per-applicant state layered on top of it.
 
 -- 1) Procurement-store cart (per applicant, keyed by catalog product_id).
+begin;
+
 create table if not exists public.founder_cart_items (
   id              uuid primary key default gen_random_uuid(),
   application_id  uuid not null references public.tir_applications(id) on delete cascade,
@@ -79,3 +81,5 @@ alter table public.founder_procurement_items
 alter table public.founder_procurement_items
   add constraint founder_procurement_items_category_check
   check (category in ('BOM','Equipment','Other','Service'));
+
+commit;
