@@ -10,6 +10,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
 import * as authApi from "../lib/auth.js";
 import { isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
+import { founderApi } from "../lib/founderApi.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { usePageTheme } from "../hooks/usePageTheme.jsx";
@@ -97,8 +98,18 @@ export default function VerifyPage() {
             // /apply or /apply-sip.
             const roles = me?.roles || [];
             const roleTarget = landingPathFor(roles);
-            const applicantTarget =
+            let applicantTarget =
               roleTarget === "/apply" ? defaultHome : roleTarget;
+            // Founders (offered/onboarded TIR applicants) land in the Founder
+            // Portal, not the wizard. GET /founder/me 200s only for founders.
+            if (roleTarget === "/apply") {
+              try {
+                await founderApi.me();
+                applicantTarget = "/founder";
+              } catch {
+                /* not a founder — keep the wizard */
+              }
+            }
             const safeApplyNext =
               nextParam &&
               (nextParam.startsWith("/apply/") ||
@@ -108,6 +119,7 @@ export default function VerifyPage() {
             const honourNext =
               nextParam &&
               (safeApplyNext ||
+                nextParam.startsWith("/founder") ||
                 nextParam.startsWith("/admin/") ||
                 nextParam.startsWith("/leadership") ||
                 nextParam.startsWith("/reviewer/")) &&

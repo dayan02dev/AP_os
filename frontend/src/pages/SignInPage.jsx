@@ -12,6 +12,7 @@ import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
 import { isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
+import { founderApi } from "../lib/founderApi.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { usePageTheme } from "../hooks/usePageTheme.jsx";
@@ -62,16 +63,28 @@ export default function SignInPage() {
       const roleTarget = landingPathFor(roles);
       // For pure applicants, prefer the track-aware destination so a VIP
       // signin lands on /apply-sip instead of generic /apply.
-      const target =
+      let target =
         roleTarget === "/apply"
           ? (isSip ? "/apply-sip" : "/apply")
           : roleTarget;
+      // Founders (a TIR applicant whose application is offered/onboarded) land
+      // in their Founder Portal, not the application wizard. GET /founder/me
+      // returns 200 only for founders; 403 otherwise → keep the wizard target.
+      if (roleTarget === "/apply") {
+        try {
+          await founderApi.me();
+          target = "/founder";
+        } catch {
+          /* not a founder — keep /apply(-sip) */
+        }
+      }
       const nextAllowedByRole =
         nextParam &&
         (nextParam.startsWith("/apply/") ||
           nextParam.startsWith("/apply-sip/") ||
           nextParam === "/apply" ||
           nextParam === "/apply-sip" ||
+          nextParam.startsWith("/founder") ||
           nextParam.startsWith("/admin/") ||
           nextParam.startsWith("/leadership") ||
           nextParam.startsWith("/reviewer/")) &&

@@ -42,6 +42,7 @@ import UserDetailPage from "./pages/admin/UserDetailPage.jsx";
 import AdminAddUser from "./pages/admin/AdminAddUser.jsx";
 import ReviewerPortal from "./pages/reviewer/v2/ReviewerPortal.jsx";
 import JuryPortal from "./pages/jury/JuryPortal.jsx";
+import FounderPortal from "./pages/founder/FounderPortal.jsx";
 import AdminPortal from "./pages/admin/platform/AdminPortal.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
 import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
@@ -211,6 +212,17 @@ function JuryRoute({ tab }) {
   return <JuryPortal tab={tab} />;
 }
 
+// Gate for /founder/*. Auth-only — the server `/founder/me` 403 is the real
+// gate, handled inside FounderPortal (shows the "unlocks once selected"
+// message rather than a hard access-denied page).
+function FounderRoute({ tab }) {
+  return (
+    <ProtectedRoute>
+      <FounderPortal tab={tab} />
+    </ProtectedRoute>
+  );
+}
+
 const SECTION_SLUGS = [
   "basic",
   "problem",
@@ -352,6 +364,24 @@ export default function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
+      {/* Founder Portal (post-onboarding). Auth-gated only — FounderRoute
+          wraps ProtectedRoute internally; the server `/founder/me` 403 is the
+          real access gate, shown inside FounderPortal. Deep-linkable:
+          /founder (application) · mou · approach · org · expense · dashboard ·
+          store · fundraising · partners · assets · support. */}
+      <Route path="/founder" element={<FounderRoute tab="application" />} />
+      <Route path="/founder/mou" element={<FounderRoute tab="mou" />} />
+      <Route path="/founder/approach" element={<FounderRoute tab="approach" />} />
+      <Route path="/founder/org" element={<FounderRoute tab="org" />} />
+      <Route path="/founder/expense" element={<FounderRoute tab="expense" />} />
+      <Route path="/founder/dashboard" element={<FounderRoute tab="dashboard" />} />
+      {/* Founders resources — not MOU-gated, available once in the portal. */}
+      <Route path="/founder/store" element={<FounderRoute tab="store" />} />
+      <Route path="/founder/fundraising" element={<FounderRoute tab="fundraising" />} />
+      <Route path="/founder/partners" element={<FounderRoute tab="partners" />} />
+      <Route path="/founder/assets" element={<FounderRoute tab="assets" />} />
+      <Route path="/founder/support" element={<FounderRoute tab="support" />} />
 
       {/* Legacy admin user-management shell (Session 3). Gated to `manage_users`.
           Kept intact under /admin/users* so user CRUD is unaffected.
