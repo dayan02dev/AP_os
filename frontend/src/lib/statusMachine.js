@@ -6,18 +6,24 @@
 // is retained as a reference mirror (its old consumer, the leadership
 // status-change modal, was removed).
 
+// Resynced 2026-08-13 against state_machine.LEGAL_TRANSITIONS. The copy here
+// had drifted: it was missing the jury_review and on_hold states entirely, and
+// most of the reject/jury paths. `offered -> onboarded` is the MOU-signing
+// transition used by the Founder Portal.
 export const LEGAL_TRANSITIONS = {
-  submitted:        ["withdrawn"],
-  ai_screening:     ["withdrawn"],
-  screening_failed: ["withdrawn"],
-  under_review:     ["evaluated", "withdrawn"],
-  evaluated:        ["shortlisted", "rejected", "waitlisted", "withdrawn"],
-  shortlisted:      ["withdrawn"],
-  interview:        ["withdrawn"],
-  offered:          ["withdrawn"],
+  submitted:        ["jury_review", "rejected", "under_review", "withdrawn"],
+  ai_screening:     ["jury_review", "rejected", "withdrawn"],
+  screening_failed: ["jury_review", "rejected", "withdrawn"],
+  under_review:     ["evaluated", "jury_review", "rejected", "withdrawn"],
+  evaluated:        ["jury_review", "on_hold", "rejected", "shortlisted", "waitlisted", "withdrawn"],
+  on_hold:          ["evaluated", "jury_review", "rejected", "shortlisted", "waitlisted", "withdrawn"],
+  shortlisted:      ["jury_review", "rejected", "withdrawn"],
+  jury_review:      ["offered", "on_hold", "rejected", "waitlisted", "withdrawn"],
+  interview:        ["rejected", "withdrawn"],
+  offered:          ["onboarded", "rejected", "withdrawn"],
   onboarded:        ["withdrawn"],
   rejected:         ["withdrawn"],
-  waitlisted:       ["withdrawn"],
+  waitlisted:       ["rejected", "withdrawn"],
   withdrawn:        [],
 };
 
