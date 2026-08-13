@@ -38,7 +38,7 @@ describe("AdminTabBar — jury vs reviewer tabs", () => {
     render(<AdminTabBar {...base} decisionMode="jury" />);
     expect(screen.getByText("Academic Jury Roster")).toBeTruthy();
     expect(screen.queryByText("Applications")).toBeNull();
-    expect(screen.queryByText("Rejected Applications")).toBeNull();
+    expect(screen.queryByText("Rejected")).toBeNull();
     const labels = screen.getAllByText(
       /Dashboard|Academic Jury Roster|Jury|TIR Selected|VIP Selected|Final Gate/)
       .map(n => n.textContent);
@@ -48,22 +48,22 @@ describe("AdminTabBar — jury vs reviewer tabs", () => {
   it("reviewer mode keeps Applications + Rejected and has no academic roster", () => {
     render(<AdminTabBar {...base} decisionMode="reviewer" />);
     expect(screen.getByText("Applications")).toBeTruthy();
-    expect(screen.getByText("Rejected Applications")).toBeTruthy();
+    expect(screen.getByText("Rejected")).toBeTruthy();
     expect(screen.queryByText("Academic Jury Roster")).toBeNull();
   });
 });
 
-describe("AdminTabBar — the merged Selected Applications tab", () => {
+describe("AdminTabBar — the merged Accepted tab", () => {
   it("shows ONE tab for both tracks, not a tab each", () => {
     render(<AdminTabBar {...base} decisionMode="jury" />);
-    expect(screen.getByText("Selected Applications")).toBeTruthy();
+    expect(screen.getByText("Accepted")).toBeTruthy();
     expect(screen.queryByText("TIR Selected")).toBeNull();
     expect(screen.queryByText("VIP Selected")).toBeNull();
   });
 
   it("keeps the single tab in reviewer mode too", () => {
     render(<AdminTabBar {...base} decisionMode="reviewer" />);
-    expect(screen.getByText("Selected Applications")).toBeTruthy();
+    expect(screen.getByText("Accepted")).toBeTruthy();
     expect(screen.queryByText("TIR Selected")).toBeNull();
   });
 
@@ -88,7 +88,7 @@ describe("AdminTabBar — the merged Selected Applications tab", () => {
   it("selects the merged tab by its id", () => {
     const setPage = vi.fn();
     render(<AdminTabBar {...base} setPage={setPage} decisionMode="jury" />);
-    screen.getByText("Selected Applications").click();
+    screen.getByText("Accepted").click();
     expect(setPage).toHaveBeenCalledWith("jury_selected");
   });
 });

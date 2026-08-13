@@ -50,7 +50,8 @@ function AdminTopbar({ page, decisionMode, setPage }) {
     roles:'USER ROLES',
     gate1: decisionMode === 'jury' ? 'FINAL GATE' : 'ADMIN REVIEW',
     psychometry:'PSYCHOMETRY',
-    jury_selected:'SELECTED APPLICATIONS',
+    rejected:'REJECTED',
+    jury_selected:'ACCEPTED',
     gate2:'GATE 2 FINAL', audit:'AUDIT LOG', analytics:'ANALYTICS',
   };
   const crumb = crumbMap[page] || 'DASHBOARD';
@@ -273,10 +274,10 @@ export function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBa
       badge:null
     },
     { id:'pipeline',     label:'Applications', sub:'ALL SUBMISSIONS',            badge: appsBadge == null ? null : String(appsBadge) },
-    { id:'rejected',     label:'Rejected Applications', sub:'REJECTED BY ADMIN', badge: rejectedBadge == null ? null : String(rejectedBadge) },
+    { id:'rejected',     label:'Rejected', sub:'TIR + VIP', badge: rejectedBadge == null ? null : String(rejectedBadge) },
     // One tab for both tracks — the work at this stage (attach the IC memo,
     // approve it) is identical either way, and each row carries a TRACK chip.
-    { id:'jury_selected', label:'Selected Applications', sub:'TIR + VIP',
+    { id:'jury_selected', label:'Accepted', sub:'TIR + VIP',
       badge: jurySelectedBadge == null ? null : String(jurySelectedBadge) },
     {
       id:'gate1',
@@ -424,7 +425,7 @@ function AdminApp() {
                 decisionMode={decisionMode}
               />
             )}
-            {page === 'reviewers'   && (decisionMode === 'jury' ? <AdminJury go={setPage} /> : <AdminReviewers decisionMode={decisionMode} />)}
+            {page === 'reviewers'   && (decisionMode === 'jury' ? <AdminJury /> : <AdminReviewers decisionMode={decisionMode} />)}
             {page === 'iisc_roster' && decisionMode === 'jury' && <AdminIiscRoster go={setPage} />}
             {page === 'roles'       && <AdminRoles />}
             {page === 'gate1'       && (decisionMode === 'jury' ? <AdminGate2 /> : <AdminGate1 goDetail={goDetail} />)}

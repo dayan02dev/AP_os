@@ -8,7 +8,7 @@
 //   "eval"  → read-only detail (/jury/eval/:track/:appId)
 //
 // There is NO scoring anywhere in this portal — jurors pick applications to
-// mentor, capped at exactly 3, and submit the set.
+// mentor — up to 3, at least 1 — and submit the set.
 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
@@ -130,7 +130,7 @@ function PickBar({ picks, queue, setNote, submitPicks, submitting, submitMsg }) 
       <div className="jry-pickbar-inner">
         <div className="jry-pickbar-head">
           <span className="jry-pickbar-count">{`Your picks: ${picks.length} / 3`}</span>
-          <span className="jry-pickbar-hint">Pick exactly 3 startups to mentor.</span>
+          <span className="jry-pickbar-hint">Pick up to 3 startups to mentor — fewer is fine.</span>
         </div>
         <div className="jry-pickbar-notes">
           {picks.length === 0 && (
@@ -153,7 +153,7 @@ function PickBar({ picks, queue, setNote, submitPicks, submitting, submitMsg }) 
         <div className="jry-pickbar-actions">
           <button
             className="jry-pickbar-submit"
-            disabled={picks.length !== 3 || submitting}
+            disabled={picks.length === 0 || submitting}
             onClick={submitPicks}
           >
             {submitting ? "Submitting…" : "Submit picks"}
@@ -214,7 +214,7 @@ export default function JuryPortal({ tab = "queue" }) {
   const [lastSubmittedAt, setLastSubmittedAt] = useState(null);
 
   const submitPicks = async () => {
-    if (picks.length !== 3 || submitting) return;
+    if (picks.length === 0 || submitting) return;
     setSubmitting(true);
     setSubmitMsg(null);
     try {

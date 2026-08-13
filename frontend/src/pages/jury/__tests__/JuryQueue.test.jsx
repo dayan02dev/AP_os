@@ -48,8 +48,12 @@ function renderQueue() {
   );
 }
 
-const pickBtnOf = (name) =>
-  within(screen.getByText(name).closest("tr")).getByRole("button");
+// A picked row's name ALSO renders in the PickBar note label, so scope the
+// lookup to the element that actually sits inside a table row.
+const pickBtnOf = (name) => {
+  const inRow = screen.getAllByText(name).find((el) => el.closest("tr"));
+  return within(inRow.closest("tr")).getByRole("button");
+};
 
 describe("JuryQueue + PickBar", () => {
   it("renders the assigned queue rows from the mocked juryApi", async () => {
@@ -81,16 +85,28 @@ describe("JuryQueue + PickBar", () => {
     expect(screen.getByText(/Your picks:\s*3\s*\/\s*3/)).toBeTruthy();
   });
 
-  it("Submit is disabled until exactly 3 are picked", async () => {
+  // 3 is a cap, not a quota: a juror who only wants to mentor one startup
+  // submits one. Only an EMPTY set is refused.
+  it("Submit is disabled only while no pick is made", async () => {
     renderQueue();
     await screen.findByText("Alpha Robotics");
     const submit = screen.getByRole("button", { name: /Submit/i });
     expect(submit).toBeDisabled();
     fireEvent.click(pickBtnOf("Alpha Robotics"));
-    expect(submit).toBeDisabled();
+    expect(submit).not.toBeDisabled();
     fireEvent.click(pickBtnOf("Beta Bio"));
-    expect(submit).toBeDisabled();
+    expect(submit).not.toBeDisabled();
     fireEvent.click(pickBtnOf("Gamma Grid"));
     expect(submit).not.toBeDisabled();
+  });
+
+  it("un-picking back down to zero re-disables Submit", async () => {
+    renderQueue();
+    await screen.findByText("Alpha Robotics");
+    const submit = screen.getByRole("button", { name: /Submit/i });
+    fireEvent.click(pickBtnOf("Alpha Robotics"));
+    expect(submit).not.toBeDisabled();
+    fireEvent.click(pickBtnOf("Alpha Robotics"));
+    expect(submit).toBeDisabled();
   });
 });

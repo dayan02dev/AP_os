@@ -461,7 +461,9 @@ function ApplicationsTable({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function AdminJury({ go } = {}) {
+// No `go` prop: the tab strip above already carries a Dashboard tab, so the
+// in-page "← Dashboard" button was redundant and has been removed.
+export function AdminJury() {
   const [tab, setTab] = useState("applications");
   const [showInvite, setShowInvite] = useState(false);
 
@@ -534,11 +536,6 @@ export function AdminJury({ go } = {}) {
   return (
     <div className="dash-scroll">
       <style dangerouslySetInnerHTML={{ __html: DRAWER_STYLES }} />
-
-      {go && (
-        <button className="os-btn ghost sm" style={{ marginBottom: 12 }}
-          onClick={() => go("dashboard")}>← Dashboard</button>
-      )}
 
       <PageHead
         eyebrow="A-6 · JURY MANAGEMENT"

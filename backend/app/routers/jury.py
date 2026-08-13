@@ -117,11 +117,15 @@ async def put_selections(body: SelectionsPut,
                          user: dict = Depends(get_current_user)) -> dict:
     juror_id = user["user_id"]
     sb = get_admin_client()
-    if len(body.selections) != 3 or \
-       len({(s.application_id, s.application_track) for s in body.selections}) != 3:
+    # Jurors pick UP TO 3 startups to mentor — 3 is a cap, not a quota. A juror
+    # who only finds one or two worth mentoring submits just those. Empty is
+    # still rejected: "submit" must mean something was chosen.
+    n = len(body.selections)
+    distinct = len({(s.application_id, s.application_track) for s in body.selections})
+    if n < 1 or n > 3 or distinct != n:
         raise HTTPException(status_code=422, detail={
-            "code": "must_pick_exactly_3",
-            "message": "Submit exactly 3 distinct picks."})
+            "code": "must_pick_1_to_3",
+            "message": "Submit between 1 and 3 distinct picks."})
 
     assigned = sb.table("jury_assignments").select("*") \
         .eq("juror_user_id", juror_id).execute().data or []

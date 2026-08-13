@@ -1,9 +1,10 @@
 """Tests for the jury v2 selections API: GET /jury/selections/mine and
-PUT /jury/selections (atomic set-replace, exactly-3, decided-app freeze).
+PUT /jury/selections (atomic set-replace, 1-to-3 picks, decided-app freeze).
 
 v2 semantics under test:
-  1. PUT must carry exactly 3 distinct (application_id, application_track)
-     pairs — otherwise 422 must_pick_exactly_3.
+  1. PUT must carry between 1 and 3 distinct (application_id,
+     application_track) pairs — otherwise 422 must_pick_1_to_3. Three is a
+     cap, not a quota: a juror may submit 1 or 2.
   2. Every picked pair must be in the juror's own jury_assignments —
      otherwise 403 not_your_assignment.
   3. Set-replace: rows for dropped pairs are deleted, rows for kept/new
@@ -128,16 +129,49 @@ def test_put_write_failure_returns_json_error(client, monkeypatch, _clear_overri
     assert [row for row in fake.tables["jury_selections"] if row.get("juror_user_id") == J1] == []
 
 
-# ─── exactly-3 ──────────────────────────────────────────────────────────────
+# ─── 1-to-3 picks ───────────────────────────────────────────────────────────
 
 
-def test_put_exactly_three_required(client, monkeypatch, _clear_overrides):
+@pytest.mark.parametrize("n", [1, 2, 3])
+def test_put_accepts_one_to_three(client, monkeypatch, _clear_overrides, n):
+    """3 is a cap, not a quota — a juror may submit 1, 2 or 3 picks."""
+    fake = _install(monkeypatch, {"jury_assignments": list(_ALL_ASSIGNMENTS),
+                                  "jury_selections": []})
+    app.dependency_overrides[get_current_user] = _override_user(J1)
+
+    r = _put(client, [_sel(f"a{i}") for i in range(1, n + 1)])
+    assert r.status_code == 200, r.text
+    written = [row for row in fake.tables["jury_selections"]
+               if row.get("juror_user_id") == J1]
+    assert len(written) == n
+
+
+def test_put_rejects_empty_selection(client, monkeypatch, _clear_overrides):
+    """Submitting nothing is not a submission."""
     _install(monkeypatch, {"jury_assignments": list(_ALL_ASSIGNMENTS), "jury_selections": []})
     app.dependency_overrides[get_current_user] = _override_user(J1)
 
-    r = _put(client, [_sel("a1"), _sel("a2")])
+    r = _put(client, [])
     assert r.status_code == 422, r.text
-    assert r.json()["detail"]["code"] == "must_pick_exactly_3"
+    assert r.json()["detail"]["code"] == "must_pick_1_to_3"
+
+
+def test_put_rejects_more_than_three(client, monkeypatch, _clear_overrides):
+    _install(monkeypatch, {"jury_assignments": list(_ALL_ASSIGNMENTS), "jury_selections": []})
+    app.dependency_overrides[get_current_user] = _override_user(J1)
+
+    r = _put(client, [_sel("a1"), _sel("a2"), _sel("a3"), _sel("a4")])
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "must_pick_1_to_3"
+
+
+def test_put_rejects_duplicate_picks(client, monkeypatch, _clear_overrides):
+    _install(monkeypatch, {"jury_assignments": list(_ALL_ASSIGNMENTS), "jury_selections": []})
+    app.dependency_overrides[get_current_user] = _override_user(J1)
+
+    r = _put(client, [_sel("a1"), _sel("a1")])
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "must_pick_1_to_3"
 
 
 # ─── ownership guard ────────────────────────────────────────────────────────

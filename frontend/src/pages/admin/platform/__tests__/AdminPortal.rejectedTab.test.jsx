@@ -30,10 +30,10 @@ vi.mock("react-router-dom", async (importOriginal) => {
 
 import AdminPortalDefault from "../AdminPortal";
 
-describe("AdminPortal — Rejected Applications tab", () => {
+describe("AdminPortal — Rejected tab", () => {
   it("renders the 5th tab with the rejected count and a reduced Applications count", () => {
     const { container } = render(<AdminPortalDefault />);
-    expect(screen.getByText("Rejected Applications")).toBeTruthy();
+    expect(screen.getByText("Rejected")).toBeTruthy();
     // Scope the badge numbers to the tab bar so they don't couple to any
     // incidental "88"/"12" that might appear elsewhere in the shell.
     const tabs = within(container.querySelector(".lp-tabs"));

@@ -1136,8 +1136,9 @@ def _fetch_jury_v2_metrics(
     Returns for every pair a dict of ``jury_assigned`` (int),
     ``jury_assigned_names`` (list), ``picked_by`` (``[{juror_user_id, name,
     note}]``), ``picks_ready`` (bool: has assignments AND every assigned juror
-    has a full ≥3 pick-set) and ``gate2_decision`` (latest gate-2 decision or
-    None). All bulk reads page via ``_fetch_all``.
+    has submitted their picks — i.e. holds ≥1, since 3 is the cap and 1 the
+    floor) and ``gate2_decision`` (latest gate-2 decision or None). All bulk
+    reads page via ``_fetch_all``.
     """
     sb = get_admin_client()
     if not pairs:
@@ -1149,8 +1150,9 @@ def _fetch_jury_v2_metrics(
         {a.get("juror_user_id") for a in assigns if a.get("juror_user_id")}
     )
     # Juror-scoped pick read (not app-scoped) so `picks_ready` reflects a
-    # juror's FULL 3-set even when the pipeline query is filtered to a subset
-    # of apps. `picked_by` still filters to this app below, so it's unaffected.
+    # juror's WHOLE submitted set even when the pipeline query is filtered to a
+    # subset of apps. `picked_by` still filters to this app below, so it's
+    # unaffected.
     sels = _fetch_all(
         lambda: sb.table("jury_selections").select("*").in_("juror_user_id", juror_ids)
     ) if juror_ids else []
@@ -1160,7 +1162,7 @@ def _fetch_jury_v2_metrics(
                   if juror_ids else [])
     }
 
-    # Total picks per juror (a juror who submitted their 3-set is "ready" for
+    # Total picks per juror (a juror who submitted their set is "ready" for
     # every app they are assigned to).
     picks_per_juror: dict[str, int] = {}
     for s in sels:
@@ -1190,8 +1192,12 @@ def _fetch_jury_v2_metrics(
                  "note": s.get("note")}
                 for s in s_rows
             ],
+            # A juror picks UP TO 3, so "ready" cannot mean "hit 3" — a juror
+            # who deliberately picked 1 would strand the app out of Final Gate
+            # forever. Rows only ever land in jury_selections via the submit
+            # (PUT) call, so >=1 pick == this juror has submitted.
             "picks_ready": bool(a_rows) and all(
-                picks_per_juror.get(j, 0) >= 3 for j in assigned_jids),
+                picks_per_juror.get(j, 0) >= 1 for j in assigned_jids),
             "gate2_decision": gate2.get((track, app_id)),
         }
     return out

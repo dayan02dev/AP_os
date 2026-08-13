@@ -55,7 +55,7 @@ describe("AdminPortal — jury decision mode", () => {
   it("renders the Selected Applications screen without crashing", () => {
     render(<AdminPortalDefault />);
     fireEvent.click(screen.getByText("Jury Decision"));
-    fireEvent.click(screen.getByText("Selected Applications"));
+    fireEvent.click(screen.getByText("Accepted"));
     expect(screen.getByText("No selected applications yet.")).toBeInTheDocument();
     expect(screen.getByLabelText("Search selected applications")).toBeInTheDocument();
   });
@@ -63,7 +63,7 @@ describe("AdminPortal — jury decision mode", () => {
   it("offers ONE selected tab covering both tracks, not a tab per track", () => {
     render(<AdminPortalDefault />);
     fireEvent.click(screen.getByText("Jury Decision"));
-    expect(screen.getByText("Selected Applications")).toBeInTheDocument();
+    expect(screen.getByText("Accepted")).toBeInTheDocument();
     expect(screen.queryByText("TIR Selected")).toBeNull();
     expect(screen.queryByText("VIP Selected")).toBeNull();
   });
@@ -71,7 +71,7 @@ describe("AdminPortal — jury decision mode", () => {
   it("offers the track switcher there so a single track can still be isolated", () => {
     render(<AdminPortalDefault />);
     fireEvent.click(screen.getByText("Jury Decision"));
-    fireEvent.click(screen.getByText("Selected Applications"));
+    fireEvent.click(screen.getByText("Accepted"));
     expect(screen.getByRole("button", { name: "TIR" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "VIP" })).toBeInTheDocument();
   });

@@ -155,12 +155,12 @@ describe("AdminJury v2 — roster tab", () => {
     expect(screen.getByText("rao@x.com")).toBeTruthy();
   });
 
-  it("shows a Dashboard back button that calls go('dashboard')", () => {
-    const go = vi.fn();
+  // The portal tab strip already carries a Dashboard tab, so the in-page
+  // "← Dashboard" button was redundant and has been removed.
+  it("has no in-page Dashboard back button", () => {
     setup({ jurors: [JUROR_DONE] });
-    render(<AdminJury go={go} />);
-    fireEvent.click(screen.getByText(/← Dashboard/));
-    expect(go).toHaveBeenCalledWith("dashboard");
+    render(<AdminJury />);
+    expect(screen.queryByText(/← Dashboard/)).toBeNull();
   });
 });
 

@@ -1,4 +1,4 @@
-// My Picks — the juror's 3 chosen startups as cards with editable notes.
+// My Picks — the juror's chosen startups (1-3) as cards with editable notes.
 // Picks live in the shell (JuryPortal); this screen just presents them,
 // resolving each against the queue rows for name / industry / AI score.
 
@@ -18,7 +18,7 @@ export default function JuryPicks({ picks = [], queue = [], setNote, submittedAt
   if (!picks.length) {
     return (
       <div className="lp-tab-content">
-        <div className="jry-picks-empty">No picks yet — choose 3 from My Applications.</div>
+        <div className="jry-picks-empty">No picks yet — choose up to 3 from My Applications.</div>
       </div>
     );
   }

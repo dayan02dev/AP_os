@@ -369,7 +369,11 @@
   font-size: 13px;
   color: var(--ink-soft);
   margin-top: 8px;
-  max-width: 60ch;
+  /* 60ch used to break our ~90-char page subtitles across two lines mid-
+     sentence, which read as two separate statements. 100ch keeps a
+     readability clamp while letting them run as one continuous line at
+     normal desktop widths. */
+  max-width: 100ch;
 }
 .adm-portal .os-breadcrumb {
   font-family: var(--font-mono);
