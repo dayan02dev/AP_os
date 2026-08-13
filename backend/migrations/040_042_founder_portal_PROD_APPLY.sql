@@ -304,12 +304,10 @@ select
     ))                                                          as tables_created,
   (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relrowsecurity
-      and c.relname like 'founder\_%')                          as rls_enabled,
-  exists (select 1 from information_schema.columns
-           where table_schema='public' and table_name='tir_applications'
-             and column_name='grant_amount')                    as grant_amount_exists,
-  exists (select 1 from storage.buckets where id = 'tir-founder-docs')
-                                                                as bucket_exists,
+      and c.relname like 'founder@_%' escape '@')                          as rls_enabled,
+  (select count(*) from information_schema.columns where table_schema='public'
+     and table_name='tir_applications' and column_name='grant_amount') as grant_amount_cols,
+  (select count(*) from storage.buckets where id='tir-founder-docs')   as bucket_rows,
   (select count(*) from public.founder_mou)                     as rows_mou;
 
 -- The MOU acknowledgements column must exist and default to an empty array,
