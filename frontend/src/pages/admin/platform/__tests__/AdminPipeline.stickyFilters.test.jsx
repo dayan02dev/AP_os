@@ -79,6 +79,35 @@ describe("AdminPipeline sticky filters", () => {
     expect(screen.getByText("VipCo")).toBeInTheDocument();
   });
 
+  // Production mounts this screen with data:null/loading:true and fills in
+  // async, whereas the tests above hand it loaded data on the first render.
+  // That is the one shape difference between test and prod, so pin it down.
+  it("restores the filter when the list data arrives only after mount", () => {
+    const first = render(<AdminPipeline decisionMode="default" scopeKey="applications" />);
+    fireEvent.click(screen.getByRole("button", { name: "TIR" }));
+    expect(screen.queryByText("VipCo")).not.toBeInTheDocument();
+    first.unmount();
+
+    // Return trip: mounts empty and still loading…
+    useAdminData.mockImplementation((kind) => {
+      if (kind === "batches")
+        return { data: BATCHES, loading: false, error: null, reload: vi.fn() };
+      return { data: null, loading: true, error: null, reload: vi.fn() };
+    });
+    const second = render(<AdminPipeline decisionMode="default" scopeKey="applications" />);
+
+    // …then the rows land.
+    useAdminData.mockImplementation((kind) => {
+      if (kind === "batches")
+        return { data: BATCHES, loading: false, error: null, reload: vi.fn() };
+      return { data: PIPELINE, loading: false, error: null, reload: vi.fn() };
+    });
+    second.rerender(<AdminPipeline decisionMode="default" scopeKey="applications" />);
+
+    expect(screen.getByText("TirCo")).toBeInTheDocument();
+    expect(screen.queryByText("VipCo")).not.toBeInTheDocument();
+  });
+
   it("clearing filters also clears what was persisted", () => {
     const first = render(<AdminPipeline decisionMode="default" scopeKey="applications" />);
     fireEvent.click(screen.getByRole("button", { name: "TIR" }));

@@ -80,6 +80,22 @@ describe("useStickyState", () => {
     expect(result.current[0]).toBe("evaluated");
   });
 
+  it("still survives a remount when storage is completely unavailable", () => {
+    // Blocked storage (private mode, hardened privacy settings) must not silently
+    // put us back to the old reset-on-every-navigation behaviour: the filter
+    // should still survive unmount for the life of the page.
+    stubStorage({
+      getItem: () => { throw new Error("denied"); },
+      setItem: () => { throw new Error("denied"); },
+    });
+    const first = renderHook(() => useStickyState("admin.pipeline", "status", "all"));
+    act(() => { first.result.current[1]("evaluated"); });
+    first.unmount();
+
+    const second = renderHook(() => useStickyState("admin.pipeline", "status", "all"));
+    expect(second.result.current[0]).toBe("evaluated");
+  });
+
   it("clearStickyState removes sticky keys but leaves other storage alone", () => {
     const { result } = renderHook(() => useStickyState("admin.pipeline", "status", "all"));
     act(() => { result.current[1]("evaluated"); });
@@ -89,6 +105,21 @@ describe("useStickyState", () => {
 
     expect(sessionStorage.getItem(`${STICKY_PREFIX}admin.pipeline.status`)).toBeNull();
     expect(sessionStorage.getItem("unrelated.key")).toBe("keep-me");
+  });
+
+  it("clearStickyState also clears filters held only in memory", () => {
+    stubStorage({
+      getItem: () => { throw new Error("denied"); },
+      setItem: () => { throw new Error("denied"); },
+    });
+    const first = renderHook(() => useStickyState("admin.pipeline", "status", "all"));
+    act(() => { first.result.current[1]("evaluated"); });
+    first.unmount();
+
+    clearStickyState();
+
+    const second = renderHook(() => useStickyState("admin.pipeline", "status", "all"));
+    expect(second.result.current[0]).toBe("all");
   });
 
   it("clearStickyState does not throw when storage is unavailable", () => {

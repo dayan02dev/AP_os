@@ -19,33 +19,39 @@ export function stickyKey(scope, field) {
   return `${STICKY_PREFIX}${scope}.${field}`;
 }
 
-// Every storage touch is wrapped: sessionStorage throws outright in Safari
-// private mode and when the quota is blown. A filter is a convenience — it must
-// never be able to take a portal down, so a failure degrades to plain in-memory
-// state rather than propagating.
+// In-page mirror of every value we have written. sessionStorage throws outright
+// in Safari private mode and under hardened privacy settings, and silently
+// caps out on quota. Without this mirror those cases would drop us straight
+// back to the old behaviour — filters resetting on every navigation — which is
+// the exact bug this hook exists to fix. The mirror keeps filters sticky for
+// the life of the page even when nothing can be persisted; sessionStorage adds
+// survival across a reload on top.
+const mirror = new Map();
+
 function read(key, initial) {
   try {
     const raw = sessionStorage.getItem(key);
-    if (raw === null || raw === undefined) return initial;
-    return JSON.parse(raw);
+    if (raw !== null && raw !== undefined) return JSON.parse(raw);
   } catch {
-    // Unreadable or corrupt (hand-edited, or written by an older build whose
-    // shape has since changed) — fall back to the default.
-    return initial;
+    /* unreadable or corrupt — fall through to the mirror */
   }
+  return mirror.has(key) ? mirror.get(key) : initial;
 }
 
 function write(key, value) {
+  mirror.set(key, value);
   try {
     sessionStorage.setItem(key, JSON.stringify(value));
   } catch {
-    /* storage unavailable — the in-memory value still applies for this view */
+    /* storage unavailable — the mirror still carries it for this page */
   }
 }
 
-/** Drop every persisted filter. Called on sign-out so the next person to use
- *  this tab does not inherit the previous user's view. */
+/** Drop every persisted filter — both the stored copy and the in-page mirror.
+ *  Called on sign-out so the next person to use this tab does not inherit the
+ *  previous user's view, and by the test setup for per-test isolation. */
 export function clearStickyState() {
+  mirror.clear();
   try {
     const store = sessionStorage;
     const doomed = [];
