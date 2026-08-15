@@ -1610,6 +1610,57 @@ Extend the cohort lock check and the switch in `renderTab`:
       case "mis": return <FounderMis />;
 ```
 
+- [ ] **Step 4b: Hide "Push to procurement" for VIP**
+
+Task 5 made `POST /founder/store/push-to-procurement` return 409 `not_available_for_track` for non-TIR callers, because `founder_procurement_items` is a TIR-only table with a live foreign key. The store UI still renders the control unconditionally, so a VIP founder would click a button that always errors. Pass the track down and hide it.
+
+In `FounderPortal.jsx`, give the store tab the track:
+
+```jsx
+      case "store": return <FounderStore track={me.track} />;
+```
+
+In `frontend/src/pages/founder/FounderStore.jsx`, accept the prop and gate the control. Change the component signature:
+
+```jsx
+export default function FounderStore({ track = "tir" }) {
+```
+
+Then wrap the button at line ~137 so it only renders for TIR — procurement is a residency-grant mechanism that VIP does not have:
+
+```jsx
+                  {track === "tir" && (
+                    <button type="button" className="btn btn-primary" style={{ justifyContent: "center" }} disabled={data.cart.length === 0 || busy} onClick={pushCart}>
+                      Push to procurement <span className="arrow">→</span>
+                    </button>
+                  )}
+```
+
+Leave everything else in the cart panel unchanged — VIP founders still browse, add to cart, and request quotes.
+
+Add a test to `FounderVipTabs.test.jsx`:
+
+```jsx
+  it("hides Push to procurement for a VIP founder but keeps it for TIR", async () => {
+    vi.spyOn(founderApi, "getStore").mockResolvedValue({
+      catalog: [], cart: [{ product_id: "p1", name: "Thing", qty: 1, unit_price: 100, line_total: 100 }],
+      cart_subtotal: 100,
+    });
+
+    vi.spyOn(founderApi, "me").mockResolvedValue({ ...me(false), track: "sip" });
+    const vip = render(<MemoryRouter><FounderPortal tab="store" /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText(/procurement store/i)).toBeInTheDocument());
+    expect(screen.queryByText(/Push to procurement/i)).not.toBeInTheDocument();
+    vip.unmount();
+
+    vi.spyOn(founderApi, "me").mockResolvedValue({ ...me(false), track: "tir" });
+    render(<MemoryRouter><FounderPortal tab="store" /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText(/Push to procurement/i)).toBeInTheDocument());
+  });
+```
+
+If `FounderStore`'s cart panel only renders when the cart is non-empty, keep the mocked cart above; adjust the mocked shape to whatever `getStore` actually returns if the assertion cannot find the panel, but do not change the component beyond the conditional.
+
 - [ ] **Step 5: Add the routes**
 
 In `frontend/src/router.jsx`, add two routes inside the founder block, after `/founder/expense`:
