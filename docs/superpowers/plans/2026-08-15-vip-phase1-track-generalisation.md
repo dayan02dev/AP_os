@@ -1661,6 +1661,68 @@ Add a test to `FounderVipTabs.test.jsx`:
 
 If `FounderStore`'s cart panel only renders when the cart is non-empty, keep the mocked cart above; adjust the mocked shape to whatever `getStore` actually returns if the assertion cannot find the panel, but do not change the component beyond the conditional.
 
+- [ ] **Step 4c: Make the Application tab track-aware**
+
+`FounderApplication.jsx` currently fetches `/applications/me/submitted` — the TIR-only endpoint, whose router is gated by `require_track("tir")` — and hardcodes `track="tir"` into `FullApplication`, which uses it to pick the question schema via `schemaFor(track)`. For a VIP founder that means an empty or erroring fetch and, if it did render, the wrong programme's questions. The spec requires the Current tab to work identically on both tracks, so it has to select both the endpoint and the schema by track.
+
+The SIP equivalent is `GET /sip-applications/me/submitted` (router prefix `/sip-applications`, confirmed in `backend/app/routers/sip_applications.py:45-49`).
+
+Replace `frontend/src/pages/founder/FounderApplication.jsx` entirely:
+
+```jsx
+import { useEffect, useState } from "react";
+import FullApplication from "../../components/FullApplication.jsx";
+import { api } from "../../lib/api.js";
+import { Loading, ErrorState } from "./ui.jsx";
+
+// The submitted-application endpoints are per-track and each router is gated
+// by require_track(...), so the path has to match the founder's own track —
+// and FullApplication picks its question schema from the same value.
+const SUBMITTED_PATH = {
+  tir: "/applications/me/submitted",
+  sip: "/sip-applications/me/submitted",
+};
+
+export default function FounderApplication({ track = "tir" }) {
+  const [app, setApp] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    api.get(SUBMITTED_PATH[track] || SUBMITTED_PATH.tir)
+      .then((rows) => setApp(Array.isArray(rows) ? rows[0] : rows))
+      .catch(setError);
+  }, [track]);
+  if (error) return <ErrorState error={error} />;
+  if (!app) return <Loading label="Loading your application…" />;
+  return (
+    <div>
+      <span className="eyebrow eyebrow-rule">Application · Current</span>
+      <h1 className="big" style={{ fontFamily: "var(--font-display)" }}>Your current application.</h1>
+      <FullApplication application={app} applicationId={app.id} track={track} />
+    </div>
+  );
+}
+```
+
+In `FounderPortal.jsx`, pass the track on the default case:
+
+```jsx
+      default: return <FounderApplication me={me} track={me.track} />;
+```
+
+Add a test to `FounderVipTabs.test.jsx`:
+
+```jsx
+  it("fetches the VIP application from the sip endpoint, not the TIR one", async () => {
+    const get = vi.spyOn(api, "get").mockResolvedValue([{ id: "a1" }]);
+    vi.spyOn(founderApi, "me").mockResolvedValue({ ...me(false), track: "sip" });
+    render(<MemoryRouter><FounderPortal tab="application" /></MemoryRouter>);
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/sip-applications/me/submitted"));
+    expect(get).not.toHaveBeenCalledWith("/applications/me/submitted");
+  });
+```
+
+That test needs `import { api } from "../../../lib/api.js";` at the top of the test file.
+
 - [ ] **Step 5: Add the routes**
 
 In `frontend/src/router.jsx`, add two routes inside the founder block, after `/founder/expense`:
