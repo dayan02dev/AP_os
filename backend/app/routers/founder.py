@@ -103,13 +103,27 @@ async def require_founder_access(
     )
 
 
-def _project_name(app: dict) -> str:
-    emb = app.get("ai_screening_project_name")
-    if isinstance(emb, list) and emb:
-        return emb[0].get("project_name") or ""
-    if isinstance(emb, dict):
-        return emb.get("project_name") or ""
-    return ""
+def _project_name(application_id: str, track: str) -> str:
+    """The venture name, from the ai_screening row for this application.
+
+    This has to be its own query. ai_screening is a separate table keyed on
+    (application_id, application_track) — the same way
+    applications_query.fetch_app_ids_by_project_name resolves it. Reading it
+    as an embed off the application row silently yields "" because the
+    access query does not select it.
+    """
+    rows = (
+        get_admin_client()
+        .table("ai_screening")
+        .select("project_name")
+        .eq("application_id", application_id)
+        .eq("application_track", track)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    return (rows[0].get("project_name") if rows else "") or ""
 
 
 @router.get("/me")
@@ -121,7 +135,7 @@ async def get_me(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
         "track": ctx["track"],
         "application_id": ctx["application_id"],
         "grant_amount": float(ctx["app"].get("grant_amount") or 0),
-        "project_name": _project_name(ctx["app"]),
+        "project_name": _project_name(ctx["application_id"], ctx["track"]),
         "mou_signed": signed,
         "locked": {
             "cohort": ctx["status"] != "onboarded",
@@ -134,7 +148,9 @@ async def get_me(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
 async def get_mou(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
     mou = founder_query.fetch_mou(ctx["application_id"])
     body = founder_mou.render_body(
-        founder_name=_signer_default(ctx), venture=_project_name(ctx["app"]), date_str=""
+        founder_name=_signer_default(ctx),
+        venture=_project_name(ctx["application_id"], ctx["track"]),
+        date_str="",
     )
     return {
         "template_version": founder_mou.TEMPLATE_VERSION,
@@ -169,7 +185,7 @@ async def sign_mou(
             user_id=ctx["user_id"],
             signer_name=payload.signer_name,
             founder_name=payload.signer_name,
-            venture=_project_name(ctx["app"]),
+            venture=_project_name(ctx["application_id"], ctx["track"]),
             signature_png=payload.signature_png,
             acknowledgements=payload.acknowledgements,
         )

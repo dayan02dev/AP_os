@@ -179,7 +179,11 @@ async def get_mentors(ctx: Annotated[dict, Depends(require_founder_access)]) -> 
 async def get_residency(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
     team = fq.fetch_team(ctx["application_id"])
     team_names = [t["name"] for t in team if t.get("name")]
-    return fjq.residency_bundle(ctx["application_id"], _project_name(ctx["app"]), team_names)
+    return fjq.residency_bundle(
+        ctx["application_id"],
+        _project_name(ctx["application_id"], ctx["track"]),
+        team_names,
+    )
 
 
 # ── Procurement sync (Expense tab "Sync from BOM & equipment") ─────────────

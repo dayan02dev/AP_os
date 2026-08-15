@@ -225,9 +225,12 @@ def test_mentors_returns_three(client, monkeypatch, _clear):
 
 # ── Residency dashboard rollup math ─────────────────────────────────────
 def test_residency_rollup_math(client, monkeypatch, _clear):
-    app_with_name = {**_APP, "ai_screening_project_name": {"project_name": "Neonatal sepsis monitor"}}
     _install(monkeypatch, {
-        "tir_applications": [app_with_name],
+        "tir_applications": [_APP],
+        "ai_screening": [
+            {"application_id": "app1", "application_track": "tir",
+             "project_name": "Neonatal sepsis monitor"},
+        ],
         "founder_experiments": [
             {"id": "e1", "application_id": "app1", "track": "technical", "sort_order": 0,
              "gate": 1, "risk": "high", "status": "validated", "test_type": "retro",
