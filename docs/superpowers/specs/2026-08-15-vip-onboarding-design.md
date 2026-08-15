@@ -51,13 +51,38 @@ COHORT MANAGEMENT                COHORT MANAGEMENT
   03 Expense management
 ```
 
-Everything else is shared: header, Application tab, Sign MOU, Process dashboard route,
-and all five Founders Resources pages.
+**Everything outside cohort management is shared code, not a copy.** A VIP founder renders
+the identical components and calls the identical endpoints a TIR founder does. Nothing is
+duplicated, forked or re-implemented, so the two tracks cannot drift apart later:
+
+| Sidebar group | Item | For VIP |
+|---|---|---|
+| Application | Current | identical — `FounderApplication.jsx`, `GET /founder/me` |
+| Onboarding | 01 Sign MOU | identical — `FounderMou.jsx`, the v2 four-acknowledgement flow, the same signed-PDF service. Changes to the MOU are explicitly deferred. |
+| Founders resources | 01 Art Infra | identical — `FounderStore.jsx`, `/founder/store` |
+| Founders resources | 02 ArtConnect | identical — `FounderFundraising.jsx`, `/founder/fundraising` |
+| Founders resources | 03 ArtPartners | identical — `FounderPartners.jsx`, `/founder/partners` |
+| Founders resources | 04 Art Assets | identical — `FounderAssets.jsx`, `/founder/assets` |
+| Founders resources | 05 Art Support | identical — `FounderSupport.jsx`, `/founder/support` |
+
+Those pages work for VIP purely because migration 043 makes their five backing tables
+track-aware; not one line of their UI or route logic changes.
 
 New routes: `/founder/tlr`, `/founder/mis`. The existing `/founder/dashboard` renders
 `FounderDashboard` for TIR and `VipDashboard` for SIP.
 
-**Deletion (D7).** The `COHORT_LINKS` block and its `<nav>` in `FounderPortal.jsx` go away.
+**Deletion (D7).** The entire `COHORT` sidebar group is removed — the group heading, its
+`<nav>`, and the `COHORT_LINKS` constant in `FounderPortal.jsx`. That deletes all three
+external links:
+
+- ↗ Programs (`/programs.html`)
+- ↗ TIR overview (`/marketing.html`)
+- ↗ VIP overview (`/sip-marketing.html`)
+
+It disappears for **TIR founders** (a change to the shipped portal) and is **never added
+for VIP**. Since the sidebar is shared, this is a single deletion that satisfies both.
+The `FounderPortal.test.jsx` suite gains an assertion that no such group renders, so it
+cannot come back by accident.
 
 **Bug fixed in passing.** `_project_name()` reads `app["ai_screening_project_name"]`, an
 embed `require_founder_access` never selects — so it returns `""` unconditionally. The
