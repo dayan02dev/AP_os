@@ -33,10 +33,13 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/founder", tags=["founder-resources"])
 
 
-def _owned_or_404(sb, table: str, row_id: str, application_id: str) -> dict:
+def _owned_or_404(sb, table: str, row_id: str, ctx: dict) -> dict:
     rows = (
-        sb.table(table).select("*").eq("id", row_id)
-        .eq("application_id", application_id).limit(1).execute().data or []
+        sb.table(table).select("*")
+        .eq("id", row_id)
+        .eq("application_id", ctx["application_id"])
+        .eq("track", ctx["track"])
+        .limit(1).execute().data or []
     )
     if not rows:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
@@ -44,10 +47,12 @@ def _owned_or_404(sb, table: str, row_id: str, application_id: str) -> dict:
     return rows[0]
 
 
-def _find_request(sb, application_id: str, kind: str, ref_id: str) -> dict | None:
+def _find_request(sb, ctx: dict, kind: str, ref_id: str) -> dict | None:
     rows = (
         sb.table("founder_resource_requests").select("*")
-        .eq("application_id", application_id).eq("kind", kind).eq("ref_id", ref_id)
+        .eq("application_id", ctx["application_id"])
+        .eq("kind", kind).eq("ref_id", ref_id)
+        .eq("track", ctx["track"])
         .limit(1).execute().data or []
     )
     return rows[0] if rows else None
@@ -56,7 +61,7 @@ def _find_request(sb, application_id: str, kind: str, ref_id: str) -> dict | Non
 # ── Store ───────────────────────────────────────────────────────────────
 @router.get("/store")
 async def get_store(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
-    return frq.store_bundle(ctx["application_id"])
+    return frq.store_bundle(ctx["application_id"], ctx["track"])
 
 
 @router.post("/store/cart")
@@ -69,6 +74,7 @@ async def add_to_cart(body: CartItemIn, ctx: Annotated[dict, Depends(require_fou
     existing = (
         sb.table("founder_cart_items").select("*")
         .eq("application_id", application_id).eq("product_id", body.product_id)
+        .eq("track", ctx["track"])
         .limit(1).execute().data or []
     )
     if existing:
@@ -80,8 +86,9 @@ async def add_to_cart(body: CartItemIn, ctx: Annotated[dict, Depends(require_fou
             "application_id": application_id,
             "product_id": body.product_id,
             "qty": body.qty,
+            "track": ctx["track"],
         }).execute()
-    return frq.store_bundle(application_id)
+    return frq.store_bundle(application_id, ctx["track"])
 
 
 @router.patch("/store/cart/{product_id}")
@@ -91,12 +98,14 @@ async def set_cart_qty(product_id: str, body: CartQtyIn,
     application_id = ctx["application_id"]
     if body.qty <= 0:
         sb.table("founder_cart_items").delete() \
-            .eq("application_id", application_id).eq("product_id", product_id).execute()
-        return frq.store_bundle(application_id)
+            .eq("application_id", application_id).eq("product_id", product_id) \
+            .eq("track", ctx["track"]).execute()
+        return frq.store_bundle(application_id, ctx["track"])
 
     existing = (
         sb.table("founder_cart_items").select("*")
         .eq("application_id", application_id).eq("product_id", product_id)
+        .eq("track", ctx["track"])
         .limit(1).execute().data or []
     )
     if existing:
@@ -107,8 +116,9 @@ async def set_cart_qty(product_id: str, body: CartQtyIn,
                                 detail={"code": "unknown_product"})
         sb.table("founder_cart_items").insert({
             "application_id": application_id, "product_id": product_id, "qty": body.qty,
+            "track": ctx["track"],
         }).execute()
-    return frq.store_bundle(application_id)
+    return frq.store_bundle(application_id, ctx["track"])
 
 
 @router.delete("/store/cart/{product_id}")
@@ -116,8 +126,9 @@ async def remove_cart_item(product_id: str, ctx: Annotated[dict, Depends(require
     sb = get_admin_client()
     application_id = ctx["application_id"]
     sb.table("founder_cart_items").delete() \
-        .eq("application_id", application_id).eq("product_id", product_id).execute()
-    return frq.store_bundle(application_id)
+        .eq("application_id", application_id).eq("product_id", product_id) \
+        .eq("track", ctx["track"]).execute()
+    return frq.store_bundle(application_id, ctx["track"])
 
 
 @router.post("/store/quote-request")
@@ -127,18 +138,26 @@ async def request_quote(body: QuoteRequestIn, ctx: Annotated[dict, Depends(requi
                             detail={"code": "unknown_product"})
     sb = get_admin_client()
     application_id = ctx["application_id"]
-    if not _find_request(sb, application_id, "quote", body.product_id):
+    if not _find_request(sb, ctx, "quote", body.product_id):
         sb.table("founder_resource_requests").insert({
             "application_id": application_id, "kind": "quote", "ref_id": body.product_id,
+            "track": ctx["track"],
         }).execute()
     return {"quote_requested": True}
 
 
 @router.post("/store/push-to-procurement")
 async def push_to_procurement(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+    # Procurement is TIR-only (it feeds the residency expense account). VIP has
+    # no procurement table, so the store's push action is not offered there.
+    if ctx["track"] != "tir":
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail={"code": "not_available_for_track"},
+        )
     sb = get_admin_client()
     application_id = ctx["application_id"]
-    cart = frq.fetch_cart(application_id)
+    cart = frq.fetch_cart(application_id, ctx["track"])
     pushed = 0
     for row in cart:
         product = founder_catalog.catalog_by_id(row["product_id"])
@@ -159,14 +178,15 @@ async def push_to_procurement(ctx: Annotated[dict, Depends(require_founder_acces
             "status": "estimate",
         }).execute()
         pushed += 1
-    sb.table("founder_cart_items").delete().eq("application_id", application_id).execute()
+    sb.table("founder_cart_items").delete().eq("application_id", application_id) \
+        .eq("track", ctx["track"]).execute()
     return {"pushed": pushed}
 
 
 # ── Fundraising & connects ────────────────────────────────────────────────
 @router.get("/fundraising")
 async def get_fundraising(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
-    return frq.fundraising_bundle(ctx["application_id"])
+    return frq.fundraising_bundle(ctx["application_id"], ctx["track"])
 
 
 @router.post("/fundraising/intro")
@@ -176,12 +196,13 @@ async def toggle_intro(body: IntroIn, ctx: Annotated[dict, Depends(require_found
                             detail={"code": "unknown_investor"})
     sb = get_admin_client()
     application_id = ctx["application_id"]
-    existing = _find_request(sb, application_id, "intro", body.investor_id)
+    existing = _find_request(sb, ctx, "intro", body.investor_id)
     if existing:
         sb.table("founder_resource_requests").delete().eq("id", existing["id"]).execute()
         return {"intro_requested": False}
     sb.table("founder_resource_requests").insert({
         "application_id": application_id, "kind": "intro", "ref_id": body.investor_id,
+        "track": ctx["track"],
     }).execute()
     return {"intro_requested": True}
 
@@ -189,7 +210,7 @@ async def toggle_intro(body: IntroIn, ctx: Annotated[dict, Depends(require_found
 # ── Corporate partners ─────────────────────────────────────────────────────
 @router.get("/partners")
 async def get_partners(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
-    return frq.partners_bundle(ctx["application_id"])
+    return frq.partners_bundle(ctx["application_id"], ctx["track"])
 
 
 @router.post("/partners/request")
@@ -199,12 +220,13 @@ async def toggle_partner(body: PartnerRequestIn, ctx: Annotated[dict, Depends(re
                             detail={"code": "unknown_partner"})
     sb = get_admin_client()
     application_id = ctx["application_id"]
-    existing = _find_request(sb, application_id, "partner", body.partner_id)
+    existing = _find_request(sb, ctx, "partner", body.partner_id)
     if existing:
         sb.table("founder_resource_requests").delete().eq("id", existing["id"]).execute()
         return {"requested": False}
     sb.table("founder_resource_requests").insert({
         "application_id": application_id, "kind": "partner", "ref_id": body.partner_id,
+        "track": ctx["track"],
     }).execute()
     return {"requested": True}
 
@@ -212,7 +234,7 @@ async def toggle_partner(body: PartnerRequestIn, ctx: Annotated[dict, Depends(re
 # ── Book ARTPARK assets ─────────────────────────────────────────────────────
 @router.get("/assets")
 async def get_assets(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
-    return frq.assets_bundle(ctx["application_id"])
+    return frq.assets_bundle(ctx["application_id"], ctx["track"])
 
 
 @router.post("/assets/bookings")
@@ -229,6 +251,7 @@ async def create_booking(body: BookingIn, ctx: Annotated[dict, Depends(require_f
         "date": body.date,
         "slot": body.slot,
         "status": "pending",
+        "track": ctx["track"],
     }).execute().data[0]
     return row
 
@@ -236,21 +259,21 @@ async def create_booking(body: BookingIn, ctx: Annotated[dict, Depends(require_f
 @router.delete("/assets/bookings/{row_id}", status_code=http_status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_booking(row_id: str, ctx: Annotated[dict, Depends(require_founder_access)]) -> None:
     sb = get_admin_client()
-    _owned_or_404(sb, "founder_bookings", row_id, ctx["application_id"])
+    _owned_or_404(sb, "founder_bookings", row_id, ctx)
     sb.table("founder_bookings").delete().eq("id", row_id).execute()
 
 
 # ── IT & Facilities support ──────────────────────────────────────────────
 @router.get("/support")
 async def get_support(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
-    return frq.support_bundle(ctx["application_id"])
+    return frq.support_bundle(ctx["application_id"], ctx["track"])
 
 
 @router.post("/support/tickets")
 async def create_ticket(body: TicketIn, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
     sb = get_admin_client()
     application_id = ctx["application_id"]
-    existing = frq.fetch_tickets(application_id)
+    existing = frq.fetch_tickets(application_id, ctx["track"])
     ref = frq.next_ticket_ref(existing, body.area)
     row = sb.table("founder_tickets").insert({
         "application_id": application_id,
@@ -260,5 +283,6 @@ async def create_ticket(body: TicketIn, ctx: Annotated[dict, Depends(require_fou
         "subject": body.subject,
         "description": body.description,
         "status": "open",
+        "track": ctx["track"],
     }).execute().data[0]
     return row

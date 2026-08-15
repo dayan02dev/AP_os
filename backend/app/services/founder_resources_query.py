@@ -10,9 +10,14 @@ from ..supabase_client import get_admin_client
 
 
 # ── DB reads (service-role) ───────────────────────────────────────────────
-def _rows(table: str, application_id: str, order: str | None = "created_at") -> list[dict]:
+def _rows(table: str, application_id: str, track: str = "tir",
+          order: str | None = "created_at") -> list[dict]:
     sb = get_admin_client()
-    q = sb.table(table).select("*").eq("application_id", application_id)
+    q = (
+        sb.table(table).select("*")
+        .eq("application_id", application_id)
+        .eq("track", track)
+    )
     if order:
         try:
             q = q.order(order)
@@ -21,26 +26,26 @@ def _rows(table: str, application_id: str, order: str | None = "created_at") -> 
     return q.execute().data or []
 
 
-def fetch_cart(application_id: str) -> list[dict]:
-    return _rows("founder_cart_items", application_id)
+def fetch_cart(application_id: str, track: str = "tir") -> list[dict]:
+    return _rows("founder_cart_items", application_id, track)
 
 
-def fetch_requests(application_id: str, kind: str) -> list[dict]:
+def fetch_requests(application_id: str, kind: str, track: str = "tir") -> list[dict]:
     sb = get_admin_client()
     return (
         sb.table("founder_resource_requests").select("*")
-        .eq("application_id", application_id).eq("kind", kind)
+        .eq("application_id", application_id).eq("kind", kind).eq("track", track)
         .execute().data
         or []
     )
 
 
-def fetch_bookings(application_id: str) -> list[dict]:
-    return _rows("founder_bookings", application_id, order="date")
+def fetch_bookings(application_id: str, track: str = "tir") -> list[dict]:
+    return _rows("founder_bookings", application_id, track, order="date")
 
 
-def fetch_tickets(application_id: str) -> list[dict]:
-    return _rows("founder_tickets", application_id, order="created_at")
+def fetch_tickets(application_id: str, track: str = "tir") -> list[dict]:
+    return _rows("founder_tickets", application_id, track, order="created_at")
 
 
 # ── pure merge helpers (mirrors the mockup's derivations) ─────────────────
@@ -80,9 +85,9 @@ def cart_subtotal(cart: list[dict]) -> int:
     return total
 
 
-def store_bundle(application_id: str) -> dict:
-    cart = fetch_cart(application_id)
-    quote_requests = fetch_requests(application_id, "quote")
+def store_bundle(application_id: str, track: str = "tir") -> dict:
+    cart = fetch_cart(application_id, track)
+    quote_requests = fetch_requests(application_id, "quote", track)
     return {
         "catalog": merge_catalog(cart, quote_requests),
         "cart": build_cart_view(cart),
@@ -98,8 +103,8 @@ def merge_investors(intro_requests: list[dict]) -> list[dict]:
     ]
 
 
-def fundraising_bundle(application_id: str) -> dict:
-    intro_requests = fetch_requests(application_id, "intro")
+def fundraising_bundle(application_id: str, track: str = "tir") -> dict:
+    intro_requests = fetch_requests(application_id, "intro", track)
     return {
         "investors": merge_investors(intro_requests),
         "tools": cat.FR_TOOLS,
@@ -114,20 +119,20 @@ def merge_partners(partner_requests: list[dict]) -> list[dict]:
     ]
 
 
-def partners_bundle(application_id: str) -> dict:
-    partner_requests = fetch_requests(application_id, "partner")
+def partners_bundle(application_id: str, track: str = "tir") -> dict:
+    partner_requests = fetch_requests(application_id, "partner", track)
     return {"partners": merge_partners(partner_requests)}
 
 
-def assets_bundle(application_id: str) -> dict:
+def assets_bundle(application_id: str, track: str = "tir") -> dict:
     return {
         "assets": cat.ASSETS,
-        "bookings": fetch_bookings(application_id),
+        "bookings": fetch_bookings(application_id, track),
     }
 
 
-def support_bundle(application_id: str) -> dict:
-    return {"tickets": fetch_tickets(application_id)}
+def support_bundle(application_id: str, track: str = "tir") -> dict:
+    return {"tickets": fetch_tickets(application_id, track)}
 
 
 def next_ticket_ref(existing: list[dict], area: str) -> str:

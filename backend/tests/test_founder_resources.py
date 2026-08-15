@@ -40,10 +40,10 @@ def test_get_store_merges_cart_and_quote_flags(client, monkeypatch, _clear):
     _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_cart_items": [
-            {"id": "ci1", "application_id": "app1", "product_id": "c1", "qty": 2},
+            {"id": "ci1", "application_id": "app1", "product_id": "c1", "qty": 2, "track": "tir"},
         ],
         "founder_resource_requests": [
-            {"id": "r1", "application_id": "app1", "kind": "quote", "ref_id": "c6"},
+            {"id": "r1", "application_id": "app1", "kind": "quote", "ref_id": "c6", "track": "tir"},
         ],
     })
     app.dependency_overrides[get_current_user] = _override_user("u1")
@@ -84,7 +84,7 @@ def test_set_cart_qty_zero_deletes_line(client, monkeypatch, _clear):
     fake = _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_cart_items": [
-            {"id": "ci1", "application_id": "app1", "product_id": "c1", "qty": 2},
+            {"id": "ci1", "application_id": "app1", "product_id": "c1", "qty": 2, "track": "tir"},
         ],
         "founder_resource_requests": [],
     })
@@ -112,8 +112,8 @@ def test_push_to_procurement_inserts_and_clears_cart(client, monkeypatch, _clear
     fake = _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_cart_items": [
-            {"id": "ci1", "application_id": "app1", "product_id": "c1", "qty": 2},
-            {"id": "ci2", "application_id": "app1", "product_id": "c5", "qty": 1},
+            {"id": "ci1", "application_id": "app1", "product_id": "c1", "qty": 2, "track": "tir"},
+            {"id": "ci2", "application_id": "app1", "product_id": "c5", "qty": 1, "track": "tir"},
         ],
         "founder_resource_requests": [],
         "founder_procurement_items": [],
