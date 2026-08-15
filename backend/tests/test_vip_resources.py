@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import pytest
 
+from app.deps import get_current_user
+from app.main import app as _app
 from app.services import founder_resources_query as frq
 from tests.fixtures.fake_supabase import FakeSupabase
 
@@ -32,8 +34,8 @@ def fake(monkeypatch):
     return f
 
 
-def test_cart_defaults_to_tir(fake):
-    cart = frq.fetch_cart("shared")
+def test_cart_reads_only_the_tir_rows_for_tir(fake):
+    cart = frq.fetch_cart("shared", "tir")
     assert [c["product_id"] for c in cart] == ["p1"]
 
 
@@ -61,13 +63,7 @@ def test_bundles_pass_the_track_down(fake):
     assert frq.assets_bundle("shared", "sip")["bookings"] == []
 
 
-import pytest as _pytest
-
-from app.deps import get_current_user
-from app.main import app as _app
-
-
-@_pytest.fixture
+@pytest.fixture
 def _clear():
     yield
     _app.dependency_overrides.clear()

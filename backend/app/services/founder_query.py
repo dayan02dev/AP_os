@@ -90,7 +90,7 @@ def fetch_approach(application_id: str) -> dict:
     return rows[0] if rows else {}
 
 
-def fetch_mou(application_id: str, track: str = "tir") -> dict | None:
+def fetch_mou(application_id: str, track: str) -> dict | None:
     sb = get_admin_client()
     rows = (
         sb.table("founder_mou").select("*")

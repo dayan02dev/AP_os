@@ -2,9 +2,9 @@
 corporate partners, book ARTPARK assets, IT & Facilities support.
 
 Same ownership model as founder.py: every route depends on
-require_founder_access (caller owns an offered/onboarded TIR application);
-all reads/writes are scoped to that application_id via the service-role
-client, which the router enforces (not RLS).
+require_founder_access (caller owns an offered/onboarded application on
+either TIR or VIP); all reads/writes are scoped to that application_id AND
+track via the service-role client, which the router enforces (not RLS).
 """
 from __future__ import annotations
 

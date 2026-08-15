@@ -1,8 +1,11 @@
 """Reads + derivations for the Founders Resources tabs (procurement store,
 fundraising & connects, corporate partners, book ARTPARK assets, IT &
 Facilities support). Pure merge helpers are unit-tested directly; the
-fetch_* functions read via the service-role admin client, following the
-`.eq("application_id", ...)` pattern in founder_query.py."""
+fetch_* functions read via the service-role admin client and scope every
+query by `.eq("application_id", ...).eq("track", ...)` — `track` is a
+required argument on every fetch_*/*_bundle function here, on purpose: a
+forgotten track raises a TypeError instead of silently reading the other
+programme's rows."""
 from __future__ import annotations
 
 from . import founder_catalog as cat
@@ -10,7 +13,7 @@ from ..supabase_client import get_admin_client
 
 
 # ── DB reads (service-role) ───────────────────────────────────────────────
-def _rows(table: str, application_id: str, track: str = "tir",
+def _rows(table: str, application_id: str, track: str,
           order: str | None = "created_at") -> list[dict]:
     sb = get_admin_client()
     q = (
@@ -26,11 +29,11 @@ def _rows(table: str, application_id: str, track: str = "tir",
     return q.execute().data or []
 
 
-def fetch_cart(application_id: str, track: str = "tir") -> list[dict]:
+def fetch_cart(application_id: str, track: str) -> list[dict]:
     return _rows("founder_cart_items", application_id, track)
 
 
-def fetch_requests(application_id: str, kind: str, track: str = "tir") -> list[dict]:
+def fetch_requests(application_id: str, kind: str, track: str) -> list[dict]:
     sb = get_admin_client()
     return (
         sb.table("founder_resource_requests").select("*")
@@ -40,11 +43,11 @@ def fetch_requests(application_id: str, kind: str, track: str = "tir") -> list[d
     )
 
 
-def fetch_bookings(application_id: str, track: str = "tir") -> list[dict]:
+def fetch_bookings(application_id: str, track: str) -> list[dict]:
     return _rows("founder_bookings", application_id, track, order="date")
 
 
-def fetch_tickets(application_id: str, track: str = "tir") -> list[dict]:
+def fetch_tickets(application_id: str, track: str) -> list[dict]:
     return _rows("founder_tickets", application_id, track, order="created_at")
 
 
@@ -85,7 +88,7 @@ def cart_subtotal(cart: list[dict]) -> int:
     return total
 
 
-def store_bundle(application_id: str, track: str = "tir") -> dict:
+def store_bundle(application_id: str, track: str) -> dict:
     cart = fetch_cart(application_id, track)
     quote_requests = fetch_requests(application_id, "quote", track)
     return {
@@ -103,7 +106,7 @@ def merge_investors(intro_requests: list[dict]) -> list[dict]:
     ]
 
 
-def fundraising_bundle(application_id: str, track: str = "tir") -> dict:
+def fundraising_bundle(application_id: str, track: str) -> dict:
     intro_requests = fetch_requests(application_id, "intro", track)
     return {
         "investors": merge_investors(intro_requests),
@@ -119,19 +122,19 @@ def merge_partners(partner_requests: list[dict]) -> list[dict]:
     ]
 
 
-def partners_bundle(application_id: str, track: str = "tir") -> dict:
+def partners_bundle(application_id: str, track: str) -> dict:
     partner_requests = fetch_requests(application_id, "partner", track)
     return {"partners": merge_partners(partner_requests)}
 
 
-def assets_bundle(application_id: str, track: str = "tir") -> dict:
+def assets_bundle(application_id: str, track: str) -> dict:
     return {
         "assets": cat.ASSETS,
         "bookings": fetch_bookings(application_id, track),
     }
 
 
-def support_bundle(application_id: str, track: str = "tir") -> dict:
+def support_bundle(application_id: str, track: str) -> dict:
     return {"tickets": fetch_tickets(application_id, track)}
 
 

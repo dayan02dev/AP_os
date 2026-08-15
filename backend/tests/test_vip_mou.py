@@ -1,8 +1,6 @@
 """A VIP founder signs their own MOU; the two tracks never see each other's."""
 from __future__ import annotations
 
-import pytest
-
 from app.services import founder_mou, founder_query
 from tests.fixtures.fake_supabase import FakeSupabase
 
@@ -14,10 +12,10 @@ _MOU_ROWS = [
 ]
 
 
-def test_fetch_mou_defaults_to_tir(monkeypatch):
+def test_fetch_mou_reads_the_tir_row_for_tir(monkeypatch):
     fake = FakeSupabase({"founder_mou": list(_MOU_ROWS)})
     monkeypatch.setattr(founder_query, "get_admin_client", lambda: fake)
-    assert founder_query.fetch_mou("shared-id")["signer_name"] == "Tir Founder"
+    assert founder_query.fetch_mou("shared-id", "tir")["signer_name"] == "Tir Founder"
 
 
 def test_fetch_mou_reads_the_sip_row_for_sip(monkeypatch):

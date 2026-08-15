@@ -276,7 +276,7 @@ def sign_and_onboard(*, application_id: str, user_id: str, track: str,
     return row
 
 
-def signed_pdf_url(application_id: str, track: str = "tir") -> str | None:
+def signed_pdf_url(application_id: str, track: str) -> str | None:
     sb = get_admin_client()
     rows = (
         sb.table("founder_mou").select("signed_pdf_path")
