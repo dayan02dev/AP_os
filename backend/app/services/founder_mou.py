@@ -199,8 +199,9 @@ def _upload(path: str, data: bytes, content_type: str) -> None:
     )
 
 
-def sign_and_onboard(*, application_id: str, user_id: str, signer_name: str,
-                     founder_name: str, venture: str, signature_png: str,
+def sign_and_onboard(*, application_id: str, user_id: str, track: str,
+                     signer_name: str, founder_name: str, venture: str,
+                     signature_png: str,
                      acknowledgements: list[str] | None = None) -> dict:
     """Idempotent MOU sign. Returns the founder_mou row. 409 if already signed.
 
@@ -218,7 +219,8 @@ def sign_and_onboard(*, application_id: str, user_id: str, signer_name: str,
 
     sb = get_admin_client()
     existing = (
-        sb.table("founder_mou").select("*").eq("application_id", application_id)
+        sb.table("founder_mou").select("*")
+        .eq("application_id", application_id).eq("track", track)
         .limit(1).execute().data or []
     )
     if existing:
@@ -228,8 +230,8 @@ def sign_and_onboard(*, application_id: str, user_id: str, signer_name: str,
         )
 
     date_str = datetime.now(UTC).strftime("%d %b %Y")
-    sig_path = f"{application_id}/mou/signature.png"
-    pdf_path = f"{application_id}/mou/signed.pdf"
+    sig_path = f"{track}/{application_id}/mou/signature.png"
+    pdf_path = f"{track}/{application_id}/mou/signed.pdf"
 
     # 1) storage FIRST (raises before any status change)
     _upload(sig_path, decode_signature_png(signature_png), "image/png")
@@ -242,6 +244,7 @@ def sign_and_onboard(*, application_id: str, user_id: str, signer_name: str,
     # 2) record
     row = {
         "application_id": application_id,
+        "track": track,
         "signer_name": signer_name,
         "signed_at": datetime.now(UTC).isoformat(),
         "signature_image_path": sig_path,
@@ -260,23 +263,25 @@ def sign_and_onboard(*, application_id: str, user_id: str, signer_name: str,
         ) from exc
 
     # 3) flip status only if still 'offered' (idempotent for already-onboarded apps)
+    table = "tir_applications" if track == "tir" else "sip_applications"
     current = (
-        sb.table("tir_applications").select("status")
+        sb.table(table).select("status")
         .eq("id", application_id).limit(1).execute().data or []
     )
     if current and current[0].get("status") == "offered":
         state_machine.apply_status_change(
-            application_id, "tir", to_status="onboarded",
+            application_id, track, to_status="onboarded",
             changed_by=user_id, reason="MOU signed",
         )
     return row
 
 
-def signed_pdf_url(application_id: str) -> str | None:
+def signed_pdf_url(application_id: str, track: str = "tir") -> str | None:
     sb = get_admin_client()
     rows = (
         sb.table("founder_mou").select("signed_pdf_path")
-        .eq("application_id", application_id).limit(1).execute().data or []
+        .eq("application_id", application_id).eq("track", track)
+        .limit(1).execute().data or []
     )
     if not rows or not rows[0].get("signed_pdf_path"):
         return None

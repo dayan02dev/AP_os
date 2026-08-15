@@ -80,7 +80,7 @@ def test_sign_mou_twice_is_conflict(client, monkeypatch, _clear):
         "tir_applications": [{"id": "app1", "user_id": "u1", "status": "onboarded",
                               "grant_amount": 2500000, "submitted_at": "2026-07-01"}],
         "profiles": [{"id": "u1", "full_name": "Priya"}],
-        "founder_mou": [{"application_id": "app1", "signer_name": "Priya",
+        "founder_mou": [{"application_id": "app1", "track": "tir", "signer_name": "Priya",
                          "signed_pdf_path": "app1/mou/signed.pdf", "signed_at": "2026-07-10"}],
     })
     app.dependency_overrides[get_current_user] = _override_user("u1")
@@ -141,7 +141,7 @@ def test_me_reports_mou_signed_and_unlocked(client, monkeypatch, _clear):
         "tir_applications": [{"id": "app1", "user_id": "u1", "status": "onboarded",
                               "grant_amount": 2500000, "submitted_at": "2026-07-01"}],
         "profiles": [{"id": "u1", "full_name": "Priya"}],
-        "founder_mou": [{"application_id": "app1", "signed_pdf_path": "x", "signed_at": "2026-07-10"}],
+        "founder_mou": [{"application_id": "app1", "track": "tir", "signed_pdf_path": "x", "signed_at": "2026-07-10"}],
     })
     app.dependency_overrides[get_current_user] = _override_user("u1")
     r = client.get("/founder/me")
