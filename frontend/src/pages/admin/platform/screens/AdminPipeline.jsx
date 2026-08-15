@@ -21,6 +21,7 @@
 
 import React from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
+import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { Chip } from "../ui.jsx";
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
@@ -121,8 +122,12 @@ function downloadCsv(rows) {
 // TIR app moved to VIP would land in the wrong bucket, and a VIP app moved to
 // TIR would vanish from both. Filtering client-side on the effective track is
 // the only split that agrees with what the row claims to be.
+// `scopeKey` namespaces the sticky filters. The Applications and Rejected tabs
+// both render this component, so they need distinct scopes — otherwise
+// filtering one silently filters the other.
 export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnly = false, heading,
-  lockTrack = null }) {
+  lockTrack = null, scopeKey = 'applications' }) {
+  const scope = `admin.pipeline.${scopeKey}`;
   const { data, loading, error, reload } = useAdminData("pipeline", baseFilter);
   const S = data?.startups || [];
 
@@ -134,26 +139,29 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     return batchData.batches || [];
   }, [batchData]);
 
-  const [search, setSearch] = React.useState('');
-  const [trackState, setTrack] = React.useState('all');
+  const [search, setSearch] = useStickyState(scope, 'search', '');
+  const [trackState, setTrack] = useStickyState(scope, 'track', 'all');
   // A locked track always wins, so "Clear filters" can't widen the list past
-  // the tab's own scope.
+  // the tab's own scope — and neither can a restored value.
   const track = lockTrack || trackState;
-  const [status, setStatus] = React.useState('all');
-  const [industry, setIndustry] = React.useState('all');
-  const [batchFilter, setBatchFilter] = React.useState('all');
-  const [recoFilter, setRecoFilter] = React.useState(null);
+  const [status, setStatus] = useStickyState(scope, 'status', 'all');
+  const [industry, setIndustry] = useStickyState(scope, 'industry', 'all');
+  const [batchFilter, setBatchFilter] = useStickyState(scope, 'batch', 'all');
+  const [recoFilter, setRecoFilter] = useStickyState(scope, 'reco', null);
   const industries = React.useMemo(() => industryCountsFor(S, track), [S, track]);
   const recoCounts = React.useMemo(() => {
     const m = { yes: 0, maybe: 0, no: 0, none: 0 };
     S.forEach((s) => { m[aggregateReco(s.reco) || "none"] += 1; });
     return m;
   }, [S]);
-  const [filtersOpen, setFiltersOpen] = React.useState(false);
+  const [filtersOpen, setFiltersOpen] = useStickyState(scope, 'filtersOpen', false);
+  // Row selection is deliberately NOT sticky: coming back to a pre-selected set
+  // of rows makes the bulk-action bar act on a selection you no longer remember
+  // making.
   const [selectedIds, setSelectedIds] = React.useState([]);
 
-  const [sortCol, setSortCol] = React.useState(null);
-  const [sortAsc, setSortAsc] = React.useState(true);
+  const [sortCol, setSortCol] = useStickyState(scope, 'sortCol', null);
+  const [sortAsc, setSortAsc] = useStickyState(scope, 'sortAsc', true);
 
   const [busy, setBusy] = React.useState(false);
   const [note, setNote] = React.useState(null);

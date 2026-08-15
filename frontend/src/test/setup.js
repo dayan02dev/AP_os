@@ -2,20 +2,26 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, vi } from "vitest";
 
-// Every test starts with a clean localStorage. jsdom's Storage impl doesn't
+// Every test starts with clean web storage. jsdom's Storage impl doesn't
 // always expose .clear() as a real method, so loop safely.
-beforeEach(() => {
+function clearStorage(store) {
   try {
-    if (typeof localStorage !== "undefined") {
-      if (typeof localStorage.clear === "function") {
-        localStorage.clear();
-      } else {
-        for (const k of Object.keys(localStorage)) localStorage.removeItem(k);
-      }
+    if (typeof store === "undefined" || store === null) return;
+    if (typeof store.clear === "function") {
+      store.clear();
+    } else {
+      for (const k of Object.keys(store)) store.removeItem(k);
     }
   } catch {
     /* noop */
   }
+}
+
+beforeEach(() => {
+  clearStorage(typeof localStorage !== "undefined" ? localStorage : null);
+  // sessionStorage backs useStickyState (sticky portal filters) — without this
+  // a filter set in one test leaks into the next.
+  clearStorage(typeof sessionStorage !== "undefined" ? sessionStorage : null);
 });
 
 afterEach(() => {

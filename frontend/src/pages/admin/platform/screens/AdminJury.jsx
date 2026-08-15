@@ -16,6 +16,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { useAdminData } from "../../../../hooks/useAdminData";
+import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { PageHead } from "../shell/osAtoms";
 import { ManageJurorsDrawer } from "./ManageJurorsDrawer";
@@ -172,8 +173,8 @@ function JuryInviteModal({ onClose, onInvited }) {
 // ── Roster table ────────────────────────────────────────────────────────────
 
 function RosterTable({ jurors, pendingInvites, onManage, onDelete, onReload }) {
-  const [sortCol, setSortCol] = useState(null);
-  const [sortAsc, setSortAsc] = useState(true);
+  const [sortCol, setSortCol] = useStickyState("admin.jury.roster", "sortCol", null);
+  const [sortAsc, setSortAsc] = useStickyState("admin.jury.roster", "sortAsc", true);
 
   const handleSort = (col) => {
     if (sortCol === col) setSortAsc(a => !a);
@@ -468,10 +469,10 @@ export function AdminJury() {
   const [showInvite, setShowInvite] = useState(false);
 
   // Applications filter state (recommendedFor drives the pipeline load params).
-  const [search, setSearch] = useState("");
-  const [track, setTrack] = useState("");
-  const [recommendedFor, setRecommendedFor] = useState("");
-  const [pickedBy, setPickedBy] = useState("");
+  const [search, setSearch] = useStickyState("admin.jury.applications", "search", "");
+  const [track, setTrack] = useStickyState("admin.jury.applications", "track", "");
+  const [recommendedFor, setRecommendedFor] = useStickyState("admin.jury.applications", "recommendedFor", "");
+  const [pickedBy, setPickedBy] = useStickyState("admin.jury.applications", "pickedBy", "");
   const [recomputeMsg, setRecomputeMsg] = useState(null);
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [autoMsg, setAutoMsg] = useState(null);

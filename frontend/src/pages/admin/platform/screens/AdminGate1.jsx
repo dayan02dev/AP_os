@@ -31,6 +31,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 
 import { useAdminData, loadDetail } from "../../../../hooks/useAdminData";
+import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { adminPlatformApi }  from "../../../../lib/adminPlatformApi";
 import { BUTTON_TO_DECISION } from "../../../../lib/adminDataAdapter";
 import { moveButtonLabel } from "../../../../lib/trackMove";
@@ -401,7 +402,7 @@ function GateReviewStack({ items, reload, goDetail }) {
 // VARIANT C · Batch decision room (prototype: GateReviewBatchDecision)
 // ══════════════════════════════════════════════════════════════════════════
 function GateReviewBatchDecision({ items, reload, goDetail }) {
-  const [selectedBatch, setSelectedBatch]     = useState("All");
+  const [selectedBatch, setSelectedBatch]     = useStickyState("admin.gate1", "batch", "All");
   const [draftDecisions, setDraftDecisions]   = useState({}); // id → 'APPROVED' | 'HOLD' | 'REJECTED'
   const [busy, setBusy]                       = useState(false);
   const [note, setNote]                       = useState(null);
@@ -568,8 +569,8 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
   const [editingId, setEditingId]   = useState(null);
   const [busy, setBusy]             = useState(false);
   const [note, setNote]             = useState(null);
-  const [sortCol, setSortCol]       = useState(null);
-  const [sortAsc, setSortAsc]       = useState(true);
+  const [sortCol, setSortCol]       = useStickyState("admin.gate1.history", "sortCol", null);
+  const [sortAsc, setSortAsc]       = useStickyState("admin.gate1.history", "sortAsc", true);
 
   // Apps with a non-null adminDecision
   const startups = useMemo(

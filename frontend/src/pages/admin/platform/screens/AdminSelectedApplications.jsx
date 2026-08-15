@@ -24,6 +24,7 @@
 import React, { useMemo, useRef, useState } from "react";
 
 import { useAdminData } from "../../../../hooks/useAdminData";
+import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { useAuth } from "../../../../hooks/useAuth.jsx";
 import { icDocumentsApi } from "../../../../lib/icDocumentsApi";
 import { stampSignature, formatSignedAt } from "../../../../lib/pdfSign";
@@ -335,11 +336,11 @@ export function AdminSelectedApplications({ goDetail } = {}) {
   const pipeline = useAdminData("pipeline", { status: "jury_review" });
   const docs = useAdminData("icDocuments");
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useStickyState("admin.selected", "search", "");
   // Both tracks share the list; this narrows it. Filtering happens on the
   // EFFECTIVE track (what the row claims to be) — the server's `track` filter
   // keys off the NATIVE track, so a moved app would land in the wrong bucket.
-  const [track, setTrack] = useState("all");
+  const [track, setTrack] = useStickyState("admin.selected", "track", "all");
   const [uploadFor, setUploadFor] = useState(null);
   const [signFor, setSignFor] = useState(null);
   const [notice, setNotice] = useState(null);

@@ -17,6 +17,7 @@
 
 import { useState } from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
+import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { PageHead } from "../shell/osAtoms";
 import { LoadingState, ErrorState, EmptyState } from "../ui.jsx";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi.js";
@@ -57,7 +58,7 @@ function triggerDownload(text, filename) {
 }
 
 export function AdminAudit() {
-  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [filters, setFilters] = useStickyState("admin.audit", "filters", EMPTY_FILTERS);
   const params = toQuery(filters);
 
   const { data, loading, error, reload } = useAdminData("audit", params);

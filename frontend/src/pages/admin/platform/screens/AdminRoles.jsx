@@ -19,6 +19,7 @@
 
 import React, { useState, useEffect, useMemo, useReducer } from "react";
 import { adminApi } from "../../../../lib/adminApi";
+import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { generateBasicPassword } from "../helpers/adminHelpers";
 import { PageHead, Chip } from "../shell/osAtoms";
 import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
@@ -97,8 +98,8 @@ export function AdminRoles() {
   }, [refetchTick]);
 
   // ── Sort ─────────────────────────────────────────────────────────────────
-  const [sortCol, setSortCol] = useState(null);
-  const [sortAsc, setSortAsc] = useState(true);
+  const [sortCol, setSortCol] = useStickyState("admin.roles", "sortCol", null);
+  const [sortAsc, setSortAsc] = useStickyState("admin.roles", "sortAsc", true);
 
   const handleSort = (col) => {
     if (sortCol === col) setSortAsc(!sortAsc);
@@ -122,7 +123,7 @@ export function AdminRoles() {
   };
 
   // ── Search / filter ───────────────────────────────────────────────────────
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useStickyState("admin.roles", "search", "");
 
   const filteredUsers = users.filter(u =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||

@@ -7,6 +7,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import * as auth from "../lib/auth.js";
 import { loadSession } from "../lib/session.js";
+import { clearStickyState } from "./useStickyState.js";
 
 const AuthContext = createContext(null);
 
@@ -87,6 +88,9 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(async () => {
     await auth.logout();
+    // Portal filters persist per browser tab; staff share machines, so the next
+    // person to sign in here must not inherit the previous user's filtered view.
+    clearStickyState();
     setUser(null);
   }, []);
 

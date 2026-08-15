@@ -7,25 +7,38 @@
 //   * `reviewStatus` is only not-started | draft | submitted (no in-progress)
 //   * `due` is an ISO timestamp (or null) → rendered as a short date
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef } from "react";
 import { LoadingState, ErrorState, Chip } from "./ui.jsx";
 import { relabelDisplayId, trackLabel } from "../../../lib/trackLabel.js";
 import { RecoBadge, RECO_LABEL } from "../../../components/RecoCell.jsx";
+import { useStickyState } from "../../../hooks/useStickyState.js";
+
+const SCOPE = "reviewer.queue";
 
 // The queue is fetched once at the ReviewerPortal shell level and passed down
 // via `queueAsync` ({ data, loading, error, reload }) so the queue table and
 // the tab badge share a single getQueue request per page view.
 export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsync }) {
-  const [search, setSearch] = useState("");
-  const [track, setTrack] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [stageFilter, setStageFilter] = useState("all");
-  const [domainFilter, setDomainFilter] = useState(initialDomain);
-  const [recoFilter, setRecoFilter] = useState("all");
-  const [showFilters, setShowFilters] = useState(false);
+  const [search, setSearch] = useStickyState(SCOPE, "search", "");
+  const [track, setTrack] = useStickyState(SCOPE, "track", "all");
+  const [statusFilter, setStatusFilter] = useStickyState(SCOPE, "status", "all");
+  const [stageFilter, setStageFilter] = useStickyState(SCOPE, "stage", "all");
+  const [domainFilter, setDomainFilter] = useStickyState(SCOPE, "domain", "all");
+  const [recoFilter, setRecoFilter] = useStickyState(SCOPE, "reco", "all");
+  const [showFilters, setShowFilters] = useStickyState(SCOPE, "showFilters", false);
 
-  const [sortCol, setSortCol] = useState(null);
-  const [sortAsc, setSortAsc] = useState(true);
+  const [sortCol, setSortCol] = useStickyState(SCOPE, "sortCol", null);
+  const [sortAsc, setSortAsc] = useStickyState(SCOPE, "sortAsc", true);
+
+  // Arriving from the dashboard's "pick an industry" tile carries a domain in
+  // router state. That is a deliberate act, so it overrides — and replaces —
+  // whatever domain was remembered. Adjusting during render (rather than in an
+  // effect) keeps the remembered filter from flashing on screen first.
+  const appliedDomainRef = useRef(null);
+  if (initialDomain !== "all" && appliedDomainRef.current !== initialDomain) {
+    appliedDomainRef.current = initialDomain;
+    if (domainFilter !== initialDomain) setDomainFilter(initialDomain);
+  }
 
   const { data, loading, error, reload } = queueAsync;
   const allQueue = data || [];

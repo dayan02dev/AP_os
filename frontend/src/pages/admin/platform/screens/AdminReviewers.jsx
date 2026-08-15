@@ -13,6 +13,7 @@
 import React, { useState, useMemo } from "react";
 
 import { useAdminData } from "../../../../hooks/useAdminData";
+import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { adminApi } from "../../../../lib/adminApi";
 import { PageHead } from "../shell/osAtoms";
@@ -483,8 +484,8 @@ export function AdminReviewers() {
   const R = liveReviewers;
 
   // Sorting
-  const [sortCol, setSortCol] = useState(null);
-  const [sortAsc, setSortAsc] = useState(true);
+  const [sortCol, setSortCol] = useStickyState("admin.reviewers", "sortCol", null);
+  const [sortAsc, setSortAsc] = useStickyState("admin.reviewers", "sortAsc", true);
 
   const handleSort = (col) => {
     if (sortCol === col) setSortAsc(a => !a);

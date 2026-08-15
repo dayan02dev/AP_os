@@ -410,8 +410,8 @@ function AdminApp() {
           )}
           <div className="lp-tab-content">
             {page === 'dashboard'   && <AdminDashboard go={setPage} decisionMode={decisionMode} />}
-            {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ exclude_status: 'rejected,jury_review' }} />}
-            {page === 'rejected'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ status: 'rejected' }} readOnly heading="Rejected applications" />}
+            {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ exclude_status: 'rejected,jury_review' }} scopeKey="applications" />}
+            {page === 'rejected'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ status: 'rejected' }} readOnly heading="Rejected applications" scopeKey="rejected" />}
             {/* Both tracks, one list. Each row carries a TRACK chip and the
                 memo upload / approve actions. */}
             {page === 'jury_selected' && <AdminSelectedApplications goDetail={goDetail} />}

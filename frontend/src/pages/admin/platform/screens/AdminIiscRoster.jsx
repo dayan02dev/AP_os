@@ -13,6 +13,7 @@
 // so "← Back to roster" returns you to the same view.
 import React, { useEffect, useMemo, useState } from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
+import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { LABEL_TO_TOKEN, TOKEN_TO_LABEL, DOMAIN_TOKENS } from "../../../../lib/artparkDomains";
 import { PageHead } from "../shell/osAtoms";
@@ -74,14 +75,14 @@ export function AdminIiscRoster() {
     return s;
   }, [jurorsData.data]);
 
-  const [search, setSearch] = useState("");
-  const [division, setDivision] = useState("");
-  const [department, setDepartment] = useState("");
-  const [match, setMatch] = useState("");
-  const [domain, setDomain] = useState("");
-  const [uniqueOnly, setUniqueOnly] = useState(false);
-  const [sortCol, setSortCol] = useState(null);
-  const [sortAsc, setSortAsc] = useState(true);
+  const [search, setSearch] = useStickyState("admin.iiscRoster", "search", "");
+  const [division, setDivision] = useStickyState("admin.iiscRoster", "division", "");
+  const [department, setDepartment] = useStickyState("admin.iiscRoster", "department", "");
+  const [match, setMatch] = useStickyState("admin.iiscRoster", "match", "");
+  const [domain, setDomain] = useStickyState("admin.iiscRoster", "domain", "");
+  const [uniqueOnly, setUniqueOnly] = useStickyState("admin.iiscRoster", "uniqueOnly", false);
+  const [sortCol, setSortCol] = useStickyState("admin.iiscRoster", "sortCol", null);
+  const [sortAsc, setSortAsc] = useStickyState("admin.iiscRoster", "sortAsc", true);
   // Index into `rows` of the professor whose full page is open; null = list view.
   const [openIdx, setOpenIdx] = useState(null);
   const [invite, setInvite] = useState(null);
