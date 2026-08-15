@@ -11,6 +11,7 @@ import FounderExpense from "./FounderExpense.jsx";
 import FounderTlr from "./FounderTlr.jsx";
 import FounderMis from "./FounderMis.jsx";
 import FounderDashboard from "./FounderDashboard.jsx";
+import VipDashboard from "./VipDashboard.jsx";
 import FounderLocked from "./FounderLocked.jsx";
 import FounderStore from "./FounderStore.jsx";
 import FounderFundraising from "./FounderFundraising.jsx";
@@ -197,7 +198,7 @@ export default function FounderPortal({ tab = "application" }) {
       case "expense": return <FounderExpense />;
       case "tlr": return <FounderTlr />;
       case "mis": return <FounderMis />;
-      case "dashboard": return <FounderDashboard />;
+      case "dashboard": return me.track === "sip" ? <VipDashboard /> : <FounderDashboard />;
       case "store": return <FounderStore track={me.track} />;
       case "fundraising": return <FounderFundraising />;
       case "partners": return <FounderPartners />;

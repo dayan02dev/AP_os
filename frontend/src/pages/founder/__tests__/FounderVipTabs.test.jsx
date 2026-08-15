@@ -59,6 +59,29 @@ describe("VIP cohort tabs", () => {
     await waitFor(() => expect(screen.getByText(/Push to procurement/i)).toBeInTheDocument());
   });
 
+  it("shows the VIP placeholder on the dashboard tab, not the TIR residency dashboard", async () => {
+    vi.spyOn(founderApi, "me").mockResolvedValue({ ...me(false), track: "sip" });
+    render(<MemoryRouter><FounderPortal tab="dashboard" /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText(/Your programme dashboard/i)).toBeInTheDocument());
+    expect(screen.queryByText(/Residency dashboard/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/TIR ·/)).not.toBeInTheDocument();
+  });
+
+  it("still shows the residency dashboard for a TIR founder", async () => {
+    vi.spyOn(founderApi, "getResidency").mockResolvedValue({
+      app: { project_name: "Dharini", cohort: "Cohort 04", team_names: [], week: 1, weeks_total: 24, weeks_remaining: 23 },
+      tiles: { derisking_pct: 0, validated: 0, total_experiments: 0, tasks_done: 0, tasks_total: 0, budget_drawn: 0, budget_pct: 0, next_milestone: null },
+      experiments: [],
+      feed: [],
+      expense: { monthly_payroll: 0, payroll_drawn: 0, bom_total: 0, equip_total: 0, remaining: 0, segments: {}, proc_committed: 0, proc_quoted: 0, proc_count: 0 },
+    });
+    vi.spyOn(founderApi, "listTeam").mockResolvedValue([]);
+    vi.spyOn(founderApi, "me").mockResolvedValue({ ...me(false), track: "tir" });
+    render(<MemoryRouter><FounderPortal tab="dashboard" /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText("Residency dashboard")).toBeInTheDocument());
+    expect(screen.getByText(/TIR ·/)).toBeInTheDocument();
+  });
+
   it("fetches the VIP application from the sip endpoint, not the TIR one", async () => {
     const get = vi.spyOn(api, "get").mockResolvedValue([{ id: "a1" }]);
     vi.spyOn(founderApi, "me").mockResolvedValue({ ...me(false), track: "sip" });
