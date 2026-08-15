@@ -239,7 +239,7 @@ def test_cannot_delete_another_apps_booking(client, monkeypatch, _clear):
         "tir_applications": [_APP],
         "founder_bookings": [{"id": "bk-other", "application_id": "app-OTHER",
                               "asset_id": "a1", "asset_name": "X", "date": "2026-08-01",
-                              "slot": "Morning (9–1)", "status": "pending"}],
+                              "slot": "Morning (9–1)", "status": "pending", "track": "tir"}],
     })
     app.dependency_overrides[get_current_user] = _override_user("u1")
     r = client.delete("/founder/assets/bookings/bk-other")

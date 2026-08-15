@@ -202,10 +202,11 @@ def test_dashboard_onboarding_pct(client, monkeypatch, _clear):
                               "grant_amount": 2500000, "submitted_at": "2026-07-01"}],
         "founder_team_members": [{"id": "m1", "application_id": "app1", "monthly_cost": 180000}],
         "founder_bom_items": [], "founder_equipment_items": [], "founder_procurement_items": [],
-        "founder_mou": [{"application_id": "app1", "signed_pdf_path": "x"}],
+        "founder_mou": [{"application_id": "app1", "track": "tir", "signed_pdf_path": "x"}],
     })
     app.dependency_overrides[get_current_user] = _override_user("u1")
     body = client.get("/founder/dashboard").json()
     assert body["onboarding_pct"] == 100
+    assert body["mou_signed"] is True
     assert body["payroll_monthly"] == 180000
     assert body["payroll_annual"] == 2160000
