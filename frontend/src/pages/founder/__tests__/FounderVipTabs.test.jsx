@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import FounderPortal from "../FounderPortal.jsx";
 import { founderApi } from "../../../lib/founderApi.js";
+import { api } from "../../../lib/api.js";
 
 vi.mock("../../../hooks/useAuth.jsx", () => ({
   useAuth: () => ({ user: { email: "founder@x.com", roles: [] }, logout: () => Promise.resolve() }),
@@ -56,5 +57,13 @@ describe("VIP cohort tabs", () => {
     await waitFor(() => expect(screen.getByText(/procurement store/i)).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /Cart/ }));
     await waitFor(() => expect(screen.getByText(/Push to procurement/i)).toBeInTheDocument());
+  });
+
+  it("fetches the VIP application from the sip endpoint, not the TIR one", async () => {
+    const get = vi.spyOn(api, "get").mockResolvedValue([{ id: "a1" }]);
+    vi.spyOn(founderApi, "me").mockResolvedValue({ ...me(false), track: "sip" });
+    render(<MemoryRouter><FounderPortal tab="application" /></MemoryRouter>);
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/sip-applications/me/submitted"));
+    expect(get).not.toHaveBeenCalledWith("/applications/me/submitted");
   });
 });
