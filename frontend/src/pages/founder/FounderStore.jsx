@@ -42,7 +42,7 @@ function matchesFilter(product, filter) {
   return true;
 }
 
-export default function FounderStore() {
+export default function FounderStore({ track = "tir" }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState("all");
@@ -134,9 +134,11 @@ export default function FounderStore() {
                 </div>
                 <div className="cart-pop-foot">
                   <div className="cart-pop-sub"><span>Subtotal</span><span className="v">{fmtINR(data.cart_subtotal)}</span></div>
-                  <button type="button" className="btn btn-primary" style={{ justifyContent: "center" }} disabled={data.cart.length === 0 || busy} onClick={pushCart}>
-                    Push to procurement <span className="arrow">→</span>
-                  </button>
+                  {track === "tir" && (
+                    <button type="button" className="btn btn-primary" style={{ justifyContent: "center" }} disabled={data.cart.length === 0 || busy} onClick={pushCart}>
+                      Push to procurement <span className="arrow">→</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </>

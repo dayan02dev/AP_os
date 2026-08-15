@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import FounderPortal from "../FounderPortal.jsx";
 import { founderApi } from "../../../lib/founderApi.js";
@@ -36,5 +36,25 @@ describe("VIP cohort tabs", () => {
       await waitFor(() => expect(screen.getByText(/sign your MOU/i)).toBeInTheDocument());
       unmount();
     }
+  });
+
+  it("hides Push to procurement for a VIP founder but keeps it for TIR", async () => {
+    vi.spyOn(founderApi, "getStore").mockResolvedValue({
+      catalog: [], cart: [{ product_id: "p1", name: "Thing", qty: 1, unit_price: 100, line_total: 100 }],
+      cart_subtotal: 100,
+    });
+
+    vi.spyOn(founderApi, "me").mockResolvedValue({ ...me(false), track: "sip" });
+    const vip = render(<MemoryRouter><FounderPortal tab="store" /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText(/procurement store/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Cart/ }));
+    expect(screen.queryByText(/Push to procurement/i)).not.toBeInTheDocument();
+    vip.unmount();
+
+    vi.spyOn(founderApi, "me").mockResolvedValue({ ...me(false), track: "tir" });
+    render(<MemoryRouter><FounderPortal tab="store" /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText(/procurement store/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Cart/ }));
+    await waitFor(() => expect(screen.getByText(/Push to procurement/i)).toBeInTheDocument());
   });
 });
