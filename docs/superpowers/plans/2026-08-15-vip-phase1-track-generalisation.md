@@ -85,8 +85,10 @@ def test_mou_uniqueness_moves_to_track_plus_application():
 
 
 def test_migration_is_transactional():
+    # `in` rather than startswith: the file opens with a comment header
+    # explaining why the FKs are dropped, which is worth keeping.
     sql = _sql()
-    assert sql.strip().startswith("begin;")
+    assert "begin;" in sql
     assert sql.strip().endswith("commit;")
 ```
 
@@ -692,6 +694,10 @@ def test_sign_stamps_the_track_and_flips_the_sip_application(monkeypatch):
     monkeypatch.setattr(founder_mou, "get_admin_client", lambda: fake)
     monkeypatch.setattr(founder_mou, "_upload", lambda *a, **k: None)
     monkeypatch.setattr(founder_mou, "render_signed_pdf", lambda **k: b"%PDF-")
+    # decode_signature_png enforces the real PNG magic bytes; these tests are
+    # about track scoping, and decoding already has its own tests in
+    # test_founder_mou.py.
+    monkeypatch.setattr(founder_mou, "decode_signature_png", lambda _s: b"\x89PNG\r\n\x1a\n")
 
     flips: list[tuple] = []
     monkeypatch.setattr(
@@ -717,6 +723,10 @@ def test_signing_on_sip_is_not_blocked_by_a_tir_row_with_the_same_id(monkeypatch
     monkeypatch.setattr(founder_mou, "get_admin_client", lambda: fake)
     monkeypatch.setattr(founder_mou, "_upload", lambda *a, **k: None)
     monkeypatch.setattr(founder_mou, "render_signed_pdf", lambda **k: b"%PDF-")
+    # decode_signature_png enforces the real PNG magic bytes; these tests are
+    # about track scoping, and decoding already has its own tests in
+    # test_founder_mou.py.
+    monkeypatch.setattr(founder_mou, "decode_signature_png", lambda _s: b"\x89PNG\r\n\x1a\n")
     monkeypatch.setattr(founder_mou.state_machine, "apply_status_change",
                         lambda *a, **k: None)
 
@@ -1620,25 +1630,18 @@ Update the founder block's comment to list them:
           approach/org/expense for TIR and tlr/mis for VIP. */}
 ```
 
-- [ ] **Step 6: Verify `FounderLocked` says "sign your MOU"**
+- [ ] **Step 6: Run tests to verify they pass**
 
-```bash
-cd .claude/worktrees/vip-onboarding/frontend
-cat src/pages/founder/FounderLocked.jsx
-```
-
-If its copy does not contain the phrase "sign your MOU", adjust the third assertion in the test to match the actual copy rather than changing the component.
-
-- [ ] **Step 7: Run tests to verify they pass**
+`FounderLocked` renders "Sign your MOU to unlock {what}" — already confirmed, so the third test's `/sign your MOU/i` assertion matches. Do not change that component.
 
 ```bash
 cd .claude/worktrees/vip-onboarding/frontend
 npx vitest run src/pages/founder
 ```
 
-Expected: PASS — the full founder suite, now 46 tests.
+Expected: PASS — the whole founder suite, including the 3 new tests here and the 5 from Task 6.
 
-- [ ] **Step 8: Build**
+- [ ] **Step 7: Build**
 
 ```bash
 cd .claude/worktrees/vip-onboarding/frontend
@@ -1647,7 +1650,7 @@ npm run build
 
 Expected: build succeeds with no unresolved imports.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add frontend/src/pages/founder/FounderTlr.jsx frontend/src/pages/founder/FounderMis.jsx frontend/src/pages/founder/FounderPortal.jsx frontend/src/router.jsx frontend/src/pages/founder/__tests__/FounderVipTabs.test.jsx
