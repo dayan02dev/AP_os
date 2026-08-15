@@ -8,6 +8,8 @@ import FounderMou from "./FounderMou.jsx";
 import FounderApproach from "./FounderApproach.jsx";
 import FounderOrganization from "./FounderOrganization.jsx";
 import FounderExpense from "./FounderExpense.jsx";
+import FounderTlr from "./FounderTlr.jsx";
+import FounderMis from "./FounderMis.jsx";
 import FounderDashboard from "./FounderDashboard.jsx";
 import FounderLocked from "./FounderLocked.jsx";
 import FounderStore from "./FounderStore.jsx";
@@ -184,7 +186,7 @@ export default function FounderPortal({ tab = "application" }) {
 
   const renderTab = () => {
     // gate cohort/dashboard tabs until MOU signed
-    if ((tab === "approach" || tab === "org" || tab === "expense") && locked.cohort)
+    if (["approach", "org", "expense", "tlr", "mis"].includes(tab) && locked.cohort)
       return <FounderLocked which="cohort" onGoMou={() => navigate("/founder/mou")} />;
     if (tab === "dashboard" && locked.dashboard)
       return <FounderLocked which="dashboard" onGoMou={() => navigate("/founder/mou")} />;
@@ -193,13 +195,15 @@ export default function FounderPortal({ tab = "application" }) {
       case "approach": return <FounderApproach />;
       case "org": return <FounderOrganization />;
       case "expense": return <FounderExpense />;
+      case "tlr": return <FounderTlr />;
+      case "mis": return <FounderMis />;
       case "dashboard": return <FounderDashboard />;
-      case "store": return <FounderStore />;
+      case "store": return <FounderStore track={me.track} />;
       case "fundraising": return <FounderFundraising />;
       case "partners": return <FounderPartners />;
       case "assets": return <FounderAssets />;
       case "support": return <FounderSupport />;
-      default: return <FounderApplication me={me} />;
+      default: return <FounderApplication me={me} track={me.track} />;
     }
   };
 

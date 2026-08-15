@@ -368,13 +368,16 @@ export default function AppRoutes() {
       {/* Founder Portal (post-onboarding). Auth-gated only — FounderRoute
           wraps ProtectedRoute internally; the server `/founder/me` 403 is the
           real access gate, shown inside FounderPortal. Deep-linkable:
-          /founder (application) · mou · approach · org · expense · dashboard ·
-          store · fundraising · partners · assets · support. */}
+          /founder (application) · mou · dashboard · store · fundraising ·
+          partners · assets · support — plus the track-specific cohort tabs,
+          approach/org/expense for TIR and tlr/mis for VIP. */}
       <Route path="/founder" element={<FounderRoute tab="application" />} />
       <Route path="/founder/mou" element={<FounderRoute tab="mou" />} />
       <Route path="/founder/approach" element={<FounderRoute tab="approach" />} />
       <Route path="/founder/org" element={<FounderRoute tab="org" />} />
       <Route path="/founder/expense" element={<FounderRoute tab="expense" />} />
+      <Route path="/founder/tlr" element={<FounderRoute tab="tlr" />} />
+      <Route path="/founder/mis" element={<FounderRoute tab="mis" />} />
       <Route path="/founder/dashboard" element={<FounderRoute tab="dashboard" />} />
       {/* Founders resources — not MOU-gated, available once in the portal. */}
       <Route path="/founder/store" element={<FounderRoute tab="store" />} />
