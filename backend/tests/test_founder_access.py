@@ -141,3 +141,83 @@ def test_multi_entry_allowlist_parses(client, monkeypatch, _clear, _allowlist):
     app.dependency_overrides[get_current_user] = _override_user("u1", "founder@artpark.in")
     r = client.get("/founder/me")
     assert r.status_code == 200, r.text
+
+
+# ── VIP / sip track ───────────────────────────────────────────────────
+
+_SIP_OFFERED_APP = {
+    "sip_applications": [
+        {"id": "sapp1", "user_id": "u1", "status": "offered",
+         "submitted_at": "2026-07-01"},
+    ],
+}
+
+
+def test_sip_offered_owner_gets_access(client, monkeypatch, _clear):
+    _install(monkeypatch, _SIP_OFFERED_APP)
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.get("/founder/me")
+    assert r.status_code == 200, r.text
+    assert r.json()["track"] == "sip"
+    assert r.json()["status"] == "offered"
+
+
+def test_sip_non_offered_user_is_denied(client, monkeypatch, _clear):
+    _install(monkeypatch, {
+        "sip_applications": [
+            {"id": "sapp1", "user_id": "u1", "status": "submitted",
+             "submitted_at": "2026-07-01"},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.get("/founder/me")
+    assert r.status_code == 403
+
+
+def test_other_users_sip_app_is_not_visible(client, monkeypatch, _clear):
+    _install(monkeypatch, {
+        "sip_applications": [
+            {"id": "sapp1", "user_id": "someone_else", "status": "onboarded",
+             "submitted_at": "2026-07-01"},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.get("/founder/me")
+    assert r.status_code == 403
+
+
+def test_tir_wins_when_a_user_holds_both(client, monkeypatch, _clear):
+    """Shouldn't happen, but the resolution order must be deterministic."""
+    _install(monkeypatch, {
+        "tir_applications": [
+            {"id": "app1", "user_id": "u1", "status": "onboarded",
+             "grant_amount": 2500000, "submitted_at": "2026-07-01"},
+        ],
+        "sip_applications": [
+            {"id": "sapp1", "user_id": "u1", "status": "onboarded",
+             "submitted_at": "2026-07-02"},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.get("/founder/me")
+    assert r.status_code == 200, r.text
+    assert r.json()["track"] == "tir"
+    assert r.json()["application_id"] == "app1"
+
+
+def test_allowlist_gates_sip_founders_too(client, monkeypatch, _clear, _allowlist):
+    _allowlist("founder@artpark.in")
+    _install(monkeypatch, _SIP_OFFERED_APP)
+    app.dependency_overrides[get_current_user] = _override_user("u1", "nope@gmail.com")
+    r = client.get("/founder/me")
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "founder_access_denied"
+
+
+def test_sip_founder_has_no_grant_amount(client, monkeypatch, _clear):
+    """sip_applications has no grant_amount column; /me must not 500."""
+    _install(monkeypatch, _SIP_OFFERED_APP)
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.get("/founder/me")
+    assert r.status_code == 200, r.text
+    assert r.json()["grant_amount"] == 0

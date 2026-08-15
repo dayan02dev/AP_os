@@ -1,9 +1,11 @@
-"""TIR post-onboarding Founder Portal endpoints (Wave 1).
+"""Post-onboarding Founder Portal endpoints.
 
-Gate: the caller must own a TIR application whose status is 'offered' or
-'onboarded'. Access is by ownership, not RBAC role — this is the applicant's
-own data. All reads/writes go through the service-role admin client; the
-router enforces application_id ↔ user_id ownership.
+Serves both tracks. Gate: the caller must own an application whose status is
+'offered' or 'onboarded' in either tir_applications or sip_applications.
+Access is by ownership, not RBAC role — this is the applicant's own data. All
+reads/writes go through the service-role admin client; the router enforces
+application_id ↔ user_id ownership, and every shared table is additionally
+scoped by track.
 """
 from __future__ import annotations
 
@@ -36,25 +38,33 @@ router = APIRouter(prefix="/founder", tags=["founder"])
 
 _ACCESS_STATUSES = ("offered", "onboarded")
 
+# Resolution order matters: a user should never hold an offered/onboarded app
+# on both tracks, but if they somehow do, TIR wins deterministically rather
+# than depending on row order. `sip_applications` has no grant_amount column,
+# so each track carries its own projection.
+_TRACK_SOURCES: tuple[tuple[str, str, str], ...] = (
+    ("tir", "tir_applications", "id,status,grant_amount,submitted_at"),
+    ("sip", "sip_applications", "id,status,submitted_at"),
+)
+
 
 class FounderContext(dict):
-    """{'user_id', 'application_id', 'status', 'app'} — the caller's onboarded TIR app."""
+    """{'user_id', 'track', 'application_id', 'status', 'app'} — the caller's
+    onboarded application on whichever track it lives."""
 
 
 async def require_founder_access(
     user: Annotated[dict, Depends(get_current_user)],
 ) -> FounderContext:
-    """Resolve the caller's most-recent offered/onboarded TIR application.
+    """Resolve the caller's most-recent offered/onboarded application, TIR or VIP.
 
     Two independent gates, both of which must pass:
 
       1. Soft-launch allow-list. While FOUNDER_PORTAL_ALLOWLIST is non-empty,
-         only the listed emails may open the portal — even if an admin
-         advances someone else's application to 'offered'. Clearing the env
-         var opens the portal to every offered/onboarded founder, which is the
-         intended end state; we keep it set during the soft launch.
-      2. Ownership + status: the caller must own a TIR application whose
-         status is 'offered' or 'onboarded'.
+         only the listed emails may open the portal — on either track — even
+         if an admin advances someone else's application to 'offered'.
+      2. Ownership + status: the caller must own an application whose status
+         is 'offered' or 'onboarded'.
 
     403 founder_access_denied on either failure. The two cases return the same
     code deliberately — a non-allow-listed founder shouldn't be able to tell
@@ -66,28 +76,30 @@ async def require_founder_access(
             detail={"code": "founder_access_denied"},
         )
     sb = get_admin_client()
-    rows = (
-        sb.table("tir_applications")
-        .select("id,status,grant_amount,submitted_at")
-        .eq("user_id", user["user_id"])
-        .in_("status", list(_ACCESS_STATUSES))
-        .order("submitted_at", desc=True)
-        .limit(1)
-        .execute()
-        .data
-        or []
-    )
-    if not rows:
-        raise HTTPException(
-            status_code=http_status.HTTP_403_FORBIDDEN,
-            detail={"code": "founder_access_denied"},
+    for track, table, columns in _TRACK_SOURCES:
+        rows = (
+            sb.table(table)
+            .select(columns)
+            .eq("user_id", user["user_id"])
+            .in_("status", list(_ACCESS_STATUSES))
+            .order("submitted_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+            or []
         )
-    app = rows[0]
-    return FounderContext(
-        user_id=user["user_id"],
-        application_id=app["id"],
-        status=app["status"],
-        app=app,
+        if rows:
+            app = rows[0]
+            return FounderContext(
+                user_id=user["user_id"],
+                track=track,
+                application_id=app["id"],
+                status=app["status"],
+                app=app,
+            )
+    raise HTTPException(
+        status_code=http_status.HTTP_403_FORBIDDEN,
+        detail={"code": "founder_access_denied"},
     )
 
 
@@ -106,6 +118,7 @@ async def get_me(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
     signed = mou is not None
     return {
         "status": ctx["status"],
+        "track": ctx["track"],
         "application_id": ctx["application_id"],
         "grant_amount": float(ctx["app"].get("grant_amount") or 0),
         "project_name": _project_name(ctx["app"]),
