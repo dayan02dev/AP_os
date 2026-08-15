@@ -19,18 +19,32 @@ import "../../styles/founder-portal.css";
 
 // Founder nav — grafted onto the applicant `.eir-os-side` sidebar language so
 // this reads as a native continuation of the /apply dashboard.
-const NAV = [
+//
+// Everything except the cohort-management group is identical on both tracks:
+// same components, same endpoints, no duplication. Only the middle group
+// swaps, because TIR runs a residency (derisking, payroll, procurement) and
+// VIP runs an incubation programme (readiness assessment, MIS reporting).
+const NAV_HEAD = [
   { group: "Application", items: [
     { sec: "application", num: "•", label: "Current", to: "/founder" },
   ]},
   { group: "Onboarding", items: [
     { sec: "mou", num: "01", label: "Sign MOU", to: "/founder/mou" },
   ]},
-  { group: "Cohort management", locked: "cohort", items: [
-    { sec: "approach", num: "01", label: "Approach", to: "/founder/approach" },
-    { sec: "org", num: "02", label: "Organization", to: "/founder/org" },
-    { sec: "expense", num: "03", label: "Expense management", to: "/founder/expense" },
-  ]},
+];
+
+const COHORT_TIR = { group: "Cohort management", locked: "cohort", items: [
+  { sec: "approach", num: "01", label: "Approach", to: "/founder/approach" },
+  { sec: "org", num: "02", label: "Organization", to: "/founder/org" },
+  { sec: "expense", num: "03", label: "Expense management", to: "/founder/expense" },
+]};
+
+const COHORT_VIP = { group: "Cohort management", locked: "cohort", items: [
+  { sec: "tlr", num: "01", label: "TLR evaluation", to: "/founder/tlr" },
+  { sec: "mis", num: "02", label: "MIS filling", to: "/founder/mis" },
+]};
+
+const NAV_TAIL = [
   { group: "Dashboard reporting", locked: "dashboard", items: [
     { sec: "dashboard", num: "•", label: "Process dashboard", to: "/founder/dashboard" },
   ]},
@@ -43,12 +57,9 @@ const NAV = [
   ]},
 ];
 
-// Same external cohort links the applicant dashboard shows, for continuity.
-const COHORT_LINKS = [
-  { href: "/programs.html", label: "Programs" },
-  { href: "/marketing.html", label: "TIR overview" },
-  { href: "/sip-marketing.html", label: "VIP overview" },
-];
+export function navFor(track) {
+  return [...NAV_HEAD, track === "sip" ? COHORT_VIP : COHORT_TIR, ...NAV_TAIL];
+}
 
 function FounderHeader({ user }) {
   const navigate = useNavigate();
@@ -85,11 +96,11 @@ function FounderHeader({ user }) {
   );
 }
 
-function FounderSidebar({ tab, locked, navigate }) {
+function FounderSidebar({ nav, tab, locked, navigate }) {
   const isLocked = (group) => group.locked && locked[group.locked];
   return (
     <aside className="eir-os-side">
-      {NAV.map((g) => (
+      {nav.map((g) => (
         <nav className="eir-os-side-group" key={g.group}>
           <div className="eir-mono eir-os-side-title">{g.group}</div>
           {g.items.map((it) => {
@@ -111,16 +122,6 @@ function FounderSidebar({ tab, locked, navigate }) {
           })}
         </nav>
       ))}
-
-      <nav className="eir-os-side-group">
-        <div className="eir-mono eir-os-side-title">Cohort</div>
-        {COHORT_LINKS.map((l) => (
-          <a className="eir-os-nav eir-os-nav-link" href={l.href} target="_blank" rel="noopener noreferrer" key={l.href}>
-            <span className="eir-mono eir-os-nav-num">↗</span>
-            <span className="eir-os-nav-label">{l.label}</span>
-          </a>
-        ))}
-      </nav>
 
       <div className="eir-os-side-foot">
         <div className="eir-mono eir-dim">↳ data encrypted at rest</div>
@@ -164,7 +165,7 @@ export default function FounderPortal({ tab = "application" }) {
                   <div className="eir-mono eir-dim eir-os-crumb">Founder Portal</div>
                   <h1 className="eir-os-view-title">Not yet unlocked</h1>
                   <p className="eir-os-view-sub">
-                    This area unlocks once your TIR application is selected.{" "}
+                    This area unlocks once your application is selected.{" "}
                     <a href="/apply">Back to your application →</a>
                   </p>
                 </header>
@@ -179,6 +180,7 @@ export default function FounderPortal({ tab = "application" }) {
   if (!me) return <Shell user={user}><div className="founder-portal"><Loading label="Loading your portal…" /></div></Shell>;
 
   const locked = me.locked || { cohort: true, dashboard: true };
+  const nav = navFor(me.track);
 
   const renderTab = () => {
     // gate cohort/dashboard tabs until MOU signed
@@ -205,7 +207,7 @@ export default function FounderPortal({ tab = "application" }) {
     <Shell user={user}>
       <div className="eir-screen eir-os-shell">
         <div className="eir-os-body">
-          <FounderSidebar tab={tab} locked={locked} navigate={navigate} />
+          <FounderSidebar nav={nav} tab={tab} locked={locked} navigate={navigate} />
           <main className="eir-os-pane">
             <div className="founder-portal founder-content">{renderTab()}</div>
           </main>
