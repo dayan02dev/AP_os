@@ -78,6 +78,45 @@
 
 /* -- Activity feed (Task 4) — reuses .fj-dash-feed-* unchanged, no new CSS. */
 
-/* Tasks 5 (metric trend small multiples) and 6 (milestones & risks, the
-   risk-severity badge) add their own rules here when they land — out of
-   scope for Tasks 1-4. */
+/* -- Metric trend small multiples (Task 5) ----------------------------- */
+
+.vipd-trend-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 20px;
+}
+
+.vipd-trend-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vipd-trend-metric-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--ink-dim);
+}
+
+.vipd-trend-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 48px;
+  border-bottom: 1px solid var(--line);
+}
+
+.vipd-trend-bar {
+  flex: 1;
+  min-width: 3px;
+  background: var(--artblue);
+  border-radius: 1px 1px 0 0;
+}
+
+@media (max-width: 900px) {
+  .vipd-trend-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
