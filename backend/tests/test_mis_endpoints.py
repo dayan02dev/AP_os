@@ -312,6 +312,103 @@ def test_unknown_entry_field_is_422(client, monkeypatch, _clear):
     assert r.json()["detail"]["code"] == "unknown_field"
 
 
+# ── Important-3: entry VALUE validation, not just key validation ─────────
+
+def test_milestone_status_value_is_validated(client, monkeypatch, _clear):
+    """The exact case the review calls out: `_carry_forward_entries`'s
+    "open_only" rule keys off `data["status"] != "Done"` (an EXACT string
+    match) — a lowercase "done" used to be accepted silently and would
+    have carried forward into every future report forever."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+        {"milestone": "x", "owner": "y", "status": "done", "notes": ""},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_value"
+    assert r.json()["detail"]["field"] == "status"
+
+
+def test_collaboration_bucket_value_is_validated(client, monkeypatch, _clear):
+    """The other case the review calls out: `_carry_forward_entries`'s
+    "buckets:active,in_discussion" rule keys off `data["bucket"]` — a
+    mistyped bucket used to be accepted silently and would have vanished
+    from next quarter's collaborations register with no error."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/collaborations", json=[
+        {"bucket": "Active", "collaborator": "x"},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_value"
+    assert r.json()["detail"]["field"] == "bucket"
+
+
+def test_int_field_rejects_a_non_numeric_value(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/asks", json=[
+        {"priority": "high", "category": "hiring_referrals", "ask": "help"},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_value"
+    assert r.json()["detail"]["field"] == "priority"
+
+
+def test_int_field_rejects_a_bool_value(client, monkeypatch, _clear):
+    """`bool` is an `int` subclass in Python — `isinstance(True, int)` is
+    `True` — so a naive `isinstance` check would silently accept it."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/asks", json=[
+        {"priority": True, "category": "hiring_referrals", "ask": "help"},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_value"
+    assert r.json()["detail"]["field"] == "priority"
+
+
+def test_numeric_field_accepts_a_number(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/collaborations", json=[
+        {"bucket": "active", "collaborator": "x", "funding_lakh": 12.5},
+    ])
+    assert r.status_code == 200, r.text
+
+
+def test_date_field_rejects_a_non_iso_value(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/publications", json=[
+        {"bucket": "published", "kind": "journal", "date": "31/12/2026"},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_value"
+    assert r.json()["detail"]["field"] == "date"
+
+
+def test_date_field_accepts_an_iso_value(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/publications", json=[
+        {"bucket": "published", "kind": "journal", "date": "2026-12-31"},
+    ])
+    assert r.status_code == 200, r.text
+
+
+def test_a_null_entry_value_is_always_accepted(client, monkeypatch, _clear):
+    """Leaving a field blank (JSON `null`) must not be rejected for any
+    field type — value validation only applies to a value actually
+    supplied."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+        {"milestone": "x", "owner": None, "status": None, "notes": None},
+    ])
+    assert r.status_code == 200, r.text
+
+
 def test_supplying_trl_level_actual_is_422(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")

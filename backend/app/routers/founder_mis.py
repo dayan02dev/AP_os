@@ -516,6 +516,55 @@ def _replace_entries_section(sb, period_id: str, section: str,
         _write()
 
 
+def _validate_entry_value(field: dict, value: Any) -> None:
+    """Important-3: a row's KEYS are checked against `cat.entry_fields`
+    above, but a value was never checked against that same field's own
+    type/`options` — so a client sending `"done"`, `"DONE"` or `"Complete"`
+    for milestones.status, or a mistyped `collaborations.bucket`, was
+    accepted silently. Both feed a carry-forward rule that keys off an
+    EXACT string match (`mis_query._carry_forward_entries`: `open_only`
+    checks `data["status"] != "Done"`; `buckets:...` checks
+    `data["bucket"] in {...}`), so a value that merely LOOKS right produces
+    a wrong outcome indistinguishable from a right one: a mistyped "done"
+    milestone carries forward forever, and a mistyped collaboration bucket
+    silently vanishes from the next quarter's register.
+
+    `None` is always accepted regardless of type — an entries row is
+    allowed to leave any field blank; this only validates a value that was
+    actually supplied. `choice` values must be one of the field's own
+    `options` (every `choice` field in `mis_catalog.ENTRY_FIELDS` carries
+    one — enforced by `test_choice_fields_declare_their_options`). `int`/
+    `numeric` values must be an actual number, not a numeric-looking
+    string — and not a `bool`, which is a `int` subclass in Python and
+    would otherwise silently pass an `isinstance(value, int)` check.
+    `date` values must be an ISO `YYYY-MM-DD` string `date.fromisoformat`
+    accepts. `text`/`bool` carry no extra constraint here — any JSON
+    scalar is accepted, matching this endpoint's existing shallow-
+    validation posture (models/mis.py's own module docstring)."""
+    if value is None:
+        return
+    ftype = field["type"]
+    if ftype == "choice":
+        if value not in field["options"]:
+            raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail={"code": "invalid_value", "field": field["key"]})
+    elif ftype in ("int", "numeric"):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail={"code": "invalid_value", "field": field["key"]})
+    elif ftype == "date":
+        valid = False
+        if isinstance(value, str):
+            try:
+                date.fromisoformat(value)
+                valid = True
+            except ValueError:
+                valid = False
+        if not valid:
+            raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail={"code": "invalid_value", "field": field["key"]})
+
+
 @router.put("/{kind}/{period_key}/entries/{section}")
 async def put_entries(
     kind: str, period_key: str, section: str, body: list[dict[str, Any]],
@@ -527,12 +576,14 @@ async def put_entries(
     if section not in _entries_sections_for_kind(kind):
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
                             detail={"code": "unknown_section"})
-    fields = {f["key"] for f in cat.entry_fields(section)}
+    fields = {f["key"]: f for f in cat.entry_fields(section)}
     for row in body:
-        unknown = set(row.keys()) - fields
+        unknown = set(row.keys()) - set(fields)
         if unknown:
             raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 detail={"code": "unknown_field", "fields": sorted(unknown)})
+        for key, value in row.items():
+            _validate_entry_value(fields[key], value)
 
     period = _own_draft_period(ctx, kind, period_key)
     sb = get_admin_client()
