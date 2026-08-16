@@ -292,6 +292,10 @@ def test_headcount_put_round_trips(client, monkeypatch, _clear):
 def test_submit_flips_status_and_stamps_timestamps(client, monkeypatch, _clear):
     fake = _install(monkeypatch)
     client.get("/founder/mis")
+    # Fix 1: both predecessors must be submitted first, or the in-order
+    # gate 409s CUR_MONTH — unrelated to what this test actually checks.
+    client.post("/founder/mis/monthly/2026-06/submit")
+    client.post("/founder/mis/monthly/2026-07/submit")
     r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
     assert r.status_code == 200, r.text
     assert r.json()["period"]["status"] == "submitted"
@@ -304,6 +308,9 @@ def test_submit_flips_status_and_stamps_timestamps(client, monkeypatch, _clear):
 def test_submitted_period_rejects_every_write_but_serves_every_read(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
+    # Fix 1: clear the in-order gate before submitting CUR_MONTH itself.
+    client.post("/founder/mis/monthly/2026-06/submit")
+    client.post("/founder/mis/monthly/2026-07/submit")
     client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
 
     writes = [
@@ -332,6 +339,9 @@ def test_quarterly_writes_also_freeze_on_submit(client, monkeypatch, _clear):
     writes and need their own proof they freeze the same way."""
     _install(monkeypatch)
     client.get("/founder/mis")
+    # Fix 1: FY26-27-Q1 must be submitted first, or the in-order gate
+    # 409s CUR_QUARTER — unrelated to what this test actually checks.
+    client.post("/founder/mis/quarterly/FY26-27-Q1/submit")
     client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/submit")
 
     r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/financials", json=[])
@@ -344,6 +354,117 @@ def test_quarterly_writes_also_freeze_on_submit(client, monkeypatch, _clear):
     r = client.get(f"/founder/mis/quarterly/{CUR_QUARTER}")
     assert r.status_code == 200, r.text
     assert r.json()["period"]["status"] == "submitted"
+
+
+# ── Fix 1: enforce in-order submit ────────────────────────────────────────
+
+def test_submit_with_earlier_draft_predecessor_409s_and_names_blocker(client, monkeypatch, _clear):
+    """The bug this closes: a founder submitting August while July (and
+    June) are still draft — the target `2026-08` has TWO earlier drafts,
+    and the 409 must name the EARLIEST of them (`2026-06`), not merely
+    "some" earlier draft."""
+    _install(monkeypatch)
+    client.get("/founder/mis")  # creates 2026-06, 2026-07, 2026-08 (all draft)
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "mis_earlier_period_open"
+    assert r.json()["detail"]["period_key"] == "2026-06"
+    assert r.json()["detail"]["label"]
+
+
+def test_submit_earliest_period_succeeds_nothing_before_it(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.post("/founder/mis/monthly/2026-06/submit")
+    assert r.status_code == 200, r.text
+    assert r.json()["period"]["status"] == "submitted"
+
+
+def test_submit_succeeds_once_every_predecessor_is_submitted(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.post("/founder/mis/monthly/2026-06/submit")
+    assert r.status_code == 200, r.text
+    r = client.post("/founder/mis/monthly/2026-07/submit")
+    assert r.status_code == 200, r.text
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    assert r.status_code == 200, r.text
+
+
+def test_submit_gate_uses_period_start_not_period_key_string_order(client, monkeypatch, _clear):
+    """period_key string order and period_start date order are made to
+    disagree on purpose: the row given the alphabetically LARGER key
+    ("9999-99") is seeded with the actually-EARLIER real date, and the
+    row given the alphabetically SMALLER key ("0000-00", the one this
+    test submits) carries the actually-LATER date. A gate that sorted by
+    period_key string would never see "9999-99" as preceding "0000-00"
+    and would let this submit through; the correct date-based gate must
+    still catch it."""
+    fake = _install(monkeypatch)
+    fake.tables["vip_mis_periods"].append({
+        "id": "earlier-by-date", "application_id": "sapp1", "kind": "monthly",
+        "period_key": "9999-99", "label": "Fake Earlier",
+        "period_start": "2026-06-01", "period_end": "2026-06-30",
+        "due_date": "2026-07-05", "status": "draft", "narrative": {},
+    })
+    fake.tables["vip_mis_periods"].append({
+        "id": "later-by-date", "application_id": "sapp1", "kind": "monthly",
+        "period_key": "0000-00", "label": "Fake Later",
+        "period_start": "2026-08-01", "period_end": "2026-08-31",
+        "due_date": "2026-09-05", "status": "draft", "narrative": {},
+    })
+    r = client.post("/founder/mis/monthly/0000-00/submit")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "mis_earlier_period_open"
+    assert r.json()["detail"]["period_key"] == "9999-99"
+
+
+def test_draft_period_of_the_other_kind_does_not_block_submit(client, monkeypatch, _clear):
+    """Monthly and quarterly are independent reporting ladders. FY26-27-Q1
+    (Apr-Jun) stays draft throughout and starts BEFORE 2026-07 — if kind
+    scoping were broken, its still-draft status would wrongly block the
+    monthly submit below."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.post("/founder/mis/monthly/2026-06/submit")
+    assert r.status_code == 200, r.text
+    r = client.post("/founder/mis/monthly/2026-07/submit")
+    assert r.status_code == 200, r.text
+
+
+def test_regression_submitted_periods_vs_last_stays_frozen(client, monkeypatch, _clear):
+    """The actual live bug this fix closes (verified live: monthly
+    `vs_last` moved 20 -> 40 with the target period still `submitted`).
+    With in-order submit enforced, July cannot be submitted while June is
+    draft, and a submitted period's writes are already frozen — so there
+    is no window left in which editing a predecessor can move a later,
+    already-submitted period's derived comparison."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    client.put(f"/founder/mis/monthly/2026-06/metrics", json=[
+        {"metric_key": "revenue_month", "actual": 20},
+    ])
+    r = client.post("/founder/mis/monthly/2026-06/submit")
+    assert r.status_code == 200, r.text
+
+    client.put(f"/founder/mis/monthly/2026-07/metrics", json=[
+        {"metric_key": "revenue_month", "actual": 40},
+    ])
+    r = client.post("/founder/mis/monthly/2026-07/submit")
+    assert r.status_code == 200, r.text
+    assert r.json()["derived"]["metrics"]["vs_last"]["revenue_month"] == 20  # 40 - 20
+
+    # The predecessor is submitted (frozen) — a write against it must
+    # 409, not silently move July's already-computed vs_last.
+    r = client.put(f"/founder/mis/monthly/2026-06/metrics", json=[
+        {"metric_key": "revenue_month", "actual": 999},
+    ])
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "mis_already_submitted"
+
+    r = client.get("/founder/mis/monthly/2026-07")
+    assert r.status_code == 200, r.text
+    assert r.json()["derived"]["metrics"]["vs_last"]["revenue_month"] == 20
 
 
 # ── unknown things 404/422 ────────────────────────────────────────────────
@@ -616,6 +737,9 @@ def test_trl_level_is_snapshotted_at_submit_and_frozen_thereafter(client, monkey
             "verified_level": 4, "criteria_checked": [],
         })
     client.get("/founder/mis")
+    # Fix 1: clear the in-order gate before submitting CUR_MONTH itself.
+    client.post("/founder/mis/monthly/2026-06/submit")
+    client.post("/founder/mis/monthly/2026-07/submit")
     r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
     assert r.status_code == 200, r.text
     trl = next(m for m in r.json()["metrics"] if m["metric_key"] == "trl_level")
@@ -644,6 +768,9 @@ def test_trl_level_snapshot_is_null_when_unverified_at_submit_time(client, monke
     freezes at None rather than 500ing or leaving the row untouched."""
     _install(monkeypatch)
     client.get("/founder/mis")
+    # Fix 1: clear the in-order gate before submitting CUR_MONTH itself.
+    client.post("/founder/mis/monthly/2026-06/submit")
+    client.post("/founder/mis/monthly/2026-07/submit")
     r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
     assert r.status_code == 200, r.text
     trl = next(m for m in r.json()["metrics"] if m["metric_key"] == "trl_level")
@@ -656,6 +783,9 @@ def test_quarterly_submit_does_not_touch_trl_level(client, monkeypatch, _clear):
     error) for a quarterly submit."""
     _install(monkeypatch)
     client.get("/founder/mis")
+    # Fix 1: FY26-27-Q1 must be submitted first, or the in-order gate
+    # 409s CUR_QUARTER — unrelated to what this test actually checks.
+    client.post("/founder/mis/quarterly/FY26-27-Q1/submit")
     r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/submit")
     assert r.status_code == 200, r.text
     assert r.json()["metrics"] == []

@@ -748,6 +748,60 @@ async def put_headcount(
 
 # ── submit ─────────────────────────────────────────────────────────────
 
+def _reject_out_of_order_submit(ctx: dict, kind: str, period: dict) -> None:
+    """Fix 1 (the important one): a period may only be submitted once
+    every EARLIER period of the same kind is no longer `draft`.
+
+    Without this gate, `submit_period` had no ordering check at all: a
+    founder could submit August while July was still a draft. Derived
+    comparisons (`vs_last` on metrics, headcount `net_change`) are
+    computed on read from whichever period is immediately preceding,
+    *regardless of that predecessor's own status*
+    (`mis_query._previous_period`'s own docstring is explicit that this is
+    deliberate for display purposes) — so editing the still-draft July
+    kept silently changing the already-submitted August's numbers.
+    Verified live: monthly `vs_last` went 20 -> 40 and quarterly
+    `net_change` went -3 -> +3, with the target period still `submitted`.
+    That contradicts "submitted means frozen"; this gate closes the
+    window by refusing the submit that would ever put a later period
+    in `submitted` status while an earlier one is still open, rather than
+    trying to freeze/snapshot the comparison itself (see this function's
+    caller for why snapshotting was rejected as the fix).
+
+    "Earlier" is `period_start` strictly less than this period's own
+    `period_start`, compared as `date` objects — `mis_query._fetch_periods`
+    already normalises every period row's date columns via
+    `_normalise_period` — NOT `period_key` string order: the two agree for
+    every period_key this codebase actually generates today, but nothing
+    guarantees that forever, and comparing on the real date is what the
+    rule is actually about. Sorted here in Python — FakeSupabase.order()
+    is a no-op, so a gate that only worked because of `.order()` would
+    pass its own tests and be wrong in production.
+
+    Reuses `mis_query._fetch_periods` (an existing, already-tested query)
+    rather than writing a second one for the same rows.
+
+    Scoped to `kind`: monthly and quarterly are independent reporting
+    ladders (mis-templates.md's own two separate calendars) — a draft
+    monthly period must never block a quarterly submit, or vice versa.
+    `_fetch_periods` is itself scoped by `kind`, so this falls out for
+    free rather than needing its own filter.
+    """
+    periods = mq._fetch_periods(ctx["application_id"], kind)
+    earlier_drafts = sorted(
+        (p for p in periods
+         if p["status"] == "draft" and p["period_start"] < period["period_start"]),
+        key=lambda p: p["period_start"],
+    )
+    if earlier_drafts:
+        blocker = earlier_drafts[0]
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail={
+            "code": "mis_earlier_period_open",
+            "period_key": blocker["period_key"],
+            "label": blocker["label"],
+        })
+
+
 @router.post("/{kind}/{period_key}/submit")
 async def submit_period(
     kind: str, period_key: str, ctx: Annotated[dict, Depends(require_vip)],
@@ -765,8 +819,14 @@ async def submit_period(
     Quarterly periods carry no metrics at all (`_catalog_for_kind`/
     `_with_trl` are both no-ops for them), so there is nothing to snapshot
     there — the write below only runs for `kind == "monthly"`.
+
+    Before any write: `_reject_out_of_order_submit` (Fix 1) 409s if an
+    earlier period of the same kind is still `draft` — see that function
+    for the bug this closes.
     """
     period = _own_draft_period(ctx, kind, period_key)
+    _reject_out_of_order_submit(ctx, kind, period)
+
     now = datetime.now(UTC).isoformat()
     if kind == "monthly":
         trl = _current_verified_trl(ctx["application_id"])
