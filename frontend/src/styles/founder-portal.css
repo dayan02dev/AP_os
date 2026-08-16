@@ -847,6 +847,10 @@
   margin-top: 16px; border: 1px solid var(--accent-coral); background: #fff3f3;
   color: var(--accent-coral); font-size: 13px; padding: 10px 16px; border-radius: 2px;
 }
+.founder-portal .fj-inline-warning {
+  margin-top: 16px; border: 1px solid var(--accent-amber); background: #fffbf0;
+  color: var(--ink-soft); font-size: 13px; padding: 10px 16px; border-radius: 2px;
+}
 .founder-portal .fj-wizard { max-width: 920px; display: flex; flex-direction: column; }
 .founder-portal .fj-h1 { font-family: var(--font-display); font-size: 40px; line-height: 1.12; margin: 18px 0 0; }
 .founder-portal .fj-h1.lg { font-size: 44px; line-height: 1.1; }

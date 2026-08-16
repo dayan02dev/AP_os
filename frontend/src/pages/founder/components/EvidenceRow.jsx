@@ -32,6 +32,19 @@
 // level.
 import { useRef, useState } from "react";
 
+// Matches founder_air.py's `_MIME_TO_EXT` exactly — the backend's complete
+// allow-list for AIR evidence. This doesn't stop a founder from picking
+// something else (a "show all files" dialog bypasses `accept` entirely),
+// but it steers toward the types that will actually work: today, any other
+// pick is a one-click route to a bare "Request failed".
+const ACCEPTED_EVIDENCE_TYPES = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+].join(",");
+
 function formatSize(bytes) {
   if (bytes == null) return null;
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -115,6 +128,7 @@ function EvidenceSlot({ level, leverName, rows, disabled, onUpload, onDelete, on
           ref={inputRef}
           type="file"
           hidden
+          accept={ACCEPTED_EVIDENCE_TYPES}
           aria-label={`Upload AIR ${level} evidence`}
           disabled={disabled}
           onChange={(e) => handleFile(e.target.files?.[0])}

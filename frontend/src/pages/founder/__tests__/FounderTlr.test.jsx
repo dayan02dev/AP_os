@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import FounderTlr from "../FounderTlr.jsx";
 import { founderApi } from "../../../lib/founderApi.js";
+import { ApiError } from "../../../lib/api.js";
 
 // Six-lever catalog fixture, small ladders (max 4) mirroring LeverPanel's own
 // test fixture shape so the wizard's plumbing — not the ladder arithmetic
@@ -350,5 +351,275 @@ describe("FounderTlr — the five-step AIR wizard", () => {
     // The optimistic selection stays put — a failed save must not roll back
     // what the founder just picked.
     expect(screen.getByRole("radio", { name: "scientific_principles-q1-B" })).toBeChecked();
+  });
+
+  // F4: AIR fires a PUT per radio click, so two quick clicks in normal use
+  // are the ordinary rhythm, not an edge case. If the responses land out of
+  // order, a naive `.then(setBundle)` lets the STALE response overwrite the
+  // newer answer, leaving the founder's second pick visibly un-checked even
+  // though the DB holds it correctly.
+  it("F4: out-of-order PUT responses don't let the stale one clobber the later-issued answer", async () => {
+    vi.spyOn(founderApi, "getAir").mockResolvedValue(makeBundle());
+    let resolveFirst, resolveSecond;
+    const first = new Promise((res) => { resolveFirst = res; });
+    const second = new Promise((res) => { resolveSecond = res; });
+    vi.spyOn(founderApi, "putAirLever")
+      .mockImplementationOnce(() => first)
+      .mockImplementationOnce(() => second);
+    render(<FounderTlr />);
+    await screen.findByText("ARTPARK Innovation Readiness");
+    await goto("Technology");
+    await screen.findByText("Architecture & System Definition");
+
+    fireEvent.click(screen.getByRole("radio", { name: "architecture-q1-A" }));
+    fireEvent.click(screen.getByRole("radio", { name: "architecture-q1-B" }));
+
+    // The SECOND (later-issued) request's response lands first...
+    resolveSecond(makeBundle({
+      levers: LEVERS_META.map((m) => leverRow(m, m.key === "architecture" ? { q1_option: "B" } : {})),
+    }));
+    await waitFor(() => expect(screen.getByRole("radio", { name: "architecture-q1-B" })).toBeChecked());
+
+    // ...then the FIRST (now-stale) request's response arrives after. It
+    // must not overwrite the newer answer.
+    resolveFirst(makeBundle({
+      levers: LEVERS_META.map((m) => leverRow(m, m.key === "architecture" ? { q1_option: "A" } : {})),
+    }));
+    await waitFor(() => expect(screen.getByRole("radio", { name: "architecture-q1-B" })).toBeChecked());
+    expect(screen.getByRole("radio", { name: "architecture-q1-A" })).not.toBeChecked();
+  });
+
+  // F4 also covers evidence uploads — "all of which return bundles" per the
+  // fix brief — not just lever PUTs.
+  it("F4: out-of-order evidence-upload responses don't let the stale one clobber the later-issued one", async () => {
+    const b = makeBundle({
+      levers: LEVERS_META.map((m) => leverRow(m, m.key === "architecture"
+        ? { claimed_level: 1, required_document: "Arch doc" }
+        : {})),
+    });
+    b.catalog.documents.architecture = { 1: "Arch doc" };
+    vi.spyOn(founderApi, "getAir").mockResolvedValue(b);
+    let resolveFirst, resolveSecond;
+    const first = new Promise((res) => { resolveFirst = res; });
+    const second = new Promise((res) => { resolveSecond = res; });
+    vi.spyOn(founderApi, "uploadAirEvidence")
+      .mockImplementationOnce(() => first)
+      .mockImplementationOnce(() => second);
+    render(<FounderTlr />);
+    await screen.findByText("ARTPARK Innovation Readiness");
+    await goto("Evidence");
+    await screen.findByText("Scientific Principles & Models");
+
+    const archRow = screen.getByText("Architecture & System Definition").closest(".fj-evidence-row");
+    const input = archRow.querySelector('input[type="file"]');
+    fireEvent.change(input, { target: { files: [new File(["a"], "a.pdf", { type: "application/pdf" })] } });
+    fireEvent.change(input, { target: { files: [new File(["b"], "b.pdf", { type: "application/pdf" })] } });
+
+    const withEvidence = (filename, id) => {
+      const bb = makeBundle({
+        levers: LEVERS_META.map((m) => leverRow(m, m.key === "architecture"
+          ? {
+              claimed_level: 1, required_document: "Arch doc",
+              evidence: [{ id, filename, size_bytes: 1, uploaded_at: null, air_level: 1 }],
+            }
+          : {})),
+      });
+      bb.catalog.documents.architecture = { 1: "Arch doc" };
+      return bb;
+    };
+
+    // The SECOND (later-issued) upload's response lands first...
+    resolveSecond(withEvidence("b.pdf", "ev-b"));
+    await waitFor(() => expect(screen.getByText("b.pdf")).toBeInTheDocument());
+
+    // ...then the FIRST (now-stale) response arrives after. It must not
+    // overwrite the newer upload.
+    resolveFirst(withEvidence("a.pdf", "ev-a"));
+    await waitFor(() => expect(screen.getByText("b.pdf")).toBeInTheDocument());
+    expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
+  });
+
+  // F5: every founder_air.py error raises `detail={"code": …}`, and api.js's
+  // _buildError sets "Request failed" whenever detail is an object without
+  // a `message` — so a rejected upload for an unsupported file type reads
+  // exactly like a rejected upload for a network blip.
+  it("F5: a rejected upload with a known error code shows type-specific copy, not the generic 'Request failed'", async () => {
+    const b = makeBundle({
+      levers: LEVERS_META.map((m) => leverRow(m, m.key === "architecture"
+        ? { claimed_level: 1, required_document: "Arch doc" }
+        : {})),
+    });
+    b.catalog.documents.architecture = { 1: "Arch doc" };
+    vi.spyOn(founderApi, "getAir").mockResolvedValue(b);
+    vi.spyOn(founderApi, "uploadAirEvidence").mockRejectedValue(
+      new ApiError({ status: 415, code: "unsupported_media", message: "Request failed" }),
+    );
+    render(<FounderTlr />);
+    await screen.findByText("ARTPARK Innovation Readiness");
+    await goto("Evidence");
+    await screen.findByText("Scientific Principles & Models");
+
+    const archRow = screen.getByText("Architecture & System Definition").closest(".fj-evidence-row");
+    const input = archRow.querySelector('input[type="file"]');
+    const file = new File(["x"], "notes.txt", { type: "text/plain" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(screen.getByRole("alert")).not.toHaveTextContent("Request failed"));
+    expect(screen.getByRole("alert").textContent.toLowerCase()).toMatch(/pdf|png|jpe?g|docx|xlsx/);
+  });
+
+  // F7: a round submitted from elsewhere (another tab, another session)
+  // 409s every subsequent autosave with air_already_submitted. Today the
+  // banner just says "Request failed" and the inputs stay enabled,
+  // continuing to display optimistic answers that were never written.
+  it("F7: air_already_submitted refetches the bundle so the UI flips to read-only", async () => {
+    const getAir = vi.spyOn(founderApi, "getAir")
+      .mockResolvedValueOnce(makeBundle())
+      .mockResolvedValueOnce(makeBundle({
+        round: { id: "r1", round_label: "FY26-27-Q2", status: "submitted", submitted_at: "2026-08-01T00:00:00Z", verified_at: null },
+      }));
+    vi.spyOn(founderApi, "putAirLever").mockRejectedValue(
+      new ApiError({ status: 409, code: "air_already_submitted", message: "Request failed" }),
+    );
+    render(<FounderTlr />);
+    await screen.findByText("ARTPARK Innovation Readiness");
+    await goto("Technology");
+    await screen.findByText("Architecture & System Definition");
+
+    fireEvent.click(screen.getByRole("radio", { name: "architecture-q1-B" }));
+
+    await waitFor(() => expect(getAir).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole("radio", { name: "architecture-q1-B" })).toBeDisabled());
+  });
+
+  // F8: onDelete removes the row optimistically with no rollback and no
+  // refetch, so a delete that fails server-side makes the document vanish
+  // from screen while it still survives on the server — and AIR evidence is
+  // exactly what ARTPARK verifies against.
+  it("F8: a failed delete refetches the bundle so the document that failed to delete reappears", async () => {
+    const row = { id: "ev-1", filename: "sourcing-plan.pdf", size_bytes: 1024, uploaded_at: "2026-08-01T00:00:00Z", air_level: 1 };
+    const b = makeBundle({
+      levers: LEVERS_META.map((m) => leverRow(m, m.key === "architecture"
+        ? { claimed_level: 1, required_document: "Arch doc", evidence: [row] }
+        : {})),
+    });
+    b.catalog.documents.architecture = { 1: "Arch doc" };
+    const getAir = vi.spyOn(founderApi, "getAir").mockResolvedValue(b);
+    vi.spyOn(founderApi, "delAirEvidence").mockRejectedValue(new Error("delete failed"));
+    render(<FounderTlr />);
+    await screen.findByText("ARTPARK Innovation Readiness");
+    await goto("Evidence");
+    await screen.findByText("Scientific Principles & Models");
+
+    expect(screen.getByText("sourcing-plan.pdf")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /delete/i }));
+    // Optimistic removal happens immediately:
+    expect(screen.queryByText("sourcing-plan.pdf")).not.toBeInTheDocument();
+
+    // The delete fails server-side; a refetch brings the truth back.
+    await waitFor(() => expect(getAir).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText("sourcing-plan.pdf")).toBeInTheDocument());
+  });
+
+  it("F8: a failed upload also refetches, so the screen can't drift from the server", async () => {
+    const b = makeBundle({
+      levers: LEVERS_META.map((m) => leverRow(m, m.key === "architecture"
+        ? { claimed_level: 1, required_document: "Arch doc" }
+        : {})),
+    });
+    b.catalog.documents.architecture = { 1: "Arch doc" };
+    const getAir = vi.spyOn(founderApi, "getAir").mockResolvedValue(b);
+    vi.spyOn(founderApi, "uploadAirEvidence").mockRejectedValue(new Error("network down"));
+    render(<FounderTlr />);
+    await screen.findByText("ARTPARK Innovation Readiness");
+    await goto("Evidence");
+    await screen.findByText("Scientific Principles & Models");
+
+    const archRow = screen.getByText("Architecture & System Definition").closest(".fj-evidence-row");
+    const input = archRow.querySelector('input[type="file"]');
+    const file = new File(["x"], "evidence.pdf", { type: "application/pdf" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(getAir).toHaveBeenCalledTimes(2));
+  });
+
+  // F9: two lever families across five steps is structural, but a lever in
+  // any OTHER family must not be silently swallowed — today it renders in
+  // Evidence and counts toward `missing` forever, with no step where it can
+  // ever be answered.
+  it("F9: a lever whose family the wizard has no step for is surfaced, and never blocks submit", async () => {
+    const extra = {
+      lever: "novel_lever", name: "Novel Lever", family: "financial",
+      q1_option: null, q2_option: null, q3_option: null, criteria_checked: [],
+      claimed_level: null, verified_level: null, verifier_note: null,
+      required_document: null, criteria: [], evidence: [],
+    };
+    const b = makeBundle({
+      levers: [...allClaimed(2), extra],
+      rollups: { claimed: { technology: 2, commercial: 2, overall: 2 }, verified: { technology: null, commercial: null, overall: null } },
+    });
+    vi.spyOn(founderApi, "getAir").mockResolvedValue(b);
+    render(<FounderTlr />);
+    await screen.findByText("ARTPARK Innovation Readiness");
+
+    // Surfaced, not silently dropped:
+    expect(screen.getByText(/Novel Lever/)).toBeInTheDocument();
+
+    await goto("Scorecard");
+    await screen.findByText("Scientific Principles & Models");
+    // And doesn't block submit, despite never having (and never being able
+    // to get) a claimed level:
+    expect(screen.getByRole("button", { name: /submit assessment/i })).not.toBeDisabled();
+  });
+
+  // F14: actionError is never cleared on success today, so one transient
+  // failure pins a red banner for the rest of the session even after later
+  // saves succeed.
+  it("F14: a successful save clears a previously shown error banner", async () => {
+    vi.spyOn(founderApi, "getAir").mockResolvedValue(makeBundle());
+    const putAirLever = vi.spyOn(founderApi, "putAirLever")
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(makeBundle({
+        levers: LEVERS_META.map((m) => leverRow(m, m.key === "architecture" ? { q1_option: "B" } : {})),
+      }));
+    render(<FounderTlr />);
+    await screen.findByText("ARTPARK Innovation Readiness");
+    await goto("Technology");
+    await screen.findByText("Architecture & System Definition");
+
+    fireEvent.click(screen.getByRole("radio", { name: "architecture-q1-A" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("network down"));
+
+    fireEvent.click(screen.getByRole("radio", { name: "architecture-q1-B" }));
+    await waitFor(() => expect(putAirLever).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  // F15: EvidenceRow.jsx guards `lever.evidence || []`; the wizard's own
+  // delete handler doesn't, so deleting a row crashes the whole step the
+  // moment ANY other lever's evidence array is undefined — not just the
+  // lever the row belongs to, since onDelete maps over every lever.
+  it("F15: deleting a row doesn't crash when another lever's evidence array is undefined", async () => {
+    const row = { id: "ev-1", filename: "doc.pdf", size_bytes: 10, uploaded_at: null, air_level: 1 };
+    const levers = LEVERS_META.map((m) => {
+      if (m.key === "architecture") return leverRow(m, { claimed_level: 1, required_document: "Arch doc", evidence: [row] });
+      if (m.key === "user_needs") {
+        const r = leverRow(m);
+        delete r.evidence;
+        return r;
+      }
+      return leverRow(m);
+    });
+    const b = makeBundle({ levers });
+    b.catalog.documents.architecture = { 1: "Arch doc" };
+    vi.spyOn(founderApi, "getAir").mockResolvedValue(b);
+    vi.spyOn(founderApi, "delAirEvidence").mockResolvedValue(undefined);
+    render(<FounderTlr />);
+    await screen.findByText("ARTPARK Innovation Readiness");
+    await goto("Evidence");
+    await screen.findByText("Scientific Principles & Models");
+
+    fireEvent.click(screen.getByRole("button", { name: /delete/i }));
+    await waitFor(() => expect(screen.queryByText("doc.pdf")).not.toBeInTheDocument());
   });
 });

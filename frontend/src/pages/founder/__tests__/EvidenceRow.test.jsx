@@ -187,6 +187,30 @@ describe("EvidenceRow", () => {
     expect(screen.getByRole("button", { name: /download/i })).not.toBeDisabled();
   });
 
+  // F5: picking a file type the backend rejects is a one-click route to a
+  // bare "Request failed" today. `accept` doesn't stop that — a founder can
+  // still pick anything from a "show all files" dialog — but it steers
+  // toward the types that will actually work, matching the backend's exact
+  // allow-list (founder_air.py's `_MIME_TO_EXT`).
+  it("F5: the file input's accept attribute matches the backend's allowed evidence types", () => {
+    render(
+      <EvidenceRow
+        lever={lever({ claimed_level: 6, required_document: "Sourcing Plan & TCO Model" })}
+        documents={DOCUMENTS}
+        onUpload={noop}
+        onDelete={noop}
+        onDownload={noop}
+      />,
+    );
+    const input = screen.getByLabelText("Upload AIR 6 evidence");
+    const accept = input.getAttribute("accept");
+    expect(accept).toContain("application/pdf");
+    expect(accept).toContain("image/png");
+    expect(accept).toContain("image/jpeg");
+    expect(accept).toContain("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    expect(accept).toContain("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  });
+
   it("disabled also hides the required slot's file input (not just the trigger button)", () => {
     const row = { id: "ev-1", filename: "sourcing-plan.pdf", size_bytes: 1024, uploaded_at: "2026-08-01T00:00:00Z", air_level: 6 };
     render(
