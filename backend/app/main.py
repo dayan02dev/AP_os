@@ -58,6 +58,7 @@ from .routers import (
     waitlist,
 )
 from .routers import founder as founder_router
+from .routers import founder_air as founder_air_router
 from .routers import founder_journey as founder_journey_router
 from .routers import founder_resources as founder_resources_router
 from .utils.logging import configure_logging, request_id_var
@@ -173,6 +174,7 @@ app.include_router(application_templates.router)
 app.include_router(founder_router.router)
 app.include_router(founder_journey_router.router)
 app.include_router(founder_resources_router.router)
+app.include_router(founder_air_router.router)
 # SIP track
 app.include_router(sip_applications.router)
 app.include_router(sip_milestone_files.router)
