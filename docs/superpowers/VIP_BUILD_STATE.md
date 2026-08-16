@@ -25,8 +25,8 @@ Work only in that worktree — concurrent sessions cross-contaminate otherwise.
 | 4 | Founder UI: AIR wizard (spec §4.3/§4.4) | ✅ complete, whole-phase reviewed, 18-item fix wave applied |
 | 5 | Founder UI: MIS monthly + quarterly forms (spec §5.3/§5.4) | planning |
 | 6 | VIP process dashboard (spec §6) | planning |
-| 7 | Admin "VIP cohort" verification surface (spec §7) | ✅ backend complete (28 tests); screens in progress |
-| 8 | docx import + xlsx export (spec §5.6/§5.7) | not started |
+| 7 | Admin "VIP cohort" verification surface (spec §7) | ✅ complete — backend (28 tests) + both screens (71 tests) |
+| 8 | docx import + xlsx export (spec §5.6/§5.7) | in progress |
 
 **The phase numbering diverges from spec §10 deliberately.** §10 folded each
 surface's UI into the phase that built its backend — its phase 2 was "AIR
@@ -130,6 +130,20 @@ $PY -m pytest tests/test_founder_access.py tests/test_founder_crud.py tests/test
 Baseline: roughly **20 pre-existing backend failures** on this branch, unrelated to this work. Verify any failure against untouched `release/sip-launch-v1` before attributing it.
 
 Staging env for verification scripts: `source /Users/apple/Desktop/Final_AP_os/backend/.env.staging` (the worktree has no `.env.staging` of its own).
+
+## Known untested paths
+
+Carried forward deliberately rather than left to be rediscovered:
+
+- **Admin MIS period render, quarterly branch.** `AdminVipMisPeriod.jsx`'s
+  `FinancialsSection` / `HeadcountSection` were written against the real
+  backend shapes but exercised only with monthly fixtures. The quarterly path
+  has no test. Highest-value gap to close first.
+- **CSS and the `accept` attribute** have no assertions anywhere in this repo's
+  suite — verified by inspection only.
+- **Integration between surfaces.** Six agents built against a written
+  contract; unit coverage is strong but the seams are where defects should be
+  expected. Nothing has been exercised in a browser yet.
 
 ## Staging gap
 
