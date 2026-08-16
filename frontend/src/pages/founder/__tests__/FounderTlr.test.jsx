@@ -60,8 +60,29 @@ function makeBundle(over = {}) {
   };
 }
 
+// F3: without a real `required_document` (and, on at least one lever, an
+// evidence row), EvidenceRow takes its empty-state branch for all six
+// levers and renders zero file inputs — "no enabled file inputs" is then
+// vacuously true whether or not disabling actually works. `scientific_principles`
+// gets the one document `catalog()` defines (level 1, since claimed_level
+// resolves down through the fallback the same way the real catalog's gaps
+// do) plus a stored row at that level, so the read-only assertions below
+// have a real input and a real Download button to bite on.
 function allClaimed(level = 2, over = {}) {
-  return LEVERS_META.map((m) => leverRow(m, { claimed_level: level, q1_option: "B", ...over }));
+  return LEVERS_META.map((m) => leverRow(m, {
+    claimed_level: level,
+    q1_option: "B",
+    ...(m.key === "scientific_principles"
+      ? {
+          required_document: "Scientific Principles & Models — doc",
+          evidence: [{
+            id: "ev-sp-1", filename: "evidence.pdf", size_bytes: 1024,
+            uploaded_at: "2026-08-01T00:00:00Z", air_level: 1,
+          }],
+        }
+      : {}),
+    ...over,
+  }));
 }
 
 async function goto(label) {
@@ -257,6 +278,9 @@ describe("FounderTlr — the five-step AIR wizard", () => {
     await goto("Evidence");
     await screen.findByText("Scientific Principles & Models");
     expect(document.querySelectorAll('input[type="file"]:not(:disabled)')).toHaveLength(0);
+    // A founder must always be able to retrieve their own documents, even
+    // once the round is read-only — only upload/replace/delete lock.
+    expect(screen.getByRole("button", { name: /download/i })).not.toBeDisabled();
 
     await goto("Scorecard");
     await screen.findByText("Submitted");
