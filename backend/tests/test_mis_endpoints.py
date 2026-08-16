@@ -435,6 +435,70 @@ def test_trl_level_is_null_when_any_lever_unverified(client, monkeypatch, _clear
     assert trl["actual"] is None
 
 
+# ── Ruling, part 1: "submitted means frozen" — TRL snapshot at submit ────
+
+def test_trl_level_is_snapshotted_at_submit_and_frozen_thereafter(client, monkeypatch, _clear):
+    """`submit_period` writes the CURRENT verified TRL into
+    `vip_mis_metrics.actual` once, at submit time. After that, the AIR
+    round is re-verified at a different level (exactly what would also
+    happen across a quarter rollover) — the already-submitted report's TRL
+    must not move."""
+    fake = _install(monkeypatch)
+    fake.tables["vip_air_assessments"].append({
+        "id": "round1", "application_id": "sapp1", "round_label": CUR_QUARTER,
+        "status": "submitted",
+    })
+    for lever in air_cat.LEVER_KEYS:
+        fake.tables["vip_air_lever_scores"].append({
+            "id": f"score-{lever}", "assessment_id": "round1", "lever": lever,
+            "verified_level": 4, "criteria_checked": [],
+        })
+    client.get("/founder/mis")
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    assert r.status_code == 200, r.text
+    trl = next(m for m in r.json()["metrics"] if m["metric_key"] == "trl_level")
+    assert trl["actual"] == 4
+
+    # The stored row itself must carry the snapshot, not just this one
+    # response — the next plain GET reads it back from storage.
+    cur_period = next(p for p in fake.tables["vip_mis_periods"]
+                       if p["period_key"] == CUR_MONTH and p["kind"] == "monthly")
+    stored = next(m for m in fake.tables["vip_mis_metrics"]
+                  if m["metric_key"] == "trl_level" and m["period_id"] == cur_period["id"])
+    assert stored.get("actual") == 4
+
+    # The AIR round is re-verified at a different level after submission.
+    for row in fake.tables["vip_air_lever_scores"]:
+        if row["assessment_id"] == "round1":
+            row["verified_level"] = 7
+
+    r = client.get(f"/founder/mis/monthly/{CUR_MONTH}")
+    trl = next(m for m in r.json()["metrics"] if m["metric_key"] == "trl_level")
+    assert trl["actual"] == 4  # frozen, not the now-live 7
+
+
+def test_trl_level_snapshot_is_null_when_unverified_at_submit_time(client, monkeypatch, _clear):
+    """No AIR round exists at submit time, so the snapshot correctly
+    freezes at None rather than 500ing or leaving the row untouched."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    assert r.status_code == 200, r.text
+    trl = next(m for m in r.json()["metrics"] if m["metric_key"] == "trl_level")
+    assert trl["actual"] is None
+
+
+def test_quarterly_submit_does_not_touch_trl_level(client, monkeypatch, _clear):
+    """Quarterly periods carry no metrics at all — the TRL-snapshot write
+    in `submit_period` is gated on `kind == "monthly"` and must not run (or
+    error) for a quarterly submit."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/submit")
+    assert r.status_code == 200, r.text
+    assert r.json()["metrics"] == []
+
+
 # ── fix round 1: onboarding-date status gate + fallback logging ──────────
 
 def test_offered_but_not_yet_onboarded_gets_an_empty_calendar(client, monkeypatch, _clear):

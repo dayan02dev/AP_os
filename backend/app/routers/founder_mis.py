@@ -35,9 +35,15 @@ TRL sourcing (constraint 4): `_current_verified_trl` reads live from the
 AIR tables via `aq.fetch_round`/`aq.fetch_lever_scores` — never
 `aq.ensure_round`, so viewing or saving MIS never side-effect-creates an
 AIR round the founder has not opened AIR for — and is applied to a
-period_bundle's response by `_with_trl` as a response-shaping step, because
-`mis_query.py` is off-limits to edit for this task and cannot be taught to
-do this itself.
+period_bundle's response by `_with_trl` as a response-shaping step, since
+TRL sourcing needs `air_query`/`air_scoring` knowledge that belongs at this
+router boundary rather than inside `mis_query`'s own period-shape logic.
+`_with_trl` only overlays the live value for a DRAFT period, though:
+`submit_period` snapshots the then-current verified TRL into that period's
+own `vip_mis_metrics.actual` at submit time, and a submitted period is read
+back exactly as stored from then on ("submitted means frozen" — see
+`_current_verified_trl`'s and `_with_trl`'s own docstrings for the
+concrete bug this closes).
 """
 from __future__ import annotations
 
@@ -145,12 +151,26 @@ def _resolve_onboarded_on(ctx: dict) -> date:
 # ── TRL sourcing (constraint 4) ──────────────────────────────────────────
 
 def _current_verified_trl(application_id: str) -> int | None:
-    """The monthly metric grid's one computed row: `trl_level`'s `actual`,
-    read live from the founder's CURRENT (this quarter's) verified overall
-    AIR level — never persisted to `vip_mis_metrics`, never taken from a
-    request. Same "derive, never store" rule `mis_query._derived` applies
-    to vs_last/needs_gap/net_change, extended here to a value that lives in
-    another module's tables entirely.
+    """The monthly metric grid's computed row: `trl_level`'s `actual`, read
+    live from the founder's CURRENT (this quarter's) verified overall AIR
+    level. Never taken from a request. For a DRAFT period this value is
+    never persisted to `vip_mis_metrics` either — `_with_trl` overlays it
+    fresh on every read, the same "derive, never store" rule
+    `mis_query._derived` applies to vs_last/needs_gap/net_change, extended
+    here to a value that lives in another module's tables entirely.
+
+    A SUBMITTED period is the one exception (Ruling, part 1 — "submitted
+    means frozen"): `submit_period` below writes this function's result
+    into that period's own `vip_mis_metrics.actual` for `trl_level` ONCE,
+    at submit time, and `_with_trl` stops overlaying once a period is no
+    longer a draft. Without that snapshot, a submitted report's TRL would
+    keep changing after the fact every time this function is called again
+    — and because this function only ever looks at the CURRENT quarter's
+    AIR round (`aq.current_round_label(mp.today_ist())`), every historical
+    monthly report's TRL would silently go null the moment a new AIR
+    quarter opens and the founder has not yet touched AIR for it, with no
+    warning and no way to tell the true submitted-time value was ever
+    different.
 
     Uses `aq.fetch_round` (read-only), not `aq.ensure_round`: opening or
     saving an MIS period must never side-effect-create an AIR round for a
@@ -177,10 +197,21 @@ def _current_verified_trl(application_id: str) -> int | None:
 
 def _with_trl(bundle: dict, application_id: str) -> dict:
     """Overwrites `trl_level`'s `actual` in a period_bundle's metrics list
-    with the live-computed verified AIR level, for monthly periods only —
-    quarterly bundles carry no metrics at all. Done as a response-shaping
-    step here, not inside `mis_query.period_bundle`, because that module is
-    off-limits to edit for this task.
+    with the live-computed verified AIR level, for a DRAFT monthly period
+    only (Ruling, part 1 — "submitted means frozen"; quarterly bundles
+    carry no metrics at all regardless of status). A SUBMITTED period is
+    left exactly as `mis_query.period_bundle` returned it: `submit_period`
+    already wrote the true submit-time value into `vip_mis_metrics.actual`
+    for that row, and overlaying the CURRENT quarter's live level on top of
+    that stored snapshot would silently move a statutory report's TRL
+    after the fact — see `_current_verified_trl`'s docstring for the
+    concrete failure mode (every historical report going null on 1 April).
+    Done as a response-shaping step here, not inside
+    `mis_query.period_bundle`, because TRL sourcing needs `air_query`'s
+    read-only round/lever-score fetches (`aq.fetch_round`,
+    `aq.fetch_lever_scores`) and `air_scoring.rollups` — module-crossing
+    knowledge that belongs at the router boundary, not folded into
+    `mis_query`'s own period-shape logic.
 
     Builds a fresh list (and a fresh dict for the one row it changes)
     rather than mutating `bundle["metrics"]`'s rows in place — the
@@ -190,7 +221,7 @@ def _with_trl(bundle: dict, application_id: str) -> dict:
     fresh copies, so an in-place `m["actual"] = trl` would silently corrupt
     the test double's stored `vip_mis_metrics` state rather than only
     shaping this one response."""
-    if bundle["period"]["kind"] == "monthly":
+    if bundle["period"]["kind"] == "monthly" and bundle["period"]["status"] == "draft":
         trl = _current_verified_trl(application_id)
         bundle["metrics"] = [
             {**m, "actual": trl} if m.get("metric_key") == "trl_level" else m
@@ -633,8 +664,27 @@ async def put_headcount(
 async def submit_period(
     kind: str, period_key: str, ctx: Annotated[dict, Depends(require_vip)],
 ) -> dict:
+    """Freezes the period (constraint 6) and, for a monthly period, writes
+    a one-time snapshot of the CURRENT verified AIR TRL into that period's
+    own `vip_mis_metrics.actual` for `trl_level` (Ruling, part 1 —
+    "submitted means frozen"). This is the only write this router ever
+    makes to `trl_level.actual` — `put_metrics` above rejects a founder
+    supplying one — and it is what lets `_with_trl` stop overlaying the
+    live value the moment a period leaves draft: without this snapshot a
+    submitted report's TRL would keep drifting with the founder's current
+    AIR standing, and would silently go null every 1 April when a new AIR
+    quarter opens and `_current_verified_trl` has no round to read yet.
+    Quarterly periods carry no metrics at all (`_catalog_for_kind`/
+    `_with_trl` are both no-ops for them), so there is nothing to snapshot
+    there — the write below only runs for `kind == "monthly"`.
+    """
     period = _own_draft_period(ctx, kind, period_key)
     now = datetime.now(UTC).isoformat()
+    if kind == "monthly":
+        trl = _current_verified_trl(ctx["application_id"])
+        get_admin_client().table("vip_mis_metrics").update({
+            "actual": trl,
+        }).eq("period_id", period["id"]).eq("metric_key", "trl_level").execute()
     get_admin_client().table("vip_mis_periods").update({
         "status": "submitted", "submitted_at": now, "updated_at": now,
     }).eq("id", period["id"]).execute()
