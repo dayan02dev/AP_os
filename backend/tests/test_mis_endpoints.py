@@ -623,6 +623,76 @@ def test_date_field_accepts_an_iso_value(client, monkeypatch, _clear):
     assert r.status_code == 200, r.text
 
 
+def test_int_field_rejects_a_non_integral_float(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/asks", json=[
+        {"priority": 3.5, "category": "hiring_referrals", "ask": "help"},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_value"
+    assert r.json()["detail"]["field"] == "priority"
+
+
+def test_int_field_accepts_a_whole_number(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/asks", json=[
+        {"priority": 3, "category": "hiring_referrals", "ask": "help"},
+    ])
+    assert r.status_code == 200, r.text
+
+
+def test_date_field_rejects_basic_format_without_dashes(client, monkeypatch, _clear):
+    """`date.fromisoformat` on Python 3.11+ also accepts the ISO 8601
+    "basic" date format with no dashes — this endpoint requires strict
+    `YYYY-MM-DD`."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/publications", json=[
+        {"bucket": "published", "kind": "journal", "date": "20261231"},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_value"
+    assert r.json()["detail"]["field"] == "date"
+
+
+def test_date_field_rejects_iso_week_date_format(client, monkeypatch, _clear):
+    """`date.fromisoformat` on Python 3.11+ also accepts an ISO week date
+    ("2026-W01-1") — silently parsing it as 2025-12-29, nowhere near what
+    a founder typing that string meant."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/publications", json=[
+        {"bucket": "published", "kind": "journal", "date": "2026-W01-1"},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_value"
+    assert r.json()["detail"]["field"] == "date"
+
+
+def test_date_field_rejects_an_invalid_calendar_date(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/publications", json=[
+        {"bucket": "published", "kind": "journal", "date": "2026-13-01"},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_value"
+    assert r.json()["detail"]["field"] == "date"
+
+
+def test_date_field_round_trips_normalised(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/publications", json=[
+        {"bucket": "published", "kind": "journal", "date": "2026-12-31"},
+    ])
+    assert r.status_code == 200, r.text
+    row = r.json()["entries"]["publications"][0]
+    assert row["data"]["date"] == "2026-12-31"
+
+
 def test_a_null_entry_value_is_always_accepted(client, monkeypatch, _clear):
     """Leaving a field blank (JSON `null`) must not be rejected for any
     field type — value validation only applies to a value actually

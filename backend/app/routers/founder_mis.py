@@ -48,6 +48,7 @@ concrete bug this closes).
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, date, datetime
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
@@ -553,7 +554,16 @@ def _replace_entries_section(sb, period_id: str, section: str,
         _write()
 
 
-def _validate_entry_value(field: dict, value: Any) -> None:
+# Fix 3: `date.fromisoformat` on Python 3.11+ also accepts ISO 8601 forms
+# other than plain `YYYY-MM-DD` — a basic-format date with no dashes
+# ("20261231") and an ISO week date ("2026-W01-1", which parses as a
+# DIFFERENT calendar date, 2025-12-29, not an error) — neither of which is
+# what this catalog's `date` fields mean. This gates the *shape* before
+# `date.fromisoformat` gates calendar validity (rejecting "2026-13-01").
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_entry_value(field: dict, value: Any) -> Any:
     """Important-3: a row's KEYS are checked against `cat.entry_fields`
     above, but a value was never checked against that same field's own
     type/`options` — so a client sending `"done"`, `"DONE"` or `"Complete"`
@@ -570,36 +580,57 @@ def _validate_entry_value(field: dict, value: Any) -> None:
     allowed to leave any field blank; this only validates a value that was
     actually supplied. `choice` values must be one of the field's own
     `options` (every `choice` field in `mis_catalog.ENTRY_FIELDS` carries
-    one — enforced by `test_choice_fields_declare_their_options`). `int`/
+    one — enforced by `test_choice_fields_declare_their_options`).
     `numeric` values must be an actual number, not a numeric-looking
-    string — and not a `bool`, which is a `int` subclass in Python and
+    string — and not a `bool`, which is an `int` subclass in Python and
     would otherwise silently pass an `isinstance(value, int)` check.
-    `date` values must be an ISO `YYYY-MM-DD` string `date.fromisoformat`
-    accepts. `text`/`bool` carry no extra constraint here — any JSON
-    scalar is accepted, matching this endpoint's existing shallow-
-    validation posture (models/mis.py's own module docstring)."""
+    `int` values carry that same check PLUS (Fix 3) must be whole: a
+    `float` is only accepted when it has no fractional part (`3.0`, not
+    `3.5`) — `priority`/`filing_year` are template integer fields, and
+    `3.5` used to pass silently. This is still validation, not coercion
+    (the project's own deliberate prior decision — a numeric-looking
+    string like `"12"` still 422s rather than being cast): an accepted
+    whole-number float is returned exactly as given, never cast to `int`.
+    `date` values must be strict `YYYY-MM-DD` (Fix 3 — see `_ISO_DATE_RE`
+    above) AND a real calendar date; the return value is the *normalised*
+    ISO form `date.fromisoformat(value).isoformat()` produces — identical
+    to the input whenever the input was already strict (which
+    `_ISO_DATE_RE` has by this point guaranteed), but derived rather than
+    trusted either way, so callers store what was actually validated, not
+    the caller's own raw string. `text`/`bool` carry no extra constraint
+    here — any JSON scalar is accepted, matching this endpoint's existing
+    shallow-validation posture (models/mis.py's own module docstring).
+
+    Returns the value a caller should actually store — `value` itself for
+    every type except `date`."""
     if value is None:
-        return
+        return None
     ftype = field["type"]
     if ftype == "choice":
         if value not in field["options"]:
             raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 detail={"code": "invalid_value", "field": field["key"]})
-    elif ftype in ("int", "numeric"):
+    elif ftype == "int":
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail={"code": "invalid_value", "field": field["key"]})
+        if isinstance(value, float) and not value.is_integer():
+            raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail={"code": "invalid_value", "field": field["key"]})
+    elif ftype == "numeric":
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 detail={"code": "invalid_value", "field": field["key"]})
     elif ftype == "date":
-        valid = False
-        if isinstance(value, str):
-            try:
-                date.fromisoformat(value)
-                valid = True
-            except ValueError:
-                valid = False
-        if not valid:
+        if not (isinstance(value, str) and _ISO_DATE_RE.match(value)):
             raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 detail={"code": "invalid_value", "field": field["key"]})
+        try:
+            value = date.fromisoformat(value).isoformat()
+        except ValueError:
+            raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail={"code": "invalid_value", "field": field["key"]})
+    return value
 
 
 @router.put("/{kind}/{period_key}/entries/{section}")
@@ -614,17 +645,22 @@ async def put_entries(
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
                             detail={"code": "unknown_section"})
     fields = {f["key"]: f for f in cat.entry_fields(section)}
+    normalised_body: list[dict[str, Any]] = []
     for row in body:
         unknown = set(row.keys()) - set(fields)
         if unknown:
             raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 detail={"code": "unknown_field", "fields": sorted(unknown)})
-        for key, value in row.items():
-            _validate_entry_value(fields[key], value)
+        # Fix 3: store what was actually validated (in particular, a
+        # `date` field's normalised ISO form), not the request's own raw
+        # value — see `_validate_entry_value`'s docstring.
+        normalised_body.append({
+            key: _validate_entry_value(fields[key], value) for key, value in row.items()
+        })
 
     period = _own_draft_period(ctx, kind, period_key)
     sb = get_admin_client()
-    _replace_entries_section(sb, period["id"], section, body)
+    _replace_entries_section(sb, period["id"], section, normalised_body)
     _stamp_updated_at(period["id"])
     return _bundle(ctx, kind, period_key)
 
