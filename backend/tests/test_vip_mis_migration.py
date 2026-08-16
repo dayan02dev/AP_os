@@ -1,7 +1,10 @@
 """045 creates the five MIS reporting tables: one row per reporting period
 (vip_mis_periods) plus four child tables for metrics, financial series,
 headcount and the repeating entity sections (vip_mis_entries)."""
+import re
 from pathlib import Path
+
+from app.services import mis_catalog as cat
 
 
 def _sql() -> str:
@@ -100,25 +103,31 @@ def test_category_check_lists_all_four_headcount_categories():
         assert f"'{category}'" in sql, category
 
 
-def test_section_check_lists_all_ten_section_names():
-    """Same reasoning as the category check: assert the CHECK contents, not
-    just its presence. Mirrors the ten entries-typed section ids in
-    mis_catalog.SECTIONS + SECTION_EXTRA_ENTRIES."""
+def test_section_check_lists_every_catalog_entries_section_and_no_extras():
+    """Minor-5, highest value per line in the phase: mirrors
+    `mis_catalog.ENTRY_FIELDS` STRUCTURALLY — iterating the actual catalog
+    keys — rather than a hard-coded literal list. The old version of this
+    test pinned a literal ten-name list, so adding an 11th entries section
+    to mis_catalog would fail NOTHING here, and that section's rows would
+    then 23514-reject at runtime the first time a founder tried to save
+    them (a CHECK constraint the migration never grew to match) — a
+    founder's IP register (or whichever section) silently refusing to
+    save. `state_machine.py` <-> `statusMachine.js` only got an equivalent
+    mirror test after it had already drifted badly; this closes the same
+    gap here before it has the chance to.
+    """
     sql = _sql()
     assert "check (section in (" in sql
-    for section in (
-        "milestones",
-        "risks",
-        "asks",
-        "ip_assets",
-        "collaborations",
-        "publications",
-        "products",
-        "funding",
-        "planned_vs_actual",
-        "next_milestones",
-    ):
-        assert f"'{section}'" in sql, section
+    start = sql.index("check (section in (")
+    end = sql.index(")", start)  # closes the `in (...)` list, not the outer CHECK
+    check_block = sql[start:end]
+    listed = set(re.findall(r"'([a-z_]+)'", check_block))
+    expected = set(cat.ENTRY_FIELDS)
+    assert listed == expected, (
+        f"migration CHECK vs mis_catalog.ENTRY_FIELDS mismatch — "
+        f"missing from CHECK: {expected - listed}; "
+        f"extra in CHECK, not in catalog: {listed - expected}"
+    )
 
 
 def test_rls_enabled_on_all_five_with_no_policies():

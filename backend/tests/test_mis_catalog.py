@@ -173,3 +173,60 @@ def test_ask_category_options_have_human_readable_labels():
     assert labels["artgarage_facility"] == "ARTGarage / facility"
     assert labels["iisc_labs_faculty"] == "IISc labs / faculty"
     assert set(labels) == set(cats["options"])
+
+
+# ── Minor-7: full per-section field-key lists ─────────────────────────────
+# One assertion per entries section, comparing its full ORDERED key list
+# against a literal transcribed from the source template. The tests above
+# only check a handful of fields (a `choice` field's options, a couple of
+# labels) or that a schema exists at all — none of them would notice a
+# silently dropped field. A dropped field from a statutory register
+# (ip_assets' 12, funding's 10, ...) is not a cosmetic bug: it is a field
+# ARTPARK never receives, on every future report, with no error anywhere.
+_EXPECTED_ENTRY_FIELD_KEYS: dict[str, list[str]] = {
+    "milestones": ["milestone", "owner", "status", "notes"],
+    "risks": ["severity", "what_happened", "impact", "mitigation"],
+    "asks": ["priority", "category", "ask"],
+    "ip_assets": [
+        "bucket", "category", "title", "tech_area", "filing_year",
+        "grant_year", "patent_id", "scope", "country",
+        "rejection_status", "ownership", "commercialises_product",
+    ],
+    "collaborations": [
+        "bucket", "collaborator", "country", "programme_title",
+        "technology_area", "application_area", "our_role", "their_role",
+        "funding_lakh", "project_value_lakh", "mou_date", "start_date",
+        "end_date", "status", "outcomes",
+    ],
+    "publications": [
+        "bucket", "kind", "title", "authors", "venue", "date",
+        "peer_reviewed", "scope", "doi_or_link",
+    ],
+    "products": [
+        "title", "type", "technology_area", "project_value_lakh", "trl",
+        "development_status", "commercialisation_status",
+        "commercialisation_date", "revenue_lakh", "industry_licensee",
+        "commercialisation_mode", "deployment_status", "deployment_sites",
+    ],
+    "funding": [
+        "name", "status", "stage", "date", "amount_lakh",
+        "post_money_lakh", "valuation_date", "mode", "equity_pct",
+        "remarks",
+    ],
+    "planned_vs_actual": [
+        "planned", "achieved", "outcome", "reason", "corrective_action",
+    ],
+    "next_milestones": ["milestone", "target_date"],
+}
+
+
+def test_every_entries_section_is_covered_by_the_expected_key_lists():
+    """A new entries section added to ENTRY_FIELDS without a matching entry
+    here would otherwise pass every per-section assertion below vacuously
+    (the loop only walks what IS in the expected dict)."""
+    assert set(_EXPECTED_ENTRY_FIELD_KEYS) == set(cat.ENTRY_FIELDS)
+
+
+@pytest.mark.parametrize("section", sorted(_EXPECTED_ENTRY_FIELD_KEYS))
+def test_entry_field_keys_match_the_source_exactly(section):
+    assert [f["key"] for f in cat.ENTRY_FIELDS[section]] == _EXPECTED_ENTRY_FIELD_KEYS[section]
