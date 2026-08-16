@@ -60,6 +60,7 @@ from .routers import (
 from .routers import founder as founder_router
 from .routers import founder_air as founder_air_router
 from .routers import founder_journey as founder_journey_router
+from .routers import founder_mis as founder_mis_router
 from .routers import founder_resources as founder_resources_router
 from .utils.logging import configure_logging, request_id_var
 from .utils.middleware import (
@@ -181,6 +182,7 @@ app.include_router(sip_evidence_files.router)
 app.include_router(sip_resume.router)
 app.include_router(sip_application_templates.router)
 app.include_router(founder_air_router.router)  # VIP-only: TLR/AIR assessment
+app.include_router(founder_mis_router.router)  # VIP-only: MIS reporting
 # Shared
 app.include_router(support.router)
 app.include_router(waitlist.router)
