@@ -823,17 +823,38 @@ async def submit_period(
     Before any write: `_reject_out_of_order_submit` (Fix 1) 409s if an
     earlier period of the same kind is still `draft` — see that function
     for the bug this closes.
+
+    Then, still while the period is a draft (Fix 2): `mq._reconcile_children`
+    repairs any child rows missing from a period a crashed earlier request
+    left half-built — the same convergent reconciliation entry point
+    `ensure_periods`/`period_bundle` already use, called here rather than
+    reimplemented, and left byte-for-byte untouched. This must run before
+    the TRL-snapshot write below, not after: a period missing its
+    `trl_level` row would otherwise make that write's
+    `.eq("metric_key", "trl_level")` a silent no-op, leaving a submitted
+    report with no TRL row at all forever (a submitted period's children
+    are never reconciled again). It must also run before `status` flips
+    to `submitted` — reconciliation is only ever applied to a `draft`
+    period (see `_reconcile_children`'s callers), so this call only works
+    because it happens here, ahead of the status write below.
+    `_reconcile_children` never touches `vip_mis_periods` itself (only
+    `vip_mis_metrics`/`vip_mis_financials`/`vip_mis_headcount`), so
+    `period` — already fetched above — needs no re-read afterwards; every
+    write below still keys off this same `period["id"]`.
     """
     period = _own_draft_period(ctx, kind, period_key)
     _reject_out_of_order_submit(ctx, kind, period)
 
+    sb = get_admin_client()
+    mq._reconcile_children(sb, period, kind)
+
     now = datetime.now(UTC).isoformat()
     if kind == "monthly":
         trl = _current_verified_trl(ctx["application_id"])
-        get_admin_client().table("vip_mis_metrics").update({
+        sb.table("vip_mis_metrics").update({
             "actual": trl,
         }).eq("period_id", period["id"]).eq("metric_key", "trl_level").execute()
-    get_admin_client().table("vip_mis_periods").update({
+    sb.table("vip_mis_periods").update({
         "status": "submitted", "submitted_at": now, "updated_at": now,
     }).eq("id", period["id"]).execute()
     return _bundle(ctx, kind, period_key)

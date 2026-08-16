@@ -467,6 +467,46 @@ def test_regression_submitted_periods_vs_last_stays_frozen(client, monkeypatch, 
     assert r.json()["derived"]["metrics"]["vs_last"]["revenue_month"] == 20
 
 
+# ── Fix 2: reconcile at the freeze boundary ───────────────────────────────
+
+def test_submit_reconciles_missing_child_rows_before_freezing(client, monkeypatch, _clear):
+    """A draft period missing child rows entirely (e.g. a crashed request
+    left it half-built — the same "bare period" shape
+    test_metrics_upsert_includes_label_and_group_key uses to exercise the
+    equivalent gap on PUT) must be repaired by submit, not stay
+    permanently holey once frozen — including the trl_level row, whose
+    absence would otherwise make the TRL-snapshot write's
+    `.eq("metric_key", "trl_level")` a silent no-op."""
+    fake = _install(monkeypatch)
+    fake.tables["vip_air_assessments"].append({
+        "id": "round1", "application_id": "sapp1", "round_label": CUR_QUARTER,
+        "status": "submitted",
+    })
+    for lever in air_cat.LEVER_KEYS:
+        fake.tables["vip_air_lever_scores"].append({
+            "id": f"score-{lever}", "assessment_id": "round1", "lever": lever,
+            "verified_level": 4, "criteria_checked": [],
+        })
+    fake.tables["vip_mis_periods"].append({
+        "id": "bare-period", "application_id": "sapp1", "kind": "monthly",
+        "period_key": CUR_MONTH, "label": "Aug 2026",
+        "period_start": "2026-08-01", "period_end": "2026-08-31",
+        "due_date": "2026-09-05", "status": "draft", "narrative": {},
+    })
+    assert fake.tables["vip_mis_metrics"] == []
+
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert {m["metric_key"] for m in body["metrics"]} == {m["key"] for m in cat.METRICS}
+    trl = next(m for m in body["metrics"] if m["metric_key"] == "trl_level")
+    assert trl["actual"] == 4
+
+    row = next(m for m in fake.tables["vip_mis_metrics"]
+               if m["period_id"] == "bare-period" and m["metric_key"] == "trl_level")
+    assert row["actual"] == 4
+
+
 # ── unknown things 404/422 ────────────────────────────────────────────────
 
 def test_unknown_section_is_404(client, monkeypatch, _clear):
