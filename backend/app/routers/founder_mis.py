@@ -49,12 +49,15 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
+from dataclasses import asdict
 from datetime import UTC, date, datetime
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi import status as http_status
+from pydantic import BaseModel, ConfigDict
 
 from ..models.mis import FinancialAmountIn, HeadcountRowIn, MetricIn
 from ..services import air_query as aq
@@ -62,6 +65,7 @@ from ..services import air_scoring as sc
 from ..services import mis_catalog as cat
 from ..services import mis_periods as mp
 from ..services import mis_query as mq
+from ..services import mis_template_parser as mis_parser
 from ..supabase_client import get_admin_client
 from .founder import require_founder_access
 
@@ -893,4 +897,184 @@ async def submit_period(
     sb.table("vip_mis_periods").update({
         "status": "submitted", "submitted_at": now, "updated_at": now,
     }).eq("id", period["id"]).execute()
+    return _bundle(ctx, kind, period_key)
+
+
+# ── docx import: upload-and-parse (preview only) + commit (spec §5.6) ────
+#
+# Two calls, never one: `POST .../import` parses an uploaded .docx and
+# returns a PREVIEW -- current stored values side by side with what the
+# document parsed to, plus the matched/ambiguous/ignored/cross-check report
+# from mis_template_parser -- and writes nothing to any vip_mis_* child
+# table. `POST .../import/commit` takes a founder-confirmed subset of that
+# same shape and writes it through the EXACT SAME PUT handlers this file
+# already exposes (put_narrative/put_metrics/put_financials/put_headcount/
+# put_entries, called directly as plain functions rather than reimplemented)
+# -- so a confirmed commit gets every validation/freeze/catalog-membership
+# rule those endpoints already enforce for free, and there is no second,
+# looser write path into vip_mis_* anywhere in this file. A mis-parsed
+# number can therefore never reach a table without a founder explicitly
+# including it in the commit body.
+
+BUCKET = "vip-founder-docs"  # same private bucket founder_air.py's evidence uses
+
+
+def _upload(path: str, data: bytes, content_type: str) -> None:
+    sb = get_admin_client()
+    sb.storage.from_(BUCKET).upload(
+        path, data, {"content-type": content_type, "upsert": "true"}
+    )
+
+
+_MAX_IMPORT_BYTES = 26_214_400  # matches 044's bucket-level file_size_limit, same cap founder_air.py uses
+
+
+def _field_note_dicts(notes: list[mis_parser.FieldNote]) -> list[dict]:
+    return [asdict(n) for n in notes]
+
+
+def _cross_check_dicts(items: list[mis_parser.CrossCheckMismatch]) -> list[dict]:
+    return [asdict(c) for c in items]
+
+
+@router.post("/{kind}/{period_key}/import")
+async def import_mis_document(
+    kind: str, period_key: str,
+    ctx: Annotated[dict, Depends(require_vip)],
+    file: UploadFile = File(...),
+) -> dict:
+    """Parses an uploaded MIS `.docx` and returns a preview. Never writes to
+    any `vip_mis_*` child table -- the only write here is stamping
+    `vip_mis_periods.source_doc_path` for audit (spec §5.3), which happens
+    only after a successful parse."""
+    if kind not in cat.KINDS:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                            detail={"code": "unknown_kind"})
+    period = _own_draft_period(ctx, kind, period_key)
+
+    # MIME check before anything is read, matching founder_air.upload_evidence.
+    mime = (file.content_type or "").lower()
+    if mime != mis_parser.DOCX_MIME:
+        raise HTTPException(
+            status_code=http_status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail={"code": "unsupported_media", "mime": mime or None},
+        )
+
+    data = await file.read()
+    if len(data) > _MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=http_status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={"code": "too_large", "max_bytes": _MAX_IMPORT_BYTES},
+        )
+
+    fy_start_year = _fy_start_year(period["period_start"]) if kind == "quarterly" else None
+
+    # Cross-check context: the previous period's OWN stored actual/current_count
+    # values, the same source mis_query.period_bundle's own `derived` block
+    # reads from (_previous_period/_fetch_metrics/_fetch_headcount) -- read
+    # here directly since founder_mis.py already reaches into mis_query's
+    # underscored helpers elsewhere (_reject_out_of_order_submit) rather than
+    # duplicating a second "previous period" query.
+    prev_actual_by_metric_key: dict[str, float | None] | None = None
+    prev_headcount_current: dict[str, float | None] | None = None
+    prev = mq._previous_period(ctx["application_id"], kind, period_key)
+    if prev is not None:
+        if kind == "monthly":
+            prev_actual_by_metric_key = {
+                m["metric_key"]: m.get("actual") for m in mq._fetch_metrics(prev["id"])
+            }
+        else:
+            prev_headcount_current = {
+                r["category"]: r.get("current_count") for r in mq._fetch_headcount(prev)
+            }
+
+    try:
+        parsed = mis_parser.parse_mis_document(
+            file_bytes=data, mime=mime, fy_start_year=fy_start_year,
+            prev_actual_by_metric_key=prev_actual_by_metric_key,
+            prev_headcount_current=prev_headcount_current,
+        )
+    except mis_parser.MisParseError as exc:
+        status = (
+            http_status.HTTP_415_UNSUPPORTED_MEDIA_TYPE if exc.code == "unsupported_mime"
+            else http_status.HTTP_422_UNPROCESSABLE_ENTITY
+        )
+        raise HTTPException(status_code=status, detail={"code": exc.code, "detail": exc.detail}) from exc
+
+    if parsed.kind != kind:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "template_kind_mismatch", "expected": kind, "detected": parsed.kind},
+        )
+
+    # Stored for audit even though nothing else was written -- the source
+    # document is retained regardless of whether the founder ends up
+    # confirming any of what it parsed to.
+    object_name = f"{uuid.uuid4().hex}.docx"
+    storage_path = f"mis/{ctx['application_id']}/{kind}/{period_key}/{object_name}"
+    _upload(storage_path, data, mime)
+    get_admin_client().table("vip_mis_periods").update({
+        "source_doc_path": storage_path, "updated_at": datetime.now(UTC).isoformat(),
+    }).eq("id", period["id"]).execute()
+
+    return {
+        "detected_kind": parsed.kind,
+        "current": _bundle(ctx, kind, period_key),
+        "parsed": {
+            "narrative": parsed.narrative,
+            "metrics": parsed.metrics,
+            "financials": parsed.financials,
+            "headcount": parsed.headcount,
+            "entries": parsed.entries,
+        },
+        "matched": parsed.matched,
+        "ambiguous": _field_note_dicts(parsed.ambiguous),
+        "ignored": _field_note_dicts(parsed.ignored),
+        "cross_check_mismatches": _cross_check_dicts(parsed.cross_check_mismatches),
+    }
+
+
+class MisImportCommitBody(BaseModel):
+    """A founder-confirmed subset of a parsed preview -- every field is
+    optional; an omitted one is simply not written. Shaped identically to
+    the individual PUT bodies above (`MetricIn`/`FinancialAmountIn`/
+    `HeadcountRowIn` reused as-is, narrative/entries as the same plain
+    dict/list-of-dict shapes those PUT endpoints already accept) so commit
+    can hand each section straight to the existing handler with no
+    translation layer of its own."""
+    model_config = ConfigDict(extra="forbid")
+    narrative: dict[str, str | None] | None = None
+    metrics: list[MetricIn] | None = None
+    financials: list[FinancialAmountIn] | None = None
+    headcount: list[HeadcountRowIn] | None = None
+    entries: dict[str, list[dict[str, Any]]] | None = None
+
+
+@router.post("/{kind}/{period_key}/import/commit")
+async def commit_mis_import(
+    kind: str, period_key: str, body: MisImportCommitBody,
+    ctx: Annotated[dict, Depends(require_vip)],
+) -> dict:
+    """Writes exactly the confirmed subset, through the SAME handlers a
+    direct PUT call uses -- see the module note above this section. A
+    period no longer `draft` 409s here too, before any of the delegated
+    calls even run (each of them re-checks on its own regardless, since
+    they are also reachable directly)."""
+    if kind not in cat.KINDS:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                            detail={"code": "unknown_kind"})
+    _own_draft_period(ctx, kind, period_key)
+
+    if body.narrative:
+        await put_narrative(kind, period_key, body.narrative, ctx)
+    if body.metrics:
+        await put_metrics(kind, period_key, body.metrics, ctx)
+    if body.financials:
+        await put_financials(kind, period_key, body.financials, ctx)
+    if body.headcount:
+        await put_headcount(kind, period_key, body.headcount, ctx)
+    if body.entries:
+        for section, rows in body.entries.items():
+            await put_entries(kind, period_key, section, rows, ctx)
+
     return _bundle(ctx, kind, period_key)
