@@ -9,10 +9,15 @@ ensure_round is convergent rather than create-once: PostgREST offers no
 client-side transaction and this project deliberately has no exec_sql RPC
 (prod DDL is Studio-only), so a multi-statement write cannot be wrapped in
 one. Instead every call reconciles state to what it should be regardless of
-what it started as, which absorbs both a concurrent-insert race on the
-(application_id, round_label) unique constraint and a process that died
-mid-way through a previous call and left the round with fewer than six
-lever rows.
+what it started as, which absorbs three failure modes with the same
+recovery shape (insert; on a unique violation, re-read and trust whoever
+won): a concurrent-insert race on the (application_id, round_label) unique
+constraint on vip_air_assessments; the same race one table down, on the
+(assessment_id, lever) unique constraint on vip_air_lever_scores, reachable
+because the loser of the first race falls straight into the same
+unconditional lever-reconciliation path the winner is running for that same
+brand-new round; and a process that died mid-way through a previous call
+and left the round with fewer than six lever rows.
 """
 from __future__ import annotations
 
@@ -46,6 +51,30 @@ def fetch_round(application_id: str, round_label: str) -> dict | None:
     return rows[0] if rows else None
 
 
+def _is_unique_violation(exc: Exception) -> bool:
+    """Whether an insert failure looks like it hit a unique constraint
+    rather than some other error. supabase-py surfaces PostgREST errors as a
+    plain Exception, not a typed one, so message-sniffing is the least bad
+    option — the same check already used in app/routers/waitlist.py and
+    app/routers/admin_users.py, pulled out here so both call sites in this
+    module share one place to get the predicate right.
+    """
+    msg = str(exc).lower()
+    return "duplicate" in msg or "unique" in msg or "23505" in msg
+
+
+def _missing_levers(assessment_id: str) -> list[str]:
+    have = {row["lever"] for row in fetch_lever_scores(assessment_id)}
+    return [lever for lever in cat.LEVER_KEYS if lever not in have]
+
+
+def _insert_levers(sb, assessment_id: str, levers: list[str]) -> None:
+    sb.table("vip_air_lever_scores").insert([
+        {"assessment_id": assessment_id, "lever": lever, "criteria_checked": []}
+        for lever in levers
+    ]).execute()
+
+
 def ensure_round(application_id: str, round_label: str) -> dict:
     """The round for this quarter, created as a draft if it does not exist.
 
@@ -53,7 +82,8 @@ def ensure_round(application_id: str, round_label: str) -> dict:
     to schedule and nothing to operate. Convergent, not create-once: the
     assessment row and its six lever rows are reconciled to the correct
     state on every call, not only when the round is first created — see the
-    module docstring for why.
+    module docstring for why, including why the lever insert below needs the
+    same race recovery as the round insert.
     """
     sb = get_admin_client()
     rnd = fetch_round(application_id, round_label)
@@ -69,21 +99,31 @@ def ensure_round(application_id: str, round_label: str) -> dict:
             # (application_id, round_label) unique constraint. Read the
             # winner's row back instead of propagating a 500; anything that
             # is not resolvable that way is re-raised, not swallowed.
-            msg = str(exc).lower()
-            if "duplicate" in msg or "unique" in msg or "23505" in msg:
-                rnd = fetch_round(application_id, round_label)
-                if rnd is None:
-                    raise
-            else:
+            if not _is_unique_violation(exc):
+                raise
+            rnd = fetch_round(application_id, round_label)
+            if rnd is None:
                 raise
 
-    have = {row["lever"] for row in fetch_lever_scores(rnd["id"])}
-    missing = [lever for lever in cat.LEVER_KEYS if lever not in have]
+    missing = _missing_levers(rnd["id"])
     if missing:
-        sb.table("vip_air_lever_scores").insert([
-            {"assessment_id": rnd["id"], "lever": lever, "criteria_checked": []}
-            for lever in missing
-        ]).execute()
+        try:
+            _insert_levers(sb, rnd["id"], missing)
+        except Exception as exc:
+            # Same race, one table down: the loser of the round-insert race
+            # above falls into this same unconditional reconciliation for
+            # the same brand-new round, and can lose a second race on
+            # vip_air_lever_scores' (assessment_id, lever) constraint. Only
+            # a unique violation is recoverable here; re-read what is
+            # actually still missing and, if the other writer beat us to
+            # all six, there is nothing left to do. If some genuinely remain,
+            # attempt those once — a second failure is not caught again and
+            # propagates, same as an unrecoverable failure at the round site.
+            if not _is_unique_violation(exc):
+                raise
+            missing = _missing_levers(rnd["id"])
+            if missing:
+                _insert_levers(sb, rnd["id"], missing)
 
     return rnd
 

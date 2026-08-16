@@ -52,6 +52,42 @@ class _RaceOnce:
         return q
 
 
+class _LeverRaceOnce:
+    """Wraps a FakeSupabase so the first insert().execute() on
+    vip_air_lever_scores simulates losing a concurrent-insert race on the
+    (assessment_id, lever) constraint: right as it raises, the six rows a
+    competing process would already have written appear in the table — as
+    if that process's insert had just committed — so the re-read
+    immediately after the exception finds all six and nothing is missing.
+    Every call after the first behaves like the plain fake.
+    """
+
+    def __init__(self, inner: FakeSupabase, winner_rows: list[dict]):
+        self._inner = inner
+        self._winner_rows = winner_rows
+        self._armed = True
+
+    def table(self, name):
+        q = self._inner.table(name)
+        if name == "vip_air_lever_scores" and self._armed:
+            real_execute = q.execute
+
+            def execute():
+                if q._mode == "insert" and self._armed:
+                    self._armed = False
+                    self._inner.tables["vip_air_lever_scores"].extend(
+                        dict(r) for r in self._winner_rows
+                    )
+                    raise Exception(
+                        'duplicate key value violates unique constraint '
+                        '"vip_air_lever_scores_assessment_id_lever_key" (23505)'
+                    )
+                return real_execute()
+
+            q.execute = execute
+        return q
+
+
 # ── Indian FY quarters ────────────────────────────────────────────────
 
 @pytest.mark.parametrize("day,label", [
@@ -130,6 +166,38 @@ def test_ensure_round_survives_a_concurrent_insert_race(fake, monkeypatch):
     scores = fake.tables["vip_air_lever_scores"]
     assert len(scores) == 6
     assert {s["assessment_id"] for s in scores} == {"winner-id"}
+
+
+def test_ensure_round_survives_a_concurrent_lever_insert_race(fake, monkeypatch):
+    """After the round-insert race is recovered from, the loser falls into
+    the same unconditional lever-reconciliation path the winner is running
+    for that same brand-new round: if both reads land before either insert
+    commits, both compute the same `missing` set and both attempt the same
+    bulk insert against vip_air_lever_scores' (assessment_id, lever) unique
+    constraint. The second insert must recover the same way the round
+    insert does — return the round normally with exactly six levers — not
+    propagate."""
+    from app.services import air_catalog as cat
+
+    # The round already exists, so ensure_round goes straight to lever
+    # reconciliation without touching the round-insert race path at all.
+    fake.tables["vip_air_assessments"].append({
+        "id": "rnd-1", "application_id": "app1",
+        "round_label": "FY26-27-Q1", "status": "draft",
+    })
+    winner_levers = [
+        {"id": f"s-{lever}", "assessment_id": "rnd-1", "lever": lever, "criteria_checked": []}
+        for lever in cat.LEVER_KEYS
+    ]
+    racy = _LeverRaceOnce(fake, winner_levers)
+    monkeypatch.setattr(aq, "get_admin_client", lambda: racy)
+
+    rnd = aq.ensure_round("app1", "FY26-27-Q1")
+
+    assert rnd["id"] == "rnd-1"
+    scores = fake.tables["vip_air_lever_scores"]
+    assert len(scores) == 6
+    assert {s["lever"] for s in scores} == set(cat.LEVER_KEYS)
 
 
 def test_ensure_round_repairs_missing_lever_rows_without_touching_existing_ones(fake):
