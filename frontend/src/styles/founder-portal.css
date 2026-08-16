@@ -1243,3 +1243,64 @@
   border-color: var(--artblue);
   background: repeating-linear-gradient(45deg, var(--artlight) 0 3px, var(--paper) 3px 6px);
 }
+
+/* ======================================================================
+   LeverPanel (LeverPanel.jsx) — one AIR lever's three ladder questions,
+   its criteria checklist and the level chip that explains the ladder.
+   `air_scoring.lever_level` walks q1 -> q2 -> q3 and only lets a question
+   lift the level while every question before it sits at its own top
+   option, so the chip must say which question is *capping* the level —
+   not decorative, it's the one piece of copy that keeps the ladder from
+   reading as a broken form. */
+.founder-portal .fj-lever-panel { display: flex; flex-direction: column; gap: 24px; }
+.founder-portal .fj-lever-chip {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--artblue-deep);
+  background: var(--artlight);
+  border: 1px solid var(--artblue);
+  border-radius: var(--r-sharp);
+  padding: 8px 14px;
+}
+.founder-portal .fj-lever-question { border: none; padding: 0; margin: 0; }
+.founder-portal .fj-lever-question:disabled { opacity: 0.6; }
+.founder-portal .fj-lever-q-text {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--ink);
+  padding: 0;
+  margin: 0 0 4px;
+}
+.founder-portal .fj-lever-q-focus { font-size: 12.5px; color: var(--ink-dim); margin-bottom: 12px; }
+.founder-portal .fj-lever-options { display: flex; flex-direction: column; gap: 8px; }
+.founder-portal .fj-lever-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sharp);
+  padding: 10px 12px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.founder-portal .fj-lever-option:has(input:checked) {
+  border-color: var(--artblue);
+  background: var(--paper-soft);
+  color: var(--ink);
+}
+.founder-portal .fj-lever-option input[type="radio"] { margin-top: 2px; flex: none; }
+.founder-portal .fj-lever-criteria { border: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.founder-portal .fj-lever-criteria:disabled { opacity: 0.6; }
+.founder-portal .fj-lever-criteria-head {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink);
+  padding: 0;
+  margin: 0 0 4px;
+}
+.founder-portal .fj-lever-criterion { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: var(--ink-soft); cursor: pointer; }
+.founder-portal .fj-lever-criterion input[type="checkbox"] { margin-top: 2px; flex: none; }
