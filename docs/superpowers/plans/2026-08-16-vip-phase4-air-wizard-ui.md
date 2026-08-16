@@ -174,12 +174,19 @@ git commit -m "feat(vip): AirBar — 1-9 lever bar with verified/claimed split"
 
 1. **Three questions**, each a radio group over `question.options`. Option label is `option.text`; the value is `option.id`. Render `question.focus` as supporting copy. Selected value comes from `lever.q1_option` / `q2_option` / `q3_option`.
 2. **Criteria checklist** from `lever.criteria` (already narrowed by the backend to the claimed level — do not filter again). Checked state from `lever.criteria_checked`, an array of strings.
-3. **The level chip and the ladder explanation.** `lever.claimed_level` is authoritative — never recompute the score in the frontend, it is the backend's job and duplicating it invites drift. But you *must* explain it:
-   - No answers at all → "Not started".
-   - All three questions at their top option → "AIR {n} — fully evidenced."
-   - Otherwise → name the capping question: "AIR {n} — lifted by {Qk}. {Q(k+1)} will count once {Qk} is at its top option."
+3. **The level chip and the ladder explanation.** `lever.claimed_level` is authoritative — never recompute the score in the frontend, it is the backend's job and duplicating it invites drift. But you *must* explain it.
 
-   Derive the capping question by walking q1→q2→q3 and finding the first one whose selected option is not the maximum-level option in that question's own option list. That mirrors `lever_level`'s stopping condition without reimplementing its arithmetic.
+   Find the **capping question**: walk q1 → q2 → q3 and stop at the first one that is either unanswered, or answered with an option that is not the highest-level option in that question's own list. That mirrors `lever_level`'s stopping condition without reimplementing its arithmetic. Then:
+
+   | State | Copy |
+   |---|---|
+   | Nothing answered | "Not started." |
+   | Capping question is **unanswered** | "AIR {n} so far — answer {Qk} to go further." |
+   | Capping question is answered below its top, and k < 3 | "AIR {n} — {Qk} is capping this. {Q(k+1)} only counts once {Qk} is at its top option." |
+   | Capping question is answered below its top, and k = 3 | "AIR {n} — a higher Q3 answer would lift this further." |
+   | No capping question (all three at top) | "AIR {n} — fully evidenced." |
+
+   **The capping question is not the one that lifted the level.** If Q1 is answered and Q2 is blank, the level came from Q1 and Q2 is what is blocking. Copy that says "lifted by Q2" in that state is wrong — this is the specific error the table above exists to prevent.
 4. **`disabled`** disables every input and hides the ladder hint (there is nothing left to act on).
 
 - [ ] **Step 1: Write the failing tests**
@@ -205,9 +212,11 @@ const lever = (over = {}) => ({
 Tests to write:
 - Renders all three questions and every option's text.
 - Selecting an option calls `onAnswer("q2", "B")` with those exact arguments.
-- **Ladder:** with `q1_option: "A"` (not top) and `claimed_level: 1`, the panel names Q1 as the cap and says Q2 will count once Q1 is at its top option.
+- **Ladder:** with `q1_option: "A"` (not top) and `claimed_level: 1`, the panel names Q1 as the cap and says Q2 only counts once Q1 is at its top option.
 - **Ladder:** with `q1_option: "B"`, `q2_option: "A"`, `claimed_level: 2`, the cap named is Q2, not Q1.
-- **Fully evidenced:** all three at top → the "fully evidenced" copy, and no "will count once" text anywhere.
+- **Ladder, unanswered cap:** with `q1_option: "B"` (top) and `q2_option: null`, `claimed_level: 2`, the copy tells the founder to *answer* Q2 — and must NOT say Q2 lifted the level. Assert the "answer Q2" copy is present and that no "capping" phrasing naming Q2 as the lifter appears.
+- **Ladder, Q3 cap:** q1 and q2 at top, `q3_option: "A"`, `claimed_level: 3` → the Q3-specific copy, with no reference to a fourth question.
+- **Fully evidenced:** all three at top → the "fully evidenced" copy, and no "only counts once" text anywhere.
 - **Not started:** no answers → "Not started", and no ladder sentence.
 - Criteria render from `lever.criteria`; a criterion present in `criteria_checked` is checked; clicking calls `onToggleCriterion` with the criterion string.
 - `disabled` → every radio and checkbox is disabled and the ladder hint is absent.
@@ -234,10 +243,12 @@ git commit -m "feat(vip): LeverPanel with ladder-aware level explanation"
 
 **Files:**
 - Create: `frontend/src/pages/founder/components/EvidenceRow.jsx`
+- Test: `frontend/src/pages/founder/__tests__/EvidenceRow.test.jsx`
 
 **Interfaces:**
-- Consumes: one `bundle.levers` element.
-- Produces: `<EvidenceRow lever={leverState} disabled onUpload={(file) => …} onDelete={(id) => …} onDownload={(id) => …} />`
+- Consumes: one `bundle.levers` element, plus `documents` — the `bundle.catalog.documents[lever]` map of `level → document name`.
+- Produces: `<EvidenceRow lever={leverState} documents={docs} disabled onUpload={(airLevel, file) => …} onDelete={(id) => …} onDownload={(id) => …} />`
+- `onUpload` takes the level first because backfill uploads target a lower level than the claimed one. Task 5 passes `(airLevel, file)` straight to `founderApi.uploadAirEvidence(lever, airLevel, file)`.
 
 **Behaviour:**
 - Header: the lever name and `lever.required_document` — the document the framework demands at the claimed level.
