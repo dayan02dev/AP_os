@@ -1218,3 +1218,28 @@
   .founder-portal .fj-dash-two { grid-template-columns: 1fr; }
   .founder-portal .fj-dash-expense-tiles { grid-template-columns: 1fr 1fr; }
 }
+
+/* ======================================================================
+   AirBar (AirBar.jsx) — one AIR lever on a 1-9 scale. New for the VIP
+   readiness assessment, not ported from the mockup. Built standalone so
+   Phase 6's dashboard scorecard can reuse it unchanged.
+   Three segment states, driven by the component's `data-air-seg` attr:
+     verified -> solid artblue     (an ARTPARK reviewer has confirmed it)
+     claimed  -> hatched/ghost     (the founder asserts it, unverified)
+     empty    -> outlined, unfilled
+   `verified` is null for every venture until the verification surface
+   ships, so an all-hatched bar up to `claimed` is the everyday look, not
+   an error state — it must read as intentional. */
+.founder-portal .fj-air-bar { display: flex; flex-direction: column; gap: 8px; }
+.founder-portal .fj-air-bar-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.founder-portal .fj-air-bar-name { font-family: var(--font-display); font-weight: 600; font-size: 14px; color: var(--ink); }
+.founder-portal .fj-air-bar-value { font-family: var(--font-mono); font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
+.founder-portal .fj-air-bar-verified-val { color: var(--accent-green); }
+.founder-portal .fj-air-bar-track { display: grid; grid-template-columns: repeat(9, 1fr); gap: 3px; }
+.founder-portal .fj-air-seg { display: block; height: 10px; border-radius: var(--r-sharp); border: 1px solid var(--line-strong); }
+.founder-portal .fj-air-seg-empty { background: var(--paper-soft); }
+.founder-portal .fj-air-seg-verified { background: var(--artblue); border-color: var(--artblue); }
+.founder-portal .fj-air-seg-claimed {
+  border-color: var(--artblue);
+  background: repeating-linear-gradient(45deg, var(--artlight) 0 3px, var(--paper) 3px 6px);
+}
