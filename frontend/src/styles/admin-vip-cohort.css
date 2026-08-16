@@ -1,0 +1,105 @@
+/* Admin "VIP cohort" tab (spec §7) — the AIR verification queue/detail and
+   the MIS submissions matrix/period screens. Scoped under .adm-portal, same
+   convention as admin-portal.css, so nothing here leaks into other surfaces.
+   Reuses os-* atoms (os-table, os-btn, os-chip, os-card) wherever they
+   already say what's needed; the rules below only cover the shapes those
+   atoms don't have — the sub-nav, lever cards, the matrix grid, the
+   read-only section renderer. */
+
+.adm-portal .vipc-subnav {
+  display: flex; gap: 4px; background: var(--bg-soft);
+  padding: 3px; border-radius: 4px; border: 1px solid var(--line);
+  width: max-content; margin-bottom: 18px;
+}
+.adm-portal .vipc-subnav-btn {
+  border: none; background: transparent; cursor: pointer;
+  font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+  color: var(--ink-soft); padding: 7px 16px; border-radius: 3px;
+}
+.adm-portal .vipc-subnav-btn.active {
+  background: #fff; color: var(--ink); font-weight: 600;
+  box-shadow: 0 1px 3px rgba(36,36,36,0.08);
+}
+
+.adm-portal .vipc-banner {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 16px; border-radius: 4px; font-size: 13px;
+  margin-bottom: 16px; line-height: 1.5;
+}
+.adm-portal .vipc-banner.info { background: #eef2ff; border: 1px solid #c7d2fe; color: #3730a3; }
+.adm-portal .vipc-banner.warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; }
+.adm-portal .vipc-banner.error { background: #fdecec; border: 1px solid #f3c2c4; color: #b3262b; }
+
+.adm-portal .vipc-rollup-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.adm-portal .vipc-rollup-tile {
+  flex: 1 1 160px; border: 1px solid var(--line); border-radius: 4px;
+  padding: 12px 16px; background: var(--bg-paper);
+}
+.adm-portal .vipc-rollup-tile .lbl {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--ink-dim); font-weight: 600; margin-bottom: 6px;
+}
+.adm-portal .vipc-rollup-tile .val { font-size: 20px; font-weight: 700; color: var(--ink); }
+.adm-portal .vipc-rollup-tile .ghost { font-size: 12.5px; color: var(--ink-soft); margin-left: 8px; font-weight: 500; }
+
+.adm-portal .vipc-lever-card {
+  border: 1px solid var(--line); border-radius: 4px; margin-bottom: 14px; overflow: hidden;
+}
+.adm-portal .vipc-lever-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; background: var(--bg-soft); border-bottom: 1px solid var(--line);
+  gap: 12px; flex-wrap: wrap;
+}
+.adm-portal .vipc-lever-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.adm-portal .vipc-answer-row { border-top: 1px solid var(--line); padding-top: 10px; }
+.adm-portal .vipc-answer-row:first-child { border-top: none; padding-top: 0; }
+.adm-portal .vipc-answer-q { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+.adm-portal .vipc-answer-opt { font-size: 12.5px; color: var(--ink-soft); }
+.adm-portal .vipc-answer-opt .lvl { font-weight: 700; color: var(--ink); margin-right: 6px; }
+
+.adm-portal .vipc-criteria-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.adm-portal .vipc-criteria-item { font-size: 12.5px; color: var(--ink-soft); display: flex; gap: 6px; }
+.adm-portal .vipc-criteria-item.checked { color: var(--ink); }
+.adm-portal .vipc-criteria-item .mark { width: 14px; flex-shrink: 0; }
+
+.adm-portal .vipc-evidence-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 3px; font-size: 12.5px;
+}
+
+.adm-portal .vipc-verify-form {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;
+  border-top: 1px dashed var(--line); padding-top: 12px;
+}
+.adm-portal .vipc-verify-form label { font-size: 11px; font-weight: 600; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.06em; display: block; margin-bottom: 4px; }
+
+.adm-portal .vipc-matrix-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; }
+.adm-portal .vipc-matrix-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.adm-portal .vipc-matrix-table th, .adm-portal .vipc-matrix-table td {
+  padding: 8px 12px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap;
+}
+.adm-portal .vipc-matrix-table th.startup-col, .adm-portal .vipc-matrix-table td.startup-col {
+  position: sticky; left: 0; background: var(--bg-paper); z-index: 1; font-weight: 600;
+}
+.adm-portal .vipc-cell-btn {
+  border: none; background: transparent; cursor: pointer; padding: 3px 9px;
+  border-radius: 10px; font-size: 11px; font-weight: 700; letter-spacing: 0.02em;
+}
+.adm-portal .vipc-cell-btn.is-submitted { background: #dcfce7; color: #166534; }
+.adm-portal .vipc-cell-btn.is-overdue { background: #fdecec; color: #b3262b; }
+.adm-portal .vipc-cell-btn.is-draft { background: var(--bg-soft); color: var(--ink-soft); border: 1px solid var(--line); }
+.adm-portal .vipc-cell-missing { color: var(--line-strong); font-size: 12px; }
+
+.adm-portal .vipc-section { border: 1px solid var(--line); border-radius: 4px; margin-bottom: 14px; }
+.adm-portal .vipc-section-head { padding: 12px 16px; background: var(--bg-soft); border-bottom: 1px solid var(--line); }
+.adm-portal .vipc-section-head .num { color: var(--ink-dim); font-weight: 600; margin-right: 6px; }
+.adm-portal .vipc-section-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.adm-portal .vipc-narrative-field .prompt { font-size: 12px; font-weight: 600; color: var(--ink-dim); margin-bottom: 3px; }
+.adm-portal .vipc-narrative-field .value { font-size: 13px; color: var(--ink); white-space: pre-wrap; }
+
+.adm-portal .vipc-mini-table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 8px; }
+.adm-portal .vipc-mini-table th, .adm-portal .vipc-mini-table td {
+  padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: left;
+}
+.adm-portal .vipc-mini-table th { color: var(--ink-dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.adm-portal .vipc-extra-title { font-size: 12px; font-weight: 700; color: var(--ink-soft); margin-top: 10px; }
