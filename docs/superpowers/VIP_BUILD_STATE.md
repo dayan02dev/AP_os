@@ -23,10 +23,10 @@ Work only in that worktree — concurrent sessions cross-contaminate otherwise.
 | 2 | AIR readiness assessment **backend** | ✅ complete, whole-phase reviewed, fix wave applied |
 | 3 | MIS reporting **backend** | ✅ complete, whole-phase reviewed, fix wave + scoped re-review + residual fixes |
 | 4 | Founder UI: AIR wizard (spec §4.3/§4.4) | ✅ complete, whole-phase reviewed, 18-item fix wave applied |
-| 5 | Founder UI: MIS monthly + quarterly forms (spec §5.3/§5.4) | planning |
-| 6 | VIP process dashboard (spec §6) | planning |
+| 5 | Founder UI: MIS monthly + quarterly forms (spec §5.3/§5.4) | ✅ complete — 6 components + shell |
+| 6 | VIP process dashboard (spec §6) | ✅ complete — derivations + 5 panels + shell |
 | 7 | Admin "VIP cohort" verification surface (spec §7) | ✅ complete — backend (28 tests) + both screens (71 tests) |
-| 8 | docx import + xlsx export (spec §5.6/§5.7) | in progress |
+| 8 | docx import + xlsx export (spec §5.6/§5.7) | ✅ complete — parser, review+commit endpoints, xlsx/csv export |
 
 **The phase numbering diverges from spec §10 deliberately.** §10 folded each
 surface's UI into the phase that built its backend — its phase 2 was "AIR
@@ -35,12 +35,15 @@ monthly and quarterly forms". In execution both shipped backend-only, so the two
 UI tails are now phases 4 and 5, and everything after shifts by two. Spec §10's
 *ordering* still holds; only the boundaries moved.
 
-`FounderTlr.jsx`, `FounderMis.jsx` and `VipDashboard.jsx` are 24-29 line
-placeholders. **Nothing in the VIP portal is clickable yet** — the AIR and MIS
-backends are complete and tested but have no UI in front of them.
+**All eight phases are code-complete.** Baseline at completion: backend
+**1647 passed / 20 failed** (the 20 are the known pre-existing baseline,
+verified byte-identical against untouched HEAD by two agents independently,
+one via a disposable worktree); frontend **894 passed / 2 failed**
+(`AdminPipeline.test.js`, `AdminPipeline.unassign.test.jsx` — same known
+baseline). `vite build` clean.
 
-Build the two forms before the dashboard: the dashboard renders AIR + MIS state,
-so building it first means building a view of data no founder can enter.
+**Nothing has been exercised in a browser.** No staging deploy of this branch
+has happened, so every claim above rests on unit tests.
 
 ## Founder UI conventions (read before phases 4-6)
 
@@ -141,9 +144,14 @@ Carried forward deliberately rather than left to be rediscovered:
   has no test. Highest-value gap to close first.
 - **CSS and the `accept` attribute** have no assertions anywhere in this repo's
   suite — verified by inspection only.
-- **Integration between surfaces.** Six agents built against a written
-  contract; unit coverage is strong but the seams are where defects should be
+- **Integration between surfaces.** Nine agents built against written
+  contracts; unit coverage is strong but the seams are where defects should be
   expected. Nothing has been exercised in a browser yet.
+- **Quarterly docx import is detect-and-flag, not prefill.** Seven of the
+  quarterly template's entry sections are free prose with no per-field textual
+  anchor, so the parser surfaces them as flagged raw text rather than guessing
+  structured fields. Deliberate, but it means quarterly import does far less
+  than monthly import does.
 
 ## Staging gap
 
