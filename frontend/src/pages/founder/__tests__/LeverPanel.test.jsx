@@ -69,7 +69,12 @@ describe("LeverPanel", () => {
       onAnswer={() => {}}
       onToggleCriterion={() => {}}
     />);
-    expect(screen.getByText(/answer Q2 to go further/)).toBeInTheDocument();
+    // F12: "to go further" promises the number will move, but in some
+    // reachable states the option bands overlap and answering Qk leaves the
+    // level unchanged. "To continue" only promises the founder must still
+    // answer it — nothing about where the number ends up.
+    expect(screen.getByText(/answer Q2 to continue/)).toBeInTheDocument();
+    expect(screen.queryByText(/to go further/)).not.toBeInTheDocument();
     // Must not say Q2 is "capping" this — the capping phrasing is reserved
     // for an answered-but-below-top question, not an unanswered one.
     expect(screen.queryByText(/Q2 is capping this/)).not.toBeInTheDocument();
@@ -120,6 +125,41 @@ describe("LeverPanel", () => {
       .toBeInTheDocument();
     // And it must not invent a level for a lever the ladder never lifted.
     expect(screen.queryByText(/AIR null/)).not.toBeInTheDocument();
+  });
+
+  // F11: `findCappingQuestion` returns null both when every question is
+  // answered at its own top (fully evidenced) AND when there are no
+  // questions to walk at all — an empty `questions` array falls through
+  // the for-loop untouched. Not reachable via the real catalog today, but
+  // it's the third instance of this phase's recurring shape: a null with
+  // two different causes and one message that's only true for one of them.
+  it("F11: an empty questions array never renders the fully-evidenced copy or 'AIR null'", () => {
+    render(<LeverPanel lever={lever()} questions={[]} onAnswer={() => {}} onToggleCriterion={() => {}} />);
+    expect(screen.queryByText(/fully evidenced/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/AIR null/)).not.toBeInTheDocument();
+  });
+
+  // F13: LeverPanel's criteria fieldset renders only when non-empty, so a
+  // lever at a level the catalog defines no criteria for (real case:
+  // supply_chain 5 and 7 are both reachable) sits in total silence — the
+  // same recurring shape as EvidenceRow's document empty state (7b1de44):
+  // `criteria: []` is null for two different reasons and needs different
+  // copy for each.
+  it("F13: a claimed level with no criteria defined says so, rather than staying silent", () => {
+    render(<LeverPanel
+      lever={lever({ q1_option: "B", q2_option: "B", q3_option: "B", claimed_level: 4, criteria: [] })}
+      questions={QUESTIONS}
+      onAnswer={() => {}}
+      onToggleCriterion={() => {}}
+    />);
+    expect(screen.getByText(/No measurement criteria are defined for AIR 4/)).toBeInTheDocument();
+  });
+
+  it("F13: no claimed level yet says criteria are named once a level is claimed, not that none are defined", () => {
+    render(<LeverPanel lever={lever()} questions={QUESTIONS} onAnswer={() => {}} onToggleCriterion={() => {}} />);
+    expect(screen.getByText(/Measurement criteria are named once this lever has a claimed level/))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/No measurement criteria are defined/)).not.toBeInTheDocument();
   });
 
   it("renders criteria from lever.criteria, checks those in criteria_checked, and reports toggles", () => {

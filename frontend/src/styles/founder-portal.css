@@ -1296,6 +1296,7 @@
   color: var(--ink);
 }
 .founder-portal .fj-lever-option input[type="radio"] { margin-top: 2px; flex: none; }
+.founder-portal .fj-lever-option-text { flex: 1; }
 .founder-portal .fj-lever-criteria { border: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
 .founder-portal .fj-lever-criteria:disabled { opacity: 0.6; }
 .founder-portal .fj-lever-criteria-head {
@@ -1308,6 +1309,7 @@
 }
 .founder-portal .fj-lever-criterion { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: var(--ink-soft); cursor: pointer; }
 .founder-portal .fj-lever-criterion input[type="checkbox"] { margin-top: 2px; flex: none; }
+.founder-portal .fj-lever-criteria-empty { font-size: 13px; color: var(--ink-dim); font-style: italic; }
 
 /* ======================================================================
    EvidenceRow (EvidenceRow.jsx) — one lever's qualifying document: the
@@ -1390,7 +1392,7 @@
 .founder-portal .fj-air-submit-gate { margin-top: 40px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .founder-portal .fj-air-outstanding { font-size: 13px; color: var(--ink-soft); }
 .founder-portal .fj-air-submitted-badge {
-  margin-top: 40px; border: 1px solid var(--accent-green); background: #f2f8f6;
+  margin-top: 40px; border: 1px solid var(--accent-green); background: #eef5f1;
   padding: 20px 24px; display: flex; align-items: center; gap: 14px;
 }
 .founder-portal .fj-air-submitted-badge .dot { width: 12px; height: 12px; }

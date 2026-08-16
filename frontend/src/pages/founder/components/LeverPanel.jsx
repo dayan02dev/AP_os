@@ -49,6 +49,17 @@ function findCappingQuestion(questions, lever) {
 // level (never named here — that isn't what a founder needs to act on)
 // from the question that is *capping* it.
 function ladderCopy(lever, questions) {
+  // Not reachable via the real catalog today — every lever defines at
+  // least one question — but `findCappingQuestion` returns null here too
+  // (the for-loop never runs on an empty array), which is the SAME null
+  // "fully evidenced" returns for a genuinely maxed-out ladder. Conflating
+  // them would print "AIR null — fully evidenced.": a null with two causes
+  // and a message that's only true for one of them, the third instance of
+  // that shape in this phase.
+  if (!questions || questions.length === 0) {
+    return "No ladder questions are defined for this lever.";
+  }
+
   const cap = findCappingQuestion(questions, lever);
   const n = lever.claimed_level;
 
@@ -78,7 +89,11 @@ function ladderCopy(lever, questions) {
       }
       return "Not started.";
     }
-    return `AIR ${n} so far — answer ${label} to go further.`;
+    // "To go further" promises the number will move — but in some
+    // reachable states the option bands overlap and answering this
+    // question leaves the level unchanged. The founder must still answer
+    // it either way; "to continue" doesn't promise movement it can't back up.
+    return `AIR ${n} so far — answer ${label} to continue.`;
   }
 
   // Answered, but below its own top option.
@@ -124,7 +139,7 @@ export default function LeverPanel({ lever, questions, disabled, onAnswer, onTog
         );
       })}
 
-      {criteria.length > 0 && (
+      {criteria.length > 0 ? (
         <fieldset className="fj-lever-criteria" disabled={disabled}>
           <legend className="fj-lever-criteria-head">Measurement criteria</legend>
           {criteria.map((c) => (
@@ -139,6 +154,17 @@ export default function LeverPanel({ lever, questions, disabled, onAnswer, onTog
             </label>
           ))}
         </fieldset>
+      ) : (
+        // `criteria` is empty for TWO different reasons, same shape as
+        // EvidenceRow's required-document empty state (7b1de44): no level
+        // claimed yet, or a level IS claimed but the catalog defines no
+        // criteria there (real case: supply_chain 5 and 7 are both
+        // reachable). Silence reads as a missing feature either way.
+        <div className="fj-lever-criteria-empty">
+          {lever.claimed_level == null
+            ? "Measurement criteria are named once this lever has a claimed level."
+            : `No measurement criteria are defined for AIR ${lever.claimed_level} on this lever.`}
+        </div>
       )}
     </div>
   );
