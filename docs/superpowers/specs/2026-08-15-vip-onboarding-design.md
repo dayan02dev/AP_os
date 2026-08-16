@@ -181,6 +181,14 @@ calendar, so the dashboard can plot AIR 3 → 4 → 5 over time rather than show
 static number. A new round seeds its answers from the previous round so the founder
 edits deltas.
 
+Seeding covers only `q1_option`/`q2_option`/`q3_option` and `criteria_checked` — never
+`verified_level`, `verifier_note`, `verified_at`/`verified_by`, or evidence, all of
+which belong to the round they were actually performed on. **Evidence from prior
+rounds is not reachable**: all three `/founder/air/evidence` endpoints resolve only
+the current quarter's round. Reopening a prior round's evidence (e.g. to reuse a
+still-valid document without re-uploading it) is deliberately deferred to the admin
+phase, not built here.
+
 ### 4.6 Tables
 
 These tables are VIP-only, so they carry no `track` column and keep a real foreign key

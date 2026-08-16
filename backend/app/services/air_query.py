@@ -18,6 +18,16 @@ because the loser of the first race falls straight into the same
 unconditional lever-reconciliation path the winner is running for that same
 brand-new round; and a process that died mid-way through a previous call
 and left the round with fewer than six lever rows.
+
+Genuine new-round creation also seeds the six lever rows' answers from the
+most recent earlier round of the same application (spec §4.5: "A new round
+seeds its answers from the previous round so the founder edits deltas").
+The repair path — filling in levers missing from a round that already
+exists — does not re-seed; see ensure_round's docstring for how the two are
+told apart. Evidence is not carried forward and is not reachable across
+rounds from any endpoint: all three /founder/air/evidence routes resolve
+only the current quarter's round, by design — reopening a prior round's
+evidence is deferred to the admin phase.
 """
 from __future__ import annotations
 
@@ -68,11 +78,62 @@ def _missing_levers(assessment_id: str) -> list[str]:
     return [lever for lever in cat.LEVER_KEYS if lever not in have]
 
 
-def _insert_levers(sb, assessment_id: str, levers: list[str]) -> None:
-    sb.table("vip_air_lever_scores").insert([
-        {"assessment_id": assessment_id, "lever": lever, "criteria_checked": []}
-        for lever in levers
-    ]).execute()
+def _seed_answers(application_id: str, round_label: str) -> dict[str, dict]:
+    """Answers to seed a genuinely new round from, per spec §4.5: "A new round
+    seeds its answers from the previous round so the founder edits deltas."
+
+    Keyed by lever, each value carrying q1_option/q2_option/q3_option and
+    criteria_checked only — never verified_level, verifier_note,
+    verified_at/verified_by, or evidence, all of which belong to the round
+    they were actually performed on. Returns {} when there is no earlier
+    round (the first-ever round is empty, not seeded from nothing).
+
+    "Most recent earlier round" = the max of round_label among labels less
+    than the new one. round_label sorts lexicographically in chronological
+    order for this format (FY26-27-Q1 < FY26-27-Q2 < FY27-28-Q1), so that
+    max is found by sorting in Python — not via .order(), which FakeSupabase
+    treats as a no-op — over every round for this application (a `<` filter
+    is not expressible via .eq()/.in_() anyway).
+    """
+    rows = (
+        get_admin_client().table("vip_air_assessments").select("*")
+        .eq("application_id", application_id).execute().data or []
+    )
+    earlier = sorted(
+        (r for r in rows if r["round_label"] < round_label),
+        key=lambda r: r["round_label"],
+        reverse=True,
+    )
+    if not earlier:
+        return {}
+    return {
+        row["lever"]: {
+            "q1_option": row.get("q1_option"),
+            "q2_option": row.get("q2_option"),
+            "q3_option": row.get("q3_option"),
+            "criteria_checked": row.get("criteria_checked") or [],
+        }
+        for row in fetch_lever_scores(earlier[0]["id"])
+    }
+
+
+def _insert_levers(sb, assessment_id: str, levers: list[str],
+                    seed: dict[str, dict] | None = None) -> None:
+    seed = seed or {}
+    rows = []
+    for lever in levers:
+        row = {"assessment_id": assessment_id, "lever": lever, "criteria_checked": []}
+        s = seed.get(lever)
+        if s:
+            row["q1_option"] = s["q1_option"]
+            row["q2_option"] = s["q2_option"]
+            row["q3_option"] = s["q3_option"]
+            row["criteria_checked"] = s["criteria_checked"]
+            row["claimed_level"] = sc.lever_level(lever, {
+                "q1": s["q1_option"], "q2": s["q2_option"], "q3": s["q3_option"],
+            })
+        rows.append(row)
+    sb.table("vip_air_lever_scores").insert(rows).execute()
 
 
 def ensure_round(application_id: str, round_label: str) -> dict:
@@ -84,9 +145,19 @@ def ensure_round(application_id: str, round_label: str) -> dict:
     state on every call, not only when the round is first created — see the
     module docstring for why, including why the lever insert below needs the
     same race recovery as the round insert.
+
+    Genuine new-round creation seeds its six levers from the most recent
+    earlier round (see _seed_answers) — but the repair path, which only
+    fills in levers missing from a round that already existed, must not:
+    `is_new_round` is latched from whether *this call's* initial read found
+    no round at all, before any insert or race recovery, so both winner and
+    loser of a round-insert race still seed (both correctly observed no
+    round existed yet), while a later call repairing a partially-written
+    existing round does not (correctly — that round already exists).
     """
     sb = get_admin_client()
     rnd = fetch_round(application_id, round_label)
+    is_new_round = rnd is None
     if rnd is None:
         try:
             rnd = sb.table("vip_air_assessments").insert({
@@ -105,10 +176,12 @@ def ensure_round(application_id: str, round_label: str) -> dict:
             if rnd is None:
                 raise
 
+    seed = _seed_answers(application_id, round_label) if is_new_round else {}
+
     missing = _missing_levers(rnd["id"])
     if missing:
         try:
-            _insert_levers(sb, rnd["id"], missing)
+            _insert_levers(sb, rnd["id"], missing, seed)
         except Exception as exc:
             # Same race, one table down: the loser of the round-insert race
             # above falls into this same unconditional reconciliation for
@@ -123,7 +196,7 @@ def ensure_round(application_id: str, round_label: str) -> dict:
                 raise
             missing = _missing_levers(rnd["id"])
             if missing:
-                _insert_levers(sb, rnd["id"], missing)
+                _insert_levers(sb, rnd["id"], missing, seed)
 
     return rnd
 

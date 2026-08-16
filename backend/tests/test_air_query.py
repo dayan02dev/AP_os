@@ -234,9 +234,123 @@ def test_ensure_round_repairs_missing_lever_rows_without_touching_existing_ones(
     assert by_id["s3"]["lever"] == "qualification"
 
 
+# ── IMPORTANT 3: carry-forward seeding ───────────────────────────────
+
+
+def test_first_ever_round_is_not_seeded(fake):
+    """No earlier round exists yet, so there is nothing to seed from — a
+    first round is genuinely empty, not seeded from nothing."""
+    aq.ensure_round("app1", "FY26-27-Q1")
+    for row in fake.tables["vip_air_lever_scores"]:
+        assert row.get("q1_option") is None
+        assert row.get("q2_option") is None
+        assert row.get("q3_option") is None
+        assert row.get("criteria_checked") == []
+
+
+def test_a_new_round_seeds_all_six_levers_from_the_most_recent_earlier_round(fake):
+    """Spec §4.5: 'A new round seeds its answers from the previous round so
+    the founder edits deltas.'"""
+    from app.services import air_catalog as cat
+
+    first = aq.ensure_round("app1", "FY26-27-Q1")
+    for row in fake.tables["vip_air_lever_scores"]:
+        if row["assessment_id"] != first["id"]:
+            continue
+        lever = row["lever"]
+        row["q1_option"] = cat.QUESTIONS[lever][0]["options"][0]["id"]
+        row["q2_option"] = None
+        row["q3_option"] = None
+        row["criteria_checked"] = [f"{lever}-checked"]
+
+    second = aq.ensure_round("app1", "FY26-27-Q2")
+    assert second["id"] != first["id"]
+    second_scores = [r for r in fake.tables["vip_air_lever_scores"]
+                      if r["assessment_id"] == second["id"]]
+    assert len(second_scores) == 6
+    for row in second_scores:
+        lever = row["lever"]
+        assert row["q1_option"] == cat.QUESTIONS[lever][0]["options"][0]["id"]
+        assert row["q2_option"] is None
+        assert row["q3_option"] is None
+        assert row["criteria_checked"] == [f"{lever}-checked"]
+    # First round's own rows are untouched by the second round's creation.
+    first_scores = [r for r in fake.tables["vip_air_lever_scores"]
+                     if r["assessment_id"] == first["id"]]
+    assert len(first_scores) == 6
+
+
+def test_seed_does_not_copy_verified_fields(fake):
+    """Verification belongs to the round it was actually performed on and
+    must never be carried forward to a new round's answers."""
+    first = aq.ensure_round("app1", "FY26-27-Q1")
+    for row in fake.tables["vip_air_lever_scores"]:
+        if row["assessment_id"] != first["id"]:
+            continue
+        row["q1_option"] = "A"
+        row["verified_level"] = 5
+        row["verifier_note"] = "looks good"
+        row["verified_at"] = "2026-07-01T00:00:00Z"
+        row["verified_by"] = "verifier-1"
+
+    second = aq.ensure_round("app1", "FY26-27-Q2")
+    second_scores = [r for r in fake.tables["vip_air_lever_scores"]
+                      if r["assessment_id"] == second["id"]]
+    assert len(second_scores) == 6
+    for row in second_scores:
+        assert row["q1_option"] == "A"  # the answer itself is seeded
+        assert row.get("verified_level") is None
+        assert row.get("verifier_note") is None
+        assert row.get("verified_at") is None
+        assert row.get("verified_by") is None
+
+
+def test_repair_path_does_not_seed_even_when_an_earlier_round_has_answers(fake):
+    """The repair path — filling in levers missing from a round that already
+    exists — must never seed, even when a genuine earlier round with real
+    answers exists to seed from. Only genuine new-round creation seeds."""
+    first = aq.ensure_round("app1", "FY26-27-Q1")
+    for row in fake.tables["vip_air_lever_scores"]:
+        if row["assessment_id"] == first["id"]:
+            row["q1_option"] = "A"
+
+    # The second round already exists but was only partially written
+    # (mirrors test_ensure_round_repairs_missing_lever_rows_without_touching
+    # _existing_ones) — ensure_round must repair it, not seed it, even
+    # though app1's FY26-27-Q1 round above now has real answers it could
+    # otherwise have pulled from.
+    fake.tables["vip_air_assessments"].append({
+        "id": "second-id", "application_id": "app1",
+        "round_label": "FY26-27-Q2", "status": "draft",
+    })
+    fake.tables["vip_air_lever_scores"].append(
+        {"id": "existing", "assessment_id": "second-id",
+         "lever": "scientific_principles", "criteria_checked": []}
+    )
+
+    rnd = aq.ensure_round("app1", "FY26-27-Q2")
+
+    assert rnd["id"] == "second-id"
+    second_scores = [r for r in fake.tables["vip_air_lever_scores"]
+                      if r["assessment_id"] == "second-id"]
+    assert len(second_scores) == 6
+    for row in second_scores:
+        assert row.get("q1_option") is None
+        assert row.get("q2_option") is None
+        assert row.get("q3_option") is None
+
+
 def test_fetch_lever_scores_returns_six_in_catalog_order(fake):
+    """Mutation-proven: ensure_round's own insert already writes the six
+    lever rows in catalog order, so leaving the fixture as-inserted would
+    still pass this assertion with fetch_lever_scores' sort deleted
+    entirely. Shuffle the underlying storage first so the test actually
+    exercises the sort rather than the insert order it happens to inherit."""
     from app.services import air_catalog as cat
     rnd = aq.ensure_round("app1", "FY26-27-Q1")
+    shuffled = list(reversed(fake.tables["vip_air_lever_scores"]))
+    assert [r["lever"] for r in shuffled] != list(cat.LEVER_KEYS)  # actually out of order
+    fake.tables["vip_air_lever_scores"][:] = shuffled
     got = aq.fetch_lever_scores(rnd["id"])
     assert [s["lever"] for s in got] == list(cat.LEVER_KEYS)
 
