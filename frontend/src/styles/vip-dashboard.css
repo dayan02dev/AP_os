@@ -165,3 +165,17 @@
 .vipd-risk-what { font-size: 14px; font-weight: 600; }
 .vipd-risk-meta { font-size: 12.5px; color: var(--ink-dim); }
 
+/* -- Stat tile 1's verification annotation (Task 7) --------------------- */
+/* State 1 — verified is structurally null for every lever until Phase 7's
+   admin surface ships; this sits under Tile 1's big number, the same
+   "awaiting verification" fact AirScorecardPanel's .vipd-verify-badge
+   states at panel scale, sized down for a stat tile's tighter footprint
+   rather than reusing that pill unchanged. */
+.vipd-tile-badge {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  margin-top: 4px;
+}
+

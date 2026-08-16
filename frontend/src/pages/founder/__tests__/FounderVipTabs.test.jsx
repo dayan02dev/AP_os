@@ -32,8 +32,22 @@ describe("VIP cohort tabs", () => {
 
   it("renders the MIS screen", async () => {
     vi.spyOn(founderApi, "me").mockResolvedValue(me(false));
+    vi.spyOn(founderApi, "getMis").mockResolvedValue({
+      catalog: {
+        kinds: ["monthly", "quarterly"],
+        sections: { monthly: [], quarterly: [] },
+        narrative_fields: {}, entry_fields: {}, metrics: [], metric_groups: [],
+        headcount_categories: [], financial_series: {}, financial_buckets: { needs: [] },
+      },
+      monthly: [{ period_key: "2026-06", label: "Jun 2026", status: "draft", due_date: "2026-07-05", overdue: false }],
+      quarterly: [],
+    });
     render(<MemoryRouter><FounderPortal tab="mis" /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText(/Monthly and quarterly reporting/i)).toBeInTheDocument());
+    // Real content, not the old placeholder: the kind tab and the fetched
+    // period's own label both come from the real FounderMis shell.
+    expect(screen.getByText("Monthly")).toBeInTheDocument();
+    expect(screen.getByText("Jun 2026")).toBeInTheDocument();
   });
 
   it("locks both VIP tabs until the MOU is signed", async () => {
@@ -65,10 +79,21 @@ describe("VIP cohort tabs", () => {
     await waitFor(() => expect(screen.getByText(/Push to procurement/i)).toBeInTheDocument());
   });
 
-  it("shows the VIP placeholder on the dashboard tab, not the TIR residency dashboard", async () => {
-    vi.spyOn(founderApi, "me").mockResolvedValue({ ...me(false), track: "sip" });
+  it("shows the real VIP process dashboard on the dashboard tab, not the TIR residency dashboard", async () => {
+    vi.spyOn(founderApi, "me").mockResolvedValue({ ...me(false), track: "sip", project_name: "Dharini" });
+    vi.spyOn(founderApi, "getAir").mockResolvedValue({
+      catalog: { levers: [], questions: {}, criteria: {}, documents: {} },
+      round: { id: "r1", round_label: "FY26-27-Q2", status: "draft", submitted_at: null, verified_at: null },
+      levers: [],
+      rollups: { claimed: { technology: null, commercial: null, overall: null }, verified: { technology: null, commercial: null, overall: null } },
+    });
+    vi.spyOn(founderApi, "getMis").mockResolvedValue({
+      catalog: { metrics: [] },
+      monthly: [],
+      quarterly: [],
+    });
     render(<MemoryRouter><FounderPortal tab="dashboard" /></MemoryRouter>);
-    await waitFor(() => expect(screen.getByText(/Your programme dashboard/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Dharini")).toBeInTheDocument());
     expect(screen.queryByText(/Residency dashboard/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/TIR ·/)).not.toBeInTheDocument();
   });
