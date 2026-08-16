@@ -187,3 +187,95 @@
 .mis-vs-last.is-flat {
   color: var(--ink-dim);
 }
+
+/* -- shell (Task 7) ------------------------------------------------------ */
+.mis-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.mis-kind-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.mis-kind-tab {
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 6px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.mis-kind-tab:hover {
+  color: var(--ink);
+}
+.mis-kind-tab.is-active {
+  color: var(--artblue);
+  border-bottom-color: var(--artblue);
+}
+.mis-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.mis-section-card {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 20px;
+  background: var(--paper);
+}
+.mis-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.mis-section-number {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-violet);
+}
+.mis-section-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  margin: 0;
+  color: var(--ink);
+}
+.mis-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.mis-submit-gate {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+}
+.mis-submit-gate.is-submitted {
+  align-items: flex-start;
+}
+.mis-blocked-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--accent-amber);
+  border-radius: 2px;
+  background: rgba(214, 158, 46, 0.08);
+  color: var(--ink);
+  font-size: 14px;
+}
