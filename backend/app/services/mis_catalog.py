@@ -19,14 +19,14 @@ Two things there are deliberate and preserved rather than tidied:
    (a leftover from a prior section order). Section numbering here follows
    the heading (7), not the stale sub-numbers.
 
-A third spot needed a judgment call rather than a straight transcription:
-`FINANCIAL_BUCKETS["annual_revenue"]` holds the template's literal example
-FY labels (FY21-22 .. FY25-26 Proj) verbatim, but the reference doc itself
-flags that these must be treated as *relative* to the period's own fiscal
-year rather than copied forward indefinitely — see the note at that
-constant. Computing the real, period-relative labels is a later task's job
-(the period calendar); this catalog only carries the template's shape and
-its own caveat forward.
+A third spot needed a judgment call rather than a straight transcription: the
+template's §6.1 Annual revenue buckets are printed as literal FY strings
+(FY21-22 .. FY25-26 Proj), but the reference doc itself flags that these must
+be treated as *relative* to the period's own fiscal year rather than copied
+forward indefinitely. A module-level constant has no access to "the current
+period", so there is no static list here that would stay correct — instead
+`annual_revenue_buckets(fy_start_year)` computes the six labels for whatever
+FY a period actually falls in. See the note at that function.
 """
 from __future__ import annotations
 
@@ -89,10 +89,17 @@ METRIC_GROUPS: list[dict] = [
 # optional narrative field for the Governing Council. The section itself is
 # represented here as id "planned_vs_actual" / type "entries" (9.1, the
 # part the source doc singles out as "the signal ARTPARK uses to
-# calibrate"); "next_milestones" is a second, independently keyed entries
-# schema (in ENTRY_FIELDS / CARRY_FORWARD) that hangs off the same section
-# in the UI, and the 9.3 narrative prompt is recorded under
-# NARRATIVE_FIELDS["planned_vs_actual"].
+# calibrate"); its narrative prompt lives at
+# NARRATIVE_FIELDS["planned_vs_actual"] the same way every other narrative
+# sub-part does. Its *second entries table*, "next_milestones", has no
+# NARRATIVE_FIELDS-style documented lookup to piggyback on — there is no
+# secondary-entries equivalent of NARRATIVE_FIELDS.get(section_id) a
+# renderer would call anyway — so it is declared explicitly in
+# SECTION_EXTRA_ENTRIES below. A renderer walking SECTIONS must union each
+# section's own id with SECTION_EXTRA_ENTRIES.get(id, []) to find every
+# entries table; skipping that union silently drops "next_milestones" (the
+# founder's "Top milestones for next quarter" table) from both the founder
+# UI and the report ARTPARK receives.
 SECTIONS: dict[str, list[dict]] = {
     "monthly": [
         {
@@ -195,6 +202,21 @@ SECTIONS: dict[str, list[dict]] = {
             "type": "entries",
         },
     ],
+}
+
+# ── Secondary entries tables ─────────────────────────────────────────────
+# section id -> extra ENTRY_FIELDS/CARRY_FORWARD keys that hang off that
+# section but have no SECTIONS row of their own. Today this is exactly
+# quarterly §9.2: "planned_vs_actual" (§9.1, the section's own id) also
+# carries "next_milestones" (§9.2). A renderer must union
+# `SECTION_EXTRA_ENTRIES.get(section["id"], [])` into a section's own
+# entries id to find every repeating-row table — see the comment above
+# SECTIONS for why this table exists (there is no narrative-style
+# documented lookup for a *second* entries table the way there is for
+# narrative sub-parts). Covered by
+# test_next_milestones_reachable_via_section_extra_entries.
+SECTION_EXTRA_ENTRIES: dict[str, list[str]] = {
+    "planned_vs_actual": ["next_milestones"],
 }
 
 # ── Narrative prompts ────────────────────────────────────────────────────
@@ -300,6 +322,19 @@ ENTRY_FIELDS: dict[str, list[dict]] = {
                 "artgarage_facility", "iisc_labs_faculty", "non_dilutive_capital",
                 "regulatory_policy", "advisor_time",
             ],
+            # Human-readable labels for the codes above, transcribed from the
+            # source's "Category labels:" line — the UI needs these to show
+            # something other than a raw enum value.
+            "option_labels": [
+                {"value": "customer_partnership_intros", "label": "Customer / partnership intros"},
+                {"value": "investor_intros", "label": "Investor intros"},
+                {"value": "hiring_referrals", "label": "Hiring referrals"},
+                {"value": "artgarage_facility", "label": "ARTGarage / facility"},
+                {"value": "iisc_labs_faculty", "label": "IISc labs / faculty"},
+                {"value": "non_dilutive_capital", "label": "Non-dilutive capital"},
+                {"value": "regulatory_policy", "label": "Regulatory / policy"},
+                {"value": "advisor_time", "label": "Advisor time"},
+            ],
         },
         {"key": "ask", "label": "Ask", "type": "text"},
     ],
@@ -388,16 +423,6 @@ ENTRY_FIELDS: dict[str, list[dict]] = {
 # ── §6 Financials (quarterly) ────────────────────────────────────────────
 # 6.1 Annual revenue: two series, six buckets (four completed FYs + the
 # current FY split into YTD / Proj).
-#
-# The source hard-codes the six bucket labels as literal FY strings
-# (FY21-22 .. FY25-26 Proj) and, in the same breath, says to treat them as
-# *relative* to the period's own fiscal year rather than copying 2021
-# forward indefinitely. This catalog carries the template's literal
-# example labels verbatim (below) because that is what the template says
-# today; a later task (the period calendar) is responsible for deriving
-# the real, period-relative FY labels for a given founder rather than
-# reusing these forever. Do not treat this list as an eternal source of
-# truth for "the current six FYs".
 FINANCIAL_SERIES: dict[str, list[dict]] = {
     "annual_revenue": [
         {"key": "annual_revenue_booked", "label": "Revenue: orders / paid pilots on books"},
@@ -411,11 +436,42 @@ FINANCIAL_SERIES: dict[str, list[dict]] = {
     ],
 }
 
+# "annual_revenue" is deliberately NOT a static key here — see
+# annual_revenue_buckets() below. A module constant has no access to "the
+# current period", so a literal list would go stale the moment the fiscal
+# year turns over (it already had: the template's own example, FY21-22 ..
+# FY25-26, is a year stale as of this writing). Leaving a stale literal
+# under a name indistinguishable from ground truth is exactly the trap a
+# later task could read uncritically into a DST / NM-ICPS report.
 FINANCIAL_BUCKETS: dict[str, list[str]] = {
-    "annual_revenue": ["FY21-22", "FY22-23", "FY23-24", "FY24-25", "FY25-26 YTD", "FY25-26 Proj"],
     # needs_gap is computed (needs_total - needs_confirmed - needs_projected), never typed.
     "needs": ["Q1 (Current)", "Q2 (Next)", "Q3", "Q4", "Q5"],
 }
+
+
+def annual_revenue_buckets(fy_start_year: int) -> list[str]:
+    """The six §6.1 Annual revenue buckets, relative to the reporting
+    period's fiscal year: four completed FYs, then the current FY split
+    into YTD and Proj.
+
+    The template hard-codes FY21-22 .. FY25-26 Proj as its example; the
+    reference doc (§6.1) says to treat those as relative rather than
+    copying 2021 forward forever — that is exactly what this computes. No
+    module-level constant can do this correctly since it has no access to
+    "the current period"; a caller (the period calendar / financials
+    renderer) supplies `fy_start_year`, the calendar year the *current*
+    Indian FY starts in (e.g. 2026 for FY26-27, which runs April 2026 -
+    March 2027).
+
+    >>> annual_revenue_buckets(2026)
+    ['FY22-23', 'FY23-24', 'FY24-25', 'FY25-26', 'FY26-27 YTD', 'FY26-27 Proj']
+    """
+    def _label(year: int) -> str:
+        return f"FY{year % 100:02d}-{(year + 1) % 100:02d}"
+
+    historical = [_label(fy_start_year - offset) for offset in (4, 3, 2, 1)]
+    current = _label(fy_start_year)
+    return historical + [f"{current} YTD", f"{current} Proj"]
 
 # ── §8 People (quarterly) ────────────────────────────────────────────────
 HEADCOUNT_CATEGORIES: list[dict] = [

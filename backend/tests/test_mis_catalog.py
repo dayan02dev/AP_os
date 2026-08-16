@@ -123,3 +123,53 @@ def test_lookups_fail_closed_on_an_unknown_key():
         cat.entry_fields("nonsense")
     with pytest.raises(KeyError):
         cat.section("monthly", "nonsense")
+
+
+# ── Fix round 1 findings ────────────────────────────────────────────────
+
+def test_next_milestones_reachable_via_section_extra_entries():
+    """Quarterly §9.2 ('next_milestones') has no SECTIONS row of its own —
+    it hangs off 'planned_vs_actual' (§9.1). A renderer that only walks
+    SECTIONS and pulls ENTRY_FIELDS[section["id"]] would silently drop the
+    entire 'Top milestones for next quarter' table from the founder UI and
+    from the report ARTPARK receives. SECTION_EXTRA_ENTRIES is the
+    documented side-table that makes it reachable; this asserts that
+    walking every SECTIONS row (both kinds) unioned with
+    SECTION_EXTRA_ENTRIES yields exactly the full ENTRY_FIELDS key set —
+    nothing missing, nothing orphaned."""
+    reachable = set()
+    for kind in cat.KINDS:
+        for s in cat.SECTIONS[kind]:
+            if s["type"] == "entries":
+                reachable.add(s["id"])
+                reachable.update(cat.SECTION_EXTRA_ENTRIES.get(s["id"], []))
+    assert reachable == set(cat.ENTRY_FIELDS.keys())
+    assert "next_milestones" in reachable
+
+
+def test_annual_revenue_buckets_are_relative_to_the_fiscal_year():
+    """§6.1's six buckets must never be a static list — they are computed
+    relative to whichever FY a period falls in. Checked for two different
+    fiscal years, one of them a century rollover."""
+    assert cat.annual_revenue_buckets(2026) == [
+        "FY22-23", "FY23-24", "FY24-25", "FY25-26", "FY26-27 YTD", "FY26-27 Proj",
+    ]
+    # Century-safe: FY99 rolls into FY00, not a literal "FY100".
+    assert cat.annual_revenue_buckets(2099) == [
+        "FY95-96", "FY96-97", "FY97-98", "FY98-99", "FY99-00 YTD", "FY99-00 Proj",
+    ]
+
+
+def test_annual_revenue_is_not_a_static_bucket_key():
+    """No stale literal must be left under a name indistinguishable from
+    ground truth — a caller must go through annual_revenue_buckets()."""
+    assert "annual_revenue" not in cat.FINANCIAL_BUCKETS
+
+
+def test_ask_category_options_have_human_readable_labels():
+    cats = next(f for f in cat.ENTRY_FIELDS["asks"] if f["key"] == "category")
+    labels = {o["value"]: o["label"] for o in cats["option_labels"]}
+    assert labels["customer_partnership_intros"] == "Customer / partnership intros"
+    assert labels["artgarage_facility"] == "ARTGarage / facility"
+    assert labels["iisc_labs_faculty"] == "IISc labs / faculty"
+    assert set(labels) == set(cats["options"])
