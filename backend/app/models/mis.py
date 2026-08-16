@@ -30,8 +30,19 @@ class MetricIn(BaseModel):
     before any founder ever reaches this endpoint). `actual` is rejected in
     the router when `metric_key == "trl_level"` — that row is server-set,
     never founder-typed.
+
+    `label` is accepted here but only ever HONOURED by the router for
+    `metric_key in {"product_metric_1", "product_metric_2"}` — the two
+    rows the template itself marks venture-defined/editable (§2: "Rows 6
+    and 7 are venture-defined: their labels are editable"). Every other
+    metric's label is always sourced from `mis_catalog`, never from a
+    request, so a founder cannot rename a standard metric to something
+    friendlier than what it actually measures — the section's own hint
+    warns against exactly that ("do not change definitions to make things
+    look better").
     """
     metric_key: str = Field(min_length=1, max_length=100)
+    label: str | None = Field(default=None, max_length=200)
     target: float | None = None
     actual: float | None = None
     rag: str | None = Field(default=None, max_length=10)

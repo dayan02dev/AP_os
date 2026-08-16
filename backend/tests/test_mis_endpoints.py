@@ -159,7 +159,55 @@ def test_metrics_put_round_trips(client, monkeypatch, _clear):
     assert m["commentary"] == "good month"
 
 
-def test_narrative_put_replaces_wholesale(client, monkeypatch, _clear):
+# ── Minor-9: product_metric_1/2 labels are the only editable ones ────────
+
+def test_product_metric_label_is_editable(client, monkeypatch, _clear):
+    """The template itself marks rows 6/7 as venture-defined with editable
+    labels (§2)."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+        {"metric_key": "product_metric_1", "label": "Model accuracy (%)", "actual": 92},
+    ])
+    assert r.status_code == 200, r.text
+    m = next(x for x in r.json()["metrics"] if x["metric_key"] == "product_metric_1")
+    assert m["label"] == "Model accuracy (%)"
+
+
+def test_standard_metric_label_cannot_be_overwritten(client, monkeypatch, _clear):
+    """Every metric OTHER than product_metric_1/2 always gets the catalog
+    label, even if a request tries to supply one — a founder must not be
+    able to rename a standard metric to flatter the numbers (the section's
+    own hint: "do not change definitions to make things look better")."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+        {"metric_key": "revenue_month", "label": "Definitely Not Revenue", "actual": 10},
+    ])
+    assert r.status_code == 200, r.text
+    m = next(x for x in r.json()["metrics"] if x["metric_key"] == "revenue_month")
+    assert m["label"] == "Revenue this month (₹ Lakh)"
+
+
+def test_blank_product_metric_label_falls_back_to_the_catalog_placeholder(client, monkeypatch, _clear):
+    """An omitted/blank label on product_metric_1/2 must not upsert a
+    blank into the NOT NULL `label` column."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+        {"metric_key": "product_metric_2", "actual": 5},
+    ])
+    assert r.status_code == 200, r.text
+    m = next(x for x in r.json()["metrics"] if x["metric_key"] == "product_metric_2")
+    assert m["label"] == "Key product metric #2"
+
+
+def test_narrative_put_merges_into_the_existing_blob(client, monkeypatch, _clear):
+    """Important-4 ruling: PUT merges, it does not replace. A second PUT
+    naming only "exec.headline_win" must leave "exec.biggest_concern"
+    (saved by the FIRST PUT, and not resubmitted here) untouched — the
+    footgun a whole-blob replace created for a founder editing one
+    narrative section at a time."""
     _install(monkeypatch)
     client.get("/founder/mis")
     client.put(f"/founder/mis/monthly/{CUR_MONTH}/narrative", json={

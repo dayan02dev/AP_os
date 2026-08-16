@@ -370,6 +370,11 @@ _METRIC_BY_KEY = {m["key"]: m for m in cat.METRICS}
 # validated here would mean a bad value 500s (23514, unhandled) instead of
 # a clean 422 — the same class of gap the duplicate-key check below closes.
 _RAG_VALUES = {"green", "amber", "red"}
+# Minor-9: the only two rows the template itself marks venture-defined
+# (§2: "Rows 6 and 7 are venture-defined ... their labels are editable").
+# Every other metric's label always comes from mis_catalog, never from a
+# request — see MetricIn.label's own docstring for why.
+_EDITABLE_LABEL_KEYS = {"product_metric_1", "product_metric_2"}
 
 
 @router.put("/{kind}/{period_key}/metrics")
@@ -408,6 +413,17 @@ async def put_metrics(
         rows = []
         for item in body:
             catalog_row = _METRIC_BY_KEY[item.metric_key]
+            # Minor-9: a supplied label is only ever honoured for the two
+            # venture-defined rows, and only when it is actually non-empty
+            # — an omitted/blank label on product_metric_1/2 falls back to
+            # the catalog's own placeholder rather than upserting a blank
+            # NOT NULL column. Every other metric_key always gets the
+            # catalog label, even if the request tried to supply one.
+            label = (
+                item.label
+                if item.metric_key in _EDITABLE_LABEL_KEYS and item.label
+                else catalog_row["label"]
+            )
             rows.append({
                 "period_id": period["id"], "metric_key": item.metric_key,
                 # label/group_key are NOT NULL with no default (045_vip_mis.sql)
@@ -417,7 +433,7 @@ async def put_metrics(
                 # lands on a period whose children were never reconciled
                 # (`_own_draft_period` deliberately does not reconcile; only
                 # `mis_query.ensure_periods`/`period_bundle` do).
-                "label": catalog_row["label"], "group_key": catalog_row["group"],
+                "label": label, "group_key": catalog_row["group"],
                 "unit": catalog_row["unit"],
                 "target": item.target, "actual": item.actual,
                 "rag": item.rag, "commentary": item.commentary,
