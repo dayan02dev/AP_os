@@ -526,11 +526,21 @@ DOCUMENTS: dict[str, dict[int, str]] = {
 def question_max(lever: str, q_id: str) -> int:
     """Highest AIR level obtainable on one question. The ladder rule in
     air_scoring depends on this, which is why it is derived from the options
-    rather than written down twice."""
+    rather than written down twice.
+
+    Fails closed on an unrecognised (lever, q_id): the ladder rule reads
+    `got < question_max(...)` to decide whether a question was answered at
+    its own maximum, i.e. whether the gate is satisfied. Returning 0 for an
+    unknown question — the previous behaviour — makes any real answer
+    (level >= 1) look like it is "at max", which *satisfies* the gate
+    instead of blocking it: the one case that must never silently pass. So
+    an unknown question raises rather than returning a value the ladder
+    could compare against.
+    """
     for q in QUESTIONS.get(lever, []):
         if q["id"] == q_id:
             return max(o["level"] for o in q["options"])
-    return 0
+    raise KeyError(f"no such question: {lever}/{q_id}")
 
 
 def level_for_option(lever: str, q_id: str, option_id: str) -> int | None:

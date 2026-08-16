@@ -3,6 +3,8 @@
 
 Content authority: docs/reference/air-framework.md
 """
+import pytest
+
 from app.services import air_catalog as cat
 
 EXPECTED_LEVERS = [
@@ -24,6 +26,33 @@ EXPECTED_MAXIMA = {
     "user_needs": (3, 6, 9),
     "supply_chain": (4, 7, 9),
     "reliability": (5, 7, 9),
+}
+
+# From docs/reference/air-framework.md §1 — the exact per-option level for
+# every one of the 18 questions, transcribed independently of air_catalog.py.
+# EXPECTED_MAXIMA above only pins the top of each question's range, which a
+# transcription slip in a *middle* option (e.g. scientific_principles q2's B:
+# level 3) would not catch — it would still pass every existing test while
+# quietly overstating a real claimed level. This pins the whole vector.
+EXPECTED_LEVEL_VECTORS = {
+    ("scientific_principles", "q1"): [1, 2, 3],
+    ("scientific_principles", "q2"): [2, 3, 4, 5],
+    ("scientific_principles", "q3"): [5, 6, 7, 8, 9],
+    ("architecture", "q1"): [1, 2, 3],
+    ("architecture", "q2"): [3, 4, 5],
+    ("architecture", "q3"): [6, 7, 8, 9],
+    ("qualification", "q1"): [1, 2, 3],
+    ("qualification", "q2"): [3, 4, 5],
+    ("qualification", "q3"): [6, 7, 8, 9],
+    ("user_needs", "q1"): [1, 2, 3],
+    ("user_needs", "q2"): [4, 5, 6],
+    ("user_needs", "q3"): [7, 8, 9],
+    ("supply_chain", "q1"): [1, 2, 4],
+    ("supply_chain", "q2"): [5, 6, 7],
+    ("supply_chain", "q3"): [8, 8, 9],
+    ("reliability", "q1"): [1, 3, 5],
+    ("reliability", "q2"): [6, 6, 7],
+    ("reliability", "q3"): [8, 8, 9],
 }
 
 EXPECTED_OPTION_COUNTS = {
@@ -87,6 +116,29 @@ def test_question_maxima_match_the_source_table():
                cat.question_max(lever, "q2"),
                cat.question_max(lever, "q3"))
         assert got == maxima, lever
+
+
+def test_question_max_fails_closed_on_an_unknown_question():
+    """Item 13: returning 0 for an unknown (lever, q_id) — the previous
+    behaviour — makes any real answer look like it is "at max" in the
+    ladder rule (`got < question_max(...)`), which *satisfies* the gate
+    instead of blocking it. An unknown question must never silently pass."""
+    with pytest.raises(KeyError):
+        cat.question_max("scientific_principles", "q9")
+    with pytest.raises(KeyError):
+        cat.question_max("nonsense", "q1")
+
+
+def test_every_option_level_matches_the_source_exactly():
+    """Mutation-proven: EXPECTED_MAXIMA alone (top of each question's range)
+    does not catch a slip in a middle option — this pins every option's
+    level, for all 18 questions at once."""
+    got = {
+        (lever, q["id"]): [o["level"] for o in q["options"]]
+        for lever in cat.LEVER_KEYS
+        for q in cat.QUESTIONS[lever]
+    }
+    assert got == EXPECTED_LEVEL_VECTORS
 
 
 def test_the_sources_duplicate_mappings_are_preserved():
