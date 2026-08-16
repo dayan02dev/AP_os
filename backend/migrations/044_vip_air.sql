@@ -68,7 +68,12 @@ create table if not exists public.vip_air_evidence (
   filename          text,
   size_bytes        int,
   content_type      text,
-  uploaded_at       timestamptz not null default now()
+  uploaded_at       timestamptz not null default now(),
+  -- Keyed on filename too, not just (assessment_id, lever, air_level):
+  -- uploading two differently-named supporting documents for one claimed
+  -- level is legitimate (assessment_bundle exposes evidence as a list per
+  -- lever) — only re-uploading the exact same slot should collide.
+  unique (assessment_id, lever, air_level, filename)
 );
 alter table public.vip_air_evidence enable row level security;
 create index if not exists idx_vip_air_evidence_assessment

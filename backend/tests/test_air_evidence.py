@@ -8,6 +8,7 @@ import pytest
 
 from app.deps import get_current_user
 from app.main import app
+from app.services import air_catalog as cat
 from tests.fixtures.fake_supabase import FakeSupabase
 
 
@@ -42,6 +43,50 @@ def _post(client, lever="architecture", level=2, name="arch.pdf"):
         files={"file": (name, io.BytesIO(b"%PDF-1.4 test"), "application/pdf")},
         data={"lever": lever, "air_level": str(level)},
     )
+
+
+def _score_everything(client):
+    """Answers q1 (only) for every lever with its lowest-scoring option, so
+    every lever carries a claimed_level and /founder/air/submit succeeds —
+    mirrors test_air_endpoints.py's helper of the same name."""
+    for lever in cat.LEVER_KEYS:
+        first = cat.QUESTIONS[lever][0]["options"][0]["id"]
+        client.put(f"/founder/air/levers/{lever}", json={
+            "q1_option": first, "q2_option": None, "q3_option": None,
+            "criteria_checked": []})
+
+
+class _DuplicateEvidenceOnce:
+    """Wraps a FakeSupabase so the first insert().execute() on
+    vip_air_evidence after arming raises a duplicate-key error — simulating
+    the (assessment_id, lever, air_level, filename) unique constraint added
+    in 044 being hit by a re-upload of the same evidence slot. Every other
+    call, and every call after the first, passes through to the wrapped
+    fake unchanged — same shape as test_air_query.py's _RaceOnce."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self._armed = True
+
+    def table(self, name):
+        q = self._inner.table(name)
+        if name == "vip_air_evidence" and self._armed:
+            real_execute = q.execute
+
+            def execute():
+                if q._mode == "insert" and self._armed:
+                    self._armed = False
+                    raise Exception(
+                        'duplicate key value violates unique constraint '
+                        '"vip_air_evidence_assessment_id_lever_air_level_filename_key" (23505)'
+                    )
+                return real_execute()
+
+            q.execute = execute
+        return q
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
 
 
 def test_upload_stores_a_row_stamped_with_the_catalog_document_label(client, monkeypatch, _clear):
@@ -113,3 +158,78 @@ def test_another_applications_evidence_has_no_signed_url(client, monkeypatch, _c
         "id": "foreign", "assessment_id": "someone-elses-round", "lever": "architecture",
         "air_level": 2, "doc_label": "x", "storage_path": "p", "filename": "f.pdf"})
     assert client.get("/founder/air/evidence/foreign/signed-url").status_code == 404
+
+
+def test_storage_path_never_carries_the_client_filename(client, monkeypatch, _clear):
+    """A path-traversal-shaped filename must never reach the storage key —
+    only a generated object name (plus a safely-derived extension) does.
+    The original name is still recorded, but only in the filename column."""
+    fake = _install(monkeypatch)
+    client.get("/founder/air")
+    r = _post(client, name="../../../etc/passwd.pdf")
+    assert r.status_code == 200, r.text
+    row = fake.tables["vip_air_evidence"][0]
+    assert row["filename"] == "../../../etc/passwd.pdf"
+    assert ".." not in row["storage_path"]
+    assert "/etc/" not in row["storage_path"]
+    assert row["storage_path"].startswith("air/sapp1/architecture/2/")
+    assert row["storage_path"].endswith(".pdf")
+
+
+def test_reuploading_the_same_slot_replaces_the_row_not_duplicates_it(client, monkeypatch, _clear):
+    """A second upload for the same (lever, level, filename) must not leave
+    two rows pointing at two different objects — it replaces the row and
+    the superseded object is not left behind as an orphan."""
+    from app.routers import founder_air as air_router
+    fake = _install(monkeypatch)
+    client.get("/founder/air")
+    _post(client)
+    assert len(fake.tables["vip_air_evidence"]) == 1
+    first_row_id = fake.tables["vip_air_evidence"][0]["id"]
+    first_path = fake.tables["vip_air_evidence"][0]["storage_path"]
+
+    monkeypatch.setattr(air_router, "get_admin_client", lambda: _DuplicateEvidenceOnce(fake))
+    r = _post(client)
+    assert r.status_code == 200, r.text
+
+    rows = fake.tables["vip_air_evidence"]
+    assert len(rows) == 1
+    assert rows[0]["id"] == first_row_id
+    assert rows[0]["storage_path"] != first_path
+    assert rows[0]["filename"] == "arch.pdf"
+    assert rows[0]["doc_label"] == "System Architecture Document"
+
+
+def test_upload_is_409_once_the_round_is_submitted(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/air")
+    _score_everything(client)
+    assert client.post("/founder/air/submit").status_code == 200
+    r = _post(client)
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "air_already_submitted"
+
+
+def test_delete_is_409_once_the_round_is_submitted(client, monkeypatch, _clear):
+    fake = _install(monkeypatch)
+    client.get("/founder/air")
+    _post(client)
+    row_id = fake.tables["vip_air_evidence"][0]["id"]
+    _score_everything(client)
+    assert client.post("/founder/air/submit").status_code == 200
+    r = client.delete(f"/founder/air/evidence/{row_id}")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "air_already_submitted"
+    assert any(e["id"] == row_id for e in fake.tables["vip_air_evidence"])
+
+
+def test_signed_url_is_409_once_the_round_is_submitted(client, monkeypatch, _clear):
+    fake = _install(monkeypatch)
+    client.get("/founder/air")
+    _post(client)
+    row_id = fake.tables["vip_air_evidence"][0]["id"]
+    _score_everything(client)
+    assert client.post("/founder/air/submit").status_code == 200
+    r = client.get(f"/founder/air/evidence/{row_id}/signed-url")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "air_already_submitted"

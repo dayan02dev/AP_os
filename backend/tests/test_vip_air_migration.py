@@ -26,6 +26,14 @@ def test_one_round_per_application_and_one_score_per_lever():
     assert "unique (assessment_id, lever)" in sql
 
 
+def test_evidence_rows_are_unique_per_lever_level_and_filename():
+    """Re-uploading the exact same slot must collide at the DB level so the
+    router can treat it as a replace rather than a duplicate; two
+    differently-named documents for the same claimed level must not."""
+    sql = _sql()
+    assert "unique (assessment_id, lever, air_level, filename)" in sql
+
+
 def test_status_and_lever_are_constrained():
     sql = _sql()
     assert "check (status in ('draft','submitted','verified'))" in sql
