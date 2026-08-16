@@ -301,8 +301,9 @@ order. Adding a section later is a catalog edit, not a migration.
 ### 5.4 Section coverage
 
 **Monthly** — §1 Executive Summary (narrative, 5 prompts) · §2 Key Metrics (`metrics`,
-18 seeded rows across Commercial / Product-Technology / Financials / Team, plus custom
-rows) · §3 Milestones (`entries.milestones`: milestone, owner, status
+**13 seeded rows** across Commercial / Product-Technology / Financials / Team, plus custom
+rows — the template's grid is 18 rows, but 1 is the header and 4 are group headings; see
+`docs/reference/mis-templates.md` §1) · §3 Milestones (`entries.milestones`: milestone, owner, status
 Done/On-Track/At-Risk/Blocked, notes) · §4 Traction (narrative: pilots, conversions,
 pipeline, losses; market lessons) · §5 Lowlights & Risks (`entries.risks`: severity,
 what happened, impact, mitigation) · §6 Team & Hiring (narrative) · §7 Financials &
