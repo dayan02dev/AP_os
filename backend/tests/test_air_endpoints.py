@@ -190,10 +190,17 @@ def test_answers_cannot_be_changed_after_submit(client, monkeypatch, _clear):
 
 def test_another_users_round_is_not_reachable(client, monkeypatch, _clear):
     """Ownership comes from require_founder_access resolving the caller's own
-    application, so a foreign round simply is not addressable."""
+    application, so a foreign round simply is not addressable.
+
+    Item 11: the foreign round must carry *today's* round label, not a
+    hardcoded one — a hardcoded "FY26-27-Q1" would never match whatever
+    _label() actually resolves to once the test runs outside that quarter,
+    which would make this pass regardless of whether the ownership filter
+    works at all."""
+    from app.routers.founder_air import _label
     fake = _install(monkeypatch)
     fake.tables["vip_air_assessments"].append({
-        "id": "other", "application_id": "someone-else", "round_label": "FY26-27-Q1",
+        "id": "other", "application_id": "someone-else", "round_label": _label(),
         "status": "draft"})
     r = client.get("/founder/air")
     assert r.status_code == 200
