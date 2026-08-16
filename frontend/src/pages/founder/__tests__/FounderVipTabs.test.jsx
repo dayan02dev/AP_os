@@ -20,6 +20,12 @@ describe("VIP cohort tabs", () => {
 
   it("renders the TLR evaluation screen", async () => {
     vi.spyOn(founderApi, "me").mockResolvedValue(me(false));
+    vi.spyOn(founderApi, "getAir").mockResolvedValue({
+      catalog: { levers: [], questions: {}, criteria: {}, documents: {} },
+      round: { id: "r1", round_label: "FY26-27-Q2", status: "draft", submitted_at: null, verified_at: null },
+      levers: [],
+      rollups: { claimed: { technology: null, commercial: null, overall: null }, verified: { technology: null, commercial: null, overall: null } },
+    });
     render(<MemoryRouter><FounderPortal tab="tlr" /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText(/ARTPARK Innovation Readiness/i)).toBeInTheDocument());
   });
