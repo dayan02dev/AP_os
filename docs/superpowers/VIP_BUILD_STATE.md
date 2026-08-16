@@ -22,7 +22,7 @@ Work only in that worktree — concurrent sessions cross-contaminate otherwise.
 | 1 | Track generalisation, shell, COHORT deletion | ✅ complete, whole-phase reviewed, fix wave applied |
 | 2 | AIR readiness assessment **backend** | ✅ complete, whole-phase reviewed, fix wave applied |
 | 3 | MIS reporting **backend** | ✅ complete, whole-phase reviewed, fix wave + scoped re-review + residual fixes |
-| 4 | Founder UI: AIR wizard (spec §4.3/§4.4) | not started |
+| 4 | Founder UI: AIR wizard (spec §4.3/§4.4) | in progress |
 | 5 | Founder UI: MIS monthly + quarterly forms (spec §5.3/§5.4) | not started |
 | 6 | VIP process dashboard (spec §6) | not started |
 | 7 | Admin "VIP cohort" verification surface (spec §7) | not started |
@@ -96,7 +96,9 @@ Established by the TIR pages; VIP must match them, not invent a second dialect.
 - **`new_keys` must mean "I inserted it", not "it was missing when I read".** Phase 3 shipped the latter and both racers seeded.
 - **Derive, never store** anything computable: `overdue`, `vs_last`, `needs_gap`, headcount `net_change`.
 - **Dates are IST.** Phase 2 shipped a UTC bug mislabelling the period for 5.5 hours after every boundary.
-- **Submitted means frozen** (ruling P3-R5): writes 409, reads stay open, `trl_level` snapshots at submit, no reconciliation into submitted periods.
+- **Submitted means frozen** (ruling P3-R5): writes 409, reads stay open, `trl_level` snapshots at submit, no reconciliation into submitted periods (submit reconciles once, while still a draft, at the freeze boundary).
+- **MIS periods submit in order** (ruling P3-R7). `POST /founder/mis/{kind}/{period_key}/submit` 409s `mis_earlier_period_open` — with the blocking period's `period_key` and `label` in the detail — while any earlier period of the same kind is still draft. Monthly and quarterly are independent ladders. The forms UI (Phase 5) must present periods oldest-first and surface that 409 as a link to the blocking period, not as a generic error. Rejected alternative: snapshotting the comparison basis at submit, which would permanently freeze a NULL delta for any period filed before its predecessor.
+- **Entry values are validated, not coerced.** `"12"` for a numeric field is a 422 `invalid_value`, dates must be strict `YYYY-MM-DD`, ints reject floats. Forms send JSON numbers and `null` for empty — never `""`.
 - **Tests must guard what they claim.** Every test whose name asserts a property gets broken in memory to prove it fails. Phase 2's final review found three that passed against deliberately broken code; Phase 3 found several more.
 - **Enumerate derived values whose formula the spec does not state**, and require them raised as questions rather than resolved silently. This is the lesson from the `net_change` Critical: the spec said "computed, not typed" and stopped, an implementer invented a formula, and three reviews read it without flagging it because the only checkable question was "is it computed?".
 - `sqlglot` parses every migration in `backend/migrations/` via `tests/test_migrations_parse.py` — this project's DDL is hand-pasted into Studio with no CI gate.
