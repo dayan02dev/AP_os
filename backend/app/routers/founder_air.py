@@ -23,6 +23,8 @@ from ..services import air_scoring as sc
 from ..supabase_client import get_admin_client
 from .founder import require_founder_access
 
+log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/founder/air", tags=["founder-air"])
 
 # Evidence documents live in their own private bucket, separate from
@@ -153,10 +155,13 @@ def _upload(path: str, data: bytes, content_type: str) -> None:
     )
 
 
-# MIME → extension for the *generated* storage object name. The client's
-# own filename is never used to build the storage key (see upload_evidence)
-# — only this lookup, and _safe_ext's stripped-suffix fallback, ever are.
-# Mirrors evidence_files.py's _MIME_TO_EXT.
+# MIME → extension for the *generated* storage object name, and — since this
+# doubles as the allow-list validated in upload_evidence below — the only
+# content types AIR evidence accepts at all. Matches 044's bucket-level
+# allowed_mime_types exactly, and mirrors evidence_files.py's _MIME_TO_EXT.
+# Because the MIME is checked against this map before anything is read or
+# uploaded, the extension always comes from here: no client input (not even
+# the original filename's suffix) ever reaches the generated object name.
 _MIME_TO_EXT: dict[str, str] = {
     "application/pdf": "pdf",
     "image/png": "png",
@@ -165,41 +170,44 @@ _MIME_TO_EXT: dict[str, str] = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
 }
 
-
-def _safe_ext(content_type: str | None, filename: str | None) -> str:
-    """Extension for the generated object name — never the filename itself.
-
-    Prefers the declared MIME type (the bucket's own allow-list); falls
-    back to the suffix of the original filename with everything but
-    alphanumerics stripped, so a `../` or `/` anywhere in a client-supplied
-    filename can never reach the storage key.
-    """
-    ext = _MIME_TO_EXT.get((content_type or "").lower())
-    if ext:
-        return ext
-    tail = (filename or "").rsplit(".", 1)
-    suffix = tail[1] if len(tail) == 2 else ""
-    safe = "".join(c for c in suffix if c.isalnum()).lower()
-    return safe or "bin"
+# Matches 044's bucket-level file_size_limit (26214400 bytes) — the app-level
+# check exists so an oversized upload surfaces as a clean 413 instead of
+# whatever shape the storage provider's own rejection takes.
+_MAX_EVIDENCE_BYTES = 26_214_400
 
 
-def _own_draft_round(ctx: dict) -> dict:
-    """Resolve the caller's own round first — never trust a row id alone —
-    and require it still be a draft.
+def _own_round(ctx: dict) -> dict:
+    """Resolve the caller's own round for the current quarter — never trust a
+    row id alone.
 
     ensure_round is convergent and cheap to call per-request (see
     air_query's module docstring), so re-resolving here on every evidence
     call is safe and keeps ownership structural rather than trusting a
     path-supplied row id.
 
-    Evidence is frozen once the round is submitted, exactly like put_lever:
-    the whole point of claimed-versus-verified is that ARTPARK verifies
-    against a fixed artefact. A founder who could swap or delete evidence
-    after submitting could change what the verifier is checking mid
-    verification. Reopening a submitted round for further evidence belongs
-    on the admin surface in a later phase, not as an always-open door here.
+    Ownership only — no status gate. Used directly by the signed-url read,
+    which must stay reachable for the whole life of a round: reading an
+    already-uploaded document changes nothing, so there is no reason to
+    freeze it the way a write is frozen. See _own_draft_round for the writes
+    that do need the gate.
     """
-    rnd = aq.ensure_round(ctx["application_id"], _label())
+    return aq.ensure_round(ctx["application_id"], _label())
+
+
+def _own_draft_round(ctx: dict) -> dict:
+    """_own_round, plus require the round still be a draft.
+
+    Evidence *writes* are frozen once the round is submitted, exactly like
+    put_lever: the whole point of claimed-versus-verified is that ARTPARK
+    verifies against a fixed artefact. A founder who could swap or delete
+    evidence after submitting could change what the verifier is checking
+    mid verification. Reopening a submitted round for further evidence
+    belongs on the admin surface in a later phase, not as an always-open
+    door here. This gate applies to upload and delete only — reading a
+    document (evidence_signed_url) is not a write and must not be frozen;
+    see _own_round.
+    """
+    rnd = _own_round(ctx)
     if rnd["status"] != "draft":
         raise HTTPException(status_code=http_status.HTTP_409_CONFLICT,
                             detail={"code": "air_already_submitted"})
@@ -244,17 +252,35 @@ async def upload_evidence(
             detail={"code": "no_document_required"},
         )
 
+    # Validate before anything is read or uploaded — an unsupported type or
+    # an oversized file must surface as a clean 415/413, not an unhandled
+    # 500 from _upload or the storage provider. Same shape as
+    # evidence_files.py's upload_evidence_file.
+    mime = (file.content_type or "").lower()
+    if mime not in _MIME_TO_EXT:
+        raise HTTPException(
+            status_code=http_status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail={"code": "unsupported_media", "mime": mime or None},
+        )
+
     data = await file.read()
+    if len(data) > _MAX_EVIDENCE_BYTES:
+        raise HTTPException(
+            status_code=http_status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={"code": "too_large",
+                    "max_bytes": _MAX_EVIDENCE_BYTES},
+        )
     filename = file.filename or "evidence"
     # Never interpolate the client-supplied filename into the storage key —
     # UploadFile.filename comes straight off the Content-Disposition header
     # with no sanitisation, and combined with _upload's upsert a `../`
     # segment would be a real traversal write. The object name is always a
-    # generated id plus a safely-derived extension; the original name lives
-    # only in the `filename` column — the same split evidence_files.py makes.
-    object_name = f"{uuid.uuid4().hex}.{_safe_ext(file.content_type, filename)}"
+    # generated id plus the extension the validated MIME maps to — no client
+    # input reaches it at all; the original name lives only in the
+    # `filename` column — the same split evidence_files.py makes.
+    object_name = f"{uuid.uuid4().hex}.{_MIME_TO_EXT[mime]}"
     storage_path = f"air/{ctx['application_id']}/{lever}/{air_level}/{object_name}"
-    _upload(storage_path, data, file.content_type or "application/octet-stream")
+    _upload(storage_path, data, mime)
 
     sb = get_admin_client()
     row = {
@@ -265,7 +291,7 @@ async def upload_evidence(
         "storage_path": storage_path,
         "filename": filename,
         "size_bytes": len(data),
-        "content_type": file.content_type,
+        "content_type": mime,
     }
     try:
         sb.table("vip_air_evidence").insert(row).execute()
@@ -297,7 +323,7 @@ async def upload_evidence(
             "doc_label": doc_label,
             "storage_path": storage_path,
             "size_bytes": len(data),
-            "content_type": file.content_type,
+            "content_type": mime,
         }).eq("id", existing[0]["id"]).execute()
         if old_path != storage_path:
             with contextlib.suppress(Exception):
@@ -318,10 +344,28 @@ async def delete_evidence(row_id: str, ctx: Annotated[dict, Depends(require_vip)
 
 @router.get("/evidence/{row_id}/signed-url")
 async def evidence_signed_url(row_id: str, ctx: Annotated[dict, Depends(require_vip)]) -> dict:
+    # Ownership only, deliberately not _own_draft_round — reading a document
+    # a founder already uploaded changes nothing, so it must not be frozen
+    # the way upload/delete are. See _own_round's docstring.
     sb = get_admin_client()
-    rnd = _own_draft_round(ctx)
+    rnd = _own_round(ctx)
     row = _owned_evidence_or_404(sb, row_id, rnd["id"])
-    signed = sb.storage.from_(BUCKET).create_signed_url(row["storage_path"], 300)
-    url = signed.get("signedURL") or signed.get("signedUrl") or signed.get("url") \
-        if isinstance(signed, dict) else signed
-    return {"url": url}
+    try:
+        signed = sb.storage.from_(BUCKET).create_signed_url(row["storage_path"], 300)
+        url = None
+        if isinstance(signed, dict):
+            url = signed.get("signedURL") or signed.get("signedUrl") or signed.get("url")
+        elif isinstance(signed, str):
+            url = signed
+        if not url:
+            raise RuntimeError("no signed url")
+        return {"url": url}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.warning("founder_air: signed-url generation failed",
+                    extra={"row_id": row_id, "assessment_id": rnd["id"]})
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "signed_url_failed"},
+        ) from exc

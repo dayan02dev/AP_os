@@ -18,6 +18,17 @@ def _clear():
     app.dependency_overrides.clear()
 
 
+class _Bucket:
+    """Mirrors test_founder_crud.py's _Bucket/_Storage — a mockable storage
+    surface so signed-url tests never touch real storage."""
+    def upload(self, *a, **k): return {"path": a[0] if a else ""}
+    def create_signed_url(self, path, expires_in): return {"signedURL": f"https://x/{path}"}
+
+
+class _Storage:
+    def from_(self, bucket): return _Bucket()
+
+
 def _install(monkeypatch):
     from app.routers import founder as founder_router
     from app.routers import founder_air as air_router
@@ -28,6 +39,7 @@ def _install(monkeypatch):
         "tir_applications": [],
         "vip_air_assessments": [], "vip_air_lever_scores": [], "vip_air_evidence": [],
     })
+    fake.storage = _Storage()
     monkeypatch.setattr(founder_router, "get_admin_client", lambda: fake)
     monkeypatch.setattr(air_router, "get_admin_client", lambda: fake)
     monkeypatch.setattr(air_query, "get_admin_client", lambda: fake)
@@ -132,6 +144,35 @@ def test_upload_for_a_level_with_no_document_defined_is_422(client, monkeypatch,
     assert r.json()["detail"]["code"] == "no_document_required"
 
 
+def test_upload_rejects_an_unsupported_mime_type(client, monkeypatch, _clear):
+    """Item 8: an unsupported content type must be a clean 415, not an
+    unhandled 500 from _upload or the storage provider."""
+    _install(monkeypatch)
+    client.get("/founder/air")
+    r = client.post(
+        "/founder/air/evidence",
+        files={"file": ("evil.exe", io.BytesIO(b"MZ..."), "application/x-msdownload")},
+        data={"lever": "architecture", "air_level": "2"},
+    )
+    assert r.status_code == 415
+    assert r.json()["detail"]["code"] == "unsupported_media"
+
+
+def test_upload_rejects_an_oversized_file(client, monkeypatch, _clear):
+    """Item 8: a file over the app-level cap must be a clean 413."""
+    from app.routers import founder_air as air_router
+    _install(monkeypatch)
+    client.get("/founder/air")
+    monkeypatch.setattr(air_router, "_MAX_EVIDENCE_BYTES", 10)
+    r = client.post(
+        "/founder/air/evidence",
+        files={"file": ("big.pdf", io.BytesIO(b"%PDF-1.4" + b"x" * 100), "application/pdf")},
+        data={"lever": "architecture", "air_level": "2"},
+    )
+    assert r.status_code == 413
+    assert r.json()["detail"]["code"] == "too_large"
+
+
 def test_delete_removes_the_row(client, monkeypatch, _clear):
     fake = _install(monkeypatch)
     client.get("/founder/air")
@@ -158,6 +199,42 @@ def test_another_applications_evidence_has_no_signed_url(client, monkeypatch, _c
         "id": "foreign", "assessment_id": "someone-elses-round", "lever": "architecture",
         "air_level": 2, "doc_label": "x", "storage_path": "p", "filename": "f.pdf"})
     assert client.get("/founder/air/evidence/foreign/signed-url").status_code == 404
+
+
+def test_signed_url_happy_path_on_a_draft_round(client, monkeypatch, _clear):
+    """Item 7: this line never executed in any test before — the whole
+    success path through evidence_signed_url, storage call included."""
+    fake = _install(monkeypatch)
+    client.get("/founder/air")
+    _post(client)
+    row_id = fake.tables["vip_air_evidence"][0]["id"]
+    r = client.get(f"/founder/air/evidence/{row_id}/signed-url")
+    assert r.status_code == 200, r.text
+    storage_path = fake.tables["vip_air_evidence"][0]["storage_path"]
+    assert r.json()["url"] == f"https://x/{storage_path}"
+
+
+def test_signed_url_502s_when_storage_returns_no_url(client, monkeypatch, _clear):
+    """Item 7: a storage response with none of signedURL/signedUrl/url must
+    not silently succeed with {"url": null} — it must fail loudly."""
+    from app.routers import founder_air as air_router
+
+    class _EmptyBucket:
+        def create_signed_url(self, path, expires_in): return {}
+
+    class _EmptyStorage:
+        def from_(self, bucket): return _EmptyBucket()
+
+    fake = _install(monkeypatch)
+    client.get("/founder/air")
+    _post(client)
+    row_id = fake.tables["vip_air_evidence"][0]["id"]
+
+    fake.storage = _EmptyStorage()
+    monkeypatch.setattr(air_router, "get_admin_client", lambda: fake)
+    r = client.get(f"/founder/air/evidence/{row_id}/signed-url")
+    assert r.status_code == 502
+    assert r.json()["detail"]["code"] == "signed_url_failed"
 
 
 def test_storage_path_never_carries_the_client_filename(client, monkeypatch, _clear):
@@ -223,7 +300,11 @@ def test_delete_is_409_once_the_round_is_submitted(client, monkeypatch, _clear):
     assert any(e["id"] == row_id for e in fake.tables["vip_air_evidence"])
 
 
-def test_signed_url_is_409_once_the_round_is_submitted(client, monkeypatch, _clear):
+def test_signed_url_still_works_once_the_round_is_submitted(client, monkeypatch, _clear):
+    """IMPORTANT 2: reading a document changes nothing, so unlike upload and
+    delete it must not be frozen after submit — a founder must still be able
+    to open their own uploaded evidence for the whole post-submit life of
+    the round."""
     fake = _install(monkeypatch)
     client.get("/founder/air")
     _post(client)
@@ -231,5 +312,5 @@ def test_signed_url_is_409_once_the_round_is_submitted(client, monkeypatch, _cle
     _score_everything(client)
     assert client.post("/founder/air/submit").status_code == 200
     r = client.get(f"/founder/air/evidence/{row_id}/signed-url")
-    assert r.status_code == 409
-    assert r.json()["detail"]["code"] == "air_already_submitted"
+    assert r.status_code == 200, r.text
+    assert r.json()["url"] == f"https://x/{fake.tables['vip_air_evidence'][0]['storage_path']}"
