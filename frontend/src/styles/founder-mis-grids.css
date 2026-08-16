@@ -1,0 +1,262 @@
+/* MIS forms UI — grid/table rendering shapes: EntriesTable, FinancialsGrid,
+   HeadcountGrid (VIP Phase 5, Tasks 4-6).
+
+   Owned by these three components only. Reuses founder-portal.css's design
+   tokens (--artblue, --ink, --line, etc.) and generic classes (.btn, .card,
+   .chip) directly rather than re-declaring them — every rule below is
+   genuinely new and mis-prefixed, scoped under `.founder-portal` the same
+   way founder-portal.css itself is, so these rules only ever apply inside
+   the founder portal shell. */
+
+/* ── EntriesTable (Task 4) ──────────────────────────────────────────── */
+
+.founder-portal .mis-entries-table {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.founder-portal .mis-entries-bucket {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+.founder-portal .mis-entries-bucket-head {
+  padding: 10px 14px;
+  background: var(--paper-soft);
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.founder-portal .mis-entries-unassigned .mis-entries-bucket-head {
+  color: var(--accent-coral);
+}
+
+.founder-portal .mis-entries-row {
+  border-bottom: 1px solid var(--line);
+  padding: 14px;
+}
+
+.founder-portal .mis-entries-row:last-child {
+  border-bottom: none;
+}
+
+.founder-portal .mis-entries-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.founder-portal .mis-entries-row-index {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+
+.founder-portal .mis-entries-row-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px 16px;
+}
+
+.founder-portal .mis-entries-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.founder-portal .mis-entries-field-label {
+  font-size: 11px;
+  color: var(--ink-dim);
+  font-weight: 600;
+}
+
+.founder-portal .mis-entries-field input,
+.founder-portal .mis-entries-field select {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--ink);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.founder-portal .mis-entries-field input:focus,
+.founder-portal .mis-entries-field select:focus {
+  outline: none;
+  border-color: var(--artblue);
+}
+
+.founder-portal .mis-entries-field input:disabled,
+.founder-portal .mis-entries-field select:disabled {
+  background: var(--paper-soft);
+  color: var(--ink-dim);
+}
+
+.founder-portal .mis-entries-empty {
+  padding: 16px 14px;
+  color: var(--ink-dim);
+  font-size: 13.5px;
+}
+
+.founder-portal .mis-entries-add {
+  align-self: flex-start;
+}
+
+/* ── FinancialsGrid (Task 5) ────────────────────────────────────────── */
+
+.founder-portal .mis-financials-grid {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  margin-top: 16px;
+  overflow-x: auto;
+}
+
+.founder-portal .mis-financials-grid + .mis-financials-grid {
+  margin-top: 24px;
+}
+
+.founder-portal .mis-financials-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(var(--mis-cols, 6), minmax(96px, 1fr));
+  border-bottom: 1px solid var(--line);
+  align-items: center;
+}
+
+.founder-portal .mis-financials-row:last-child {
+  border-bottom: none;
+}
+
+.founder-portal .mis-financials-row.is-head {
+  background: var(--paper-soft);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.founder-portal .mis-financials-row > .mis-financials-label,
+.founder-portal .mis-financials-row > .mis-financials-cell {
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.founder-portal .mis-financials-cell input {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--ink);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.founder-portal .mis-financials-cell input:focus {
+  outline: none;
+  border-color: var(--artblue);
+}
+
+.founder-portal .mis-financials-cell input:disabled {
+  background: var(--paper-soft);
+  color: var(--ink-dim);
+}
+
+.founder-portal .mis-gap-row {
+  background: rgba(255, 90, 95, 0.06);
+  font-weight: 700;
+}
+
+.founder-portal .mis-gap-row .mis-financials-label {
+  color: var(--accent-coral);
+}
+
+.founder-portal .mis-gap-cell {
+  color: var(--accent-coral);
+  font-size: 13px;
+}
+
+/* ── HeadcountGrid (Task 6) ─────────────────────────────────────────── */
+
+.founder-portal .mis-headcount-grid {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  margin-top: 16px;
+}
+
+.founder-portal .mis-headcount-head,
+.founder-portal .mis-headcount-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(96px, 1fr)) minmax(160px, 1.4fr);
+  border-bottom: 1px solid var(--line);
+  align-items: center;
+}
+
+.founder-portal .mis-headcount-head {
+  background: var(--paper-soft);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.founder-portal .mis-headcount-row:last-child {
+  border-bottom: none;
+}
+
+.founder-portal .mis-headcount-head > div,
+.founder-portal .mis-headcount-row > div {
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.founder-portal .mis-headcount-row input {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--ink);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.founder-portal .mis-headcount-row input:focus {
+  outline: none;
+  border-color: var(--artblue);
+}
+
+.founder-portal .mis-headcount-row input:disabled {
+  background: var(--paper-soft);
+  color: var(--ink-dim);
+}
+
+.founder-portal .mis-headcount-total {
+  background: var(--paper-soft);
+  font-weight: 700;
+}
+
+.founder-portal .mis-net-change {
+  font-variant-numeric: tabular-nums;
+}
+
+.founder-portal .mis-net-change-empty {
+  color: var(--ink-dim);
+  font-size: 12.5px;
+}
