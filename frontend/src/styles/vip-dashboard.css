@@ -120,3 +120,48 @@
   .vipd-trend-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
+/* -- Milestones & risks (Task 6) ---------------------------------------- */
+
+.vipd-milestones { margin-bottom: 8px; }
+
+.vipd-milestone-group-label {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink-dim);
+  margin-top: 18px;
+}
+
+.vipd-milestone-group-label:first-child { margin-top: 0; }
+
+.vipd-risks { display: flex; flex-direction: column; }
+
+.vipd-risk-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.vipd-risk-row:last-child { border-bottom: none; }
+
+.vipd-risk-badge {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: #fff;
+}
+
+.vipd-risk-badge-red { background: var(--accent-coral); }
+.vipd-risk-badge-amber { background: var(--accent-amber); color: #3a2a00; }
+
+.vipd-risk-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.vipd-risk-what { font-size: 14px; font-weight: 600; }
+.vipd-risk-meta { font-size: 12.5px; color: var(--ink-dim); }
+
