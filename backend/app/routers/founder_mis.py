@@ -24,8 +24,12 @@ table carries that as its own column. `application_status_log`
 record of when this application moved to 'onboarded', so `GET /founder/mis`
 reads its earliest such row rather than reusing `submitted_at` (which is
 when the application was filed — typically months earlier, and would
-over-generate a long backlog of periods the founder never owed). See
-`_resolve_onboarded_on` for the fallback when no such row exists yet.
+over-generate a long backlog of periods the founder never owed). `GET
+/founder/mis` only attempts this at all when `ctx["status"] == "onboarded"`
+— an `offered` founder owes nothing yet and gets an empty calendar, not a
+guessed one. See `_resolve_onboarded_on` for the fallback this still needs
+for an onboarded founder whose status-log row is itself missing (a real,
+if rare, data-quality gap — not the normal case).
 
 TRL sourcing (constraint 4): `_current_verified_trl` reads live from the
 AIR tables via `aq.fetch_round`/`aq.fetch_lever_scores` — never
@@ -103,15 +107,22 @@ def _resolve_onboarded_on(ctx: dict) -> date:
     reopen-then-reapprove: the calendar should not roll forward just
     because status moved back to 'onboarded' a second time.
 
-    Falls back to today when no such row exists yet. That is reachable only
-    for a founder whose application is 'offered' but not yet 'onboarded' —
-    require_founder_access's own gate admits both statuses, but MIS
-    reporting has no real start date before actual onboarding. The safe
-    failure mode here is to under-generate (a single period starting today,
-    nothing retroactive) rather than invent a historical date — the same
-    no-fail-open spirit `ensure_periods` applies by raising on a malformed
-    `onboarded_on`, just applied here to a missing signal instead of a bad
-    one.
+    Falls back to today when no such row exists. `get_mis` only calls this
+    for a founder whose status IS ALREADY `'onboarded'` (see its own status
+    gate) — so an empty result here is never the ordinary "not onboarded
+    yet" case, it is a genuine data-quality gap: `state_machine.py`'s
+    status-log insert is best-effort (a failed write there is swallowed and
+    only logged as a warning, it does not roll back the status change
+    itself — see state_machine.py's own transition method), and a status
+    set by a direct Studio edit or manual data injection — this repo has a
+    documented history of both — writes no log row at all. Logged at
+    WARNING with the application_id so a silently missing reporting backlog
+    is visible in the logs rather than only discovered by a founder noticing
+    their calendar is empty. The safe failure mode is still to
+    under-generate (a single period starting today, nothing retroactive)
+    rather than invent a historical date — the same no-fail-open spirit
+    `ensure_periods` applies by raising on a malformed `onboarded_on`, just
+    applied here to a missing signal instead of a bad one.
     """
     rows = (
         get_admin_client().table("application_status_log").select("changed_at")
@@ -121,7 +132,14 @@ def _resolve_onboarded_on(ctx: dict) -> date:
         .execute().data or []
     )
     dates = [_ist_date_of(r["changed_at"]) for r in rows if r.get("changed_at")]
-    return min(dates) if dates else mp.today_ist()
+    if dates:
+        return min(dates)
+    log.warning(
+        "founder_mis: onboarded application has no application_status_log "
+        "'onboarded' transition; falling back to today as onboarded_on",
+        extra={"application_id": ctx["application_id"], "track": ctx["track"]},
+    )
+    return mp.today_ist()
 
 
 # ── TRL sourcing (constraint 4) ──────────────────────────────────────────
@@ -162,12 +180,22 @@ def _with_trl(bundle: dict, application_id: str) -> dict:
     with the live-computed verified AIR level, for monthly periods only —
     quarterly bundles carry no metrics at all. Done as a response-shaping
     step here, not inside `mis_query.period_bundle`, because that module is
-    off-limits to edit for this task."""
+    off-limits to edit for this task.
+
+    Builds a fresh list (and a fresh dict for the one row it changes)
+    rather than mutating `bundle["metrics"]`'s rows in place — the
+    "copy before you mutate" discipline `mis_query.py` states explicitly
+    for exactly this reason: under `FakeSupabase`, `.select().execute().data`
+    returns references straight into the fake's own stored table rows, not
+    fresh copies, so an in-place `m["actual"] = trl` would silently corrupt
+    the test double's stored `vip_mis_metrics` state rather than only
+    shaping this one response."""
     if bundle["period"]["kind"] == "monthly":
         trl = _current_verified_trl(application_id)
-        for m in bundle["metrics"]:
-            if m.get("metric_key") == "trl_level":
-                m["actual"] = trl
+        bundle["metrics"] = [
+            {**m, "actual": trl} if m.get("metric_key") == "trl_level" else m
+            for m in bundle["metrics"]
+        ]
     return bundle
 
 
@@ -206,6 +234,17 @@ def _own_draft_period(ctx: dict, kind: str, period_key: str) -> dict:
     return period
 
 
+def _stamp_updated_at(period_id: str) -> None:
+    """Every write handler below calls this after its own table write, so
+    `vip_mis_periods.updated_at` reflects the period's true last-edited
+    time regardless of which child table the edit actually touched — not
+    only the two writes (`narrative`, `submit`) that happen to already
+    update the `vip_mis_periods` row directly for another reason."""
+    get_admin_client().table("vip_mis_periods").update({
+        "updated_at": datetime.now(UTC).isoformat(),
+    }).eq("id", period_id).execute()
+
+
 # ── index catalog ─────────────────────────────────────────────────────────
 
 def _entries_sections_for_kind(kind: str) -> list[str]:
@@ -239,11 +278,15 @@ def _index_catalog() -> dict:
     """The period-independent slice of the catalog `GET /founder/mis`
     needs: every section for both kinds, their narrative prompts and entry
     field schemas, plus the metric/headcount/financial-series definitions.
-    Deliberately excludes the annual_revenue bucket labels — those are
-    period-relative (`mis_catalog.annual_revenue_buckets`), so there is no
-    single answer at the index level; the per-period detail bundle
-    (`mis_query.period_bundle`) carries them, scoped to that period's own
-    fiscal year."""
+    `financial_buckets` deliberately carries only `"needs"`, not
+    `"annual_revenue"` — those buckets are period-relative
+    (`mis_catalog.annual_revenue_buckets`), so there is no single answer at
+    the index level; the per-period detail bundle (`mis_query.period_bundle`)
+    carries the full `{"annual_revenue", "needs"}` shape, scoped to that
+    period's own fiscal year. Nested under the same `financial_buckets` key
+    the detail bundle uses (rather than a separate `financial_buckets_needs`
+    key) so a frontend reader can use one access path, `.financial_buckets
+    .needs`, against either response."""
     all_entry_ids = {sid for kind in cat.KINDS for sid in _entries_sections_for_kind(kind)}
     return {
         "kinds": list(cat.KINDS),
@@ -254,15 +297,27 @@ def _index_catalog() -> dict:
         "metric_groups": cat.METRIC_GROUPS,
         "headcount_categories": cat.HEADCOUNT_CATEGORIES,
         "financial_series": cat.FINANCIAL_SERIES,
-        "financial_buckets_needs": cat.FINANCIAL_BUCKETS["needs"],
+        "financial_buckets": {"needs": cat.FINANCIAL_BUCKETS["needs"]},
     }
 
 
 @router.get("")
 async def get_mis(ctx: Annotated[dict, Depends(require_vip)]) -> dict:
+    out: dict[str, Any] = {"catalog": _index_catalog()}
+    if ctx["status"] != "onboarded":
+        # require_founder_access admits 'offered' as well as 'onboarded',
+        # but MIS reporting has no real start date before actual onboarding
+        # — generating a calendar from a guessed date would create period
+        # rows that then persist forever and go overdue the moment their
+        # due_date passes (periods_index lists every EXISTING row, not the
+        # expected calendar, so nothing later prunes a spurious one). An
+        # 'offered' founder owes nothing yet; give them an empty calendar
+        # rather than one manufactured from a placeholder date.
+        for kind in cat.KINDS:
+            out[kind] = []
+        return out
     onboarded_on = _resolve_onboarded_on(ctx)
     today = mp.today_ist()
-    out: dict[str, Any] = {"catalog": _index_catalog()}
     for kind in cat.KINDS:
         mq.ensure_periods(ctx["application_id"], kind, onboarded_on, today)
         out[kind] = mq.periods_index(ctx["application_id"], kind, today)
@@ -279,6 +334,11 @@ async def get_period(kind: str, period_key: str,
 # ── metrics (monthly only) ────────────────────────────────────────────────
 
 _METRIC_KEYS = {m["key"] for m in cat.METRICS}
+_METRIC_BY_KEY = {m["key"]: m for m in cat.METRICS}
+# 045_vip_mis.sql: `rag text check (rag in ('green','amber','red'))`. Not
+# validated here would mean a bad value 500s (23514, unhandled) instead of
+# a clean 422 — the same class of gap the duplicate-key check below closes.
+_RAG_VALUES = {"green", "amber", "red"}
 
 
 @router.put("/{kind}/{period_key}/metrics")
@@ -299,17 +359,42 @@ async def put_metrics(
         if item.metric_key == "trl_level" and item.actual is not None:
             raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 detail={"code": "computed_metric", "field": "actual"})
+        if item.rag is not None and item.rag not in _RAG_VALUES:
+            raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail={"code": "invalid_value", "field": "rag"})
+    keys = [item.metric_key for item in body]
+    if len(keys) != len(set(keys)):
+        # PostgREST's upsert compiles to a single ON CONFLICT DO UPDATE
+        # statement; two rows in one payload sharing a conflict target hit
+        # Postgres 21000 ("command cannot affect row a second time") and
+        # 500 rather than reject cleanly — reject before it ever reaches
+        # that statement.
+        raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail={"code": "duplicate_key", "field": "metric_key"})
 
     period = _own_draft_period(ctx, kind, period_key)
     if body:
-        rows = [{
-            "period_id": period["id"], "metric_key": item.metric_key,
-            "target": item.target, "actual": item.actual,
-            "rag": item.rag, "commentary": item.commentary,
-        } for item in body]
+        rows = []
+        for item in body:
+            catalog_row = _METRIC_BY_KEY[item.metric_key]
+            rows.append({
+                "period_id": period["id"], "metric_key": item.metric_key,
+                # label/group_key are NOT NULL with no default (045_vip_mis.sql)
+                # and are not part of the unique key, so a plain upsert of
+                # only the founder-editable columns would 23502 the moment
+                # this row does not already exist — reachable whenever a PUT
+                # lands on a period whose children were never reconciled
+                # (`_own_draft_period` deliberately does not reconcile; only
+                # `mis_query.ensure_periods`/`period_bundle` do).
+                "label": catalog_row["label"], "group_key": catalog_row["group"],
+                "unit": catalog_row["unit"],
+                "target": item.target, "actual": item.actual,
+                "rag": item.rag, "commentary": item.commentary,
+            })
         get_admin_client().table("vip_mis_metrics").upsert(
             rows, on_conflict="period_id,metric_key"
         ).execute()
+    _stamp_updated_at(period["id"])
     return _bundle(ctx, kind, period_key)
 
 
@@ -337,36 +422,74 @@ async def put_narrative(
 
 # ── entries (wholesale section replace) ───────────────────────────────────
 
+def _replace_entries_section(sb, period_id: str, section: str,
+                              rows: list[dict[str, Any]]) -> None:
+    """Replaces every `vip_mis_entries` row for `(period_id, section)` with
+    `rows`, converged against a concurrent writer doing the same thing.
+
+    Not atomic: PostgREST offers no client-side multi-statement transaction
+    and this project has no `exec_sql` RPC (see mis_query.py's own module
+    docstring), and `vip_mis_entries` deliberately carries no unique
+    constraint (two milestones may legitimately share a title), so there is
+    no constraint here to catch a collision the way the metrics/financials/
+    headcount upserts are protected by one.
+
+    Six interleavings are possible between two concurrent callers A and B,
+    each individually ordered delete-before-insert. In four of them both
+    deletes land before either insert — each delete finds nothing left to
+    remove — so the result is the UNION of A's and B's rows: duplicates, not
+    missing rows. (An earlier version of this function's docstring claimed
+    the opposite; it was wrong, and so was the ordering rationale behind
+    it — plain delete-then-insert cannot make missing rows the failure mode,
+    because ordering the two statements within ONE writer says nothing about
+    how two writers' statements interleave with each other.) The duplicates
+    are also not silent (the section renders doubled on the founder's next
+    reload) and not permanent on their own (the next wholesale PUT to the
+    same section clears and re-inserts, converging normally) — the one case
+    that is NOT self-healing is a period that gets submitted while carrying
+    doubled rows: writes freeze at that point, so the duplicate survives
+    into the statutory report until an admin reopens the period.
+
+    Mitigation, not a fix: write once, then re-select this exact
+    `(period_id, section)`'s row count. A count that does not match what
+    was just written means a concurrent writer's insert landed inside this
+    call's own window, so delete and re-insert (this writer's own `rows`)
+    once more — the same "insert; on a mismatch, reconcile once" discipline
+    `mis_query.py` uses throughout for its own convergent writes, applied
+    here at the router boundary since that module is off-limits to edit for
+    this task. This converges to last-writer-wins for the common case where
+    the colliding writer's insert has already landed by the time this
+    writer reads back; it does NOT close the window entirely — a writer
+    whose own insert lands strictly after the OTHER writer's read-back check
+    is not caught by that other writer's retry, so a vanishingly narrow
+    version of the same race still exists one layer down. Closing it fully
+    needs a real mutex (a `seeded_at`/version claim column — the same
+    remedy Task 5's review recorded as a deliberate, deferred follow-up for
+    the carry-forward race), which is a schema change and out of scope
+    here.
+    """
+    def _write() -> None:
+        sb.table("vip_mis_entries").delete().eq("period_id", period_id).eq("section", section).execute()
+        if rows:
+            sb.table("vip_mis_entries").insert([
+                {"period_id": period_id, "section": section, "sort_order": i, "data": dict(row)}
+                for i, row in enumerate(rows)
+            ]).execute()
+
+    _write()
+    after = (
+        sb.table("vip_mis_entries").select("id")
+        .eq("period_id", period_id).eq("section", section).execute().data or []
+    )
+    if len(after) != len(rows):
+        _write()
+
+
 @router.put("/{kind}/{period_key}/entries/{section}")
 async def put_entries(
     kind: str, period_key: str, section: str, body: list[dict[str, Any]],
     ctx: Annotated[dict, Depends(require_vip)],
 ) -> dict:
-    """Replaces every `vip_mis_entries` row for `(period_id, section)` with
-    `body`, in one delete followed by one insert.
-
-    Concurrency: this is NOT atomic. PostgREST offers no client-side
-    multi-statement transaction and this project has no `exec_sql` RPC (see
-    mis_query.py's own module docstring), and `vip_mis_entries` deliberately
-    carries no unique constraint (two milestones may legitimately share a
-    title), so there is no constraint here to catch a collision the way the
-    metrics/financials/headcount upserts below are protected by one.
-
-    Two concurrent PUTs for the same section can therefore still interleave
-    between this delete and this insert. The ordering below (delete first,
-    insert second, scoped tightly to `(period_id, section)` on both) is
-    chosen so the *observable* failure mode of that interleaving is rows
-    going missing — recoverable, and visible the moment the founder reloads
-    the section and sees it short — rather than rows getting duplicated,
-    which nothing here or in the schema would ever surface or clean up. A
-    retry of a partial failure is safe (the retry's own delete clears
-    whatever the partial attempt left behind before it re-inserts), but two
-    genuinely concurrent requests racing each other is a residual window
-    this endpoint does not close. A `seeded_at`-style claim column (the
-    same remedy Task 5's review recorded as a deliberate, deferred follow-up
-    for the carry-forward race) would close it properly; that is a schema
-    change and is out of scope here.
-    """
     if kind not in cat.KINDS:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
                             detail={"code": "unknown_kind"})
@@ -382,12 +505,8 @@ async def put_entries(
 
     period = _own_draft_period(ctx, kind, period_key)
     sb = get_admin_client()
-    sb.table("vip_mis_entries").delete().eq("period_id", period["id"]).eq("section", section).execute()
-    if body:
-        sb.table("vip_mis_entries").insert([
-            {"period_id": period["id"], "section": section, "sort_order": i, "data": dict(row)}
-            for i, row in enumerate(body)
-        ]).execute()
+    _replace_entries_section(sb, period["id"], section, body)
+    _stamp_updated_at(period["id"])
     return _bundle(ctx, kind, period_key)
 
 
@@ -425,6 +544,16 @@ async def put_financials(
         if item.series not in _ANNUAL_REVENUE_SERIES and item.series not in _NEEDS_SERIES:
             raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 detail={"code": "unknown_field", "field": "series"})
+    conflict_keys = [(item.series, item.bucket) for item in body]
+    if len(conflict_keys) != len(set(conflict_keys)):
+        # Same class of gap as the metrics duplicate-key check: two rows in
+        # one payload sharing (series, bucket) would hit Postgres 21000 on
+        # the upsert below rather than reject cleanly. Checked here, ahead
+        # of bucket validity, because duplicate detection needs only the
+        # request itself — not the period's fiscal year the bucket check
+        # below needs.
+        raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail={"code": "duplicate_key", "field": "series,bucket"})
 
     # Bucket validity for the annual_revenue series is relative to this
     # period's own fiscal year, so it cannot be checked until the period is
@@ -452,6 +581,7 @@ async def put_financials(
         get_admin_client().table("vip_mis_financials").upsert(
             rows, on_conflict="period_id,series,bucket"
         ).execute()
+    _stamp_updated_at(period["id"])
     return _bundle(ctx, kind, period_key)
 
 
@@ -475,6 +605,13 @@ async def put_headcount(
         if item.category not in _HEADCOUNT_KEYS:
             raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 detail={"code": "unknown_field", "field": item.category})
+    categories = [item.category for item in body]
+    if len(categories) != len(set(categories)):
+        # Same class of gap as the metrics/financials duplicate-key checks:
+        # two rows sharing `category` would hit Postgres 21000 on the
+        # upsert below rather than reject cleanly.
+        raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail={"code": "duplicate_key", "field": "category"})
 
     period = _own_draft_period(ctx, kind, period_key)
     if body:
@@ -486,6 +623,7 @@ async def put_headcount(
         get_admin_client().table("vip_mis_headcount").upsert(
             rows, on_conflict="period_id,category"
         ).execute()
+    _stamp_updated_at(period["id"])
     return _bundle(ctx, kind, period_key)
 
 

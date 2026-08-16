@@ -394,6 +394,23 @@ def test_trl_level_reflects_the_verified_air_level(client, monkeypatch, _clear):
     trl = next(m for m in r.json()["metrics"] if m["metric_key"] == "trl_level")
     assert trl["actual"] == 4
 
+    # _with_trl must build a fresh row rather than mutate the one
+    # FakeSupabase's .select() handed back — that select() returns a
+    # reference straight into the fake's own stored table, not a copy, so
+    # an in-place `m["actual"] = trl` would silently write 4 into
+    # `vip_mis_metrics`'s stored row too, which is never a real write this
+    # endpoint is supposed to make (trl_level's actual is never persisted).
+    # Scoped by period_id, not just metric_key: three monthly periods exist
+    # (2026-06/07/08), each with its own trl_level row, and only CUR_MONTH's
+    # was ever read — matching on metric_key alone would pick up
+    # 2026-06's untouched row and pass regardless of whether the mutation
+    # bug is present.
+    cur_period = next(p for p in fake.tables["vip_mis_periods"]
+                       if p["period_key"] == CUR_MONTH and p["kind"] == "monthly")
+    stored = next(m for m in fake.tables["vip_mis_metrics"]
+                  if m["metric_key"] == "trl_level" and m["period_id"] == cur_period["id"])
+    assert stored.get("actual") is None
+
 
 def test_trl_level_is_null_when_any_lever_unverified(client, monkeypatch, _clear):
     fake = _install(monkeypatch)
@@ -416,3 +433,269 @@ def test_trl_level_is_null_when_any_lever_unverified(client, monkeypatch, _clear
     r = client.get(f"/founder/mis/monthly/{CUR_MONTH}")
     trl = next(m for m in r.json()["metrics"] if m["metric_key"] == "trl_level")
     assert trl["actual"] is None
+
+
+# ── fix round 1: onboarding-date status gate + fallback logging ──────────
+
+def test_offered_but_not_yet_onboarded_gets_an_empty_calendar(client, monkeypatch, _clear):
+    """require_founder_access admits 'offered' as well as 'onboarded', but
+    an 'offered' founder owes no MIS reporting yet and has no real
+    onboarding date to compute a calendar from. No period rows should be
+    created at all — not a calendar seeded from a placeholder date."""
+    fake = _install(monkeypatch)
+    fake.tables["sip_applications"][0]["status"] = "offered"
+    r = client.get("/founder/mis")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["monthly"] == []
+    assert body["quarterly"] == []
+    assert fake.tables["vip_mis_periods"] == []
+
+
+def test_missing_status_log_row_falls_back_and_logs_a_warning(client, monkeypatch, _clear, caplog):
+    """An onboarded founder with no application_status_log 'onboarded' row
+    (state_machine.py's own insert there is best-effort and can be
+    swallowed, or the status could have been set by a direct Studio edit)
+    must still get a calendar — starting from today, per the fallback —
+    AND the gap must be logged, not silent."""
+    fake = _install(monkeypatch)
+    fake.tables["application_status_log"] = []
+    with caplog.at_level("WARNING"):
+        r = client.get("/founder/mis")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert [p["period_key"] for p in body["monthly"]] == [CUR_MONTH]
+    assert [p["period_key"] for p in body["quarterly"]] == [CUR_QUARTER]
+    assert any(
+        "application_status_log" in rec.message and "sapp1" in str(rec.__dict__)
+        for rec in caplog.records
+    )
+
+
+# ── fix round 1: entries race — convergent read-back ──────────────────────
+
+def test_entries_race_converges_instead_of_duplicating(client, monkeypatch, _clear):
+    """Simulates the interleaving the entries-replace hazard is about: a
+    concurrent writer's own insert landing inside THIS request's
+    delete-then-insert window, immediately after this request's own insert
+    commits. Proves the convergent read-back in `_replace_entries_section`
+    detects the resulting row-count mismatch and cleans it back to exactly
+    this writer's own rows — last-writer-wins — rather than leaving the
+    union of both writers' rows (a duplicate) behind."""
+    from app.routers import founder_mis as mis_router
+
+    fake = _install(monkeypatch)
+    client.get("/founder/mis")
+    period = next(p for p in fake.tables["vip_mis_periods"]
+                  if p["period_key"] == CUR_MONTH and p["kind"] == "monthly")
+
+    class _InjectPhantomOnce:
+        """Wraps the fake so the FIRST insert().execute() against
+        vip_mis_entries also appends one extra row directly into the
+        store, right after the real insert commits — the concurrent
+        writer's own row landing in the window. Disarms itself after
+        firing once, so the retry `_write()` this triggers behaves like
+        the plain fake."""
+        def __init__(self, inner):
+            self._inner = inner
+            self._armed = True
+
+        def table(self, name):
+            q = self._inner.table(name)
+            if name == "vip_mis_entries" and self._armed:
+                real_execute = q.execute
+
+                def execute():
+                    result = real_execute()
+                    if q._mode == "insert" and self._armed:
+                        self._armed = False
+                        self._inner.tables["vip_mis_entries"].append({
+                            "id": "phantom", "period_id": period["id"],
+                            "section": "milestones", "sort_order": 999,
+                            "data": {"milestone": "concurrent writer's row"},
+                        })
+                    return result
+
+                q.execute = execute
+            return q
+
+    monkeypatch.setattr(mis_router, "get_admin_client", lambda: _InjectPhantomOnce(fake))
+
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+        {"milestone": "Alpha launch", "owner": "Asha", "status": "On Track", "notes": ""},
+    ])
+    assert r.status_code == 200, r.text
+    rows = r.json()["entries"]["milestones"]
+    assert len(rows) == 1
+    assert rows[0]["data"]["milestone"] == "Alpha launch"
+    stored = [row for row in fake.tables["vip_mis_entries"] if row["section"] == "milestones"]
+    assert len(stored) == 1
+    assert not any(row.get("id") == "phantom" for row in stored)
+
+
+def test_entries_delete_is_scoped_to_its_own_section(client, monkeypatch, _clear):
+    """Deleting only `.eq("section", section)` must leave every OTHER
+    section of the same period untouched. Every existing test before this
+    one only ever wrote to a single section per period, so a delete scoped
+    to `period_id` alone would have passed them all just as easily."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+        {"milestone": "Alpha", "owner": "Asha", "status": "On Track", "notes": ""},
+    ])
+    client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/risks", json=[
+        {"severity": "amber", "what_happened": "vendor delay",
+         "impact": "2wk slip", "mitigation": "backup vendor"},
+    ])
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+        {"milestone": "Beta", "owner": "Ravi", "status": "At Risk", "notes": ""},
+    ])
+    assert r.status_code == 200, r.text
+    entries = r.json()["entries"]
+    assert len(entries["milestones"]) == 1
+    assert entries["milestones"][0]["data"]["milestone"] == "Beta"
+    assert len(entries["risks"]) == 1
+    assert entries["risks"][0]["data"]["what_happened"] == "vendor delay"
+
+
+def test_next_milestones_is_reachable_via_section_extra_entries(client, monkeypatch, _clear):
+    """next_milestones (quarterly §9.2) hangs off planned_vs_actual via
+    mis_catalog.SECTION_EXTRA_ENTRIES rather than owning its own SECTIONS
+    row — exactly the section mis_catalog's own module docstring warns is
+    silently droppable by a renderer that does not union
+    SECTION_EXTRA_ENTRIES into its section-id lookup."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/next_milestones", json=[
+        {"milestone": "Ship v2", "target_date": "2026-10-01"},
+    ])
+    assert r.status_code == 200, r.text
+    rows = r.json()["entries"]["next_milestones"]
+    assert len(rows) == 1
+    assert rows[0]["data"]["milestone"] == "Ship v2"
+
+
+# ── fix round 1: rag/duplicate-key validation + metrics NOT NULL columns ──
+
+def test_invalid_rag_value_is_422(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+        {"metric_key": "revenue_month", "rag": "purple"},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_value"
+
+
+def test_duplicate_metric_key_in_payload_is_422(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+        {"metric_key": "revenue_month", "actual": 1},
+        {"metric_key": "revenue_month", "actual": 2},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "duplicate_key"
+
+
+def test_duplicate_financials_key_in_payload_is_422(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/financials", json=[
+        {"series": "needs_total", "bucket": "Q1 (Current)", "amount": 1},
+        {"series": "needs_total", "bucket": "Q1 (Current)", "amount": 2},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "duplicate_key"
+
+
+def test_duplicate_headcount_category_in_payload_is_422(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/headcount", json=[
+        {"category": "startup", "current_count": 1},
+        {"category": "startup", "current_count": 2},
+    ])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "duplicate_key"
+
+
+def test_metrics_upsert_includes_label_and_group_key(client, monkeypatch, _clear):
+    """label/group_key are NOT NULL with no default and are not part of
+    the unique key (045_vip_mis.sql), so a PUT against a period whose
+    child rows were never reconciled would 23502 on a real Postgrest
+    without them — reachable because `_own_draft_period` deliberately does
+    not reconcile (only `mis_query.ensure_periods`/`period_bundle` do).
+
+    Deliberately does NOT call `GET /founder/mis` first: doing so would
+    reconcile a blank `revenue_month` row (with label/group_key already
+    correctly seeded by mis_query's own `_insert_metrics`) before the PUT
+    ever runs, so the PUT's upsert would just merge into that pre-existing
+    row and this test would pass even if the PUT's own payload omitted
+    both fields entirely — exactly what an earlier version of this test
+    did, vacuously. Seeding the period row directly, with no metrics rows
+    of its own, is what actually exercises the PUT's own insert path.
+    """
+    fake = _install(monkeypatch)
+    fake.tables["vip_mis_periods"].append({
+        "id": "bare-period", "application_id": "sapp1", "kind": "monthly",
+        "period_key": CUR_MONTH, "label": "Aug 2026",
+        "period_start": "2026-08-01", "period_end": "2026-08-31",
+        "due_date": "2026-09-05", "status": "draft", "narrative": {},
+    })
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+        {"metric_key": "revenue_month", "actual": 5},
+    ])
+    assert r.status_code == 200, r.text
+    row = next(m for m in fake.tables["vip_mis_metrics"] if m["metric_key"] == "revenue_month")
+    expected = next(m for m in cat.METRICS if m["key"] == "revenue_month")
+    assert row["label"] == expected["label"]
+    assert row["group_key"] == expected["group"]
+
+
+# ── fix round 1: updated_at stamped on every write kind ───────────────────
+
+def test_every_write_kind_stamps_updated_at(client, monkeypatch, _clear):
+    """Metrics, entries, financials and headcount edits all land on a
+    child table, not vip_mis_periods directly — unlike narrative and
+    submit, which happen to touch vip_mis_periods anyway. This proves each
+    of the four still stamps the period's own updated_at via
+    `_stamp_updated_at`, so a "last edited" signal reading only
+    vip_mis_periods does not lie."""
+    fake = _install(monkeypatch)
+    client.get("/founder/mis")
+    monthly = next(p for p in fake.tables["vip_mis_periods"]
+                   if p["period_key"] == CUR_MONTH and p["kind"] == "monthly")
+    quarterly = next(p for p in fake.tables["vip_mis_periods"]
+                      if p["period_key"] == CUR_QUARTER and p["kind"] == "quarterly")
+    assert not monthly.get("updated_at")
+    assert not quarterly.get("updated_at")
+
+    client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+        {"metric_key": "revenue_month", "actual": 1}])
+    assert monthly.get("updated_at")
+
+    monthly["updated_at"] = None  # isolate the next write's own stamp
+    client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+        {"milestone": "x", "owner": "y", "status": "On Track", "notes": ""}])
+    assert monthly.get("updated_at")
+
+    client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/financials", json=[
+        {"series": "needs_total", "bucket": "Q1 (Current)", "amount": 1}])
+    assert quarterly.get("updated_at")
+
+    quarterly["updated_at"] = None  # isolate the next write's own stamp
+    client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/headcount", json=[
+        {"category": "startup", "current_count": 1}])
+    assert quarterly.get("updated_at")
+
+
+# ── fix round 1: index catalog shape ───────────────────────────────────────
+
+def test_index_catalog_financial_buckets_matches_detail_bundle_shape(client, monkeypatch, _clear):
+    """Both the index and the detail bundle must expose the needs buckets
+    under the same `financial_buckets.needs` path, not two differently
+    named keys a frontend would need two readers for."""
+    _install(monkeypatch)
+    r = client.get("/founder/mis")
+    assert r.json()["catalog"]["financial_buckets"] == {"needs": cat.FINANCIAL_BUCKETS["needs"]}
