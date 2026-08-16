@@ -22,10 +22,10 @@ Work only in that worktree — concurrent sessions cross-contaminate otherwise.
 | 1 | Track generalisation, shell, COHORT deletion | ✅ complete, whole-phase reviewed, fix wave applied |
 | 2 | AIR readiness assessment **backend** | ✅ complete, whole-phase reviewed, fix wave applied |
 | 3 | MIS reporting **backend** | ✅ complete, whole-phase reviewed, fix wave + scoped re-review + residual fixes |
-| 4 | Founder UI: AIR wizard (spec §4.3/§4.4) | in progress |
-| 5 | Founder UI: MIS monthly + quarterly forms (spec §5.3/§5.4) | not started |
-| 6 | VIP process dashboard (spec §6) | not started |
-| 7 | Admin "VIP cohort" verification surface (spec §7) | not started |
+| 4 | Founder UI: AIR wizard (spec §4.3/§4.4) | ✅ complete, whole-phase reviewed, 18-item fix wave applied |
+| 5 | Founder UI: MIS monthly + quarterly forms (spec §5.3/§5.4) | planning |
+| 6 | VIP process dashboard (spec §6) | planning |
+| 7 | Admin "VIP cohort" verification surface (spec §7) | backend in progress |
 | 8 | docx import + xlsx export (spec §5.6/§5.7) | not started |
 
 **The phase numbering diverges from spec §10 deliberately.** §10 folded each
@@ -64,6 +64,18 @@ Established by the TIR pages; VIP must match them, not invent a second dialect.
 - **The MIS API validates rather than coerces.** `"12"` for a numeric field is
   a 422, not `12`. Forms must send JSON numbers, and `null` for empty — not
   `""`.
+- **`founderApi.js` already carries every AIR and MIS thunk.** Phases 5-6 must
+  not edit it; that file was the one choke point forcing those phases to run
+  in series, so it was filled in ahead of them.
+- **Each new surface owns its own stylesheet**, imported by its page —
+  `founder-mis.css`, `vip-dashboard.css`. Only the AIR wizard and the shared
+  atoms live in `founder-portal.css`. This is what lets phases 5 and 6 be
+  built concurrently.
+- **Empty states need one message per cause.** Five defects in phase 4 were a
+  single shape: a null with two distinct causes and one message true for only
+  one of them (a lever never touched vs. one whose Q1 was skipped; a document
+  undefined vs. not yet earned). Enumerate every empty state and give each its
+  own copy.
 
 ## Migrations
 
