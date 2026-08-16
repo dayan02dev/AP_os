@@ -1,0 +1,67 @@
+/* Founder MIS reporting screens — monthly/quarterly forms (spec §5).
+   New MIS-specific rules only; reuses founder-portal.css's generic classes
+   (.tile, .card, .badge, .btn*, .chip, .dot, .eyebrow, .hint, .fj-table,
+   .fj-actions, .fj-inline-error, .fj-inline-warning) directly rather than
+   re-declaring them. Imported once by FounderMis.jsx (Task 7). Built up
+   task-by-task; this pass adds PeriodPicker's classes only. */
+
+/* -- period picker (Task 1) ------------------------------------------ */
+.mis-period-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mis-period-list-empty {
+  color: var(--ink-dim);
+  font-size: 14px;
+  padding: 16px 0;
+}
+.mis-period-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.mis-period-chip:hover {
+  border-color: var(--line-strong);
+}
+.mis-period-chip.is-selected {
+  border-color: var(--artblue);
+  background: rgba(50, 19, 183, 0.04);
+}
+.mis-period-label {
+  font-weight: 500;
+}
+.mis-period-status {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 2px;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+}
+.mis-period-status.is-draft {
+  color: var(--ink-soft);
+  border-color: var(--line-strong);
+}
+.mis-period-status.is-submitted {
+  color: var(--accent-green);
+  border-color: var(--accent-green);
+}
+.mis-period-status.is-overdue {
+  color: var(--accent-coral);
+  border-color: var(--accent-coral);
+}
