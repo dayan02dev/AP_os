@@ -1304,3 +1304,65 @@
 }
 .founder-portal .fj-lever-criterion { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: var(--ink-soft); cursor: pointer; }
 .founder-portal .fj-lever-criterion input[type="checkbox"] { margin-top: 2px; flex: none; }
+
+/* ======================================================================
+   EvidenceRow (EvidenceRow.jsx) — one lever's qualifying document: the
+   required upload at the claimed level, plus collapsed-by-default optional
+   backfill uploads for lower levels the catalog also defines a document
+   for. Uploading over an existing row is a replace (the backend replaces
+   on conflict), so the trigger reads "Replace" once a row exists rather
+   than implying copies accumulate. Download is never gated by `disabled` —
+   a founder must always be able to retrieve their own documents, including
+   after the round is submitted. */
+.founder-portal .fj-evidence-row { display: flex; flex-direction: column; gap: 12px; }
+.founder-portal .fj-evidence-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.founder-portal .fj-evidence-lever-name { font-family: var(--font-display); font-weight: 600; font-size: 15px; color: var(--ink); }
+.founder-portal .fj-evidence-doc-name { font-size: 13px; color: var(--ink-soft); }
+.founder-portal .fj-evidence-empty { font-size: 13px; color: var(--ink-dim); font-style: italic; }
+
+.founder-portal .fj-evidence-slot { display: flex; flex-direction: column; gap: 8px; }
+.founder-portal .fj-evidence-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sharp);
+  padding: 10px 12px;
+  background: var(--paper-soft);
+}
+.founder-portal .fj-evidence-filename { font-family: var(--font-mono); font-size: 13px; color: var(--ink); }
+.founder-portal .fj-evidence-meta { font-size: 12px; color: var(--ink-dim); }
+.founder-portal .fj-evidence-actions { display: flex; gap: 8px; margin-left: auto; }
+.founder-portal .fj-evidence-upload { display: flex; }
+
+.founder-portal .fj-evidence-backfill { border-top: 1px dashed var(--line-strong); padding-top: 10px; }
+.founder-portal .fj-evidence-backfill-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.founder-portal .fj-evidence-backfill-toggle:hover { color: var(--ink); }
+.founder-portal .fj-evidence-backfill-chevron { font-size: 11px; }
+.founder-portal .fj-evidence-backfill-body { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; }
+.founder-portal .fj-evidence-backfill-item { display: flex; flex-direction: column; gap: 6px; }
+.founder-portal .fj-evidence-backfill-item-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.founder-portal .fj-evidence-backfill-level { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
+.founder-portal .fj-evidence-optional-tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sharp);
+  padding: 1px 6px;
+}
