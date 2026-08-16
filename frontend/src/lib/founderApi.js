@@ -1,5 +1,5 @@
 // Wrapper for /founder/* endpoints. Mirrors reviewerApi.js shape.
-import { api } from "./api.js";
+import { api, UPLOAD_TIMEOUT_MS } from "./api.js";
 
 export const founderApi = {
   me: () => api.get("/founder/me"),
@@ -88,13 +88,16 @@ export const founderApi = {
   putAirLever: (lever, payload) => api.put(`/founder/air/levers/${lever}`, payload),
   submitAir: () => api.post("/founder/air/submit"),
   // Multipart — field names are exact, `upload_evidence` reads them via
-  // Form(...) on the backend, not JSON.
+  // Form(...) on the backend, not JSON. The backend allows up to 25MB
+  // (26,214,400 bytes); the default 30s timeout is too tight for that on a
+  // slow connection, so this follows the same UPLOAD_TIMEOUT_MS precedent
+  // as api.uploadSipTemplate, the only other upload path in this codebase.
   uploadAirEvidence: (lever, airLevel, file) => {
     const fd = new FormData();
     fd.append("file", file, file.name || "evidence");
     fd.append("lever", lever);
     fd.append("air_level", airLevel);
-    return api.post("/founder/air/evidence", fd);
+    return api.post("/founder/air/evidence", fd, { timeoutMs: UPLOAD_TIMEOUT_MS });
   },
   delAirEvidence: (id) => api.del(`/founder/air/evidence/${id}`),
   airEvidenceSignedUrl: (id) => api.get(`/founder/air/evidence/${id}/signed-url`),
