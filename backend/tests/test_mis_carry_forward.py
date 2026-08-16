@@ -106,7 +106,12 @@ def test_first_ever_period_is_empty(fake):
     assert entries == []
 
 
-def test_second_period_copies_target_blanks_actual_and_carries_prev_actual(fake):
+def test_second_period_copies_target_and_blanks_actual(fake):
+    """`prev_actual` is deliberately never written by seeding (Important-2
+    fix) — "vs Last Mo" is derived on read from the previous period's own
+    `actual` instead (see test_mis_query.py's vs_last tests), so this row
+    must NOT carry a `prev_actual` value, even though the seed source's own
+    `actual` (42) is right there."""
     fake.tables["vip_mis_periods"].append(_period("p1", "2026-07", status="submitted"))
     fake.tables["vip_mis_metrics"].append(_metric_row(
         "m1", "p1", "revenue_month", target=50, actual=42, commentary="solid month",
@@ -122,7 +127,7 @@ def test_second_period_copies_target_blanks_actual_and_carries_prev_actual(fake)
     assert row["target"] == 50
     assert row.get("actual") is None
     assert row.get("commentary") is None
-    assert row["prev_actual"] == 42
+    assert row.get("prev_actual") is None
     # untouched metrics still get their ordinary blank catalog row
     others = [
         r for r in fake.tables["vip_mis_metrics"]
@@ -130,6 +135,37 @@ def test_second_period_copies_target_blanks_actual_and_carries_prev_actual(fake)
     ]
     assert len(others) == 12
     assert all(r.get("target") is None for r in others)
+
+
+def test_custom_metric_carries_forward_and_is_not_dropped_by_reconciliation(fake):
+    """Minor-8: a custom metric (`is_custom=True`, a `metric_key` outside
+    the 13-key catalog) must carry forward like any catalog metric —
+    mis_catalog's own §2 hint explicitly invites founders to "add rows for
+    your business-specific KPIs". `_seed_metrics` used to filter its
+    carry-forward to `_METRIC_BY_KEY`-recognised keys only, silently
+    dropping a custom row at the seed boundary the moment the period
+    rolled over — and nothing in `_reconcile_metrics` ever deletes a
+    non-catalog row (it only ever inserts catalog rows that are missing),
+    so "not dropped by reconciliation" is proven here by the row surviving
+    at all, unmodified, alongside the ordinary 13."""
+    fake.tables["vip_mis_periods"].append(_period("p1", "2026-07", status="submitted"))
+    fake.tables["vip_mis_metrics"].append({
+        "id": "custom1", "period_id": "p1", "metric_key": "custom_nps",
+        "label": "NPS", "group_key": "commercial", "unit": "score",
+        "target": 40, "actual": 35, "is_custom": True, "sort_order": 99,
+    })
+
+    periods = mq.ensure_periods("app1", "monthly", date(2026, 7, 1), date(2026, 8, 1))
+    p2 = next(p for p in periods if p["period_key"] == "2026-08")
+    rows = [r for r in fake.tables["vip_mis_metrics"] if r["period_id"] == p2["id"]]
+
+    assert len(rows) == 14  # 13 catalog + 1 custom — not dropped
+    custom = next(r for r in rows if r["metric_key"] == "custom_nps")
+    assert custom["label"] == "NPS"
+    assert custom["group_key"] == "commercial"
+    assert custom["target"] == 40
+    assert custom.get("actual") is None  # blanked, same as every other metric
+    assert custom["is_custom"] is True
 
 
 def test_draft_previous_period_is_not_a_seed_source(fake):
@@ -339,7 +375,7 @@ def test_new_and_pre_existing_periods_are_seeded_and_repaired_independently_in_o
     assert len(aug_rows) == 13
     aug_revenue = next(r for r in aug_rows if r["metric_key"] == "revenue_month")
     assert aug_revenue["target"] == 50  # genuinely new, correctly seeded
-    assert aug_revenue["prev_actual"] == 42
+    assert aug_revenue.get("prev_actual") is None  # never written (Important-2)
 
 
 # ── the Important fix: new_keys must narrow on the race path ────────────

@@ -51,11 +51,13 @@ series/category rows with blank amounts" is exactly what
 `_reconcile_financials`/`_reconcile_headcount` already produce for *any*
 missing row, seed or no seed — their inserts never carry an amount either
 way. Metrics and entries are the two shapes that actually need a value
-copied (a metric's `target`/`prev_actual`; an entries row's `data`), so
-those are the only two seeding functions this module adds. Entries seeding
-is the one write in this module with no matching unique constraint to
-recover a race with — see `_seed_entries`'s docstring for why and what is
-accepted instead.
+copied (a metric's `target`; an entries row's `data`), so those are the
+only two seeding functions this module adds. `prev_actual` is deliberately
+NOT one of the values `_seed_metrics` copies — see `_previous_period` and
+`_derived` for why "vs Last Mo" is computed fresh on every read instead.
+Entries seeding is the one write in this module with no matching unique
+constraint to recover a race with — see `_seed_entries`'s docstring for why
+and what is accepted instead.
 
 `_reconcile_children` (the per-period dispatch to metrics or
 financials+headcount) is the one implementation of "make this period's
@@ -481,9 +483,18 @@ def _seed_metrics(sb, period_id: str, seed_rows: list[dict]) -> None:
     `seed_rows` — the seed period's own `vip_mis_metrics` rows — per
     mis-templates.md §4: `metric_key`, `label`, `group_key`, `unit`,
     `target`, `is_custom` and `sort_order` copied verbatim from the seed
-    row; `actual` and `commentary` left blank; the seed row's own `actual`
-    copied into `prev_actual` so "vs Last Mo" is computed (`_diff`), not
-    typed.
+    row; `actual` and `commentary` left blank. `prev_actual` is
+    deliberately never written here (Important-2 fix): "vs Last Mo" used to
+    be computed from this stored column, which only a genuinely-new
+    period's seeding step ever touched — so a founder who opens the portal
+    after the seed source was submitted (routine: the calendar rolls over
+    on the 1st, the previous period is not due until the 5th) got a "vs
+    Last Mo" compared against the wrong month, and a founder backfilling
+    several periods in one pass got a permanently null column, because
+    seeding never revisits an already-created period once its source is
+    later submitted. `_previous_period`/`_derived` compute "vs Last Mo"
+    fresh on every read instead, from whichever period actually precedes
+    this one — see those for the fix.
 
     `seed_rows` is fetched once by the caller (`ensure_periods`) and
     reused across every new period seeded from the same source period in
@@ -491,16 +502,23 @@ def _seed_metrics(sb, period_id: str, seed_rows: list[dict]) -> None:
     round 1, N+1 finding — see `_most_recent_submitted_period` for the
     matching change one call up).
 
-    Restricted to metric_keys `_METRIC_BY_KEY` (i.e. `cat.METRICS`)
-    recognises — the same universe `_missing_metrics` offers — because
-    nothing in this codebase can yet create an `is_custom` metric outside
-    the catalog; `is_custom`/`sort_order` are still carried from the seed
-    row rather than recomputed from the catalog, so this stays correct the
-    day that changes. Every row built here is a fresh dict literal, never
-    a mutated reference into `_METRIC_BY_KEY` — see the module's own
-    "copy before you mutate" note for why: `_METRIC_BY_KEY`'s dicts are
-    `cat.METRICS`'s own module-level rows, and every request in the
-    process shares them.
+    Carries EVERY row in `seed_rows`, not only the ones `_METRIC_BY_KEY`
+    (i.e. `cat.METRICS`) recognises (Minor-8 fix): a metric outside the
+    13-key catalog is a founder's own business-specific KPI — mis_catalog's
+    own §2 hint explicitly invites adding one ("Add rows for your
+    business-specific KPIs") — and dropping it silently at the seed
+    boundary the moment a period rolls over would erase it from every
+    future report despite nothing in `_reconcile_metrics` ever deleting a
+    non-catalog row (reconciliation only ever inserts catalog rows that are
+    missing; it has no delete path at all). `label`/`group_key` fall back
+    to the catalog only for a recognised key whose seed row happens to
+    carry a falsy value; for a custom key (`m` is `None`) the seed row's
+    own NOT-NULL `label`/`group_key` are used as-is, and `is_custom`
+    defaults to `True` when the seed row itself has no opinion. Every row
+    built here is a fresh dict literal, never a mutated reference into
+    `_METRIC_BY_KEY` — see the module's own "copy before you mutate" note
+    for why: `_METRIC_BY_KEY`'s dicts are `cat.METRICS`'s own module-level
+    rows, and every request in the process shares them.
 
     Called once per genuinely new monthly period, before the ordinary
     catalog-blank `_reconcile_metrics` call every period gets — whatever
@@ -509,23 +527,20 @@ def _seed_metrics(sb, period_id: str, seed_rows: list[dict]) -> None:
     after, the same way it always fills any other gap.
     """
     seed_by_key = {r["metric_key"]: r for r in seed_rows}
-    keys = [k for k in seed_by_key if k in _METRIC_BY_KEY]
-    if not keys:
+    if not seed_by_key:
         return
     rows = []
-    for key in keys:
-        s = seed_by_key[key]
-        m = _METRIC_BY_KEY[key]
+    for key, s in seed_by_key.items():
+        m = _METRIC_BY_KEY.get(key)
         rows.append({
             "period_id": period_id,
             "metric_key": key,
-            "label": s.get("label") or m["label"],
-            "group_key": s.get("group_key") or m["group"],
+            "label": s.get("label") or (m["label"] if m else key),
+            "group_key": s.get("group_key") or (m["group"] if m else "custom"),
             "unit": s.get("unit"),
             "target": s.get("target"),
-            "is_custom": s.get("is_custom", False),
-            "sort_order": s.get("sort_order", _METRIC_ORDER[key]),
-            "prev_actual": s.get("actual"),
+            "is_custom": s.get("is_custom", m is None),
+            "sort_order": s.get("sort_order", _METRIC_ORDER.get(key, 999)),
         })
     try:
         sb.table("vip_mis_metrics").insert(rows).execute()
@@ -662,11 +677,20 @@ def ensure_periods(
     application_id: str, kind: str, onboarded_on: date, today: date,
 ) -> list[dict]:
     """Every period from onboarding through today for (application_id,
-    kind), created as drafts where missing, with every period's child rows
-    reconciled to complete on every call — not only at creation. See the
-    module docstring for why both writes need the same race-recovery
+    kind), created as drafts where missing, with every DRAFT period's child
+    rows reconciled to complete on every call — not only at creation. See
+    the module docstring for why both writes need the same race-recovery
     discipline `air_query.ensure_round` established, and why reconciliation
-    must be unconditional rather than gated on "was this just created".
+    must be unconditional across new-vs-repair rather than gated on "was
+    this just created". It IS gated on one thing: a period's own `status`
+    (Ruling, part 2 — "submitted means frozen"). A `submitted` period's
+    child rows must never be touched again by ordinary reconciliation —
+    today that is a no-op because the catalog and the rows already agree,
+    but the day the catalog gains a 14th metric or a new financial series,
+    reconciling unconditionally would silently grow a blank row onto every
+    already-submitted historical report the instant this function next
+    runs for that application, with no founder action involved at all.
+    `period_bundle` applies the same guard for the same reason.
 
     A period_key in `new_keys` — genuinely created by *this* call, latched
     by `_ensure_period_rows` and narrowed on the race path so it names
@@ -706,7 +730,8 @@ def ensure_periods(
                 if seed_id not in entries_seed_cache:
                     entries_seed_cache[seed_id] = _carry_forward_entries(seed_id, kind)
                 _seed_entries(sb, period["id"], entries_seed_cache[seed_id])
-        _reconcile_children(sb, period, kind)
+        if period["status"] == "draft":
+            _reconcile_children(sb, period, kind)
     return periods
 
 
@@ -740,6 +765,35 @@ def periods_index(application_id: str, kind: str, today: date) -> list[dict]:
 
 
 # ── the read bundle ───────────────────────────────────────────────────────
+
+def _previous_period(application_id: str, kind: str, period_key: str) -> dict | None:
+    """The period immediately preceding `period_key` for
+    (application_id, kind), by `period_key` order — regardless of its own
+    `status`. Used to derive both "vs Last Mo" (Important-2) and headcount
+    `net_change` (Critical-1) fresh on every read, never from a stored
+    column seeded once at period-creation time.
+
+    Deliberately NOT `_most_recent_submitted_period`: that helper is the
+    carry-forward SEED source and is intentionally restricted to a
+    `submitted` period (a draft must never propagate its in-progress
+    values into a fresh period's `target`/entries). Comparison for display
+    has no such constraint — a founder reading this month's numbers wants
+    them compared against last month's whether or not last month has been
+    formally submitted yet. Gating this on `submitted` the way seeding does
+    is exactly what produced the Important-2 bug: `prev_actual` was only
+    ever written once, at seed time, from whatever the most recent
+    SUBMITTED period was at that moment — so a period created before its
+    predecessor was submitted stayed permanently uncompared, and a period
+    created right after the calendar rolled over compared against the
+    wrong (stale, two-periods-back) month. Recomputing against whichever
+    period is simply adjacent by `period_key`, on every read, closes both
+    gaps at once.
+
+    Returns `None` when there is no earlier period at all — the
+    first-ever period has nothing to compare against."""
+    earlier = [p for p in _fetch_periods(application_id, kind) if p["period_key"] < period_key]
+    return max(earlier, key=lambda p: p["period_key"]) if earlier else None
+
 
 def _diff(a, b):
     """actual - prev_actual, or None if either side has no value yet — a
@@ -776,26 +830,50 @@ def _partial_sum(values: list) -> int | float | None:
     return sum(v or 0 for v in values)
 
 
-def _net_change(current, exited):
-    """current - exited for one category, or `None` if neither side of
-    that category has been entered at all — same all-missing-is-None,
-    partial-treats-the-blank-side-as-0 rule as `_partial_sum`, just
-    expressed as a difference instead of a sum."""
-    if current is None and exited is None:
+def _net_change(current, previous_current):
+    """This quarter's `current_count` minus the immediately preceding
+    quarterly period's `current_count` for the same category, or `None`
+    when either side has no value yet — including when there IS no
+    preceding quarterly period at all (a venture's first-ever quarter has
+    nothing to diff against, and treating "no previous period" as a
+    previous count of 0 would fabricate a "grew by N" for a first-time
+    filer).
+
+    Critical-1: this is a stock-over-time delta (two `current_count`
+    readings, one quarter apart) — NOT `current_count - exited`, which
+    subtracts a flow (people who left DURING the quarter) from a stock (a
+    snapshot AT quarter end) and is neither the right magnitude nor
+    reliably the right sign. Example: a venture ends last quarter with 8
+    people, loses 5 through attrition, hires 2, and ends this quarter at 5.
+    True net change is 5 - 8 = -3. `current_count - exited` would have
+    reported 5 - 5 = 0 — wrong both quarters, and the founder has no way to
+    correct it because the template computes this column rather than
+    accepting typed input for it (ARTPARK_Quarterly_Review_Template.docx
+    §8)."""
+    if current is None or previous_current is None:
         return None
-    return (current or 0) - (exited or 0)
+    return current - previous_current
 
 
-def _headcount_derived(headcount: list[dict]) -> dict:
-    """net_change per category, and the Total row across all four.
+def _headcount_derived(
+    headcount: list[dict], prev_current_by_category: dict[str, int | float | None],
+) -> dict:
+    """net_change per category (against `prev_current_by_category` — this
+    period's immediately preceding quarterly period's `current_count`s, see
+    `_previous_period`), and the Total row across all four categories.
 
-    Follows the same all-missing-is-None, partial-is-a-real-sum rule
-    `_diff`/`_needs_gap` already apply to metrics/financials: a wholly
-    blank period must not read as "0 people" (a number nobody typed), but
-    partial entry is genuine information and must still roll up.
+    The Total row carries `current_count` and `exited` — the same
+    all-missing-is-None, partial-is-a-real-sum rule `_diff`/`_needs_gap`
+    already apply to metrics/financials — but deliberately carries NO
+    `net_change` key at all (Critical-1, part 2): the source template's own
+    Total row has input cells for Current Count and Exited this Qtr only:
+    Net Change is left blank there. Summing a column that is itself a
+    cross-period delta would also double-derive across two different
+    quarters' worth of `current_count` per category, which is not a
+    meaningful "total" in the first place.
     """
     net_change = {
-        r["category"]: _net_change(r.get("current_count"), r.get("exited"))
+        r["category"]: _net_change(r.get("current_count"), prev_current_by_category.get(r["category"]))
         for r in headcount
     }
     return {
@@ -803,25 +881,31 @@ def _headcount_derived(headcount: list[dict]) -> dict:
         "total": {
             "current_count": _partial_sum([r.get("current_count") for r in headcount]),
             "exited": _partial_sum([r.get("exited") for r in headcount]),
-            "net_change": _partial_sum(list(net_change.values())),
         },
     }
 
 
-def _derived(metrics: list[dict], financials: list[dict], headcount: list[dict]) -> dict:
+def _derived(
+    metrics: list[dict], financials: list[dict], headcount: list[dict],
+    prev_actual_by_key: dict[str, float | int | None],
+    prev_current_by_category: dict[str, int | float | None],
+) -> dict:
     """The values constraint 3 forbids storing, computed fresh from what
-    was just read and never written back: each metric's `vs_last`,
-    `needs_gap` per bucket, and headcount `net_change` plus the computed
-    Total row."""
+    was just read and never written back: each metric's `vs_last` (against
+    `prev_actual_by_key`, sourced from the immediately preceding period's
+    OWN `actual` values — see `_previous_period`, never from the
+    `prev_actual` column), `needs_gap` per bucket, and headcount
+    `net_change` (against `prev_current_by_category`, same preceding-period
+    source) plus the computed Total row."""
     return {
         "metrics": {
             "vs_last": {
-                m["metric_key"]: _diff(m.get("actual"), m.get("prev_actual"))
+                m["metric_key"]: _diff(m.get("actual"), prev_actual_by_key.get(m["metric_key"]))
                 for m in metrics
             },
         },
         "financials": {"needs_gap": _needs_gap(financials)},
-        "headcount": _headcount_derived(headcount),
+        "headcount": _headcount_derived(headcount, prev_current_by_category),
     }
 
 
@@ -892,23 +976,45 @@ def period_bundle(application_id: str, kind: str, period_key: str) -> dict:
     `ensure_periods`/`periods_index` first) — but it DOES converge that
     period's child rows before reading them, via the same
     `_reconcile_children` `ensure_periods` uses, scoped to just this one
-    `period_id`. Without this, a detail read of a period a crashed
-    request left half-built (e.g. 10 of 13 metric rows) would silently
-    render an incomplete grid with no error and no repair; a transaction
-    would have prevented that state from being observable at all, but one
-    is not available here (see the module docstring), so this read
-    repairs it the same way every other read in this module does.
+    `period_id` — for a `draft` period only (Ruling, part 2: "submitted
+    means frozen"). Without this, a detail read of a `draft` period a
+    crashed request left half-built (e.g. 10 of 13 metric rows) would
+    silently render an incomplete grid with no error and no repair; a
+    transaction would have prevented that state from being observable at
+    all, but one is not available here (see the module docstring), so this
+    read repairs it the same way every other read in this module does. A
+    `submitted` period skips this: reconciliation is a no-op today because
+    the catalog and the period's rows already agree, but the day the
+    catalog gains a 14th metric or a new financial series, an unconditional
+    reconcile here would silently grow a blank row onto every
+    already-submitted historical report — a statutory record — on nothing
+    more than someone reading it. `ensure_periods` applies the same guard
+    for the same reason.
     """
     period = fetch_period(application_id, kind, period_key)
     if period is None:
         raise LookupError(f"no such MIS period: {kind}/{period_key} for {application_id}")
 
-    _reconcile_children(get_admin_client(), period, kind)
+    if period["status"] == "draft":
+        _reconcile_children(get_admin_client(), period, kind)
 
     metrics = _fetch_metrics(period["id"]) if kind == "monthly" else []
     financials = _fetch_financials(period) if kind == "quarterly" else []
     headcount = _fetch_headcount(period) if kind == "quarterly" else []
     entries = _fetch_entries_by_section(period["id"], kind)
+
+    prev = _previous_period(application_id, kind, period_key)
+    prev_actual_by_key: dict[str, float | int | None] = {}
+    prev_current_by_category: dict[str, int | float | None] = {}
+    if prev is not None:
+        if kind == "monthly":
+            prev_actual_by_key = {
+                m["metric_key"]: m.get("actual") for m in _fetch_metrics(prev["id"])
+            }
+        else:  # "quarterly"
+            prev_current_by_category = {
+                r["category"]: r.get("current_count") for r in _fetch_headcount(prev)
+            }
 
     return {
         "catalog": _catalog_for_kind(kind, period),
@@ -918,5 +1024,7 @@ def period_bundle(application_id: str, kind: str, period_key: str) -> dict:
         "headcount": headcount,
         "entries": entries,
         "narrative": period.get("narrative") or {},
-        "derived": _derived(metrics, financials, headcount),
+        "derived": _derived(
+            metrics, financials, headcount, prev_actual_by_key, prev_current_by_category,
+        ),
     }

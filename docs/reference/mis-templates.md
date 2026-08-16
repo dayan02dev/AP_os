@@ -50,8 +50,12 @@ are data. Columns: Target · Actual · vs Last Mo · Commentary. *"Keep the metr
 month-on-month — do not change definitions to make things look better. Add rows for your
 business-specific KPIs."*
 
-`vs Last Mo` is **computed** from the previous submitted period's `actual`, never typed —
-that is what `prev_actual` on the row is for.
+`vs Last Mo` is **computed**, never typed — on every read, from the immediately preceding
+period's own `actual`, regardless of that period's status. It is NOT read from the row's own
+`prev_actual` column: that column is never written (a stored value seeded once, at
+period-creation time, from whatever the most recent *submitted* period happened to be at
+that moment, went stale the instant the calendar rolled over before its predecessor was
+submitted — see mis_query.py's `_previous_period`).
 
 Commentary carries a RAG colour: **green** = ahead / on plan · **amber** = behind but
 recoverable · **red** = blocked / material risk.
@@ -260,7 +264,7 @@ on books versus payment actually received."*
   `annual_revenue_received` ("Revenue: payment received")
 - buckets, in order: `FY21-22`, `FY22-23`, `FY23-24`, `FY24-25`, `FY25-26 YTD`, `FY25-26 Proj`
 
-> The template hard-codes those FY labels. Treat them as **relative** — five historical
+> The template hard-codes those FY labels. Treat them as **relative** — four historical
 > years, then YTD and projection for the current FY — and generate the labels from the
 > period's own fiscal year rather than copying 2021 forward indefinitely.
 
@@ -298,7 +302,12 @@ full.
 ### §8 People — `vip_mis_headcount` + narrative
 
 End-of-quarter headcount. Four categories plus a computed Total row. Columns: Current
-Count · Exited this Qtr · Net Change · Remarks. **Net Change is computed, not typed.**
+Count · Exited this Qtr · Net Change · Remarks. **Net Change is computed, not typed:** this
+quarter's `current_count` minus the immediately preceding quarterly period's `current_count`
+for that category (a stock-over-time delta) — never `current_count − exited`, which
+subtracts a flow from a stock and is not the same quantity. The **Total row carries Current
+Count and Exited this Qtr only** — the source template leaves its own Total row's Net Change
+cell blank, so the computed Net Change column is never summed into a Total.
 
 | `category` | Label |
 |---|---|
@@ -341,7 +350,7 @@ A newly created period seeds from the most recent **submitted** period of the sa
 
 | What | Rule |
 |---|---|
-| Metrics | copy `metric_key`, `label`, `group_key`, `unit`, `target`. Blank `actual` and `commentary`. Copy the previous `actual` into `prev_actual` so "vs Last Mo" is computed. |
+| Metrics | copy `metric_key`, `label`, `group_key`, `unit`, `target` (including a founder's own custom, non-catalog metrics). Blank `actual` and `commentary`. Never write `prev_actual` — "vs Last Mo" is computed on read from the immediately preceding period's own `actual` instead (see §2). |
 | Milestones | copy rows whose status is not `Done` |
 | IP assets, funding, products | copy **in full** — cumulative registers by definition |
 | Collaborations | copy `active` and `in_discussion` buckets |

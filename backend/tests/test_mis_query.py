@@ -481,6 +481,45 @@ def test_period_bundle_repairs_partially_missing_metric_rows(fake):
         assert by_id[f"m-{key}"]["label"] == "x"
 
 
+def test_period_bundle_does_not_reconcile_a_submitted_period(fake):
+    """Ruling, part 2: "submitted means frozen" — a submitted period's
+    child-row SHAPE must never change again either, not just its values.
+    Reconciliation is a no-op today because the catalog and the rows
+    already agree, but simulates the day it would not be: a period
+    submitted with only 10 of 13 metric rows (e.g. because it predates a
+    catalog change) must stay at 10 on every later read, not silently grow
+    the 3 new ones onto an already-submitted, statutory report."""
+    _seed_monthly_period(fake, period_id="p1", period_key="2026-08")
+    fake.tables["vip_mis_periods"][0]["status"] = "submitted"
+    keep_keys = [m["key"] for m in cat.METRICS[:10]]
+    for key in keep_keys:
+        fake.tables["vip_mis_metrics"].append({
+            "id": f"m-{key}", "period_id": "p1", "metric_key": key,
+            "label": "x", "group_key": "y",
+        })
+
+    b = mq.period_bundle("app1", "monthly", "2026-08")
+
+    assert len(b["metrics"]) == 10  # NOT repaired to 13 — status is submitted
+
+
+def test_ensure_periods_does_not_reconcile_a_pre_existing_submitted_period(fake):
+    """Same guard, exercised via `ensure_periods` instead of
+    `period_bundle` — the list-view path must skip reconciliation for the
+    same reason."""
+    _seed_monthly_period(fake, period_id="p1", period_key="2026-08")
+    fake.tables["vip_mis_periods"][0]["status"] = "submitted"
+    fake.tables["vip_mis_metrics"].append({
+        "id": "m-revenue_month", "period_id": "p1", "metric_key": "revenue_month",
+        "label": "x", "group_key": "y",
+    })
+
+    mq.ensure_periods("app1", "monthly", date(2026, 8, 1), date(2026, 8, 1))
+
+    rows = [r for r in fake.tables["vip_mis_metrics"] if r["period_id"] == "p1"]
+    assert len(rows) == 1  # NOT repaired to 13 — status is submitted
+
+
 def test_period_bundle_excludes_internal_period_fields(fake):
     """application_id (redundant — already scoped by the caller),
     reopened_by (an admin's uuid) and source_doc_path (an internal storage
@@ -523,18 +562,90 @@ def test_catalog_in_bundle_matches_kind(fake):
 
 
 def test_bundle_vs_last_is_computed_not_stored(fake):
-    mq.ensure_periods("app1", "monthly", date(2026, 8, 1), date(2026, 8, 1))
-    period_id = fake.tables["vip_mis_periods"][0]["id"]
+    """Important-2: "vs Last Mo" is derived on every read from the
+    immediately preceding period's OWN `actual` — never from a stored
+    `prev_actual` column. Two real periods, each with its own `actual`,
+    prove the diff is computed fresh rather than merely echoed back from a
+    column this test never touches."""
+    mq.ensure_periods("app1", "monthly", date(2026, 7, 1), date(2026, 8, 1))
+    periods = {p["period_key"]: p["id"] for p in fake.tables["vip_mis_periods"]}
     for row in fake.tables["vip_mis_metrics"]:
-        if row["period_id"] == period_id and row["metric_key"] == "revenue_month":
+        if row["period_id"] == periods["2026-07"] and row["metric_key"] == "revenue_month":
+            row["actual"] = 30
+        if row["period_id"] == periods["2026-08"] and row["metric_key"] == "revenue_month":
             row["actual"] = 50
-            row["prev_actual"] = 30
 
     b = mq.period_bundle("app1", "monthly", "2026-08")
 
     assert b["derived"]["metrics"]["vs_last"]["revenue_month"] == 20
     stored = next(m for m in b["metrics"] if m["metric_key"] == "revenue_month")
     assert "vs_last" not in stored
+    assert "prev_actual" not in stored  # never written (Important-2)
+
+
+def test_bundle_vs_last_ignores_a_stale_prev_actual_column_value(fake):
+    """The `prev_actual` column still exists (045 is applied and untouched)
+    but must be completely ignored on read, even if some pre-fix row still
+    carries a value in it — proves the derivation genuinely reads the
+    previous period's `actual`, not this column, rather than merely never
+    writing to it."""
+    mq.ensure_periods("app1", "monthly", date(2026, 7, 1), date(2026, 8, 1))
+    periods = {p["period_key"]: p["id"] for p in fake.tables["vip_mis_periods"]}
+    for row in fake.tables["vip_mis_metrics"]:
+        if row["period_id"] == periods["2026-07"] and row["metric_key"] == "revenue_month":
+            row["actual"] = 30
+        if row["period_id"] == periods["2026-08"] and row["metric_key"] == "revenue_month":
+            row["actual"] = 50
+            row["prev_actual"] = 999  # deliberately wrong stale value
+
+    b = mq.period_bundle("app1", "monthly", "2026-08")
+
+    assert b["derived"]["metrics"]["vs_last"]["revenue_month"] == 20  # not 50 - 999
+
+
+def test_bundle_vs_last_derives_from_a_draft_previous_period_too(fake):
+    """Comparison-for-display has no `submitted` gate, unlike carry-forward
+    seeding: a founder reading this month's numbers wants them compared
+    against last month's whether or not last month has been formally
+    submitted yet (`_previous_period`'s own docstring)."""
+    mq.ensure_periods("app1", "monthly", date(2026, 7, 1), date(2026, 8, 1))
+    periods = {p["period_key"]: p["id"] for p in fake.tables["vip_mis_periods"]}
+    assert next(
+        p["status"] for p in fake.tables["vip_mis_periods"]
+        if p["period_key"] == "2026-07"
+    ) == "draft"
+    for row in fake.tables["vip_mis_metrics"]:
+        if row["period_id"] == periods["2026-07"] and row["metric_key"] == "revenue_month":
+            row["actual"] = 30
+        if row["period_id"] == periods["2026-08"] and row["metric_key"] == "revenue_month":
+            row["actual"] = 50
+
+    b = mq.period_bundle("app1", "monthly", "2026-08")
+
+    assert b["derived"]["metrics"]["vs_last"]["revenue_month"] == 20
+
+
+def test_bundle_vs_last_recovers_after_a_backfill_gap(fake):
+    """Important-2's second consequence: a founder onboarded months ago who
+    first opens the portal today creates several periods in one pass, none
+    submitted, so none seeded. The OLD bug: submitting the earliest one
+    later never revisited the next period's `prev_actual`, so the
+    comparison stayed permanently null. Derivation-on-read has no such
+    gap — filling in BOTH periods' `actual` after the fact is enough, no
+    matter which order they were created or submitted in."""
+    mq.ensure_periods("app1", "monthly", date(2026, 4, 1), date(2026, 8, 1))
+    periods = {p["period_key"]: p["id"] for p in fake.tables["vip_mis_periods"]}
+    assert set(periods) == {"2026-04", "2026-05", "2026-06", "2026-07", "2026-08"}
+
+    for row in fake.tables["vip_mis_metrics"]:
+        if row["period_id"] == periods["2026-04"] and row["metric_key"] == "revenue_month":
+            row["actual"] = 42
+        if row["period_id"] == periods["2026-05"] and row["metric_key"] == "revenue_month":
+            row["actual"] = 55
+
+    b = mq.period_bundle("app1", "monthly", "2026-05")
+
+    assert b["derived"]["metrics"]["vs_last"]["revenue_month"] == 13  # 55 - 42
 
 
 def test_bundle_vs_last_is_none_when_no_prior_actual(fake):
@@ -563,7 +674,12 @@ def test_bundle_needs_gap_equals_total_minus_confirmed_minus_projected(fake):
     assert "needs_gap" not in {r["series"] for r in b["financials"]}
 
 
-def test_bundle_needs_gap_is_none_when_any_input_is_missing(fake):
+def test_bundle_needs_gap_is_none_when_nothing_is_filled(fake):
+    """Minor-6: renamed from "...when_any_input_is_missing" — that name
+    described the PARTIAL case below, not what this test actually covers
+    (the wholly-blank period). This phase has been strict about test
+    integrity and should not ship a test whose name is itself a
+    counterexample."""
     mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 4, 1))
     b = mq.period_bundle("app1", "quarterly", "FY26-27-Q1")
     assert all(v is None for v in b["derived"]["financials"]["needs_gap"].values())
@@ -587,31 +703,38 @@ def test_bundle_needs_gap_is_none_when_partially_filled(fake):
 
 
 def test_bundle_headcount_total_is_the_sum_of_the_four_categories(fake):
+    """Critical-1: the Total row carries `current_count`/`exited` sums only
+    — never a `net_change` key at all, matching the source template's own
+    Total row (input cells for Current Count and Exited this Qtr only).
+    Category-level `net_change` is a cross-period delta, not derivable from
+    this period alone: with no PREVIOUS quarterly period yet (this is the
+    venture's first-ever quarter), every category must read None rather
+    than a current-minus-exited guess."""
     mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 4, 1))
     period_id = fake.tables["vip_mis_periods"][0]["id"]
     counts = {"artpark_associated": 3, "startup": 5, "consultants": 1, "interns": 2}
     for row in fake.tables["vip_mis_headcount"]:
         if row["period_id"] == period_id:
             row["current_count"] = counts[row["category"]]
-            row["exited"] = 0
+            row["exited"] = 1
 
     b = mq.period_bundle("app1", "quarterly", "FY26-27-Q1")
 
     assert b["derived"]["headcount"]["total"]["current_count"] == sum(counts.values())
-    assert b["derived"]["headcount"]["total"]["net_change"] == sum(counts.values())
-    assert b["derived"]["headcount"]["net_change"]["startup"] == 5
+    assert b["derived"]["headcount"]["total"]["exited"] == 4  # 1 per category x 4
+    assert "net_change" not in b["derived"]["headcount"]["total"]
+    assert b["derived"]["headcount"]["net_change"]["startup"] is None
 
 
 def test_bundle_headcount_total_is_none_when_nothing_is_filled(fake):
     """Important-1: a fresh quarterly period's four headcount rows are all
     NULL current_count/exited. The Total row must read as "no data yet",
-    not as "0 / 0 / 0" — the latter is a number nobody typed and would
-    silently tell ARTPARK this venture has zero people if a founder
-    submitted without noticing."""
+    not as "0 / 0" — a number nobody typed and would silently tell ARTPARK
+    this venture has zero people if a founder submitted without noticing."""
     mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 4, 1))
     b = mq.period_bundle("app1", "quarterly", "FY26-27-Q1")
     assert b["derived"]["headcount"]["total"] == {
-        "current_count": None, "exited": None, "net_change": None,
+        "current_count": None, "exited": None,
     }
     assert all(v is None for v in b["derived"]["headcount"]["net_change"].values())
 
@@ -631,8 +754,73 @@ def test_bundle_headcount_total_sums_partial_entries_treating_blanks_as_zero(fak
 
     assert b["derived"]["headcount"]["total"]["current_count"] == 5
     assert b["derived"]["headcount"]["total"]["exited"] == 2
-    assert b["derived"]["headcount"]["total"]["net_change"] == 3
-    assert b["derived"]["headcount"]["net_change"]["startup"] == 3
-    # the three untouched categories individually stay None, not 0
-    for category in ("artpark_associated", "consultants", "interns"):
+    assert "net_change" not in b["derived"]["headcount"]["total"]
+    # no previous quarterly period exists yet, so every category —
+    # including the one partially filled — stays None, not 0
+    for category in ("artpark_associated", "startup", "consultants", "interns"):
         assert b["derived"]["headcount"]["net_change"][category] is None
+
+
+def test_headcount_net_change_is_this_quarters_current_minus_last_quarters(fake):
+    """Critical-1's worked example: a venture had 8 people last quarter,
+    loses 5 through attrition and hires 2 this quarter, ending at 5. True
+    net change is 5 - 8 = -3. The bug this fixes (`current_count - exited`)
+    would have reported 5 - 2 = 3 — wrong in both magnitude and sign."""
+    q1 = mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 4, 1))[0]
+    for row in fake.tables["vip_mis_headcount"]:
+        if row["period_id"] == q1["id"] and row["category"] == "startup":
+            row["current_count"] = 8
+            row["exited"] = 0
+
+    mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 7, 1))
+    q2 = next(
+        p for p in fake.tables["vip_mis_periods"]
+        if p["kind"] == "quarterly" and p["period_key"] == "FY26-27-Q2"
+    )
+    for row in fake.tables["vip_mis_headcount"]:
+        if row["period_id"] == q2["id"] and row["category"] == "startup":
+            row["current_count"] = 5
+            row["exited"] = 2
+
+    b = mq.period_bundle("app1", "quarterly", "FY26-27-Q2")
+
+    assert b["derived"]["headcount"]["net_change"]["startup"] == -3
+
+
+def test_headcount_net_change_is_none_with_no_previous_quarter(fake):
+    """Explicit no-previous-quarter case: the venture's first-ever
+    quarterly period has nothing to diff against."""
+    mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 4, 1))
+    period_id = fake.tables["vip_mis_periods"][0]["id"]
+    for row in fake.tables["vip_mis_headcount"]:
+        if row["period_id"] == period_id and row["category"] == "startup":
+            row["current_count"] = 5
+            row["exited"] = 1
+
+    b = mq.period_bundle("app1", "quarterly", "FY26-27-Q1")
+
+    assert b["derived"]["headcount"]["net_change"]["startup"] is None
+
+
+def test_headcount_net_change_uses_previous_quarter_even_when_still_draft(fake):
+    """Like vs_last, net_change comparison has no `submitted` gate — it
+    compares against whichever period is adjacent by period_key,
+    regardless of status."""
+    q1 = mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 4, 1))[0]
+    assert q1["status"] == "draft"
+    for row in fake.tables["vip_mis_headcount"]:
+        if row["period_id"] == q1["id"] and row["category"] == "startup":
+            row["current_count"] = 4
+
+    mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 7, 1))
+    q2 = next(
+        p for p in fake.tables["vip_mis_periods"]
+        if p["kind"] == "quarterly" and p["period_key"] == "FY26-27-Q2"
+    )
+    for row in fake.tables["vip_mis_headcount"]:
+        if row["period_id"] == q2["id"] and row["category"] == "startup":
+            row["current_count"] = 6
+
+    b = mq.period_bundle("app1", "quarterly", "FY26-27-Q2")
+
+    assert b["derived"]["headcount"]["net_change"]["startup"] == 2
