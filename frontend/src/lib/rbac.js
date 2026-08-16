@@ -43,6 +43,7 @@ export const ROLE_CAPABILITIES = Object.freeze({
     "view_audit_log",
     "decide_application",
     "manage_ic_documents",
+    "manage_vip_cohort",
   ]),
   admin: new Set([
     "manage_users",
@@ -62,6 +63,7 @@ export const ROLE_CAPABILITIES = Object.freeze({
     "manage_batches",
     "manage_reviewers_roster",
     "manage_ic_documents",
+    "manage_vip_cohort",
   ]),
 });
 
