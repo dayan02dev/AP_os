@@ -30,6 +30,7 @@ import { AdminSelectedApplications } from "./screens/AdminSelectedApplications";
 import { AdminPsychometry } from "./screens/AdminPsychometry";
 import { AdminAIStatus } from "./screens/AdminAIStatus";
 import { AdminRoles } from "./screens/AdminRoles";
+import { AdminVipCohort } from "./screens/AdminVipCohort";
 import PortalSwitcher from "../../../components/PortalSwitcher.jsx";
 import ChangePasswordForm from "../../../components/ChangePasswordForm.jsx";
 
@@ -53,6 +54,7 @@ function AdminTopbar({ page, decisionMode, setPage }) {
     rejected:'REJECTED',
     jury_selected:'ACCEPTED',
     gate2:'GATE 2 FINAL', audit:'AUDIT LOG', analytics:'ANALYTICS',
+    vip_cohort:'VIP COHORT',
   };
   const crumb = crumbMap[page] || 'DASHBOARD';
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -285,6 +287,10 @@ export function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBa
       sub: decisionMode === 'jury' ? 'CONSOLIDATED DECISIONS' : 'PENDING DECISIONS',
       badge: decisionMode === 'jury' ? null : (reviewBadge == null ? null : String(reviewBadge))
     },
+    // Verification loop for the VIP (SIP) track's post-onboarding AIR
+    // self-assessment + MIS reporting (spec §7 / D4). Independent of
+    // reviewer-vs-jury decision mode — always present.
+    { id:'vip_cohort', label:'VIP cohort', sub:'AIR · MIS', badge:null },
   ];
   if (decisionMode === 'jury') {
     // Jury mode: drop the reviewer-pipeline tabs, add the candidate-pool roster
@@ -431,6 +437,7 @@ function AdminApp() {
             {page === 'gate1'       && (decisionMode === 'jury' ? <AdminGate2 /> : <AdminGate1 goDetail={goDetail} />)}
             {page === 'psychometry' && <AdminPsychometry />}
             {page === 'aistatus'   && <AdminAIStatus />}
+            {page === 'vip_cohort' && <AdminVipCohort />}
           </div>
         </div>
       </div>
