@@ -34,13 +34,28 @@ Every insert here therefore serialises those three fields with
 (`_normalise_period`), so `mis_periods.is_overdue`'s `due_date < today`
 never compares a string against a `date`.
 
-Task 5 seeds a genuinely-created period's child rows from the most recent
-*submitted* period of the same kind; the repair path — filling in rows
-missing from a period that already existed — must not. `_ensure_period_rows`
-latches which period_keys this call genuinely created, before any child
-reconciliation runs, and returns that set alongside the period rows: the
-same `is_new_round` distinction `air_query.ensure_round` makes, so Task 5
-can hook its seeding off this set rather than re-deriving it.
+A genuinely-created period seeds its child rows from the most recent
+*submitted* period of the same kind (docs/reference/mis-templates.md §4);
+the repair path — filling in rows missing from a period that already
+existed — never does. `_ensure_period_rows` latches which period_keys a
+call genuinely created, before any child reconciliation runs, and returns
+that set alongside the period rows: the same `is_new_round` distinction
+`air_query.ensure_round` makes. `ensure_periods` hooks seeding off exactly
+that set — `_seed_metrics`/`_seed_entries` are only ever called for a
+period_key in `new_keys`, never re-derived from a second read (which could
+race and answer "is this new" differently than the read that already
+happened inside `_ensure_period_rows`).
+
+Financials and headcount need no seeding code of their own: "copy the
+series/category rows with blank amounts" is exactly what
+`_reconcile_financials`/`_reconcile_headcount` already produce for *any*
+missing row, seed or no seed — their inserts never carry an amount either
+way. Metrics and entries are the two shapes that actually need a value
+copied (a metric's `target`/`prev_actual`; an entries row's `data`), so
+those are the only two seeding functions this module adds. Entries seeding
+is the one write in this module with no matching unique constraint to
+recover a race with — see `_seed_entries`'s docstring for why and what is
+accepted instead.
 
 `_reconcile_children` (the per-period dispatch to metrics or
 financials+headcount) is the one implementation of "make this period's
@@ -386,6 +401,181 @@ def _fetch_entries_by_section(period_id: str, kind: str) -> dict[str, list[dict]
     return by_section
 
 
+# ── carry-forward seeding ────────────────────────────────────────────────
+# Only reached for a genuinely new period (see ensure_periods, which gates
+# every call here on the period_key being in `new_keys`). Never reached
+# from period_bundle, which has no `new_keys` of its own to gate on — its
+# own repair-only reconciliation is what that structural absence is for.
+
+def _most_recent_submitted_period(
+    application_id: str, kind: str, before_period_key: str,
+) -> dict | None:
+    """The most recent *submitted* period of this kind for this
+    application, strictly earlier than `before_period_key` — the seed
+    source for a genuinely new period's carry-forward. A `draft` previous
+    period is never a seed source: it is a work in progress and must not
+    propagate into a fresh one. `period_key` sorts lexicographically in
+    chronological order for both formats this module handles (see
+    `_fetch_periods`), so "most recent" is found the same way
+    `air_query._seed_answers` finds its "most recent earlier round" —
+    sorted in Python, not via `.order()`, which FakeSupabase treats as a
+    no-op. Returns `None` when there is no earlier submitted period (the
+    first-ever period is empty, not seeded from nothing).
+    """
+    periods = _fetch_periods(application_id, kind)
+    earlier_submitted = sorted(
+        (p for p in periods
+         if p["status"] == "submitted" and p["period_key"] < before_period_key),
+        key=lambda p: p["period_key"],
+    )
+    return earlier_submitted[-1] if earlier_submitted else None
+
+
+def _seed_metrics(sb, period_id: str, seed_period_id: str) -> None:
+    """Insert metric rows for `period_id`, carried forward from
+    `seed_period_id`'s own metric rows, per mis-templates.md §4:
+    `metric_key`, `label`, `group_key`, `unit`, `target`, `is_custom` and
+    `sort_order` copied verbatim from the seed row; `actual` and
+    `commentary` left blank; the seed row's own `actual` copied into
+    `prev_actual` so "vs Last Mo" is computed (`_diff`), not typed.
+
+    Restricted to metric_keys `_METRIC_BY_KEY` (i.e. `cat.METRICS`)
+    recognises — the same universe `_missing_metrics` offers — because
+    nothing in this codebase can yet create an `is_custom` metric outside
+    the catalog; `is_custom`/`sort_order` are still carried from the seed
+    row rather than recomputed from the catalog, so this stays correct the
+    day that changes. Every row built here is a fresh dict literal, never
+    a mutated reference into `_METRIC_BY_KEY` — see the module's own
+    "copy before you mutate" note for why: `_METRIC_BY_KEY`'s dicts are
+    `cat.METRICS`'s own module-level rows, and every request in the
+    process shares them.
+
+    Called once per genuinely new monthly period, before the ordinary
+    catalog-blank `_reconcile_metrics` call every period gets — whatever
+    this does not insert (the first-ever period, or a catalog metric added
+    after the seed period existed) is completed by that call immediately
+    after, the same way it always fills any other gap.
+    """
+    seed_by_key = {r["metric_key"]: r for r in _fetch_metrics(seed_period_id)}
+    keys = [k for k in seed_by_key if k in _METRIC_BY_KEY]
+    if not keys:
+        return
+    rows = []
+    for key in keys:
+        s = seed_by_key[key]
+        m = _METRIC_BY_KEY[key]
+        rows.append({
+            "period_id": period_id,
+            "metric_key": key,
+            "label": s.get("label") or m["label"],
+            "group_key": s.get("group_key") or m["group"],
+            "unit": s.get("unit"),
+            "target": s.get("target"),
+            "is_custom": s.get("is_custom", False),
+            "sort_order": s.get("sort_order", _METRIC_ORDER[key]),
+            "prev_actual": s.get("actual"),
+        })
+    try:
+        sb.table("vip_mis_metrics").insert(rows).execute()
+    except Exception as exc:
+        # Same race shape _reconcile_metrics recovers from, one call
+        # earlier: both winner and loser of the period-insert race see
+        # this period as new (both observed no row before inserting — see
+        # _ensure_period_rows) and can both reach this seed insert for the
+        # same brand-new period, racing on vip_mis_metrics'
+        # (period_id, metric_key) constraint.
+        if not _is_unique_violation(exc):
+            raise
+        have = {r["metric_key"] for r in _fetch_metrics(period_id)}
+        retry = [r for r in rows if r["metric_key"] not in have]
+        if retry:
+            sb.table("vip_mis_metrics").insert(retry).execute()
+
+
+def _carry_forward_entries(seed_period_id: str, kind: str) -> dict[str, list[dict]]:
+    """The seed period's entries rows, grouped by section and filtered per
+    `cat.CARRY_FORWARD[section]` (mis-templates.md §4): `"all"` copies
+    every row, `"open_only"` drops rows whose `data.status` is `"Done"`,
+    `"buckets:..."` keeps only rows whose `data.bucket` is in the listed
+    set, `"none"` copies nothing. Sections with nothing to carry are
+    omitted from the result rather than included as an empty list, so a
+    caller can test truthiness to decide whether there is anything to seed
+    at all.
+
+    Indexes `cat.CARRY_FORWARD[section]` directly, not `.get`: every
+    entries section `kind` has is guaranteed an entry there (mis_catalog's
+    own comment above that dict), so a section ever added to `SECTIONS`
+    without a matching carry-forward rule must fail loudly here rather
+    than silently copy nothing — the same no-fail-open convention
+    `entry_fields`/`section` already use for an unknown id.
+    """
+    by_section = _fetch_entries_by_section(seed_period_id, kind)
+    seeded: dict[str, list[dict]] = {}
+    for section, rows in by_section.items():
+        rule = cat.CARRY_FORWARD[section]
+        if rule == "all":
+            keep = rows
+        elif rule == "open_only":
+            keep = [r for r in rows if (r.get("data") or {}).get("status") != "Done"]
+        elif rule.startswith("buckets:"):
+            buckets = set(rule[len("buckets:"):].split(","))
+            keep = [r for r in rows if (r.get("data") or {}).get("bucket") in buckets]
+        elif rule == "none":
+            keep = []
+        else:
+            raise ValueError(f"unknown CARRY_FORWARD rule for {section!r}: {rule!r}")
+        if keep:
+            seeded[section] = keep
+    return seeded
+
+
+def _seed_entries(sb, period_id: str, seed_period_id: str, kind: str) -> None:
+    """Insert this genuinely new period's carried-forward entries rows —
+    see `_carry_forward_entries` for which rows survive each section's
+    rule. Each inserted row's `data` is a fresh `dict(...)` copy of the
+    seed row's `data`, never the seed row's own dict — the same
+    "copy before you mutate" discipline `_seed_metrics` follows for
+    `_METRIC_BY_KEY`'s rows, applied here to a row fetched from the seed
+    period instead of a catalog structure.
+
+    `vip_mis_entries` deliberately has no unique constraint — it is an
+    ordered list, not a one-row-per-key table (045_vip_mis.sql's own
+    comment above it: two milestones can legitimately share a title, a
+    founder can carry forward an identical risk row unchanged) — so the
+    race recovery every other write in this module gets (catch a unique
+    violation, re-read, retry once) has no matching failure mode to catch
+    here. Instead this checks the period has no entries rows at all before
+    writing, which makes a *sequential* re-run of this function idempotent.
+    It does not close the narrower window where two concurrent requests
+    both observe the same brand-new period (the same race
+    `_ensure_period_rows`' docstring describes for the period and metric
+    tables) and both pass that check before either has inserted — closing
+    that fully would need a real unique constraint or transaction, neither
+    of which this table has by design. That residual risk is accepted
+    rather than hidden behind a false sense of protection.
+    """
+    seeded = _carry_forward_entries(seed_period_id, kind)
+    if not seeded:
+        return
+    existing = (
+        sb.table("vip_mis_entries").select("id")
+        .eq("period_id", period_id).limit(1).execute().data or []
+    )
+    if existing:
+        return
+    rows = [
+        {
+            "period_id": period_id,
+            "section": section,
+            "sort_order": r.get("sort_order", i),
+            "data": dict(r.get("data") or {}),
+        }
+        for section, section_rows in seeded.items()
+        for i, r in enumerate(section_rows)
+    ]
+    sb.table("vip_mis_entries").insert(rows).execute()
+
+
 # ── child reconciliation dispatch ───────────────────────────────────────
 
 def _reconcile_children(sb, period: dict, kind: str) -> None:
@@ -412,13 +602,29 @@ def ensure_periods(
     module docstring for why both writes need the same race-recovery
     discipline `air_query.ensure_round` established, and why reconciliation
     must be unconditional rather than gated on "was this just created".
+
+    A period_key in `new_keys` — genuinely created by *this* call, latched
+    by `_ensure_period_rows` before any race recovery — gets carry-forward
+    seeded from the most recent submitted period of the same kind before
+    its ordinary reconciliation runs (`_seed_metrics` for monthly,
+    `_seed_entries` for both kinds; see the module docstring for why
+    financials/headcount need no seeding call of their own). A period_key
+    NOT in `new_keys` — the repair path, whether that period existed
+    already or this is a second call on the same request — never seeds,
+    unconditionally: there is no code path below that can reach
+    `_seed_metrics`/`_seed_entries` for such a period_key.
     """
     sb = get_admin_client()
-    periods, _new_keys = _ensure_period_rows(application_id, kind, onboarded_on, today)
-    # _new_keys is not yet consumed here — Task 5 (carry-forward) is the
-    # first caller that needs to tell genuine creation apart from repair,
-    # and hooks its seeding off exactly this set.
+    periods, new_keys = _ensure_period_rows(application_id, kind, onboarded_on, today)
     for period in periods:
+        if period["period_key"] in new_keys:
+            seed_period = _most_recent_submitted_period(
+                application_id, kind, period["period_key"]
+            )
+            if seed_period is not None:
+                if kind == "monthly":
+                    _seed_metrics(sb, period["id"], seed_period["id"])
+                _seed_entries(sb, period["id"], seed_period["id"], kind)
         _reconcile_children(sb, period, kind)
     return periods
 
