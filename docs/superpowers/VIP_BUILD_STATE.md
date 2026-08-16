@@ -20,11 +20,50 @@ Work only in that worktree — concurrent sessions cross-contaminate otherwise.
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Track generalisation, shell, COHORT deletion | ✅ complete, whole-phase reviewed, fix wave applied |
-| 2 | AIR readiness assessment backend | ✅ complete, whole-phase reviewed, fix wave applied |
-| 3 | MIS reporting backend | ✅ 6/6 tasks reviewed; whole-phase review done; **fix wave in progress** |
-| 4 | VIP process dashboard | not started |
-| 5 | Admin "VIP cohort" verification surface | not started |
-| 6 | docx import + xlsx export | not started |
+| 2 | AIR readiness assessment **backend** | ✅ complete, whole-phase reviewed, fix wave applied |
+| 3 | MIS reporting **backend** | ✅ complete, whole-phase reviewed, fix wave + scoped re-review + residual fixes |
+| 4 | Founder UI: AIR wizard (spec §4.3/§4.4) | not started |
+| 5 | Founder UI: MIS monthly + quarterly forms (spec §5.3/§5.4) | not started |
+| 6 | VIP process dashboard (spec §6) | not started |
+| 7 | Admin "VIP cohort" verification surface (spec §7) | not started |
+| 8 | docx import + xlsx export (spec §5.6/§5.7) | not started |
+
+**The phase numbering diverges from spec §10 deliberately.** §10 folded each
+surface's UI into the phase that built its backend — its phase 2 was "AIR
+endpoints *and* the 5-step wizard", its phase 3 "period generation *and* the
+monthly and quarterly forms". In execution both shipped backend-only, so the two
+UI tails are now phases 4 and 5, and everything after shifts by two. Spec §10's
+*ordering* still holds; only the boundaries moved.
+
+`FounderTlr.jsx`, `FounderMis.jsx` and `VipDashboard.jsx` are 24-29 line
+placeholders. **Nothing in the VIP portal is clickable yet** — the AIR and MIS
+backends are complete and tested but have no UI in front of them.
+
+Build the two forms before the dashboard: the dashboard renders AIR + MIS state,
+so building it first means building a view of data no founder can enter.
+
+## Founder UI conventions (read before phases 4-6)
+
+Established by the TIR pages; VIP must match them, not invent a second dialect.
+
+- `frontend/src/lib/founderApi.js` — flat map of endpoint thunks over
+  `api.get/post/patch/del`. Add AIR and MIS entries here; do not create a
+  second client module.
+- `frontend/src/pages/founder/ui.jsx` — `Loading`, `ErrorState`, `Tile`,
+  `fmtINR`, `fmtL`, `sum`.
+- `frontend/src/pages/founder/components/Stepper.jsx` — the numbered-circle
+  wizard chrome (active / done / default, connectors, progress bar), already
+  driven by `steps / current / furthest / onGo / eyebrow / progressLabel`. The
+  AIR wizard reuses it as-is; it was built generic for exactly this.
+- **Autosave pattern:** optimistic local `setState`, fire the PATCH, push the
+  error into a non-blocking `actionError`. See `FounderApproach.jsx:64-100`.
+  No save buttons on field edits.
+- CSS classes are `fj-*` / `tile` / `eyebrow`, defined in the founder
+  stylesheet. Reuse; do not add inline style objects beyond what `ui.jsx`
+  already does.
+- **The MIS API validates rather than coerces.** `"12"` for a numeric field is
+  a 422, not `12`. Forms must send JSON numbers, and `null` for empty — not
+  `""`.
 
 ## Migrations
 
@@ -44,7 +83,11 @@ Work only in that worktree — concurrent sessions cross-contaminate otherwise.
 2. **AIR source quirks** — three duplicate option→level mappings (`supply_chain` Q3 A/B → 8; `reliability` Q2 A/B → 6, Q3 A/B → 8). Preserved deliberately and guarded by a test. Worth ARTPARK confirming the intended levels; affects real scores.
 3. **Unreachable AIR levels** — `supply_chain` can never claim AIR 3, `reliability` can never claim 2 or 4. Faithful to the source (no option maps there), but a founder cannot express those states.
 4. **Evidence from prior AIR rounds is unreachable** — all three evidence endpoints resolve only the current quarter's round. Deliberately deferred to the admin phase.
-5. **Reopen semantics** — `vip_mis_periods.reopened_at`/`reopened_by` exist but no reopen code does. If reopening flips status back to `draft`, that period stops being a carry-forward seed source while open. Decide when the reopen task lands (Phase 5).
+5. **Reopen semantics** — `vip_mis_periods.reopened_at`/`reopened_by` exist but no reopen code does. Three things must be settled together when the reopen task lands (now Phase 7):
+   - Reopening flips status back to `draft`, so that period stops being a carry-forward seed source while open.
+   - **Reopening a period that has submitted successors reintroduces the bug ruling P3-R7 just closed** — a later submitted report's `vs Last` would shift when the reopened earlier one is edited. Reopen must either be disallowed for such periods or cascade to reopen the successors too.
+   - In-order submit (P3-R7) means a founder holding one unfillable historical period cannot file the current one. The admin reopen surface is where the escape hatch belongs.
+6. **Overdue backlog on day one** — a venture onboarded months ago gets every intervening period generated at once, all draft and overdue. With in-order submit they must be filed oldest-first. Confirm that matches how ARTPARK actually wants catch-up handled.
 
 ## Standing constraints for later phases
 
