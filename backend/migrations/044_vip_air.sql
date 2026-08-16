@@ -61,11 +61,18 @@ create index if not exists idx_vip_air_scores_assessment
 create table if not exists public.vip_air_evidence (
   id                uuid primary key default gen_random_uuid(),
   assessment_id     uuid not null references public.vip_air_assessments(id) on delete cascade,
-  lever             text not null,
+  lever             text not null check (lever in (
+                      'scientific_principles','architecture','qualification',
+                      'user_needs','supply_chain','reliability')),
   air_level         int not null check (air_level between 1 and 9),
   doc_label         text not null,
   storage_path      text not null,
-  filename          text,
+  -- not null: the (assessment_id, lever, air_level, filename) unique
+  -- constraint below is the only thing standing between a re-upload and a
+  -- duplicate row, and Postgres treats every NULL as distinct from every
+  -- other NULL — a NULL filename would let the constraint be defeated
+  -- silently, one row per re-upload, forever.
+  filename          text not null,
   size_bytes        int,
   content_type      text,
   uploaded_at       timestamptz not null default now(),
