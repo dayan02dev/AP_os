@@ -1,7 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
-  misEmptyReason, reportingCompliance, nextDue,
-  cashRunway, metricTrend, milestonesAndRisks, airTile, activityFeed,
+  activityFeed,
+  airTile,
+  cashRunway,
+  metricTrend,
+  milestonesAndRisks,
+  misEmptyCopy,
+  misEmptyReason,
+  nextDue,
+  reportingCompliance,
 } from "../vipDashboardRollup.js";
 
 const period = (over = {}) => ({
@@ -275,5 +282,40 @@ describe("activityFeed", () => {
     expect(events).toHaveLength(8);
     expect(events[0].text).toContain("Month 10");
     expect(events[7].text).toContain("Month 3");
+  });
+});
+
+// misEmptyCopy lived in three files as three byte-identical copies until it
+// was consolidated into the rollup module. The point of one definition is
+// that the two causes stay distinguishable; these assert exactly that, so a
+// future edit collapsing them back into one sentence fails loudly.
+describe("misEmptyCopy", () => {
+  it("returns null when there is no empty reason", () => {
+    expect(misEmptyCopy(null)).toBeNull();
+  });
+
+  it("names the backlog size and the oldest period when periods are overdue", () => {
+    const copy = misEmptyCopy({
+      cause: "overdue_backlog", count: 3,
+      oldest_label: "May 2026", oldest_due: "2026-06-10",
+    });
+    expect(copy).toContain("3 period(s) are overdue");
+    expect(copy).toContain("May 2026");
+    expect(copy).toContain("2026-06-10");
+  });
+
+  it("says when the first report is due when nothing is overdue yet", () => {
+    const copy = misEmptyCopy({ cause: "not_due_yet", due_date: "2026-09-10" });
+    expect(copy).toContain("first one is due 2026-09-10");
+    expect(copy).not.toContain("overdue");
+  });
+
+  it("gives the two causes genuinely different copy", () => {
+    const backlog = misEmptyCopy({
+      cause: "overdue_backlog", count: 2,
+      oldest_label: "May 2026", oldest_due: "2026-06-10",
+    });
+    const notDue = misEmptyCopy({ cause: "not_due_yet", due_date: "2026-09-10" });
+    expect(backlog).not.toEqual(notDue);
   });
 });

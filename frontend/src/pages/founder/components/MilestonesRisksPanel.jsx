@@ -9,14 +9,6 @@
 // Duplicated verbatim from MetricTrendPanel.jsx — see that file's header
 // comment for why this is a literal duplicate rather than a shared import:
 // both panels must render states 6/7 with byte-identical copy.
-function misEmptyCopy(reason) {
-  if (!reason) return null;
-  if (reason.cause === "overdue_backlog") {
-    return `No monthly update filed yet — ${reason.count} period(s) are overdue, starting with ${reason.oldest_label} (due ${reason.oldest_due}).`;
-  }
-  return `No monthly update filed yet — your first one is due ${reason.due_date}.`;
-}
-
 // A fixed, hardcoded whitelist of the three OPEN statuses — deliberately
 // NOT `Object.keys(data.milestones_by_status)`. `milestonesAndRisks()`
 // already excludes "Done" rows from every group it returns, so this
@@ -25,6 +17,7 @@ function misEmptyCopy(reason) {
 // that upstream guarantee were ever weakened, without this render layer
 // silently trusting whatever keys the input object happens to carry. See
 // this task's mutation check.
+import { misEmptyCopy } from "../vipDashboardRollup.js";
 const MILESTONE_STATUSES = ["On Track", "At Risk", "Blocked"];
 
 const MILESTONE_STATUS_COLOR = {

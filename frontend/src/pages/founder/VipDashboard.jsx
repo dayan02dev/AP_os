@@ -18,10 +18,7 @@ import AirTrajectoryPanel from "./components/AirTrajectoryPanel.jsx";
 import ActivityFeedPanel from "./components/ActivityFeedPanel.jsx";
 import MetricTrendPanel from "./components/MetricTrendPanel.jsx";
 import MilestonesRisksPanel from "./components/MilestonesRisksPanel.jsx";
-import {
-  misEmptyReason, reportingCompliance, nextDue, cashRunway,
-  metricTrend, milestonesAndRisks, airTile, activityFeed,
-} from "./vipDashboardRollup.js";
+import { activityFeed, airTile, cashRunway, metricTrend, milestonesAndRisks, misEmptyCopy, misEmptyReason, nextDue, reportingCompliance } from "./vipDashboardRollup.js";
 import "../../styles/vip-dashboard.css";
 
 // The one place in this file that reads the browser clock — display-only
@@ -36,14 +33,6 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 // — see either file's header comment for why this is a literal copy
 // (small-guard-duplication precedent) rather than a shared import: all
 // three surfaces must render states 6/7 with byte-identical copy.
-function misEmptyCopy(reason) {
-  if (!reason) return null;
-  if (reason.cause === "overdue_backlog") {
-    return `No monthly update filed yet — ${reason.count} period(s) are overdue, starting with ${reason.oldest_label} (due ${reason.oldest_due}).`;
-  }
-  return `No monthly update filed yet — your first one is due ${reason.due_date}.`;
-}
-
 export default function VipDashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);

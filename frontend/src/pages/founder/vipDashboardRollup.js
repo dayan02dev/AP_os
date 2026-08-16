@@ -74,6 +74,22 @@ function sortByDueDateAsc(rows) {
 // build's own failure mode: a null with two distinct causes rendered with
 // one message true for only one of them. Both are composed purely from
 // `status`/`overdue`, never from a frontend `due_date <= today` comparison.
+// The copy for the reason `misEmptyReason` returns. It lives here, beside the
+// function that produces the reason, rather than in each panel: three panels
+// render this same sentence, and three verbatim copies of it is precisely how
+// the two causes drift back into one message. This build has already paid for
+// that mistake five times, and this codebase has a longer history of
+// hand-synced pairs silently diverging (rbac.py/rbac.js, state_machine.py/
+// statusMachine.js — the latter drifted badly enough to need a mirror test).
+// One definition, one place to fix.
+export function misEmptyCopy(reason) {
+  if (!reason) return null;
+  if (reason.cause === "overdue_backlog") {
+    return `No monthly update filed yet — ${reason.count} period(s) are overdue, starting with ${reason.oldest_label} (due ${reason.oldest_due}).`;
+  }
+  return `No monthly update filed yet — your first one is due ${reason.due_date}.`;
+}
+
 export function misEmptyReason(periodRows) {
   const rows = periodRows || [];
   if (rows.some((r) => r.status === "submitted")) return null; // not empty

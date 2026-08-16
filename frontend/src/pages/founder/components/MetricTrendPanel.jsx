@@ -23,18 +23,11 @@
 // otherwise needs — both panels must render states 6/7 with byte-identical
 // copy, which is exactly what keeping the same literal string in both
 // places (not a shared import) makes trivially auditable at a glance.
-function misEmptyCopy(reason) {
-  if (!reason) return null;
-  if (reason.cause === "overdue_backlog") {
-    return `No monthly update filed yet — ${reason.count} period(s) are overdue, starting with ${reason.oldest_label} (due ${reason.oldest_due}).`;
-  }
-  return `No monthly update filed yet — your first one is due ${reason.due_date}.`;
-}
-
 // Normalised to THIS metric's own series max — never a shared cross-metric
 // scale (cash-in-bank and headcount are different units). A series whose
 // every point is null (or whose max is otherwise <= 0) renders every bar at
 // 0%, not a crash and not a divide-by-zero NaN height.
+import { misEmptyCopy } from "../vipDashboardRollup.js";
 function barHeightPct(value, max) {
   if (value == null || !(max > 0)) return 0;
   return Math.max(0, Math.min(100, (value / max) * 100));
