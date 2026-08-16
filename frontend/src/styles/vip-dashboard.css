@@ -1,0 +1,83 @@
+/* VIP process dashboard (spec §6) — new rules only. Reuses
+   founder-portal.css's existing dashboard shell classes (.fj-dash-*,
+   .fj-air-*, .card, .tile, .eyebrow) directly rather than re-declaring
+   them; this file only adds what genuinely does not exist there yet: the
+   AIR scorecard's overall-rule marker + verification badge, the metric
+   trend small-multiples, and the risk-severity badge. Classes are
+   prefixed `vipd-` so they can never collide with founder-portal.css's
+   `fj-*`/`eir-*` classes. Imported once by VipDashboard.jsx. Rendered
+   inside `.founder-portal`, which already defines every `--token` used
+   below — nothing here redefines one. */
+
+/* -- AIR scorecard (Task 2) ------------------------------------------- */
+
+.vipd-air-status {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  margin: 4px 0 0;
+}
+
+.vipd-air-family-wrap {
+  position: relative;
+}
+
+.vipd-air-rule {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--artblue);
+  z-index: 1;
+}
+
+.vipd-verify-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--programs-tint, rgba(50, 19, 183, 0.06));
+  border: 1px solid var(--line);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+}
+
+/* -- AIR trajectory (Task 3) ------------------------------------------- */
+
+.vipd-trajectory {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.vipd-trajectory-point {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.vipd-trajectory-round {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.vipd-trajectory-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--artblue);
+}
+
+.vipd-trajectory-note {
+  font-size: 12.5px;
+  color: var(--ink-dim);
+}
+
+/* -- Activity feed (Task 4) — reuses .fj-dash-feed-* unchanged, no new CSS. */
+
+/* Tasks 5 (metric trend small multiples) and 6 (milestones & risks, the
+   risk-severity badge) add their own rules here when they land — out of
+   scope for Tasks 1-4. */
