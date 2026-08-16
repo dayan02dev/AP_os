@@ -52,6 +52,41 @@ def _guard() -> None:
         )
 
 
+def _find_user(sb, email: str, page_size: int = 200):
+    """Paginated auth.admin.list_users() email lookup.
+
+    list_users() defaults to the first page only and does not auto-iterate —
+    this project has been bitten by PostgREST's 1000-row cap before, and an
+    unpaginated call here means a staging account past page 1 is silently
+    "not found" rather than actually missing. Mirrors the same walk used in
+    setup_reviewer_nirav.py / seed_leadership_user.py.
+    """
+    target = email.lower()
+    page = 1
+    while True:
+        batch = sb.auth.admin.list_users(page=page, per_page=page_size)
+        if not batch:
+            return None
+        hit = next((u for u in batch if (u.email or "").lower() == target), None)
+        if hit:
+            return hit
+        if len(batch) < page_size:
+            return None
+        page += 1
+
+
+def _revert_precondition_ok(current_status: str) -> bool:
+    """--revert only ever undoes THIS script's own promotion to 'onboarded'.
+
+    The old code restored to 'submitted' unconditionally, regardless of what
+    status the application actually held before — running --revert twice, or
+    against an application this script never touched, would silently stomp
+    whatever status was really there. Refuse unless the application is
+    currently 'onboarded'.
+    """
+    return current_status == "onboarded"
+
+
 def _months_back(months: int) -> datetime:
     """First of the month `months` before this one, at midnight UTC.
 
@@ -91,8 +126,7 @@ def main() -> None:
     sb = get_admin_client()
 
     # ---- resolve the target ------------------------------------------------
-    users = sb.auth.admin.list_users()
-    user = next((u for u in users if (u.email or "").lower() == args.email.lower()), None)
+    user = _find_user(sb, args.email)
     if user is None:
         sys.exit(f"no staging auth user with email {args.email!r}")
 
@@ -128,6 +162,13 @@ def main() -> None:
     if len(apps) > len(candidates):
         skipped = sorted(a["status"] for a in apps if a is not app)
         print(f"note        : ignoring {len(apps) - len(candidates)} other row(s) {skipped}")
+
+    if args.revert and not _revert_precondition_ok(app["status"]):
+        sys.exit(
+            f"refusing to revert: {args.email}'s application is currently "
+            f"{app['status']!r}, not 'onboarded'. --revert only undoes this "
+            "script's own promotion; nothing to revert here."
+        )
 
     target_status = "submitted" if args.revert else "onboarded"
     changed_at = _months_back(args.months_back)
