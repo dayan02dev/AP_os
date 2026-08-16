@@ -208,6 +208,45 @@ def test_period_insert_race_is_recovered_by_reread(fake, monkeypatch):
     assert len(rows) == 13
 
 
+def test_period_insert_partial_race_retries_only_the_still_missing_period(fake, monkeypatch):
+    """A bulk insert of several missing periods can lose the race on only
+    SOME of them: writer A commits two of the three missing periods before
+    our insert fails, so the retry branch must insert exactly the one that
+    is genuinely still missing — not resurrect the two that already exist,
+    and not skip the retry entirely. Every other race test in this file
+    injects the COMPLETE winner set, so the re-read always finds nothing
+    still missing and the retry path is never actually exercised; this is
+    the one test that forces it."""
+    winners = [
+        {
+            "id": "winner-06", "application_id": "app1", "kind": "monthly",
+            "period_key": "2026-06", "label": "Jun 2026",
+            "period_start": "2026-06-01", "period_end": "2026-06-30",
+            "due_date": "2026-07-05", "status": "draft", "narrative": {},
+        },
+        {
+            "id": "winner-07", "application_id": "app1", "kind": "monthly",
+            "period_key": "2026-07", "label": "Jul 2026",
+            "period_start": "2026-07-01", "period_end": "2026-07-31",
+            "due_date": "2026-08-05", "status": "draft", "narrative": {},
+        },
+    ]
+    racy = _RaceOnce(fake, "vip_mis_periods", winners)
+    monkeypatch.setattr(mq, "get_admin_client", lambda: racy)
+
+    periods = mq.ensure_periods("app1", "monthly", date(2026, 6, 1), date(2026, 8, 16))
+
+    assert [p["period_key"] for p in periods] == ["2026-06", "2026-07", "2026-08"]
+    assert len(fake.tables["vip_mis_periods"]) == 3
+    by_key = {p["period_key"]: p for p in periods}
+    assert by_key["2026-06"]["id"] == "winner-06"
+    assert by_key["2026-07"]["id"] == "winner-07"
+    # 2026-08 was genuinely still missing after the race and must have
+    # been inserted for real by the retry — not left absent, and not one
+    # of the two injected winner rows.
+    assert by_key["2026-08"]["id"] not in ("winner-06", "winner-07")
+
+
 def test_metrics_race_is_recovered_by_reread(fake, monkeypatch):
     """After a genuinely new monthly period is created, both winner and
     loser of a concurrent request can reach the unconditional metrics
@@ -305,6 +344,27 @@ def test_financials_race_does_not_break_headcount_reconciliation_for_the_same_pe
     assert len(hc) == 4
 
 
+def test_headcount_race_is_recovered_by_reread(fake, monkeypatch):
+    """The fourth of the four unique-violation catches this module makes
+    (period, metrics, financials, headcount) had no dedicated race test —
+    all three others were proven by mutation check 2, this one was only
+    structurally similar. Proves it behaviourally: the loser must recover
+    the same way the other three do."""
+    _seed_quarterly_period(fake, period_id="q1")
+    winner_hc = [
+        {"id": f"h-{c['key']}", "period_id": "q1", "category": c["key"]}
+        for c in cat.HEADCOUNT_CATEGORIES
+    ]
+    racy = _RaceOnce(fake, "vip_mis_headcount", winner_hc)
+    monkeypatch.setattr(mq, "get_admin_client", lambda: racy)
+
+    mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 4, 1))
+
+    hc = [r for r in fake.tables["vip_mis_headcount"] if r["period_id"] == "q1"]
+    assert len(hc) == 4
+    assert {r["category"] for r in hc} == {c["key"] for c in cat.HEADCOUNT_CATEGORIES}
+
+
 # ── fetch_period ──────────────────────────────────────────────────────────
 
 def test_fetch_period_returns_none_when_absent(fake):
@@ -349,6 +409,14 @@ def test_periods_index_is_sorted_by_period_key(fake):
     assert [p["period_key"] for p in idx] == ["2026-01", "2026-02", "2026-03"]
 
 
+def test_periods_index_raises_on_unknown_kind(fake):
+    """No fail-open default: a typo'd kind must be loud, not a silent []
+    that reads exactly like "this founder has no periods yet" — the same
+    rule mis_periods.expected_periods already enforces for this parameter."""
+    with pytest.raises(ValueError):
+        mq.periods_index("app1", "weekly", date(2026, 8, 1))
+
+
 # ── the read bundle ───────────────────────────────────────────────────────
 
 def test_period_bundle_has_the_documented_keys(fake):
@@ -370,6 +438,76 @@ def test_bundle_entries_includes_the_secondary_next_milestones_table(fake):
     b = mq.period_bundle("app1", "quarterly", "FY26-27-Q1")
     assert "next_milestones" in b["entries"]
     assert "planned_vs_actual" in b["entries"]
+
+
+def test_bundle_entries_excludes_a_row_belonging_to_the_other_kinds_section(fake):
+    """vip_mis_entries.section's CHECK constraint is global across both
+    templates, not per-kind, so nothing in the database stops a "risks"
+    row (monthly-only) from existing against a quarterly period_id. It
+    must not surface as a stray key a renderer could draw as a real
+    section of the wrong template."""
+    periods = mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 4, 1))
+    period_id = periods[0]["id"]
+    fake.tables["vip_mis_entries"].append({
+        "id": "stray", "period_id": period_id, "section": "risks",
+        "sort_order": 0, "data": {},
+    })
+
+    b = mq.period_bundle("app1", "quarterly", "FY26-27-Q1")
+
+    assert "risks" not in b["entries"]
+    assert "planned_vs_actual" in b["entries"]  # a genuine quarterly section is unaffected
+
+
+def test_period_bundle_repairs_partially_missing_metric_rows(fake):
+    """period_bundle must converge like ensure_periods does: a detail read
+    of a period a crashed request left half-built (10 of 13 metric rows)
+    must not silently render an incomplete grid — it must repair first."""
+    _seed_monthly_period(fake, period_id="p1")
+    keep_keys = [m["key"] for m in cat.METRICS[:10]]
+    for key in keep_keys:
+        fake.tables["vip_mis_metrics"].append({
+            "id": f"m-{key}", "period_id": "p1", "metric_key": key,
+            "label": "x", "group_key": "y",
+        })
+
+    b = mq.period_bundle("app1", "monthly", "2026-08")
+
+    assert len(b["metrics"]) == 13
+    assert {m["metric_key"] for m in b["metrics"]} == {m["key"] for m in cat.METRICS}
+    # the 10 pre-existing rows are untouched by the repair
+    by_id = {m["id"]: m for m in b["metrics"]}
+    for key in keep_keys:
+        assert by_id[f"m-{key}"]["label"] == "x"
+
+
+def test_period_bundle_excludes_internal_period_fields(fake):
+    """application_id (redundant — already scoped by the caller),
+    reopened_by (an admin's uuid) and source_doc_path (an internal storage
+    path) must not ship to the founder UI."""
+    mq.ensure_periods("app1", "monthly", date(2026, 8, 1), date(2026, 8, 1))
+    fake.tables["vip_mis_periods"][0]["reopened_by"] = "admin-uuid-1"
+    fake.tables["vip_mis_periods"][0]["source_doc_path"] = "s3://internal/path.docx"
+
+    b = mq.period_bundle("app1", "monthly", "2026-08")
+
+    assert "application_id" not in b["period"]
+    assert "reopened_by" not in b["period"]
+    assert "source_doc_path" not in b["period"]
+    assert b["period"]["period_key"] == "2026-08"
+    assert b["period"]["status"] == "draft"
+
+
+def test_period_bundle_narrative_is_not_duplicated_inside_period(fake):
+    """narrative lives once, at the bundle's own top-level "narrative" key
+    — not also inside bundle["period"]."""
+    mq.ensure_periods("app1", "monthly", date(2026, 8, 1), date(2026, 8, 1))
+    fake.tables["vip_mis_periods"][0]["narrative"] = {"exec.headline_win": "shipped v1"}
+
+    b = mq.period_bundle("app1", "monthly", "2026-08")
+
+    assert b["narrative"] == {"exec.headline_win": "shipped v1"}
+    assert "narrative" not in b["period"]
 
 
 def test_catalog_in_bundle_matches_kind(fake):
@@ -431,6 +569,23 @@ def test_bundle_needs_gap_is_none_when_any_input_is_missing(fake):
     assert all(v is None for v in b["derived"]["financials"]["needs_gap"].values())
 
 
+def test_bundle_needs_gap_is_none_when_partially_filled(fake):
+    """The case that matters, which the all-missing test above cannot
+    catch: one of the three inputs present is not enough to compute a
+    gap — needs_confirmed/needs_projected still missing must not silently
+    read as 0, which would understate the gap ARTPARK is meant to see."""
+    mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 4, 1))
+    period_id = fake.tables["vip_mis_periods"][0]["id"]
+    bucket = "Q1 (Current)"
+    for row in fake.tables["vip_mis_financials"]:
+        if row["period_id"] == period_id and row["bucket"] == bucket and row["series"] == "needs_total":
+            row["amount"] = 100
+
+    b = mq.period_bundle("app1", "quarterly", "FY26-27-Q1")
+
+    assert b["derived"]["financials"]["needs_gap"][bucket] is None
+
+
 def test_bundle_headcount_total_is_the_sum_of_the_four_categories(fake):
     mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 4, 1))
     period_id = fake.tables["vip_mis_periods"][0]["id"]
@@ -445,3 +600,39 @@ def test_bundle_headcount_total_is_the_sum_of_the_four_categories(fake):
     assert b["derived"]["headcount"]["total"]["current_count"] == sum(counts.values())
     assert b["derived"]["headcount"]["total"]["net_change"] == sum(counts.values())
     assert b["derived"]["headcount"]["net_change"]["startup"] == 5
+
+
+def test_bundle_headcount_total_is_none_when_nothing_is_filled(fake):
+    """Important-1: a fresh quarterly period's four headcount rows are all
+    NULL current_count/exited. The Total row must read as "no data yet",
+    not as "0 / 0 / 0" — the latter is a number nobody typed and would
+    silently tell ARTPARK this venture has zero people if a founder
+    submitted without noticing."""
+    mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 4, 1))
+    b = mq.period_bundle("app1", "quarterly", "FY26-27-Q1")
+    assert b["derived"]["headcount"]["total"] == {
+        "current_count": None, "exited": None, "net_change": None,
+    }
+    assert all(v is None for v in b["derived"]["headcount"]["net_change"].values())
+
+
+def test_bundle_headcount_total_sums_partial_entries_treating_blanks_as_zero(fake):
+    """Partial entry (one of four categories filled) is genuine
+    information and must still roll up — it must not collapse to None the
+    way the wholly-blank case does."""
+    mq.ensure_periods("app1", "quarterly", date(2026, 4, 1), date(2026, 4, 1))
+    period_id = fake.tables["vip_mis_periods"][0]["id"]
+    for row in fake.tables["vip_mis_headcount"]:
+        if row["period_id"] == period_id and row["category"] == "startup":
+            row["current_count"] = 5
+            row["exited"] = 2
+
+    b = mq.period_bundle("app1", "quarterly", "FY26-27-Q1")
+
+    assert b["derived"]["headcount"]["total"]["current_count"] == 5
+    assert b["derived"]["headcount"]["total"]["exited"] == 2
+    assert b["derived"]["headcount"]["total"]["net_change"] == 3
+    assert b["derived"]["headcount"]["net_change"]["startup"] == 3
+    # the three untouched categories individually stay None, not 0
+    for category in ("artpark_associated", "consultants", "interns"):
+        assert b["derived"]["headcount"]["net_change"][category] is None

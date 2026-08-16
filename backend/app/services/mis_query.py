@@ -41,6 +41,15 @@ latches which period_keys this call genuinely created, before any child
 reconciliation runs, and returns that set alongside the period rows: the
 same `is_new_round` distinction `air_query.ensure_round` makes, so Task 5
 can hook its seeding off this set rather than re-deriving it.
+
+`_reconcile_children` (the per-period dispatch to metrics or
+financials+headcount) is the one implementation of "make this period's
+child rows complete", shared by both write paths that need it:
+`ensure_periods` calls it for every period in the calendar, and
+`period_bundle` calls it for just the one period it is about to render —
+a detail GET must converge too, not only a list GET, or a period a
+crashed request left half-built would render silently incomplete forever
+until someone happened to hit the list endpoint for that application.
 """
 from __future__ import annotations
 
@@ -57,11 +66,16 @@ _METRIC_BY_KEY = {m["key"]: m for m in cat.METRICS}
 _METRIC_ORDER = {m["key"]: i for i, m in enumerate(cat.METRICS)}
 _HEADCOUNT_ORDER = {c["key"]: i for i, c in enumerate(cat.HEADCOUNT_CATEGORIES)}
 
-_ANNUAL_REVENUE_SERIES = ("annual_revenue_booked", "annual_revenue_received")
-# needs_gap is deliberately excluded here — it is derived on read
-# (needs_total - needs_confirmed - needs_projected), never stored. See
-# _derived and the module doctring of mis_catalog for why a bare stored
-# column would go stale.
+# Derived from the catalog rather than hand-listed: if mis_catalog ever
+# grows a third annual_revenue series, a literal tuple here would silently
+# produce no vip_mis_financials rows for it — the UI would render a row
+# from catalog.financial_series with nothing to show in financials.
+_ANNUAL_REVENUE_SERIES = tuple(s["key"] for s in cat.FINANCIAL_SERIES["annual_revenue"])
+# _NEEDS_SERIES stays a literal: it is a justified filtered subset of the
+# catalog's "needs" series that deliberately excludes needs_gap (derived
+# on read as needs_total - needs_confirmed - needs_projected, never
+# stored — see _needs_gap and mis_catalog's own module docstring for why
+# a bare stored column would go stale).
 _NEEDS_SERIES = ("needs_total", "needs_confirmed", "needs_projected")
 
 
@@ -350,13 +364,23 @@ def _entries_sections_for_kind(kind: str) -> list[str]:
 
 
 def _fetch_entries_by_section(period_id: str, kind: str) -> dict[str, list[dict]]:
+    """Every vip_mis_entries row for this period, grouped by section —
+    restricted to the sections `kind` actually has. `vip_mis_entries.section`'s
+    CHECK constraint (045_vip_mis.sql) is global across both templates, not
+    per-kind, so nothing at the database layer stops a row belonging to
+    the *other* template's section (e.g. monthly's "risks" on a quarterly
+    period_id) from existing; grouping with `setdefault` would surface it
+    as a stray key a renderer could draw as a real section of the wrong
+    template. Rows outside `kind`'s own sections are dropped here rather
+    than surfaced."""
     rows = (
         get_admin_client().table("vip_mis_entries").select("*")
         .eq("period_id", period_id).execute().data or []
     )
     by_section: dict[str, list[dict]] = {sid: [] for sid in _entries_sections_for_kind(kind)}
     for r in rows:
-        by_section.setdefault(r["section"], []).append(r)
+        if r["section"] in by_section:
+            by_section[r["section"]].append(r)
     for group in by_section.values():
         group.sort(key=lambda r: r.get("sort_order", 0))
     return by_section
@@ -407,7 +431,14 @@ def periods_index(application_id: str, kind: str, today: date) -> list[dict]:
     never stored. Reads only; does not create missing periods itself (that
     needs `onboarded_on`, which this function does not take) — call
     `ensure_periods` first so the calendar is complete before listing it.
+
+    Raises `ValueError` on an unknown `kind` rather than the `.eq("kind",
+    kind)` filter below silently matching zero rows — a typo'd kind must
+    read as an error, not as "no periods yet", the same no-fail-open rule
+    `mis_periods.expected_periods` enforces for the same parameter.
     """
+    if kind not in cat.KINDS:
+        raise ValueError(f"unknown MIS period kind: {kind!r}")
     periods = _fetch_periods(application_id, kind)
     return [
         {
@@ -446,23 +477,46 @@ def _needs_gap(financials: list[dict]) -> dict[str, float | int | None]:
     return gap
 
 
+def _partial_sum(values: list) -> int | float | None:
+    """`None` if every value is `None` (nothing entered at all — a fresh
+    period's Total row must not silently read as "0", which a founder
+    would submit as "this venture has zero people" without ever having
+    typed a number); otherwise the sum, treating any still-blank value as
+    0 (partial entry — three of four filled — is still useful
+    information, so it must not collapse to None too)."""
+    if all(v is None for v in values):
+        return None
+    return sum(v or 0 for v in values)
+
+
+def _net_change(current, exited):
+    """current - exited for one category, or `None` if neither side of
+    that category has been entered at all — same all-missing-is-None,
+    partial-treats-the-blank-side-as-0 rule as `_partial_sum`, just
+    expressed as a difference instead of a sum."""
+    if current is None and exited is None:
+        return None
+    return (current or 0) - (exited or 0)
+
+
 def _headcount_derived(headcount: list[dict]) -> dict:
-    # Unset counts are treated as 0 for this roll-up — the founder hasn't
-    # blanked a real answer, there is simply nothing there yet, and a
-    # Total row that refuses to sum until every category is filled in
-    # would be less useful than one that sums what exists.
+    """net_change per category, and the Total row across all four.
+
+    Follows the same all-missing-is-None, partial-is-a-real-sum rule
+    `_diff`/`_needs_gap` already apply to metrics/financials: a wholly
+    blank period must not read as "0 people" (a number nobody typed), but
+    partial entry is genuine information and must still roll up.
+    """
     net_change = {
-        r["category"]: (r.get("current_count") or 0) - (r.get("exited") or 0)
+        r["category"]: _net_change(r.get("current_count"), r.get("exited"))
         for r in headcount
     }
-    total_current = sum((r.get("current_count") or 0) for r in headcount)
-    total_exited = sum((r.get("exited") or 0) for r in headcount)
     return {
         "net_change": net_change,
         "total": {
-            "current_count": total_current,
-            "exited": total_exited,
-            "net_change": total_current - total_exited,
+            "current_count": _partial_sum([r.get("current_count") for r in headcount]),
+            "exited": _partial_sum([r.get("exited") for r in headcount]),
+            "net_change": _partial_sum(list(net_change.values())),
         },
     }
 
@@ -519,21 +573,50 @@ def _catalog_for_kind(kind: str, period: dict) -> dict:
     return catalog
 
 
+# Period fields safe to ship to the founder UI. Excludes application_id
+# (redundant — the caller already scoped the read to their own
+# application), reopened_by (an admin's uuid, not the founder's
+# business), source_doc_path (an internal storage path), and narrative
+# (carried once, at the bundle's own top-level "narrative" key — see
+# period_bundle's docstring for why it is not duplicated here too).
+_PERIOD_BUNDLE_FIELDS = (
+    "id", "kind", "period_key", "label", "period_start", "period_end",
+    "due_date", "status", "submitted_at", "reopened_at",
+)
+
+
+def _period_for_bundle(period: dict) -> dict:
+    return {k: period.get(k) for k in _PERIOD_BUNDLE_FIELDS}
+
+
 def period_bundle(application_id: str, kind: str, period_key: str) -> dict:
     """Everything the founder MIS UI needs for one period in one read: the
-    catalog slice for this kind, the period row, its
-    metrics/financials/headcount/entries, its narrative, and `derived` —
-    the computed-not-stored values (see `_derived`).
+    catalog slice for this kind, the period row (whitelisted — see
+    `_PERIOD_BUNDLE_FIELDS`), its metrics/financials/headcount/entries, its
+    narrative (present ONLY at this top-level `narrative` key — not
+    duplicated inside `period`), and `derived` — the computed-not-stored
+    values (see `_derived`).
 
     Raises `LookupError` if the period does not exist — fail closed, the
     same convention `mis_catalog.section()`/`entry_fields()` use. This
-    function does not create periods itself (that is `ensure_periods`'
-    job, which needs `onboarded_on`/`today` this function does not take);
-    a caller lists via `ensure_periods`/`periods_index` first.
+    function does not create the *period row* itself (that is
+    `ensure_periods`' job, which needs `onboarded_on`/`today` this
+    function does not take; a caller lists via
+    `ensure_periods`/`periods_index` first) — but it DOES converge that
+    period's child rows before reading them, via the same
+    `_reconcile_children` `ensure_periods` uses, scoped to just this one
+    `period_id`. Without this, a detail read of a period a crashed
+    request left half-built (e.g. 10 of 13 metric rows) would silently
+    render an incomplete grid with no error and no repair; a transaction
+    would have prevented that state from being observable at all, but one
+    is not available here (see the module docstring), so this read
+    repairs it the same way every other read in this module does.
     """
     period = fetch_period(application_id, kind, period_key)
     if period is None:
         raise LookupError(f"no such MIS period: {kind}/{period_key} for {application_id}")
+
+    _reconcile_children(get_admin_client(), period, kind)
 
     metrics = _fetch_metrics(period["id"]) if kind == "monthly" else []
     financials = _fetch_financials(period) if kind == "quarterly" else []
@@ -542,7 +625,7 @@ def period_bundle(application_id: str, kind: str, period_key: str) -> dict:
 
     return {
         "catalog": _catalog_for_kind(kind, period),
-        "period": period,
+        "period": _period_for_bundle(period),
         "metrics": metrics,
         "financials": financials,
         "headcount": headcount,
