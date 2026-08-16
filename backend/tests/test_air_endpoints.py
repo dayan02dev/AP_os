@@ -41,6 +41,15 @@ def _install(monkeypatch, track: str = "sip"):
     return fake
 
 
+def test_label_uses_ist_not_utc(freezer):
+    """Item 14: the Indian FY quarter boundary is an IST midnight. At
+    20:00 UTC on 30 June it is already 01:30 IST on 1 July — Q2, not Q1 —
+    for the 5.5 hours a UTC-based label would still call it Q1."""
+    from app.routers.founder_air import _label
+    freezer.move_to("2026-06-30T20:00:00Z")
+    assert _label() == "FY26-27-Q2"
+
+
 def test_tir_founders_cannot_reach_the_air_surface(client, monkeypatch, _clear):
     _install(monkeypatch, track="tir")
     r = client.get("/founder/air")
@@ -130,6 +139,31 @@ def test_submit_flips_the_round_and_stamps_rollups(client, monkeypatch, _clear):
     row = fake.tables["vip_air_assessments"][0]
     assert row["status"] == "submitted"
     assert row["submitted_at"]
+    assert row["updated_at"]
+    assert row["overall_claimed"] == 1
+
+
+def test_put_lever_does_not_persist_rollups_only_submit_does(client, monkeypatch, _clear):
+    """IMPORTANT 1: a PUT must never write the *_claimed columns — that used
+    to be a read-then-write with no atomicity, so two concurrent PUTs could
+    interleave and leave a stale rollup the answers no longer support. Only
+    submit_air, a single point in time, should ever stamp them."""
+    fake = _install(monkeypatch)
+    client.get("/founder/air")
+    r = client.put("/founder/air/levers/user_needs", json={
+        "q1_option": "C", "q2_option": None, "q3_option": None,
+        "criteria_checked": [],
+    })
+    assert r.status_code == 200, r.text
+    row = fake.tables["vip_air_assessments"][0]
+    assert row.get("overall_claimed") is None
+    assert row.get("tech_claimed") is None
+    assert row.get("comm_claimed") is None
+
+    _score_everything(client)
+    r = client.post("/founder/air/submit")
+    assert r.status_code == 200, r.text
+    row = fake.tables["vip_air_assessments"][0]
     assert row["overall_claimed"] == 1
 
 

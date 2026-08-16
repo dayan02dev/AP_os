@@ -8,8 +8,9 @@ the gate rather than from the request.
 from __future__ import annotations
 
 import contextlib
+import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -40,18 +41,20 @@ def require_vip(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
     return ctx
 
 
+# India has no daylight saving, so a fixed offset is exact — no tz database
+# dependency needed for a Lambda deployment to get this right.
+_IST_OFFSET = timedelta(hours=5, minutes=30)
+
+
 def _label() -> str:
-    return aq.current_round_label(datetime.now(UTC).date())
+    """The current FY-quarter label, in IST — not UTC.
 
-
-def _persist_claimed_rollups(assessment_id: str, bundle: dict) -> None:
-    roll = bundle["rollups"]["claimed"]
-    get_admin_client().table("vip_air_assessments").update({
-        "overall_claimed": roll["overall"],
-        "tech_claimed": roll["technology"],
-        "comm_claimed": roll["commercial"],
-        "updated_at": datetime.now(UTC).isoformat(),
-    }).eq("id", assessment_id).execute()
+    The Indian FY quarter boundary is an IST midnight. Using UTC's date
+    would mislabel the round for the 5.5 hours after each quarter turns
+    over (IST is UTC+5:30), so the founder's round briefly points at the
+    quarter that just ended.
+    """
+    return aq.current_round_label((datetime.now(UTC) + _IST_OFFSET).date())
 
 
 @router.get("")
@@ -94,9 +97,19 @@ async def put_lever(
         "updated_at": datetime.now(UTC).isoformat(),
     }).eq("assessment_id", rnd["id"]).eq("lever", lever).execute()
 
-    bundle = aq.assessment_bundle(ctx["application_id"], label)
-    _persist_claimed_rollups(rnd["id"], bundle)
-    return bundle
+    # The three *_claimed columns on vip_air_assessments are deliberately not
+    # touched here. Persisting them on every PUT — as this used to do — is a
+    # read-whole-bundle-then-write-columns sequence with no atomicity:
+    # two concurrent PUTs from the same founder (easy with a per-lever
+    # wizard) can interleave so the stored rollup no longer matches the
+    # answers. assessment_bundle recomputes claimed levels live from the
+    # stored answers on every read, so the response here is always correct
+    # regardless; only the persisted columns could go stale, and now nothing
+    # writes them until submit_air, which makes *_claimed mean "snapshot at
+    # submission" — matching what the column names imply — and leaves a
+    # draft round's rollups NULL, which is correct: a draft has nothing to
+    # plot yet.
+    return aq.assessment_bundle(ctx["application_id"], label)
 
 
 @router.post("/submit")
@@ -116,9 +129,11 @@ async def submit_air(ctx: Annotated[dict, Depends(require_vip)]) -> dict:
         )
 
     roll = bundle["rollups"]["claimed"]
+    now = datetime.now(UTC).isoformat()
     get_admin_client().table("vip_air_assessments").update({
         "status": "submitted",
-        "submitted_at": datetime.now(UTC).isoformat(),
+        "submitted_at": now,
+        "updated_at": now,
         "overall_claimed": roll["overall"],
         "tech_claimed": roll["technology"],
         "comm_claimed": roll["commercial"],
