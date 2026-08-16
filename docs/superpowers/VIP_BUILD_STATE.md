@@ -25,7 +25,7 @@ Work only in that worktree — concurrent sessions cross-contaminate otherwise.
 | 4 | Founder UI: AIR wizard (spec §4.3/§4.4) | ✅ complete, whole-phase reviewed, 18-item fix wave applied |
 | 5 | Founder UI: MIS monthly + quarterly forms (spec §5.3/§5.4) | planning |
 | 6 | VIP process dashboard (spec §6) | planning |
-| 7 | Admin "VIP cohort" verification surface (spec §7) | backend in progress |
+| 7 | Admin "VIP cohort" verification surface (spec §7) | ✅ backend complete (28 tests); screens in progress |
 | 8 | docx import + xlsx export (spec §5.6/§5.7) | not started |
 
 **The phase numbering diverges from spec §10 deliberately.** §10 folded each
@@ -95,11 +95,10 @@ Established by the TIR pages; VIP must match them, not invent a second dialect.
 2. **AIR source quirks** — three duplicate option→level mappings (`supply_chain` Q3 A/B → 8; `reliability` Q2 A/B → 6, Q3 A/B → 8). Preserved deliberately and guarded by a test. Worth ARTPARK confirming the intended levels; affects real scores.
 3. **Unreachable AIR levels** — `supply_chain` can never claim AIR 3, `reliability` can never claim 2 or 4. Faithful to the source (no option maps there), but a founder cannot express those states.
 4. **Evidence from prior AIR rounds is unreachable** — all three evidence endpoints resolve only the current quarter's round. Deliberately deferred to the admin phase.
-5. **Reopen semantics** — `vip_mis_periods.reopened_at`/`reopened_by` exist but no reopen code does. Three things must be settled together when the reopen task lands (now Phase 7):
-   - Reopening flips status back to `draft`, so that period stops being a carry-forward seed source while open.
-   - **Reopening a period that has submitted successors reintroduces the bug ruling P3-R7 just closed** — a later submitted report's `vs Last` would shift when the reopened earlier one is edited. Reopen must either be disallowed for such periods or cascade to reopen the successors too.
-   - In-order submit (P3-R7) means a founder holding one unfillable historical period cannot file the current one. The admin reopen surface is where the escape hatch belongs.
-6. **Overdue backlog on day one** — a venture onboarded months ago gets every intervening period generated at once, all draft and overdue. With in-order submit they must be filed oldest-first. Confirm that matches how ARTPARK actually wants catch-up handled.
+5. ~~**Reopen semantics**~~ — **settled in Phase 7.** Reopen flips a submitted period back to `draft` and stamps `reopened_at`/`reopened_by`, but **409s `mis_later_period_submitted` when any later period of the same kind is still submitted** — the exact mirror of `founder_mis._reject_out_of_order_submit`, protecting the same adjacency invariant from the other side. Still open for the user: in-order submit means a founder holding one unfillable historical period cannot file the current one, and reopen is not an escape hatch for that (it only moves submitted→draft). If ARTPARK needs a venture to skip a period entirely, that is a separate mechanism nobody has asked for yet.
+6. **No write path for custom MIS metrics** — the source template invites a venture to add its own metrics, and the backend seeds and carries them forward correctly, but `put_metrics` rejects any key outside the catalog. The template promises something the API cannot do. Product decision.
+7. **AIR trajectory cannot be built as specced** — spec §6 wants overall AIR plotted per round, but no founder-facing endpoint returns any round except the current IST quarter's. The dashboard ships a single point with an honest "history not available" note. Exposing prior rounds is an admin-phase change.
+8. **Overdue backlog on day one** — a venture onboarded months ago gets every intervening period generated at once, all draft and overdue. With in-order submit they must be filed oldest-first. Confirm that matches how ARTPARK actually wants catch-up handled.
 
 ## Standing constraints for later phases
 
