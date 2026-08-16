@@ -18,6 +18,40 @@ def fake(monkeypatch):
     return f
 
 
+class _RaceOnce:
+    """Wraps a FakeSupabase so the first insert().execute() on `table_name`
+    simulates losing a concurrent-insert race: right as it raises, a
+    colliding row appears in the table — as if another request's insert on
+    the same (application_id, round_label) had just committed — so a
+    re-fetch immediately after the exception finds it. Every call after the
+    first behaves like the plain fake.
+    """
+
+    def __init__(self, inner: FakeSupabase, table_name: str, winner_row: dict):
+        self._inner = inner
+        self._table_name = table_name
+        self._winner_row = winner_row
+        self._armed = True
+
+    def table(self, name):
+        q = self._inner.table(name)
+        if name == self._table_name and self._armed:
+            real_execute = q.execute
+
+            def execute():
+                if q._mode == "insert" and self._armed:
+                    self._armed = False
+                    self._inner.tables[self._table_name].append(dict(self._winner_row))
+                    raise Exception(
+                        'duplicate key value violates unique constraint '
+                        '"vip_air_assessments_application_id_round_label_key" (23505)'
+                    )
+                return real_execute()
+
+            q.execute = execute
+        return q
+
+
 # ── Indian FY quarters ────────────────────────────────────────────────
 
 @pytest.mark.parametrize("day,label", [
@@ -72,6 +106,64 @@ def test_ensure_round_separates_quarters(fake):
     aq.ensure_round("app1", "FY26-27-Q1")
     aq.ensure_round("app1", "FY26-27-Q2")
     assert len(fake.tables["vip_air_assessments"]) == 2
+
+
+def test_ensure_round_survives_a_concurrent_insert_race(fake, monkeypatch):
+    """Two concurrent GET /founder/air calls can both see no round and both
+    reach the insert. The loser must hit the (application_id, round_label)
+    unique constraint, catch it, and read the winner's row back — not
+    propagate a 500."""
+    winner = {
+        "id": "winner-id",
+        "application_id": "app1",
+        "round_label": "FY26-27-Q1",
+        "status": "draft",
+    }
+    racy = _RaceOnce(fake, "vip_air_assessments", winner)
+    monkeypatch.setattr(aq, "get_admin_client", lambda: racy)
+
+    rnd = aq.ensure_round("app1", "FY26-27-Q1")
+
+    assert rnd["id"] == "winner-id"
+    assert len(fake.tables["vip_air_assessments"]) == 1
+    # the round found via the race still gets its six levers reconciled
+    scores = fake.tables["vip_air_lever_scores"]
+    assert len(scores) == 6
+    assert {s["assessment_id"] for s in scores} == {"winner-id"}
+
+
+def test_ensure_round_repairs_missing_lever_rows_without_touching_existing_ones(fake):
+    """Simulates a process that died mid-way through a previous ensure_round
+    call, leaving only three of six lever rows. The repair must add exactly
+    the missing three and must not touch the three that already carry real
+    answers."""
+    from app.services import air_catalog as cat
+
+    fake.tables["vip_air_assessments"].append({
+        "id": "existing-id",
+        "application_id": "app1",
+        "round_label": "FY26-27-Q1",
+        "status": "draft",
+    })
+    fake.tables["vip_air_lever_scores"].extend([
+        {"id": "s1", "assessment_id": "existing-id", "lever": "scientific_principles",
+         "criteria_checked": [], "q1_option": "B"},
+        {"id": "s2", "assessment_id": "existing-id", "lever": "architecture",
+         "criteria_checked": [], "q1_option": "C"},
+        {"id": "s3", "assessment_id": "existing-id", "lever": "qualification",
+         "criteria_checked": []},
+    ])
+
+    rnd = aq.ensure_round("app1", "FY26-27-Q1")
+
+    assert rnd["id"] == "existing-id"
+    scores = fake.tables["vip_air_lever_scores"]
+    assert len(scores) == 6
+    assert {s["lever"] for s in scores} == set(cat.LEVER_KEYS)
+    by_id = {s["id"]: s for s in scores}
+    assert by_id["s1"]["q1_option"] == "B"
+    assert by_id["s2"]["q1_option"] == "C"
+    assert by_id["s3"]["lever"] == "qualification"
 
 
 def test_fetch_lever_scores_returns_six_in_catalog_order(fake):

@@ -4,6 +4,15 @@ Rounds are quarterly and generated on read rather than by a cron: computing
 the current label and inserting if absent is idempotent and leaves nothing to
 operate. Sorting is done in Python because the FakeSupabase test double treats
 .order() as a no-op and lever order is contractual.
+
+ensure_round is convergent rather than create-once: PostgREST offers no
+client-side transaction and this project deliberately has no exec_sql RPC
+(prod DDL is Studio-only), so a multi-statement write cannot be wrapped in
+one. Instead every call reconciles state to what it should be regardless of
+what it started as, which absorbs both a concurrent-insert race on the
+(application_id, round_label) unique constraint and a process that died
+mid-way through a previous call and left the round with fewer than six
+lever rows.
 """
 from __future__ import annotations
 
@@ -41,23 +50,41 @@ def ensure_round(application_id: str, round_label: str) -> dict:
     """The round for this quarter, created as a draft if it does not exist.
 
     Idempotent, and generated on read rather than by a cron: there is nothing
-    to schedule and nothing to operate.
+    to schedule and nothing to operate. Convergent, not create-once: the
+    assessment row and its six lever rows are reconciled to the correct
+    state on every call, not only when the round is first created — see the
+    module docstring for why.
     """
-    existing = fetch_round(application_id, round_label)
-    if existing:
-        return existing
     sb = get_admin_client()
-    rnd = sb.table("vip_air_assessments").insert({
-        "application_id": application_id,
-        "round_label": round_label,
-        "status": "draft",
-    }).execute().data[0]
-    for lever in cat.LEVER_KEYS:
-        sb.table("vip_air_lever_scores").insert({
-            "assessment_id": rnd["id"],
-            "lever": lever,
-            "criteria_checked": [],
-        }).execute()
+    rnd = fetch_round(application_id, round_label)
+    if rnd is None:
+        try:
+            rnd = sb.table("vip_air_assessments").insert({
+                "application_id": application_id,
+                "round_label": round_label,
+                "status": "draft",
+            }).execute().data[0]
+        except Exception as exc:
+            # The loser of a concurrent-insert race hits the
+            # (application_id, round_label) unique constraint. Read the
+            # winner's row back instead of propagating a 500; anything that
+            # is not resolvable that way is re-raised, not swallowed.
+            msg = str(exc).lower()
+            if "duplicate" in msg or "unique" in msg or "23505" in msg:
+                rnd = fetch_round(application_id, round_label)
+                if rnd is None:
+                    raise
+            else:
+                raise
+
+    have = {row["lever"] for row in fetch_lever_scores(rnd["id"])}
+    missing = [lever for lever in cat.LEVER_KEYS if lever not in have]
+    if missing:
+        sb.table("vip_air_lever_scores").insert([
+            {"assessment_id": rnd["id"], "lever": lever, "criteria_checked": []}
+            for lever in missing
+        ]).execute()
+
     return rnd
 
 
