@@ -174,13 +174,13 @@ app.include_router(application_templates.router)
 app.include_router(founder_router.router)
 app.include_router(founder_journey_router.router)
 app.include_router(founder_resources_router.router)
-app.include_router(founder_air_router.router)
 # SIP track
 app.include_router(sip_applications.router)
 app.include_router(sip_milestone_files.router)
 app.include_router(sip_evidence_files.router)
 app.include_router(sip_resume.router)
 app.include_router(sip_application_templates.router)
+app.include_router(founder_air_router.router)  # VIP-only: TLR/AIR assessment
 # Shared
 app.include_router(support.router)
 app.include_router(waitlist.router)
