@@ -429,13 +429,33 @@ async def put_metrics(
     return _bundle(ctx, kind, period_key)
 
 
-# ── narrative (whole-blob replace) ────────────────────────────────────────
+# ── narrative (merge into the existing blob) ──────────────────────────────
 
 @router.put("/{kind}/{period_key}/narrative")
 async def put_narrative(
     kind: str, period_key: str, body: dict[str, str | None],
     ctx: Annotated[dict, Depends(require_vip)],
 ) -> dict:
+    """Merges `body` into `vip_mis_periods.narrative` — it does NOT replace
+    the whole blob (Important-4 ruling). Only the keys present in `body`
+    are touched: any existing field id not mentioned in this request is
+    left exactly as it was, and a field id submitted with an explicit JSON
+    `null` is cleared to `null` — that is the one way to actually blank a
+    field back out. Every submitted key is still validated against
+    `_narrative_field_ids(kind)` before the merge runs, so a merge can
+    never accumulate a junk/typo'd key the way an unvalidated merge would.
+
+    This is a deliberate change from wholesale replace: §1-§9's narrative
+    prompts are naturally edited section-by-section in the founder UI (one
+    PUT per section's handful of field ids), and a whole-blob replace meant
+    saving ANY one section silently wiped every OTHER section's answers
+    that were not resubmitted in the same request — and two browser tabs
+    editing two different sections would race to whichever PUT landed
+    last, with the loser's entire section gone, not just its own edits.
+    Merge removes the footgun outright rather than requiring the frontend
+    to always resend the full union of every section's keys on every save,
+    a requirement that would inevitably be violated once, silently.
+    """
     if kind not in cat.KINDS:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
                             detail={"code": "unknown_kind"})
@@ -445,8 +465,9 @@ async def put_narrative(
                             detail={"code": "unknown_field", "fields": sorted(unknown)})
 
     period = _own_draft_period(ctx, kind, period_key)
+    merged = {**(period.get("narrative") or {}), **body}
     get_admin_client().table("vip_mis_periods").update({
-        "narrative": body, "updated_at": datetime.now(UTC).isoformat(),
+        "narrative": merged, "updated_at": datetime.now(UTC).isoformat(),
     }).eq("id", period["id"]).execute()
     return _bundle(ctx, kind, period_key)
 

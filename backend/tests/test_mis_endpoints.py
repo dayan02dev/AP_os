@@ -169,10 +169,27 @@ def test_narrative_put_replaces_wholesale(client, monkeypatch, _clear):
         "exec.headline_win": "Closed pilot",
     })
     assert r.status_code == 200, r.text
-    # A genuine REPLACE, not a merge: the second PUT's narrative has no
-    # "exec.biggest_concern" key, so it must be gone from the stored blob,
-    # not merely overwritten to null.
-    assert r.json()["narrative"] == {"exec.headline_win": "Closed pilot"}
+    assert r.json()["narrative"] == {
+        "exec.headline_win": "Closed pilot", "exec.biggest_concern": "Runway",
+    }
+
+
+def test_narrative_put_null_clears_a_single_field(client, monkeypatch, _clear):
+    """The one way to actually blank a field back out under merge
+    semantics: submit it with an explicit JSON `null`. Every other
+    existing field stays untouched."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    client.put(f"/founder/mis/monthly/{CUR_MONTH}/narrative", json={
+        "exec.headline_win": "Shipped v2", "exec.biggest_concern": "Runway",
+    })
+    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/narrative", json={
+        "exec.biggest_concern": None,
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["narrative"] == {
+        "exec.headline_win": "Shipped v2", "exec.biggest_concern": None,
+    }
 
 
 def test_entries_put_replaces_section_wholesale(client, monkeypatch, _clear):
