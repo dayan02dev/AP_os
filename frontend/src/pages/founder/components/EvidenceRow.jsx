@@ -9,11 +9,16 @@
 // (a later task) owns fetching, including turning onDownload's id into an
 // actual signed-URL download the way FounderMou.jsx already does.
 //
-// `lever.required_document` is only ever null when `lever.claimed_level` is
-// null (see air_query.assessment_bundle) — i.e. no level has been claimed
-// yet. Rendering a file input in that state would let a founder submit a
-// request the backend always 422s (`no_document_required`), so the empty
-// state below is the *only* thing that state renders.
+// `lever.required_document` is null for TWO different reasons, and they need
+// different copy:
+//   1. No level is claimed yet — the founder has not answered the questions.
+//   2. A level IS claimed, but the catalog defines no document at or below
+//      it. Real case: supply_chain's lowest document sits at AIR 2 while
+//      AIR 1 is reachable, so a venture claiming supply_chain 1 owes nothing.
+// Telling case 2 to "answer the questions" is wrong — they already have.
+// Either way no file input is rendered: uploading at a level with no
+// document 422s `no_document_required` on the backend, so the control would
+// be guaranteed to fail.
 //
 // Evidence rows carry `air_level`. The required slot only ever shows rows
 // at exactly `lever.claimed_level`; each backfill slot only shows rows at
@@ -101,18 +106,30 @@ export default function EvidenceRow({ lever, documents, disabled, onUpload, onDe
   const requiredDoc = lever.required_document;
   const evidence = lever.evidence || [];
 
-  // Catalog levels below the claimed one that actually define a document.
-  // Sourced from `documents` (bundle.catalog.documents[lever]) rather than
-  // walking 1..claimed_level, so a level the catalog leaves undefined (a
-  // deliberate gap, e.g. supply_chain has none at 1/3/5/7) never renders an
-  // empty row.
-  const backfillLevels =
+  const definedLevels = Object.keys(documents || {})
+    .map(Number)
+    .sort((a, b) => a - b);
+
+  // The level whose document is ACTUALLY required. The catalog has gaps —
+  // supply_chain defines documents only at 2/4/6/8/9 — and the backend's
+  // `required_document` falls back to the highest defined level at or below
+  // the claimed one. So a venture claiming supply_chain 5 is required to
+  // supply the level-4 document.
+  //
+  // Backfill must be computed from THIS level, not from `claimed_level`:
+  // filtering `lvl < claimed_level` would list level 4 as optional backfill
+  // while the very same document is displayed above it as required, so the
+  // founder sees one document twice and can upload it to two different
+  // levels.
+  const resolvedLevel =
     requiredLevel == null
+      ? null
+      : definedLevels.filter((lvl) => lvl <= requiredLevel).pop() ?? null;
+
+  const backfillLevels =
+    resolvedLevel == null
       ? []
-      : Object.keys(documents || {})
-          .map(Number)
-          .filter((lvl) => lvl < requiredLevel)
-          .sort((a, b) => a - b);
+      : definedLevels.filter((lvl) => lvl < resolvedLevel);
 
   return (
     <div className="fj-evidence-row">
@@ -123,7 +140,9 @@ export default function EvidenceRow({ lever, documents, disabled, onUpload, onDe
 
       {requiredDoc == null ? (
         <div className="fj-evidence-empty">
-          The qualifying document is named once this lever's questions are answered.
+          {requiredLevel == null
+            ? "The qualifying document is named once this lever's questions are answered."
+            : `No qualifying document is defined at or below AIR ${requiredLevel} for this lever — nothing to upload yet.`}
         </div>
       ) : (
         <EvidenceSlot

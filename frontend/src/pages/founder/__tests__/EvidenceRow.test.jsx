@@ -32,6 +32,44 @@ function file(name = "evidence.pdf", type = "application/pdf") {
 function noop() {}
 
 describe("EvidenceRow", () => {
+  // supply_chain defines documents only at 2/4/6/8/9 while AIR 1 and 5 are
+  // both reachable claims, so the catalog's gaps are not hypothetical.
+  it("catalog gap: a claimed level with no document at or below it says so, rather than claiming the questions are unanswered", () => {
+    render(
+      <EvidenceRow
+        lever={lever({ claimed_level: 1, required_document: null })}
+        documents={DOCUMENTS}
+        onUpload={noop}
+        onDelete={noop}
+        onDownload={noop}
+      />,
+    );
+    expect(screen.getByText(/No qualifying document is defined at or below AIR 1/))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/once this lever's questions are answered/))
+      .not.toBeInTheDocument();
+    expect(document.querySelector("input[type=file]")).toBeNull();
+  });
+
+  it("catalog gap: the fallback document required at a gap level is not also offered as backfill", () => {
+    // Claiming 5 resolves to the level-4 document (DFMA Report). Listing
+    // level 4 as optional backfill would show that same document twice and
+    // let it be uploaded against two different levels.
+    render(
+      <EvidenceRow
+        lever={lever({ claimed_level: 5, required_document: "DFMA Report" })}
+        documents={DOCUMENTS}
+        onUpload={noop}
+        onDelete={noop}
+        onDownload={noop}
+      />,
+    );
+    fireEvent.click(screen.getByText(/Optional backfill documents/));
+    expect(screen.getByText("Draft BOM")).toBeInTheDocument();
+    expect(screen.queryByText("AIR 4")).not.toBeInTheDocument();
+    expect(screen.getAllByText("DFMA Report")).toHaveLength(1);
+  });
+
   it("null required_document: no claimed level yet renders no file input anywhere, and explains why", () => {
     render(<EvidenceRow lever={lever()} documents={DOCUMENTS} onUpload={noop} onDelete={noop} onDownload={noop} />);
     expect(document.querySelectorAll('input[type="file"]')).toHaveLength(0);
