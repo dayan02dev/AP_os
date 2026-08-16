@@ -20,11 +20,16 @@
 // document 422s `no_document_required` on the backend, so the control would
 // be guaranteed to fail.
 //
-// Evidence rows carry `air_level`. The required slot only ever shows rows
-// at exactly `lever.claimed_level`; each backfill slot only shows rows at
-// its own catalog level. Nothing is ever listed against the wrong slot,
-// per the brief: "file each under its own level rather than listing them
-// all against the required one."
+// Evidence rows carry `air_level`. The required slot shows rows at exactly
+// `resolvedLevel` — the level whose document is actually required, which is
+// the claimed level ONLY when the catalog defines a document there; each
+// backfill slot only shows rows at its own catalog level. Nothing is ever
+// listed against the wrong slot, per the brief: "file each under its own
+// level rather than listing them all against the required one." A row that
+// lands at neither — a gap-level upload, or one orphaned by the claim
+// moving after it was filed — still renders, in a catch-all section below
+// backfill: every row that exists must be reachable somewhere, at its own
+// level.
 import { useRef, useState } from "react";
 
 function formatSize(bytes) {
@@ -42,7 +47,14 @@ function formatSize(bytes) {
 // rather than the file alone: a backfill upload targets a level below the
 // claimed one, and the level has to travel with the file for the caller to
 // know which slot it came from.
-function EvidenceSlot({ level, rows, disabled, onUpload, onDelete, onDownload }) {
+//
+// `leverName` exists only to build accessible names: with six levers each
+// carrying a required slot plus backfill slots on the real Evidence step,
+// "Upload" / "Replace" / "Download" / "Delete" alone collide across all of
+// them. The file input's own aria-label already names the level; these
+// buttons need the same treatment because they — not the hidden input —
+// are what a screen reader actually exposes.
+function EvidenceSlot({ level, leverName, rows, disabled, onUpload, onDelete, onDownload }) {
   const inputRef = useRef(null);
   const hasRows = rows.length > 0;
 
@@ -68,12 +80,18 @@ function EvidenceSlot({ level, rows, disabled, onUpload, onDelete, onDownload })
                 founder must always be able to retrieve their own documents,
                 including after they've submitted. Only upload and delete
                 lock. */}
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => onDownload(row.id)}>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              aria-label={`Download AIR ${level} evidence for ${leverName}: ${row.filename}`}
+              onClick={() => onDownload(row.id)}
+            >
               Download
             </button>
             <button
               type="button"
               className="btn btn-sm btn-destructive"
+              aria-label={`Delete AIR ${level} evidence for ${leverName}: ${row.filename}`}
               disabled={disabled}
               onClick={() => onDelete(row.id)}
             >
@@ -84,7 +102,13 @@ function EvidenceSlot({ level, rows, disabled, onUpload, onDelete, onDownload })
       ))}
 
       <div className="fj-evidence-upload">
-        <button type="button" className="btn btn-sm btn-ghost" disabled={disabled} onClick={pick}>
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost"
+          aria-label={`${hasRows ? "Replace" : "Upload"} AIR ${level} evidence for ${leverName}`}
+          disabled={disabled}
+          onClick={pick}
+        >
           {hasRows ? "Replace" : "Upload"}
         </button>
         <input
@@ -131,6 +155,18 @@ export default function EvidenceRow({ lever, documents, disabled, onUpload, onDe
       ? []
       : definedLevels.filter((lvl) => lvl < resolvedLevel);
 
+  // Every evidence row must be reachable somewhere in the UI, at its own
+  // level — that's the invariant F1/F2 exist to establish. The required
+  // slot covers `resolvedLevel`; backfill slots cover `backfillLevels`.
+  // Anything else — a row uploaded at a gap level before this fix shipped,
+  // or one orphaned by the founder correcting an answer downward after
+  // uploading — is invisible to both while it still occupies storage and
+  // still reaches the verifier. List it rather than drop it.
+  const shownLevels = new Set([resolvedLevel, ...backfillLevels].filter((lvl) => lvl != null));
+  const otherRows = evidence
+    .filter((e) => !shownLevels.has(e.air_level))
+    .sort((a, b) => a.air_level - b.air_level);
+
   return (
     <div className="fj-evidence-row">
       <div className="fj-evidence-head">
@@ -146,8 +182,9 @@ export default function EvidenceRow({ lever, documents, disabled, onUpload, onDe
         </div>
       ) : (
         <EvidenceSlot
-          level={requiredLevel}
-          rows={evidence.filter((e) => e.air_level === requiredLevel)}
+          level={resolvedLevel}
+          leverName={lever.name}
+          rows={evidence.filter((e) => e.air_level === resolvedLevel)}
           disabled={disabled}
           onUpload={onUpload}
           onDelete={onDelete}
@@ -177,6 +214,7 @@ export default function EvidenceRow({ lever, documents, disabled, onUpload, onDe
                   </div>
                   <EvidenceSlot
                     level={lvl}
+                    leverName={lever.name}
                     rows={evidence.filter((e) => e.air_level === lvl)}
                     disabled={disabled}
                     onUpload={onUpload}
@@ -187,6 +225,44 @@ export default function EvidenceRow({ lever, documents, disabled, onUpload, onDe
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {otherRows.length > 0 && (
+        <div className="fj-evidence-orphaned">
+          <div className="fj-evidence-orphaned-head">
+            Filed against a level this lever no longer claims. Not required — kept here for the
+            record.
+          </div>
+          {otherRows.map((row) => (
+            <div className="fj-evidence-file" key={row.id}>
+              <span className="fj-evidence-backfill-level">AIR {row.air_level}</span>
+              <span className="fj-evidence-filename">{row.filename}</span>
+              <span className="fj-evidence-meta">
+                {formatSize(row.size_bytes)}
+                {row.uploaded_at && ` · ${new Date(row.uploaded_at).toLocaleDateString()}`}
+              </span>
+              <div className="fj-evidence-actions">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  aria-label={`Download AIR ${row.air_level} evidence for ${lever.name}: ${row.filename}`}
+                  onClick={() => onDownload(row.id)}
+                >
+                  Download
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-destructive"
+                  aria-label={`Delete AIR ${row.air_level} evidence for ${lever.name}: ${row.filename}`}
+                  disabled={disabled}
+                  onClick={() => onDelete(row.id)}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

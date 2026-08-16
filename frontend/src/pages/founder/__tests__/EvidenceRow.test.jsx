@@ -115,8 +115,8 @@ describe("EvidenceRow", () => {
         onDownload={noop}
       />,
     );
-    expect(screen.getByRole("button", { name: "Upload" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Replace" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Upload/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Replace/ })).not.toBeInTheDocument();
 
     const row = { id: "ev-1", filename: "sourcing-plan.pdf", size_bytes: 1024, uploaded_at: "2026-08-01T00:00:00Z", air_level: 6 };
     rerender(
@@ -128,8 +128,46 @@ describe("EvidenceRow", () => {
         onDownload={noop}
       />,
     );
-    expect(screen.getByRole("button", { name: "Replace" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Upload" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Replace/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Upload/ })).not.toBeInTheDocument();
+  });
+
+  // F10: on the real Evidence step there are six levers each with a
+  // required slot plus backfill slots, so "Upload" / "Replace" / "Download"
+  // / "Delete" alone are not unique accessible names. Proven with two
+  // EvidenceRows on screen at once, the way the wizard actually renders
+  // them — a single row in isolation (every other test in this file) can't
+  // expose the collision.
+  it("F10: upload and download controls name their lever so multiple rows on screen don't collide", () => {
+    const rowA = { id: "ev-a", filename: "a.pdf", size_bytes: 100, uploaded_at: null, air_level: 6 };
+    const rowB = { id: "ev-b", filename: "b.pdf", size_bytes: 100, uploaded_at: null, air_level: 6 };
+    render(
+      <>
+        <EvidenceRow
+          lever={lever({ claimed_level: 6, required_document: "Sourcing Plan & TCO Model", evidence: [rowA] })}
+          documents={DOCUMENTS}
+          onUpload={noop}
+          onDelete={noop}
+          onDownload={noop}
+        />
+        <EvidenceRow
+          lever={lever({
+            lever: "user_needs", name: "User Needs & Requirements",
+            claimed_level: 6, required_document: "Sourcing Plan & TCO Model", evidence: [rowB],
+          })}
+          documents={DOCUMENTS}
+          onUpload={noop}
+          onDelete={noop}
+          onDownload={noop}
+        />
+      </>,
+    );
+    expect(screen.getByRole("button", { name: /Replace.*Supply Chain Readiness/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Replace.*User Needs & Requirements/ })).toBeInTheDocument();
+
+    const downloads = screen.getAllByRole("button", { name: /download/i });
+    expect(downloads).toHaveLength(2);
+    expect(downloads[0].getAttribute("aria-label")).not.toBe(downloads[1].getAttribute("aria-label"));
   });
 
   it("disabled locks upload and delete but leaves download enabled — founders must reach their own docs after submit", () => {
@@ -144,7 +182,7 @@ describe("EvidenceRow", () => {
         onDownload={noop}
       />,
     );
-    expect(screen.getByRole("button", { name: "Replace" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Replace/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: /delete/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /download/i })).not.toBeDisabled();
   });
@@ -245,6 +283,112 @@ describe("EvidenceRow", () => {
 
     expect(onUpload).toHaveBeenCalledWith(2, f);
     expect(onUpload).not.toHaveBeenCalledWith(6, f);
+  });
+
+  // F1: `required_document` names the document at the CLAIMED level, but the
+  // catalog's fallback means the document actually asked for lives at a
+  // lower level (claiming 5 resolves to the level-4 doc). The slot itself —
+  // its `level` prop, its upload target, its accessible name — must follow
+  // the resolved level, not the claimed one, or the founder's upload gets
+  // filed under a level the framework defines no document for.
+  it("F1: a gap-level claim resolves the required slot to the fallback level, not the claimed one", () => {
+    const onUpload = vi.fn();
+    render(
+      <EvidenceRow
+        lever={lever({ claimed_level: 5, required_document: "DFMA Report" })}
+        documents={DOCUMENTS}
+        onUpload={onUpload}
+        onDelete={noop}
+        onDownload={noop}
+      />,
+    );
+    // Accessible name of the required slot's input names AIR 4, not AIR 5:
+    const input = screen.getByLabelText("Upload AIR 4 evidence");
+    expect(screen.queryByLabelText("Upload AIR 5 evidence")).not.toBeInTheDocument();
+
+    const f = file("dfma.pdf");
+    fireEvent.change(input, { target: { files: [f] } });
+    expect(onUpload).toHaveBeenCalledWith(4, f);
+    expect(onUpload).not.toHaveBeenCalledWith(5, f);
+  });
+
+  it("F1: a stored row at the resolved (fallback) level appears in the required slot", () => {
+    const row = { id: "ev-1", filename: "dfma.pdf", size_bytes: 1024, uploaded_at: "2026-08-01T00:00:00Z", air_level: 4 };
+    render(
+      <EvidenceRow
+        lever={lever({ claimed_level: 5, required_document: "DFMA Report", evidence: [row] })}
+        documents={DOCUMENTS}
+        onUpload={noop}
+        onDelete={noop}
+        onDownload={noop}
+      />,
+    );
+    // Visible without opening backfill — it's the required slot, not a
+    // backfill slot:
+    expect(screen.getByText("dfma.pdf")).toBeInTheDocument();
+  });
+
+  // F2: a row can end up at a level that is neither the required slot nor
+  // any backfill slot — either because it was uploaded at a gap level
+  // before F1's fix, or because the founder answered differently after
+  // uploading and the claim moved. Either way the row still occupies
+  // storage and still reaches the verifier, so it must render SOMEWHERE.
+  it("F2: a row at a level neither required nor backfill renders in a catch-all section, and is downloadable/deletable", () => {
+    const orphan = { id: "ev-orphan", filename: "old-claim.pdf", size_bytes: 2048, uploaded_at: "2026-06-01T00:00:00Z", air_level: 5 };
+    const onDownload = vi.fn();
+    const onDelete = vi.fn();
+    render(
+      <EvidenceRow
+        lever={lever({ claimed_level: 3, required_document: "Draft BOM", evidence: [orphan] })}
+        documents={DOCUMENTS}
+        onUpload={noop}
+        onDelete={onDelete}
+        onDownload={onDownload}
+      />,
+    );
+    expect(screen.getByText("old-claim.pdf")).toBeInTheDocument();
+    expect(screen.getByText(/AIR 5/)).toBeInTheDocument();
+
+    const downloadBtn = screen.getByRole("button", { name: /download/i });
+    fireEvent.click(downloadBtn);
+    expect(onDownload).toHaveBeenCalledWith("ev-orphan");
+
+    const deleteBtn = screen.getByRole("button", { name: /delete/i });
+    fireEvent.click(deleteBtn);
+    expect(onDelete).toHaveBeenCalledWith("ev-orphan");
+  });
+
+  it("F2: the catch-all section is absent when every row is already shown by a required or backfill slot", () => {
+    const requiredRow = { id: "ev-req", filename: "sourcing-plan.pdf", size_bytes: 1024, uploaded_at: "2026-08-01T00:00:00Z", air_level: 6 };
+    const backfillRow = { id: "ev-back", filename: "draft-bom.pdf", size_bytes: 512, uploaded_at: "2026-07-01T00:00:00Z", air_level: 2 };
+    render(
+      <EvidenceRow
+        lever={lever({
+          claimed_level: 6,
+          required_document: "Sourcing Plan & TCO Model",
+          evidence: [requiredRow, backfillRow],
+        })}
+        documents={DOCUMENTS}
+        onUpload={noop}
+        onDelete={noop}
+        onDownload={noop}
+      />,
+    );
+    expect(document.querySelector(".fj-evidence-orphaned")).toBeNull();
+  });
+
+  it("F2: downgrading a claim (5 -> 3) with a level-5 row already on file surfaces the row rather than dropping it", () => {
+    const staleRow = { id: "ev-stale", filename: "dfma.pdf", size_bytes: 1024, uploaded_at: "2026-05-01T00:00:00Z", air_level: 5 };
+    render(
+      <EvidenceRow
+        lever={lever({ claimed_level: 3, required_document: "Draft BOM", evidence: [staleRow] })}
+        documents={DOCUMENTS}
+        onUpload={noop}
+        onDelete={noop}
+        onDownload={noop}
+      />,
+    );
+    expect(screen.getByText("dfma.pdf")).toBeInTheDocument();
   });
 
   it("existing backfill evidence files under its own level, not against the required slot", () => {
