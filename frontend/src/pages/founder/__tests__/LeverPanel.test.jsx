@@ -104,6 +104,24 @@ describe("LeverPanel", () => {
     expect(screen.queryByText(/answer Q/)).not.toBeInTheDocument();
   });
 
+  it("skipped q1: answers on q2/q3 still score null, but the copy explains why instead of claiming nothing was started", () => {
+    render(
+      <LeverPanel
+        lever={lever({ q1_option: null, q2_option: "B", q3_option: "B", claimed_level: null })}
+        questions={QUESTIONS}
+        onAnswer={() => {}}
+        onToggleCriterion={() => {}}
+      />,
+    );
+    // The bare "Not started." of the nothing-answered case would read here
+    // as the form having discarded two real answers.
+    expect(screen.queryByText("Not started.")).not.toBeInTheDocument();
+    expect(screen.getByText(/Q1 must be answered before the later questions count/))
+      .toBeInTheDocument();
+    // And it must not invent a level for a lever the ladder never lifted.
+    expect(screen.queryByText(/AIR null/)).not.toBeInTheDocument();
+  });
+
   it("renders criteria from lever.criteria, checks those in criteria_checked, and reports toggles", () => {
     const onToggleCriterion = vi.fn();
     const criteria = ["Has a functioning prototype", "Ran a literature scan"];

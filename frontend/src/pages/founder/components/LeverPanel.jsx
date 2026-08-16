@@ -62,7 +62,22 @@ function ladderCopy(lever, questions) {
     // not "AIR null so far". Any later question being the unanswered cap
     // means everything before it is already at its top, so `n` is a real
     // number worth reporting.
-    if (cap.index === 0) return "Not started.";
+    if (cap.index === 0) {
+      // Q1 unanswered splits in two, and conflating them misleads. A
+      // founder who has answered NOTHING is simply not started. A founder
+      // who skipped Q1 but answered Q2/Q3 has done real work and still
+      // scores null, because the ladder never leaves the ground without
+      // Q1 — telling them "Not started." full stop reads as the form
+      // having lost their answers. Name the reason instead.
+      const answeredLater = questions
+        .slice(1)
+        .some((q) => lever[`${q.id}_option`]);
+      if (answeredLater) {
+        const firstLabel = Q_LABELS[questions[0].id] || "Q1";
+        return `Not started — ${firstLabel} must be answered before the later questions count.`;
+      }
+      return "Not started.";
+    }
     return `AIR ${n} so far — answer ${label} to go further.`;
   }
 
