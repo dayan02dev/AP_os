@@ -21,6 +21,8 @@ email-validator==2.*
 # Resume parsing (Phase 5).
 pypdf==5.*
 python-docx==1.1.*
+# xlsx export of a filled MIS period (VIP onboarding, spec §5.7).
+openpyxl==3.1.*
 # Fallback when an LLM returns *almost* valid JSON (unescaped quotes
 # inside a long string, trailing commas, dropped braces under load).
 # Cheaper and more deterministic than retrying the whole API call.

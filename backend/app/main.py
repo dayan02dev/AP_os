@@ -34,6 +34,7 @@ from .routers import (
     admin_platform,
     admin_users,
     admin_vip,
+    admin_vip_mis_export,
     ai_screening,
     application_templates,
     applications,
@@ -191,6 +192,7 @@ app.include_router(profile_completion.router)
 app.include_router(admin.router)
 app.include_router(admin_platform.router)
 app.include_router(admin_vip.router)  # admin VIP-cohort AIR/MIS verification surface
+app.include_router(admin_vip_mis_export.router)  # admin VIP-cohort MIS xlsx/csv export
 app.include_router(admin_users.router)
 app.include_router(ai_screening.router)
 app.include_router(leadership.router)
