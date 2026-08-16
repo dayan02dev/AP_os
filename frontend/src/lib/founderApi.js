@@ -82,4 +82,20 @@ export const founderApi = {
   // Founders resources · IT & Facilities support
   getSupport: () => api.get("/founder/support"),
   createTicket: (payload) => api.post("/founder/support/tickets", payload),
+
+  // ---- AIR (VIP TLR evaluation) ----
+  getAir: () => api.get("/founder/air"),
+  putAirLever: (lever, payload) => api.put(`/founder/air/levers/${lever}`, payload),
+  submitAir: () => api.post("/founder/air/submit"),
+  // Multipart — field names are exact, `upload_evidence` reads them via
+  // Form(...) on the backend, not JSON.
+  uploadAirEvidence: (lever, airLevel, file) => {
+    const fd = new FormData();
+    fd.append("file", file, file.name || "evidence");
+    fd.append("lever", lever);
+    fd.append("air_level", airLevel);
+    return api.post("/founder/air/evidence", fd);
+  },
+  delAirEvidence: (id) => api.del(`/founder/air/evidence/${id}`),
+  airEvidenceSignedUrl: (id) => api.get(`/founder/air/evidence/${id}/signed-url`),
 };
