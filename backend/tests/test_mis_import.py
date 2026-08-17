@@ -291,3 +291,59 @@ def test_quarterly_commit_writes_financials_and_headcount(client, monkeypatch, _
     assert fin["amount"] == 100
     hc = next(h for h in body["headcount"] if h["category"] == "artpark_associated")
     assert hc["current_count"] == 12
+
+
+def test_commit_of_a_partial_metric_row_preserves_the_founders_other_fields(
+    client, monkeypatch, _clear,
+):
+    """An import commit must not blank what the founder typed by hand.
+
+    `put_metrics` is a full-row upsert — every column of `MetricIn` is
+    written unconditionally, and an omitted field arrives as Pydantic's
+    `None` default. That is right for a direct PUT (the form always sends
+    the whole row) but wrong for an import commit, which carries only the
+    subset confirmed off a parsed document. A template naming an actual but
+    no target would otherwise null a target the founder had already set.
+
+    Confirmed against deployed staging before this guard existed: PUT
+    `{metric_key, actual}` alone nulled both `target` and `commentary`.
+    """
+    _install(monkeypatch)
+    client.get("/founder/mis")
+
+    client.put(f"/founder/mis/monthly/{FIRST_MONTH}/metrics", json=[
+        {"metric_key": "revenue_month", "target": 10, "actual": 4,
+         "commentary": "typed by the founder"},
+    ])
+
+    r = client.post(f"/founder/mis/monthly/{FIRST_MONTH}/import/commit", json={
+        "metrics": [{"metric_key": "revenue_month", "actual": 7}],
+    })
+    assert r.status_code == 200, r.text
+
+    row = next(m for m in r.json()["metrics"] if m["metric_key"] == "revenue_month")
+    assert row["actual"] == 7, "the imported value must land"
+    assert row["target"] == 10, "an untouched target must survive the commit"
+    assert row["commentary"] == "typed by the founder", "untouched commentary must survive"
+
+
+def test_commit_can_still_explicitly_clear_a_field(client, monkeypatch, _clear):
+    """The merge keys off `model_fields_set`, not "is the value None" — so an
+    explicitly-sent null still clears, and only genuinely absent keys are
+    back-filled. Without that distinction a founder could never clear a
+    field through an import at all."""
+    _install(monkeypatch)
+    client.get("/founder/mis")
+
+    client.put(f"/founder/mis/monthly/{FIRST_MONTH}/metrics", json=[
+        {"metric_key": "revenue_month", "target": 10, "actual": 4, "commentary": "old"},
+    ])
+
+    r = client.post(f"/founder/mis/monthly/{FIRST_MONTH}/import/commit", json={
+        "metrics": [{"metric_key": "revenue_month", "actual": 7, "commentary": None}],
+    })
+    assert r.status_code == 200, r.text
+
+    row = next(m for m in r.json()["metrics"] if m["metric_key"] == "revenue_month")
+    assert row["commentary"] is None, "an explicit null must clear"
+    assert row["target"] == 10, "an absent key must still be preserved"

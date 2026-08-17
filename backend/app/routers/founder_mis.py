@@ -1050,6 +1050,38 @@ class MisImportCommitBody(BaseModel):
     entries: dict[str, list[dict[str, Any]]] | None = None
 
 
+def _merged_rows(ctx, kind, period_key, rows, bundle_key, id_field):
+    """Fill in the fields an import row never mentioned from what is already
+    stored, so committing a partial import cannot blank a founder's own work.
+
+    `put_metrics` and `put_headcount` are full-row upserts: they write every
+    column of `MetricIn`/`HeadcountRowIn` unconditionally, and a field the
+    caller omitted arrives as Pydantic's `None` default. That is correct for
+    a direct PUT — the forms always send the whole row — but an import
+    commit carries only the subset the founder confirmed off a parsed
+    document, and a template that names an actual but no target would
+    otherwise null a target the founder had typed by hand. Verified against
+    staging: PUT `{metric_key, actual}` alone nulls `target` and
+    `commentary`.
+
+    The discriminator is `model_fields_set`, not "is the value None" —
+    otherwise a founder could never clear a field, because an explicit null
+    and an omitted key would be indistinguishable. Explicitly-sent nulls
+    still clear.
+    """
+    stored = {r[id_field]: r for r in (_bundle(ctx, kind, period_key).get(bundle_key) or [])}
+    merged = []
+    for row in rows:
+        prior = stored.get(getattr(row, id_field))
+        if prior is None:
+            merged.append(row)
+            continue
+        patch = {f: prior.get(f) for f in type(row).model_fields
+                 if f != id_field and f not in row.model_fields_set and f in prior}
+        merged.append(row.model_copy(update=patch) if patch else row)
+    return merged
+
+
 @router.post("/{kind}/{period_key}/import/commit")
 async def commit_mis_import(
     kind: str, period_key: str, body: MisImportCommitBody,
@@ -1068,11 +1100,15 @@ async def commit_mis_import(
     if body.narrative:
         await put_narrative(kind, period_key, body.narrative, ctx)
     if body.metrics:
-        await put_metrics(kind, period_key, body.metrics, ctx)
+        await put_metrics(kind, period_key,
+                          _merged_rows(ctx, kind, period_key, body.metrics,
+                                       "metrics", "metric_key"), ctx)
     if body.financials:
         await put_financials(kind, period_key, body.financials, ctx)
     if body.headcount:
-        await put_headcount(kind, period_key, body.headcount, ctx)
+        await put_headcount(kind, period_key,
+                            _merged_rows(ctx, kind, period_key, body.headcount,
+                                         "headcount", "category"), ctx)
     if body.entries:
         for section, rows in body.entries.items():
             await put_entries(kind, period_key, section, rows, ctx)

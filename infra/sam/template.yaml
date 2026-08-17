@@ -191,6 +191,7 @@ Resources:
             - "https://ap-os-git-reviewer-v2-pilot-artpark.vercel.app"
             - "https://ap-os-git-newsubmissionedit-artpark.vercel.app"
             - "https://ap-os-git-postonboarding-artpark.vercel.app"
+            - "https://ap-os-git-feat-vip-onboarding-artpark.vercel.app"
         AllowMethods: [GET, POST, PATCH, PUT, DELETE, OPTIONS]
         AllowHeaders: [Authorization, Content-Type, X-Request-ID, X-Admin-Key]
         AllowCredentials: true
