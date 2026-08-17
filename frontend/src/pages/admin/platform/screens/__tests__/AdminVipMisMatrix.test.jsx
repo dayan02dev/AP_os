@@ -114,4 +114,35 @@ describe("AdminVipMisMatrix — the grid", () => {
     await waitFor(() =>
       expect(adminVipApi.getMisPeriod).toHaveBeenCalledWith("app-1", "monthly", "2026-06"));
   });
+
+  it("a blocked reopen's 'go to blocking period' link stays on the SAME startup and re-fetches the new period", async () => {
+    // Seam: AdminVipMisMatrix wires AdminVipMisPeriod's onNavigatePeriod to
+    // `setSelected((s) => ({ ...s, periodKey }))` — carrying `applicationId`
+    // forward from the CURRENT selection rather than reconstructing it. A
+    // bug here (e.g. resetting applicationId) would silently navigate an
+    // admin to the wrong startup's period.
+    adminVipApi.getMisMatrix.mockResolvedValue(MATRIX);
+    adminVipApi.getMisPeriod.mockImplementation((appId, kind, periodKey) =>
+      Promise.resolve(periodBundle({
+        application_id: appId,
+        period: { ...periodBundle().period, period_key: periodKey, label: periodKey === "2026-07" ? "Jul 2026" : "Jun 2026" },
+      })));
+    adminVipApi.reopenMisPeriod.mockRejectedValue({
+      code: "mis_later_period_submitted",
+      details: { period_key: "2026-07", label: "Jul 2026" },
+    });
+
+    render(<AdminVipMisMatrix canWrite={true} />);
+    await waitFor(() => expect(screen.getByText("Helios Robotics")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Helios Robotics.*Jun 2026.*submitted/i }));
+    await waitFor(() => expect(screen.getByText("Helios Robotics").closest(".os-view, div")).toBeTruthy());
+
+    fireEvent.click(await screen.findByRole("button", { name: /reopen/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^reopen period$/i }));
+    const link = await screen.findByRole("button", { name: /Jul 2026/i });
+    fireEvent.click(link);
+
+    await waitFor(() =>
+      expect(adminVipApi.getMisPeriod).toHaveBeenCalledWith("app-1", "monthly", "2026-07"));
+  });
 });
