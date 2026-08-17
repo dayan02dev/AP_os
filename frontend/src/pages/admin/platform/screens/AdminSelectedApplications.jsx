@@ -26,6 +26,7 @@ import React, { useMemo, useRef, useState } from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
 import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { useAuth } from "../../../../hooks/useAuth.jsx";
+import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { icDocumentsApi } from "../../../../lib/icDocumentsApi";
 import { stampSignature, formatSignedAt } from "../../../../lib/pdfSign";
 import { relabelDisplayId, trackLabel } from "../../../../lib/trackLabel.js";
@@ -204,6 +205,89 @@ function SignaturePad({ canvasRef, onDrawn }) {
   );
 }
 
+// ── Reject (final-gate decision) modal ─────────────────────────────────────────────
+// Unlike Approve — which only signs the memo PDF and leaves status alone — this
+// records a real gate-2 decision: jury_review -> rejected. Hence the reason box
+// and the confirm step; the row leaves this tab once it lands.
+function RejectModal({ app, onClose, onDone }) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const submit = async () => {
+    const rationale = reason.trim();
+    if (!rationale || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      // NATIVE track: a TIR application moved to VIP renders here as VIP but
+      // lives in tir_applications, and the decision endpoint reads
+      // {track}_applications.
+      await adminPlatformApi.decideGate2(nativeOf(app), app.id, {
+        decision: "rejected",
+        rationale,
+      });
+      onDone();
+    } catch (e) {
+      const code = e?.details?.code;
+      if (code === "not_in_jury_review") {
+        setErr("This application is no longer awaiting a final decision — someone may have already decided it. Close this and refresh.");
+      } else if (code === "rationale_required") {
+        setErr("A reason is required to reject an application.");
+      } else {
+        setErr(e?.details?.message || e?.message || "Could not reject this application. Try again.");
+      }
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="os-modal-backdrop" onClick={onClose} style={backdropStyle}>
+      <div className="os-modal" onClick={(e) => e.stopPropagation()} style={panelStyle(520)}>
+        <div className="os-modal-head" style={headStyle}>
+          <div style={{ fontWeight: 600, fontSize: 16, color: "var(--ink)" }}>Reject application</div>
+          <button className="os-btn sm ghost" onClick={onClose} style={{ padding: "2px 8px", fontSize: 18 }}>&times;</button>
+        </div>
+        <div className="os-modal-body" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="os-text-sm os-text-soft">
+            Reject <strong>{app.name}</strong>
+            {app.applicationId ? ` (${relabelDisplayId(app.applicationId)})` : ""}. This records a final
+            decision and moves the application out of this list into <strong>Rejected</strong>.
+            The applicant is not emailed.
+          </div>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span className="os-text-sm" style={{ fontWeight: 600, color: "var(--ink)" }}>
+              Reason for rejection
+            </span>
+            <textarea
+              className="os-input"
+              aria-label="Reason for rejection"
+              rows={4}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Recorded on the decision log and the audit trail."
+            />
+          </label>
+          {err && (
+            <div style={{ color: "var(--bad)", fontSize: 13, fontWeight: 600, padding: "8px 12px", background: "var(--bad-soft)", borderRadius: 4 }}>{err}</div>
+          )}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, paddingTop: 4 }}>
+            <button className="os-btn secondary" onClick={onClose} disabled={busy}>Cancel</button>
+            <button
+              className="os-btn"
+              style={{ background: "#d23b40", color: "#fff" }}
+              onClick={submit}
+              disabled={!reason.trim() || busy}
+            >
+              {busy ? "Rejecting…" : "Reject application"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Approve (sign memo) modal ──────────────────────────────────────────────────────
 
 function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
@@ -343,6 +427,7 @@ export function AdminSelectedApplications({ goDetail } = {}) {
   const [track, setTrack] = useStickyState("admin.selected", "track", "all");
   const [uploadFor, setUploadFor] = useState(null);
   const [signFor, setSignFor] = useState(null);
+  const [rejectFor, setRejectFor] = useState(null);
   const [notice, setNotice] = useState(null);
   const [linkErr, setLinkErr] = useState(null);
 
@@ -534,6 +619,17 @@ export function AdminSelectedApplications({ goDetail } = {}) {
                         >
                           {doc?.signed ? "Re-approve" : "Approve"}
                         </button>
+                        {/* Deliberately NOT gated on a memo: rejecting an
+                            application should not require first uploading a
+                            document about it. */}
+                        <button
+                          className="os-btn sm"
+                          style={{ background: "#fff0f0", color: "#d23b40", borderColor: "#f8c2c4" }}
+                          title="Reject this application (final decision)"
+                          onClick={() => setRejectFor(s)}
+                        >
+                          Reject
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -567,6 +663,18 @@ export function AdminSelectedApplications({ goDetail } = {}) {
           onDone={() => {
             setSignFor(null);
             setNotice(`Memo approved for ${signFor.name}.`);
+            reload();
+          }}
+        />
+      )}
+
+      {rejectFor && (
+        <RejectModal
+          app={rejectFor}
+          onClose={() => setRejectFor(null)}
+          onDone={() => {
+            setNotice(`${rejectFor.name} rejected — moved to the Rejected tab.`);
+            setRejectFor(null);
             reload();
           }}
         />
