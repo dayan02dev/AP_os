@@ -42,8 +42,33 @@ one via a disposable worktree); frontend **894 passed / 2 failed**
 (`AdminPipeline.test.js`, `AdminPipeline.unassign.test.jsx` — same known
 baseline). `vite build` clean.
 
-**Nothing has been exercised in a browser.** No staging deploy of this branch
-has happened, so every claim above rests on unit tests.
+**Deployed and smoke-tested on staging 2026-08-17.**
+
+| | |
+|---|---|
+| API | `https://cdw51c7gid.execute-api.ap-south-1.amazonaws.com` (stack `artpark-eir-api-staging`) |
+| Preview | `https://ap-os-git-feat-vip-onboarding-artpark.vercel.app` |
+| Test founder | `claude-test-applicant-sip@artpark.in` — onboarded, 4 monthly + 2 quarterly periods, 4 overdue |
+| Smoke test | `backend/scripts/smoke_vip_portal.py` (`--writes` to include write paths) |
+
+Two defects that only surfaced against live infrastructure:
+
+1. **The CORS change did not apply.** SAM buries CORS in the OpenAPI body, so
+   CFN reported no change and the branch preview origin never reached the
+   allow-list — every browser request would have failed with no clear cause,
+   while the code itself deployed fine. Patched live with
+   `aws apigatewayv2 update-api --cors-configuration`; verified it survives a
+   redeploy. **Any future preview origin needs the same manual patch.**
+2. **The docx import commit blanked fields it did not carry** (fixed,
+   `c79e014`). `put_metrics`/`put_headcount` are full-row upserts; the import
+   commit passes only the founder-confirmed subset, so a template naming an
+   actual but no target nulled a hand-typed target.
+
+**Correction to a claim repeated throughout this build:** "the API validates,
+never coerces" is true only for **entries** (`_validate_entry_value`).
+Metrics, financials and headcount go through Pydantic in lax mode — `"12"`
+returns 200 and stores `12.0`. Sending real JSON numbers is still right, but
+not for the reason previously stated.
 
 ## Founder UI conventions (read before phases 4-6)
 
