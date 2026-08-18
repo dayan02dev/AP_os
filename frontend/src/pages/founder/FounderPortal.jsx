@@ -10,6 +10,7 @@ import FounderOrganization from "./FounderOrganization.jsx";
 import FounderExpense from "./FounderExpense.jsx";
 import FounderDashboard from "./FounderDashboard.jsx";
 import FounderLocked from "./FounderLocked.jsx";
+import FounderResourceLocked from "./FounderResourceLocked.jsx";
 import FounderStore from "./FounderStore.jsx";
 import FounderFundraising from "./FounderFundraising.jsx";
 import FounderPartners from "./FounderPartners.jsx";
@@ -35,13 +36,24 @@ const NAV = [
     { sec: "dashboard", num: "•", label: "Process dashboard", to: "/founder/dashboard" },
   ]},
   { group: "Founders resources", items: [
-    { sec: "store", num: "01", label: "Art Infra", to: "/founder/store" },
-    { sec: "fundraising", num: "02", label: "ArtConnect", to: "/founder/fundraising" },
-    { sec: "partners", num: "03", label: "ArtPartners", to: "/founder/partners" },
-    { sec: "assets", num: "04", label: "Art Assets", to: "/founder/assets" },
-    { sec: "support", num: "05", label: "Art Support", to: "/founder/support" },
+    { sec: "store", num: "01", label: "Art Infra", to: "/founder/store", avail: "store" },
+    { sec: "fundraising", num: "02", label: "ArtConnect", to: "/founder/fundraising", avail: "fundraising" },
+    { sec: "partners", num: "03", label: "ArtPartners", to: "/founder/partners", avail: "partners" },
+    { sec: "assets", num: "04", label: "Art Assets", to: "/founder/assets", avail: "assets" },
+    { sec: "support", num: "05", label: "Art Support", to: "/founder/support", avail: "support" },
   ]},
 ];
+
+// Maps each Founders Resources tab key to the label used in its
+// FounderResourceLocked screen and in the sidebar.
+const RESOURCE_LABELS = {
+  store: "Art Infra", fundraising: "ArtConnect", partners: "ArtPartners",
+  assets: "Art Assets", support: "Art Support",
+};
+
+const DEFAULT_RESOURCES_AVAILABLE = {
+  store: false, fundraising: false, partners: false, assets: false, support: false,
+};
 
 // Same external cohort links the applicant dashboard shows, for continuity.
 const COHORT_LINKS = [
@@ -85,15 +97,21 @@ function FounderHeader({ user }) {
   );
 }
 
-function FounderSidebar({ tab, locked, navigate }) {
-  const isLocked = (group) => group.locked && locked[group.locked];
+function FounderSidebar({ tab, locked, resourcesAvailable, navigate }) {
+  // Group-level lock (Cohort management / Dashboard reporting, gated on the
+  // MOU) is a different mechanism from item-level lock (Founders Resources,
+  // gated per-item from the backend) — check both, since a group can have
+  // neither, either, or (in principle) both kinds of lock on its items.
+  const isLocked = (group, item) =>
+    (group.locked && locked[group.locked]) ||
+    (item.avail && !resourcesAvailable[item.avail]);
   return (
     <aside className="eir-os-side">
       {NAV.map((g) => (
         <nav className="eir-os-side-group" key={g.group}>
           <div className="eir-mono eir-os-side-title">{g.group}</div>
           {g.items.map((it) => {
-            const lock = isLocked(g);
+            const lock = isLocked(g, it);
             return (
               <button
                 type="button"
@@ -179,6 +197,7 @@ export default function FounderPortal({ tab = "application" }) {
   if (!me) return <Shell user={user}><div className="founder-portal"><Loading label="Loading your portal…" /></div></Shell>;
 
   const locked = me.locked || { cohort: true, dashboard: true };
+  const resourcesAvailable = me.resources_available || DEFAULT_RESOURCES_AVAILABLE;
 
   const renderTab = () => {
     // gate cohort/dashboard tabs until MOU signed
@@ -186,6 +205,13 @@ export default function FounderPortal({ tab = "application" }) {
       return <FounderLocked which="cohort" onGoMou={() => navigate("/founder/mou")} />;
     if (tab === "dashboard" && locked.dashboard)
       return <FounderLocked which="dashboard" onGoMou={() => navigate("/founder/mou")} />;
+    // Route guard for the five Founders Resources tabs: this decides which
+    // component to mount BEFORE any child renders. When the item is locked,
+    // FounderStore/FounderFundraising/etc. (and its data-fetching call) is
+    // never constructed — typing /founder/store into the URL bar lands on
+    // this exact check, same as clicking a disabled sidebar item.
+    if (RESOURCE_LABELS[tab] && !resourcesAvailable[tab])
+      return <FounderResourceLocked label={RESOURCE_LABELS[tab]} />;
     switch (tab) {
       case "mou": return <FounderMou me={me} onSigned={refresh} />;
       case "approach": return <FounderApproach />;
@@ -205,7 +231,7 @@ export default function FounderPortal({ tab = "application" }) {
     <Shell user={user}>
       <div className="eir-screen eir-os-shell">
         <div className="eir-os-body">
-          <FounderSidebar tab={tab} locked={locked} navigate={navigate} />
+          <FounderSidebar tab={tab} locked={locked} resourcesAvailable={resourcesAvailable} navigate={navigate} />
           <main className="eir-os-pane">
             <div className="founder-portal founder-content">{renderTab()}</div>
           </main>
