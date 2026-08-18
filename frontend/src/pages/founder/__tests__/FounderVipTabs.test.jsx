@@ -33,14 +33,15 @@ describe("VIP cohort tabs", () => {
   it("renders the MIS screen", async () => {
     vi.spyOn(founderApi, "me").mockResolvedValue(me(false));
     vi.spyOn(founderApi, "getMis").mockResolvedValue({
-      catalog: {
-        kinds: ["monthly", "quarterly"],
-        sections: { monthly: [], quarterly: [] },
-        narrative_fields: {}, entry_fields: {}, metrics: [], metric_groups: [],
-        headcount_categories: [], financial_series: {}, financial_buckets: { needs: [] },
-      },
       monthly: [{ period_key: "2026-06", label: "Jun 2026", status: "draft", due_date: "2026-07-05", overdue: false }],
       quarterly: [],
+    });
+    // FounderMis.jsx (the graphical rebuild) fetches one period bundle per
+    // calendar entry in parallel with the index — the old form-shell's
+    // catalog-only index fixture above is no longer enough on its own.
+    vi.spyOn(founderApi, "getMisPeriod").mockResolvedValue({
+      period: { period_key: "2026-06", label: "Jun 2026", status: "draft", submitted_at: null },
+      metrics: [],
     });
     render(<MemoryRouter><FounderPortal tab="mis" /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText(/Monthly and quarterly reporting/i)).toBeInTheDocument());
