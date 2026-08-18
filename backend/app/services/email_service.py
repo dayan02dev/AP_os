@@ -366,6 +366,49 @@ class EmailService:
         )
         return self.send_raw([to], subject, html, text)
 
+    def send_applicant_selected(
+        self,
+        *,
+        to: str,
+        applicant_name: str,
+        track: str,
+        venture: str = "",
+        vip_funding_line: str = "",
+        vip_duration_line: str = "",
+    ) -> dict[str, str]:
+        """Gate-2 selection email — the applicant has been offered a place.
+
+        Track-specific by design: the two programmes unlock different portal
+        tabs (TIR gets Approach / Organization / Expense management, VIP gets
+        TLR evaluation / MIS filling), and only TIR's commercial terms are
+        documented, so they cannot share one template.
+
+        `vip_funding_line` / `vip_duration_line` carry VIP's programme terms.
+        While either is empty the VIP mail renders a loud DRAFT banner instead
+        of quietly shipping an offer with holes in it.
+        """
+        is_vip = track == "sip"
+        template_base = "applicant_selected_vip" if is_vip else "applicant_selected_tir"
+        subject = (
+            "You're joining the ARTPARK VIP programme"
+            if is_vip else
+            "You're joining the ARTPARK TIR residency"
+        )
+        html, text = self._render_pair(
+            template_base,
+            {
+                "applicant_name": applicant_name or "there",
+                "venture": venture or "",
+                "portal_url": frontend_url("/founder"),
+                # TIR's first cheque, as written in the MOU the founder signs.
+                "grant_display": "Rs. 25,00,000",
+                "vip_funding_line": vip_funding_line or "",
+                "vip_duration_line": vip_duration_line or "",
+                "vip_terms_confirmed": bool(vip_funding_line and vip_duration_line),
+            },
+        )
+        return self.send_raw([to], subject, html, text)
+
     def send_track_moved(
         self,
         *,

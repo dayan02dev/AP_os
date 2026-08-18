@@ -1,0 +1,64 @@
+ARTPARK — VENTURE INNOVATION PROGRAMME · 2026
+SELECTION DECISION
+{% if not vip_terms_confirmed %}
+!! DRAFT — NOT FOR SENDING. The programme terms below are placeholders.
+!! ARTPARK has not supplied VIP's funding amount or duration, and nothing
+!! here has been invented to fill the gap. Replace every TO CONFIRM marker
+!! before this template is used with a real applicant.
+{% endif %}
+Congratulations, {{ applicant_name }} — you're in.
+
+Our jury has completed its review{% if venture %} of {{ venture }}{% endif %}, and we would
+like to invite you to join the ARTPARK Venture Innovation Programme (VIP).
+
+This was a competitive cycle with a deliberately high bar, and your
+application stood out on the things we weight most heavily — the quality of
+the problem, the depth of the technology, and the evidence that you can move
+it.
+
+WHAT THE PROGRAMME GIVES YOU
+
+  * {{ vip_funding_line or '[TO CONFIRM — VIP funding: amount, and whether it is non-dilutive]' }}
+  * {{ vip_duration_line or '[TO CONFIRM — VIP programme duration and what the cycle looks like]' }}
+  * Access to IISc laboratory, sensor and manufacturing infrastructure,
+    alongside our procurement team.
+  * A structured readiness assessment against the ARTPARK Innovation
+    Readiness framework, verified with you rather than self-reported.
+
+WHAT HAPPENS NEXT
+
+Your Founder Portal is now open. Sign in exactly as you did while applying —
+same email, same password. Nothing about your login has changed, and we will
+never ask you to reset it by email.
+
+Your first task is to sign the MOU. You'll find it under
+Onboarding -> Sign MOU. It sets out the terms of your participation and
+records your acknowledgement of each condition individually. Until it is
+signed, the cohort tabs stay locked.
+
+Once the MOU is signed, these unlock:
+
+  * TLR evaluation — your readiness assessment across the six ARTPARK
+    Innovation Readiness levers. You self-assess; we verify with you, one
+    round per quarter.
+  * MIS filling — monthly and quarterly reporting. Periods open on a fixed
+    calendar, carry forward from the previous one, and lock when you submit.
+    You can upload the filled ARTPARK template to prefill the form instead
+    of typing it twice.
+  * Process dashboard — a rollup of your readiness levels and reporting,
+    which is how we track progress together.
+
+Available to you from day one, MOU or not: Founders resources — Art Infra
+(procurement), ArtConnect (fundraising and introductions), ArtPartners,
+Art Assets (book campus facilities), and Art Support.
+
+Open your Founder Portal:
+{{ portal_url }}
+
+If anything in the MOU needs discussion before you sign, reply to this email
+and we'll sort it out.
+
+Welcome aboard,
+— The ARTPARK team
+
+ARTPARK at IISc · Bengaluru · artpark.in

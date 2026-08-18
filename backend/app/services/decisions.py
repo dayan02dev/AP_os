@@ -196,6 +196,19 @@ def record_gate2_decision(
         target_table=table, target_id=application_id,
         after={"decision": decision, "from_status": from_status},
     )
+    # Applicant-facing mail. Gate-2 used to send nothing; `offered` now sends the
+    # track-specific selection mail and `rejected` reuses gate-1's decline. The
+    # decision and status change are already committed above, so a mail failure
+    # must never propagate — notify_applicant_gate2 swallows its own errors, and
+    # this belt-and-braces guard covers anything it cannot.
+    try:
+        decision_email.notify_applicant_gate2(
+            sb, track=track, application_id=application_id, decision=decision,
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("gate2 applicant notification failed for %s/%s",
+                    track, application_id, exc_info=True)
+
     return {
         "application_id": application_id,
         "track": track,

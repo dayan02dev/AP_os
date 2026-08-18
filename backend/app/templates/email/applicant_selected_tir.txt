@@ -1,0 +1,71 @@
+ARTPARK — TECHNOLOGY INNOVATOR IN RESIDENCE · 2026
+SELECTION DECISION
+
+Congratulations, {{ applicant_name }} — you're in.
+
+Our jury has completed its review{% if venture %} of {{ venture }}{% endif %}, and we would
+like to invite you to join the ARTPARK Technology Innovator in Residence
+(TIR) residency.
+
+This was a competitive cycle with a deliberately high bar, and your
+application stood out on the things we weight most heavily — the quality of
+the problem, the depth of the technology, and the evidence that you can move
+it.
+
+WHAT THE RESIDENCY GIVES YOU
+
+  * A non-dilutive first cheque of {{ grant_display }}, disbursed in tranches
+    against agreed stage gates.
+  * A six-month residency at the ARTPARK campus, extendable by mutual
+    agreement.
+  * Access to IISc laboratory, sensor and manufacturing infrastructure,
+    alongside our procurement team.
+  * A pod of technical mentors who sign off at each stage gate as you draw
+    successive tranches.
+
+WHAT HAPPENS NEXT
+
+Your Founder Portal is now open. Sign in exactly as you did while applying —
+same email, same password. Nothing about your login has changed, and we will
+never ask you to reset it by email.
+
+Your first task is to sign the MOU. You'll find it under
+Onboarding -> Sign MOU. It sets out the terms of the residency and records
+your acknowledgement of each residency condition individually. Until it is
+signed, the cohort tabs stay locked.
+
+Once the MOU is signed, these unlock:
+
+  * Cohort management — Approach, Organization, and Expense management.
+  * Dashboard reporting — your process dashboard, which is how we track
+    progress together.
+
+Available to you from day one, MOU or not: Founders resources — Art Infra
+(procurement), ArtConnect (fundraising and introductions), ArtPartners,
+Art Assets (book campus facilities), and Art Support.
+
+WORTH READING BEFORE YOU SIGN
+
+The MOU asks you to acknowledge each of the following separately. None of
+them should be a surprise, but please read them properly rather than
+clicking through:
+
+  * TIR is a full-time programme requiring your presence at the ARTPARK
+    campus, unless agreed before application.
+  * ARTPARK holds a first right of refusal to invest at incubation / first
+    investment.
+  * The residency runs as an expense account managed with our procurement
+    team — funds are not paid out to company or related-party accounts.
+  * Funding needed beyond the initial {{ grant_display }} to complete the
+    residency attracts equity allocation to ARTPARK at the incubation stage.
+
+Open your Founder Portal:
+{{ portal_url }}
+
+If anything in the MOU needs discussion before you sign, reply to this email
+and we'll sort it out.
+
+Welcome aboard,
+— The ARTPARK team
+
+ARTPARK at IISc · Bengaluru · artpark.in

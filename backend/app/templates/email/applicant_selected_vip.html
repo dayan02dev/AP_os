@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}You're joining the ARTPARK VIP programme{% endblock %}
+{% block header_sublabel %}Venture Innovation Programme · 2026{% endblock %}
+{% block content %}
+{% if not vip_terms_confirmed %}
+<div style="background:#fff8e1;border:1px solid #f0d48a;border-radius:4px;padding:12px 14px;margin:0 0 18px;font-size:13px;color:#7a5b00;">
+  <strong>DRAFT — NOT FOR SENDING.</strong> The programme terms below are placeholders.
+  ARTPARK has not supplied VIP's funding amount or duration, and nothing here has been
+  invented to fill the gap. Replace every <strong>TO CONFIRM</strong> marker before this
+  template is used with a real applicant.
+</div>
+{% endif %}
+<div style="font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#8a86a0;margin-bottom:10px;">Selection decision</div>
+<div style="font-family:'Trebuchet MS','Lucida Grande',Tahoma,sans-serif;font-weight:700;font-size:22px;line-height:1.25;letter-spacing:-0.01em;color:#242424;margin:0 0 14px;">Congratulations, {{ applicant_name }} — you're in.</div>
+
+<p style="margin:0 0 14px;">Our jury has completed its review{% if venture %} of <strong>{{ venture }}</strong>{% endif %}, and we would like to invite you to join the ARTPARK <strong>Venture Innovation Programme (VIP)</strong>.</p>
+
+<p style="margin:0 0 14px;">This was a competitive cycle with a deliberately high bar, and your application stood out on the things we weight most heavily — the quality of the problem, the depth of the technology, and the evidence that you can move it.</p>
+
+<h2 style="margin:24px 0 8px 0;font-size:15px;font-weight:700;color:#242424;">What the programme gives you</h2>
+<ul style="margin:0 0 14px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;">{{ vip_funding_line or '<span style="background:#ffe9a8;padding:1px 4px;">TO CONFIRM — VIP funding: amount, and whether it is non-dilutive</span>'|safe }}</li>
+  <li style="margin-bottom:8px;">{{ vip_duration_line or '<span style="background:#ffe9a8;padding:1px 4px;">TO CONFIRM — VIP programme duration and what the cycle looks like</span>'|safe }}</li>
+  <li style="margin-bottom:8px;"><strong>Access to IISc laboratory, sensor and manufacturing infrastructure</strong>, alongside our procurement team.</li>
+  <li style="margin-bottom:8px;"><strong>A structured readiness assessment</strong> against the ARTPARK Innovation Readiness framework, verified with you rather than self-reported.</li>
+</ul>
+
+<h2 style="margin:24px 0 8px 0;font-size:15px;font-weight:700;color:#242424;">What happens next</h2>
+
+<p style="margin:0 0 14px;">Your Founder Portal is now open. <strong>Sign in exactly as you did while applying</strong> — same email, same password. Nothing about your login has changed, and we will never ask you to reset it by email.</p>
+
+<p style="margin:0 0 14px;"><strong>Your first task is to sign the MOU.</strong> You'll find it under <strong>Onboarding → Sign MOU</strong>. It sets out the terms of your participation and records your acknowledgement of each condition individually. Until it is signed, the cohort tabs stay locked.</p>
+
+<p style="margin:0 0 8px;">Once the MOU is signed, these unlock:</p>
+<ul style="margin:0 0 14px 0;padding-left:20px;">
+  <li style="margin-bottom:6px;"><strong>TLR evaluation</strong> — your readiness assessment across the six ARTPARK Innovation Readiness levers. You self-assess; we verify with you, one round per quarter.</li>
+  <li style="margin-bottom:6px;"><strong>MIS filling</strong> — monthly and quarterly reporting. Periods open on a fixed calendar, carry forward from the previous one, and lock when you submit. You can upload the filled ARTPARK template to prefill the form instead of typing it twice.</li>
+  <li style="margin-bottom:6px;"><strong>Process dashboard</strong> — a rollup of your readiness levels and reporting, which is how we track progress together.</li>
+</ul>
+
+<p style="margin:0 0 14px;">Available to you from day one, MOU or not: <strong>Founders resources</strong> — Art Infra (procurement), ArtConnect (fundraising and introductions), ArtPartners, Art Assets (book campus facilities), and Art Support.</p>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:22px 0 18px 0;">
+  <tr>
+    <td bgcolor="#3213b7" style="border-radius:4px;background-color:#3213b7;">
+      <a href="{{ portal_url }}" target="_blank" style="display:inline-block;padding:13px 28px;font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:4px;">Open your Founder Portal</a>
+    </td>
+  </tr>
+</table>
+
+<p style="margin:0 0 18px 0;font-size:13px;color:#6f6f78;">If the button does not work, paste this link into your browser:<br/><a href="{{ portal_url }}" style="color:#3213b7;word-break:break-all;">{{ portal_url }}</a></p>
+
+<p style="margin:0 0 14px;">If anything in the MOU needs discussion before you sign, reply to this email and we'll sort it out.</p>
+
+<p style="margin:24px 0 0;color:#5a5a66;">Welcome aboard,<br />— The ARTPARK team</p>
+{% endblock %}
