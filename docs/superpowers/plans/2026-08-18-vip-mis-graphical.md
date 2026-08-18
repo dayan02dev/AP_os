@@ -42,6 +42,28 @@ below.
 
 ## Global Constraints
 
+> **Mocking Chart.js under this project's Vitest (2.1.9) — read before Tasks 6, 8 and 10.**
+> `vi.mock` factories are hoisted above ordinary top-level `const` declarations,
+> so a plain `const chartCtor = vi.fn()` written above `vi.mock("chart.js", ...)`
+> throws *"Cannot access 'chartCtor' before initialization"*. Create the mocks
+> inside `vi.hoisted()` instead. This was hit and fixed in Task 5; the working
+> version is in `frontend/src/components/__tests__/MisLineChart.test.jsx` —
+> copy the idiom from there, not from a snippet elsewhere in this plan.
+>
+> ```js
+> const { destroyMock, chartCtor } = vi.hoisted(() => {
+>   const destroyMock = vi.fn();
+>   const chartCtor = vi.fn(() => ({ destroy: destroyMock }));
+>   return { destroyMock, chartCtor };
+> });
+> vi.mock("chart.js", () => ({
+>   Chart: Object.assign(chartCtor, { register: vi.fn() }),
+>   LineController: {}, LineElement: {}, PointElement: {}, LinearScale: {},
+>   CategoryScale: {}, Filler: {}, Tooltip: {},
+> }));
+> ```
+
+
 - **Migrations 043-045 are frozen.** No schema change anywhere in this plan.
   Every new read is built from tables that already exist
   (`vip_mis_periods`, `vip_mis_metrics`).
