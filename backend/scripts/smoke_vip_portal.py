@@ -124,23 +124,23 @@ lev = next((l for l in b["levers"] if l["lever"] == "architecture"), {}) if code
 out.append(("PUT air lever (q1 max + q2)", code, f"claimed_level={lev.get('claimed_level')}"))
 
 # 3. MIS metrics full-row upsert: set target+actual, then send actual only
-call("PUT", "/founder/mis/monthly/2026-05/metrics",
-     [{"metric_key": "revenue_month", "target": 10, "actual": 4, "commentary": "keep me"}])
-code, b = call("PUT", "/founder/mis/monthly/2026-05/metrics",
-     [{"metric_key": "revenue_month", "actual": 7}])
+call("POST", "/founder/mis/monthly/2026-05/import/commit",
+     {"metrics": [{"metric_key": "revenue_month", "target": 10, "actual": 4, "commentary": "keep me"}]})
+code, b = call("POST", "/founder/mis/monthly/2026-05/import/commit",
+     {"metrics": [{"metric_key": "revenue_month", "actual": 7}]})
 row = next((m for m in b["metrics"] if m["metric_key"] == "revenue_month"), {}) if code == 200 else {}
-out.append(("PUT metrics partial row", code,
+out.append(("commit metrics partial row", code,
     f"target={row.get('target')} commentary={row.get('commentary')!r} <- NULLED means full-row upsert confirmed"))
 
 # 4. Validation, not coercion: a string for a numeric field must 422
-code, b = call("PUT", "/founder/mis/monthly/2026-05/metrics",
-     [{"metric_key": "revenue_month", "actual": "12"}])
-out.append(("PUT metrics with string '12'", code, str(b)[:90]))
+code, b = call("POST", "/founder/mis/monthly/2026-05/import/commit",
+     {"metrics": [{"metric_key": "revenue_month", "actual": "12"}]})
+out.append(("commit metrics with string '12'", code, str(b)[:90]))
 
 # 5. THE ruling: submit August while May is still draft -> 409 naming May
-code, b = call("POST", "/founder/mis/monthly/2026-08/submit")
+code, b = call("POST", "/founder/mis/monthly/2026-08/import/commit", {"submit": True})
 d = b.get("detail", {}) if isinstance(b, dict) else {}
-out.append(("POST submit out of order", code,
+out.append(("commit with submit, out of order", code,
     f"code={d.get('code')} blocker={d.get('period_key')} ({d.get('label')})"))
 
 print(f"\n{'WRITE CHECK':<34} {'HTTP':<6} DETAIL")

@@ -107,9 +107,9 @@ def test_export_startup_scope_xlsx(client, monkeypatch, _clear):
     _install(monkeypatch)
     _as(_founder_user())
     client.get("/founder/mis")  # generates the period rows
-    client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+    client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"metrics": [
         {"metric_key": "revenue_month", "actual": 12.5, "target": 10},
-    ])
+    ]})
 
     _as(_admin_user())
     r = client.get(

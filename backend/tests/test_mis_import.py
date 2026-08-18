@@ -110,7 +110,7 @@ FIRST_MONTH = "2026-06"  # no earlier period to block its submit
 def test_import_requires_draft_period(client, monkeypatch, _clear):
     fake = _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.post(f"/founder/mis/monthly/{FIRST_MONTH}/submit")
+    r = client.post(f"/founder/mis/monthly/{FIRST_MONTH}/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
     r = client.post(
         f"/founder/mis/monthly/{FIRST_MONTH}/import",
@@ -123,7 +123,7 @@ def test_import_requires_draft_period(client, monkeypatch, _clear):
 def test_commit_requires_draft_period(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    client.post(f"/founder/mis/monthly/{FIRST_MONTH}/submit")
+    client.post(f"/founder/mis/monthly/{FIRST_MONTH}/import/commit", json={"submit": True})
     r = client.post(f"/founder/mis/monthly/{FIRST_MONTH}/import/commit", json={
         "narrative": {"exec.headline_win": "should not land"},
     })
@@ -137,7 +137,7 @@ def test_commit_with_empty_body_still_409s_on_submitted_period(client, monkeypat
     endpoint's own top-level freeze gate actually runs before returning."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    client.post(f"/founder/mis/monthly/{FIRST_MONTH}/submit")
+    client.post(f"/founder/mis/monthly/{FIRST_MONTH}/import/commit", json={"submit": True})
     r = client.post(f"/founder/mis/monthly/{FIRST_MONTH}/import/commit", json={})
     assert r.status_code == 409, r.text
     assert r.json()["detail"]["code"] == "mis_already_submitted"
@@ -206,9 +206,9 @@ def test_import_preview_never_writes_mis_data(client, monkeypatch, _clear):
 def test_import_preview_surfaces_current_values_for_side_by_side(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    client.put(f"/founder/mis/monthly/{CUR_MONTH}/narrative", json={
+    client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"narrative": {
         "exec.headline_win": "Already typed by the founder",
-    })
+    }})
     r = _upload_monthly(client)
     assert r.status_code == 200, r.text
     assert r.json()["current"]["narrative"]["exec.headline_win"] == "Already typed by the founder"
@@ -219,9 +219,9 @@ def test_import_preview_surfaces_current_values_for_side_by_side(client, monkeyp
 def test_commit_writes_only_the_confirmed_narrative_field(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    client.put(f"/founder/mis/monthly/{CUR_MONTH}/narrative", json={
+    client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"narrative": {
         "exec.biggest_concern": "Runway is tight",
-    })
+    }})
     r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={
         "narrative": {"exec.headline_win": "Shipped v2 to three hospitals"},
     })
@@ -311,10 +311,10 @@ def test_commit_of_a_partial_metric_row_preserves_the_founders_other_fields(
     _install(monkeypatch)
     client.get("/founder/mis")
 
-    client.put(f"/founder/mis/monthly/{FIRST_MONTH}/metrics", json=[
+    client.post(f"/founder/mis/monthly/{FIRST_MONTH}/import/commit", json={"metrics": [
         {"metric_key": "revenue_month", "target": 10, "actual": 4,
          "commentary": "typed by the founder"},
-    ])
+    ]})
 
     r = client.post(f"/founder/mis/monthly/{FIRST_MONTH}/import/commit", json={
         "metrics": [{"metric_key": "revenue_month", "actual": 7}],
@@ -335,9 +335,9 @@ def test_commit_can_still_explicitly_clear_a_field(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
 
-    client.put(f"/founder/mis/monthly/{FIRST_MONTH}/metrics", json=[
+    client.post(f"/founder/mis/monthly/{FIRST_MONTH}/import/commit", json={"metrics": [
         {"metric_key": "revenue_month", "target": 10, "actual": 4, "commentary": "old"},
-    ])
+    ]})
 
     r = client.post(f"/founder/mis/monthly/{FIRST_MONTH}/import/commit", json={
         "metrics": [{"metric_key": "revenue_month", "actual": 7, "commentary": None}],
@@ -347,3 +347,42 @@ def test_commit_can_still_explicitly_clear_a_field(client, monkeypatch, _clear):
     row = next(m for m in r.json()["metrics"] if m["metric_key"] == "revenue_month")
     assert row["commentary"] is None, "an explicit null must clear"
     assert row["target"] == 10, "an absent key must still be preserved"
+
+
+# ── Task 1: `submit` flag on the commit body ──────────────────────────────
+
+def test_commit_with_submit_flips_status_and_stamps_timestamps(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    # The detail GET does not create period rows (only the index does, via
+    # ensure_periods) -- the index call is what actually seeds the calendar.
+    # FIRST_MONTH (2026-06), not CUR_MONTH: the fixture calendar generates
+    # 2026-06/07/08 all draft, and CUR_MONTH would trip the in-order-submit
+    # gate on the two earlier still-draft periods -- unrelated to what this
+    # test actually checks.
+    client.get("/founder/mis")
+    resp = client.post(f"/founder/mis/monthly/{FIRST_MONTH}/import/commit",
+                        json={"narrative": {"exec.headline_win": "Shipped v2"}, "submit": True})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["period"]["status"] == "submitted"
+    assert body["period"]["submitted_at"] is not None
+
+
+def test_commit_with_submit_refuses_while_an_earlier_period_is_draft(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")  # generates 2026-06, 2026-07, 2026-08
+    # leave 2026-06 draft; try to submit 2026-07 via commit
+    resp = client.post("/founder/mis/monthly/2026-07/import/commit",
+                        json={"submit": True})
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["code"] == "mis_earlier_period_open"
+    assert resp.json()["detail"]["period_key"] == "2026-06"
+
+
+def test_commit_without_submit_leaves_the_period_draft(client, monkeypatch, _clear):
+    _install(monkeypatch)
+    client.get("/founder/mis")
+    resp = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit",
+                        json={"narrative": {"exec.headline_win": "Draft only"}})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["period"]["status"] == "draft"

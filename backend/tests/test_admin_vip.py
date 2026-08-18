@@ -135,7 +135,8 @@ def _submit_air(client):
 
 
 def _submit_mis_period(client, kind: str, period_key: str):
-    r = client.post(f"/founder/mis/{kind}/{period_key}/submit")
+    r = client.post(f"/founder/mis/{kind}/{period_key}/import/commit",
+                    json={"submit": True})
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -524,7 +525,7 @@ def test_reopen_returns_a_submitted_period_to_draft(client, monkeypatch, _clear,
 
     # The founder can edit it again now that it's a draft.
     _as(_founder_user())
-    r2 = client.put("/founder/mis/monthly/2026-06/metrics", json=[])
+    r2 = client.post("/founder/mis/monthly/2026-06/import/commit", json={"metrics": []})
     assert r2.status_code == 200, r2.text
 
 

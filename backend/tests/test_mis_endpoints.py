@@ -79,12 +79,12 @@ def _install(monkeypatch, track: str = "sip", onboarded_on: str = "2026-06-10"):
 _ALL_ROUTES = [
     ("get", "/founder/mis", None),
     ("get", f"/founder/mis/monthly/{CUR_MONTH}", None),
-    ("put", f"/founder/mis/monthly/{CUR_MONTH}/metrics", []),
-    ("put", f"/founder/mis/monthly/{CUR_MONTH}/narrative", {}),
-    ("put", f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", []),
-    ("put", f"/founder/mis/quarterly/{CUR_QUARTER}/financials", []),
-    ("put", f"/founder/mis/quarterly/{CUR_QUARTER}/headcount", []),
-    ("post", f"/founder/mis/monthly/{CUR_MONTH}/submit", None),
+    ("post", f"/founder/mis/monthly/{CUR_MONTH}/import/commit", {"metrics": []}),
+    ("post", f"/founder/mis/monthly/{CUR_MONTH}/import/commit", {"narrative": {}}),
+    ("post", f"/founder/mis/monthly/{CUR_MONTH}/import/commit", {"entries": {"milestones": []}}),
+    ("post", f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", {"financials": []}),
+    ("post", f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", {"headcount": []}),
+    ("post", f"/founder/mis/monthly/{CUR_MONTH}/import/commit", {"submit": True}),
 ]
 
 
@@ -94,6 +94,39 @@ def test_tir_callers_409_on_every_endpoint(client, monkeypatch, _clear):
         r = getattr(client, method)(path, json=body) if body is not None or method != "get" else client.get(path)
         assert r.status_code == 409, f"{method} {path} -> {r.status_code}"
         assert r.json()["detail"]["code"] == "not_available_for_track"
+
+
+# ── founder write routes are gone (Task 1: submission moved to import/commit) ─
+
+@pytest.mark.parametrize("method,kind,period_key,suffix,body", [
+    ("put", "monthly", CUR_MONTH, "/metrics", []),
+    ("put", "monthly", CUR_MONTH, "/narrative", {}),
+    ("put", "monthly", CUR_MONTH, "/entries/milestones", []),
+    # financials/headcount are quarterly-only (put_financials/put_headcount
+    # 404 not_found on a kind mismatch, same as if the route did not
+    # exist) -- exercised against a quarterly period_key so a 404 here
+    # actually proves the ROUTE is gone, not merely that a monthly period
+    # can't take a quarterly-only write. Verified live: against the
+    # unmodified router these two cases 404 on the wrong period_key
+    # (monthly) just as readily as on kind, so they must use CUR_QUARTER
+    # or this test would pass vacuously for both.
+    ("put", "quarterly", CUR_QUARTER, "/financials", []),
+    ("put", "quarterly", CUR_QUARTER, "/headcount", []),
+    ("post", "monthly", CUR_MONTH, "/submit", None),
+])
+def test_founder_write_routes_are_gone(client, monkeypatch, _clear, method, kind, period_key, suffix, body):
+    _install(monkeypatch)
+    # The detail GET below does not create period rows -- only the index
+    # does, via ensure_periods -- so seed via the index first. Otherwise
+    # every one of these would 404 anyway (period not found) regardless of
+    # whether the route itself still existed, and this test would prove
+    # nothing: verified live, it passes vacuously against unmodified
+    # founder_mis.py without this line.
+    client.get("/founder/mis")
+    client.get(f"/founder/mis/{kind}/{period_key}")  # the period row exists now
+    kwargs = {"json": body} if body is not None else {}
+    resp = getattr(client, method)(f"/founder/mis/{kind}/{period_key}{suffix}", **kwargs)
+    assert resp.status_code == 404
 
 
 # ── index: lazy period generation ────────────────────────────────────────
@@ -149,9 +182,9 @@ def test_unknown_period_key_is_404(client, monkeypatch, _clear):
 def test_metrics_put_round_trips(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"metrics": [
         {"metric_key": "revenue_month", "actual": 12.5, "target": 10, "commentary": "good month"},
-    ])
+    ]})
     assert r.status_code == 200, r.text
     m = next(x for x in r.json()["metrics"] if x["metric_key"] == "revenue_month")
     assert m["actual"] == 12.5
@@ -166,9 +199,9 @@ def test_product_metric_label_is_editable(client, monkeypatch, _clear):
     labels (§2)."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"metrics": [
         {"metric_key": "product_metric_1", "label": "Model accuracy (%)", "actual": 92},
-    ])
+    ]})
     assert r.status_code == 200, r.text
     m = next(x for x in r.json()["metrics"] if x["metric_key"] == "product_metric_1")
     assert m["label"] == "Model accuracy (%)"
@@ -181,9 +214,9 @@ def test_standard_metric_label_cannot_be_overwritten(client, monkeypatch, _clear
     own hint: "do not change definitions to make things look better")."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"metrics": [
         {"metric_key": "revenue_month", "label": "Definitely Not Revenue", "actual": 10},
-    ])
+    ]})
     assert r.status_code == 200, r.text
     m = next(x for x in r.json()["metrics"] if x["metric_key"] == "revenue_month")
     assert m["label"] == "Revenue this month (₹ Lakh)"
@@ -194,9 +227,9 @@ def test_blank_product_metric_label_falls_back_to_the_catalog_placeholder(client
     blank into the NOT NULL `label` column."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"metrics": [
         {"metric_key": "product_metric_2", "actual": 5},
-    ])
+    ]})
     assert r.status_code == 200, r.text
     m = next(x for x in r.json()["metrics"] if x["metric_key"] == "product_metric_2")
     assert m["label"] == "Key product metric #2"
@@ -210,12 +243,12 @@ def test_narrative_put_merges_into_the_existing_blob(client, monkeypatch, _clear
     narrative section at a time."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    client.put(f"/founder/mis/monthly/{CUR_MONTH}/narrative", json={
+    client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"narrative": {
         "exec.headline_win": "Shipped v2", "exec.biggest_concern": "Runway",
-    })
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/narrative", json={
+    }})
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"narrative": {
         "exec.headline_win": "Closed pilot",
-    })
+    }})
     assert r.status_code == 200, r.text
     assert r.json()["narrative"] == {
         "exec.headline_win": "Closed pilot", "exec.biggest_concern": "Runway",
@@ -228,12 +261,12 @@ def test_narrative_put_null_clears_a_single_field(client, monkeypatch, _clear):
     existing field stays untouched."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    client.put(f"/founder/mis/monthly/{CUR_MONTH}/narrative", json={
+    client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"narrative": {
         "exec.headline_win": "Shipped v2", "exec.biggest_concern": "Runway",
-    })
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/narrative", json={
+    }})
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"narrative": {
         "exec.biggest_concern": None,
-    })
+    }})
     assert r.status_code == 200, r.text
     assert r.json()["narrative"] == {
         "exec.headline_win": "Shipped v2", "exec.biggest_concern": None,
@@ -243,13 +276,13 @@ def test_narrative_put_null_clears_a_single_field(client, monkeypatch, _clear):
 def test_entries_put_replaces_section_wholesale(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+    client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"milestones": [
         {"milestone": "Alpha launch", "owner": "Asha", "status": "On Track", "notes": ""},
         {"milestone": "Beta launch", "owner": "Ravi", "status": "Blocked", "notes": "waiting on IP"},
-    ])
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+    ]}})
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"milestones": [
         {"milestone": "GA launch", "owner": "Asha", "status": "At Risk", "notes": ""},
-    ])
+    ]}})
     assert r.status_code == 200, r.text
     rows = r.json()["entries"]["milestones"]
     assert len(rows) == 1
@@ -259,11 +292,11 @@ def test_entries_put_replaces_section_wholesale(client, monkeypatch, _clear):
 def test_financials_put_round_trips(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/financials", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"financials": [
         {"series": "needs_total", "bucket": "Q1 (Current)", "amount": 500000},
         {"series": "needs_confirmed", "bucket": "Q1 (Current)", "amount": 200000},
         {"series": "needs_projected", "bucket": "Q1 (Current)", "amount": 100000},
-    ])
+    ]})
     assert r.status_code == 200, r.text
     body = r.json()
     # FakeSupabase does not apply column defaults, so the many OTHER
@@ -278,9 +311,9 @@ def test_financials_put_round_trips(client, monkeypatch, _clear):
 def test_headcount_put_round_trips(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/headcount", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"headcount": [
         {"category": "startup", "current_count": 5, "exited": 1, "remarks": "grew"},
-    ])
+    ]})
     assert r.status_code == 200, r.text
     row = next(h for h in r.json()["headcount"] if h["category"] == "startup")
     assert row["current_count"] == 5
@@ -294,9 +327,9 @@ def test_submit_flips_status_and_stamps_timestamps(client, monkeypatch, _clear):
     client.get("/founder/mis")
     # Fix 1: both predecessors must be submitted first, or the in-order
     # gate 409s CUR_MONTH — unrelated to what this test actually checks.
-    client.post("/founder/mis/monthly/2026-06/submit")
-    client.post("/founder/mis/monthly/2026-07/submit")
-    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    client.post("/founder/mis/monthly/2026-06/import/commit", json={"submit": True})
+    client.post("/founder/mis/monthly/2026-07/import/commit", json={"submit": True})
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
     assert r.json()["period"]["status"] == "submitted"
     row = next(p for p in fake.tables["vip_mis_periods"] if p["period_key"] == CUR_MONTH)
@@ -309,15 +342,15 @@ def test_submitted_period_rejects_every_write_but_serves_every_read(client, monk
     _install(monkeypatch)
     client.get("/founder/mis")
     # Fix 1: clear the in-order gate before submitting CUR_MONTH itself.
-    client.post("/founder/mis/monthly/2026-06/submit")
-    client.post("/founder/mis/monthly/2026-07/submit")
-    client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    client.post("/founder/mis/monthly/2026-06/import/commit", json={"submit": True})
+    client.post("/founder/mis/monthly/2026-07/import/commit", json={"submit": True})
+    client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"submit": True})
 
     writes = [
-        ("put", f"/founder/mis/monthly/{CUR_MONTH}/metrics", []),
-        ("put", f"/founder/mis/monthly/{CUR_MONTH}/narrative", {}),
-        ("put", f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", []),
-        ("post", f"/founder/mis/monthly/{CUR_MONTH}/submit", None),
+        ("post", f"/founder/mis/monthly/{CUR_MONTH}/import/commit", {"metrics": []}),
+        ("post", f"/founder/mis/monthly/{CUR_MONTH}/import/commit", {"narrative": {}}),
+        ("post", f"/founder/mis/monthly/{CUR_MONTH}/import/commit", {"entries": {"milestones": []}}),
+        ("post", f"/founder/mis/monthly/{CUR_MONTH}/import/commit", {"submit": True}),
     ]
     for method, path, body in writes:
         r = getattr(client, method)(path, json=body) if body is not None else getattr(client, method)(path)
@@ -341,13 +374,13 @@ def test_quarterly_writes_also_freeze_on_submit(client, monkeypatch, _clear):
     client.get("/founder/mis")
     # Fix 1: FY26-27-Q1 must be submitted first, or the in-order gate
     # 409s CUR_QUARTER — unrelated to what this test actually checks.
-    client.post("/founder/mis/quarterly/FY26-27-Q1/submit")
-    client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/submit")
+    client.post("/founder/mis/quarterly/FY26-27-Q1/import/commit", json={"submit": True})
+    client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"submit": True})
 
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/financials", json=[])
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"financials": []})
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "mis_already_submitted"
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/headcount", json=[])
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"headcount": []})
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "mis_already_submitted"
 
@@ -365,7 +398,7 @@ def test_submit_with_earlier_draft_predecessor_409s_and_names_blocker(client, mo
     "some" earlier draft."""
     _install(monkeypatch)
     client.get("/founder/mis")  # creates 2026-06, 2026-07, 2026-08 (all draft)
-    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"submit": True})
     assert r.status_code == 409, r.text
     assert r.json()["detail"]["code"] == "mis_earlier_period_open"
     assert r.json()["detail"]["period_key"] == "2026-06"
@@ -375,7 +408,7 @@ def test_submit_with_earlier_draft_predecessor_409s_and_names_blocker(client, mo
 def test_submit_earliest_period_succeeds_nothing_before_it(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.post("/founder/mis/monthly/2026-06/submit")
+    r = client.post("/founder/mis/monthly/2026-06/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
     assert r.json()["period"]["status"] == "submitted"
 
@@ -383,11 +416,11 @@ def test_submit_earliest_period_succeeds_nothing_before_it(client, monkeypatch, 
 def test_submit_succeeds_once_every_predecessor_is_submitted(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.post("/founder/mis/monthly/2026-06/submit")
+    r = client.post("/founder/mis/monthly/2026-06/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
-    r = client.post("/founder/mis/monthly/2026-07/submit")
+    r = client.post("/founder/mis/monthly/2026-07/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
-    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
 
 
@@ -413,7 +446,7 @@ def test_submit_gate_uses_period_start_not_period_key_string_order(client, monke
         "period_start": "2026-08-01", "period_end": "2026-08-31",
         "due_date": "2026-09-05", "status": "draft", "narrative": {},
     })
-    r = client.post("/founder/mis/monthly/0000-00/submit")
+    r = client.post("/founder/mis/monthly/0000-00/import/commit", json={"submit": True})
     assert r.status_code == 409, r.text
     assert r.json()["detail"]["code"] == "mis_earlier_period_open"
     assert r.json()["detail"]["period_key"] == "9999-99"
@@ -426,9 +459,9 @@ def test_draft_period_of_the_other_kind_does_not_block_submit(client, monkeypatc
     monthly submit below."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.post("/founder/mis/monthly/2026-06/submit")
+    r = client.post("/founder/mis/monthly/2026-06/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
-    r = client.post("/founder/mis/monthly/2026-07/submit")
+    r = client.post("/founder/mis/monthly/2026-07/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
 
 
@@ -441,24 +474,24 @@ def test_regression_submitted_periods_vs_last_stays_frozen(client, monkeypatch, 
     already-submitted period's derived comparison."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    client.put(f"/founder/mis/monthly/2026-06/metrics", json=[
+    client.post(f"/founder/mis/monthly/2026-06/import/commit", json={"metrics": [
         {"metric_key": "revenue_month", "actual": 20},
-    ])
-    r = client.post("/founder/mis/monthly/2026-06/submit")
+    ]})
+    r = client.post("/founder/mis/monthly/2026-06/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
 
-    client.put(f"/founder/mis/monthly/2026-07/metrics", json=[
+    client.post(f"/founder/mis/monthly/2026-07/import/commit", json={"metrics": [
         {"metric_key": "revenue_month", "actual": 40},
-    ])
-    r = client.post("/founder/mis/monthly/2026-07/submit")
+    ]})
+    r = client.post("/founder/mis/monthly/2026-07/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
     assert r.json()["derived"]["metrics"]["vs_last"]["revenue_month"] == 20  # 40 - 20
 
     # The predecessor is submitted (frozen) — a write against it must
     # 409, not silently move July's already-computed vs_last.
-    r = client.put(f"/founder/mis/monthly/2026-06/metrics", json=[
+    r = client.post(f"/founder/mis/monthly/2026-06/import/commit", json={"metrics": [
         {"metric_key": "revenue_month", "actual": 999},
-    ])
+    ]})
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "mis_already_submitted"
 
@@ -495,7 +528,7 @@ def test_submit_reconciles_missing_child_rows_before_freezing(client, monkeypatc
     })
     assert fake.tables["vip_mis_metrics"] == []
 
-    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
     body = r.json()
     assert {m["metric_key"] for m in body["metrics"]} == {m["key"] for m in cat.METRICS}
@@ -512,7 +545,7 @@ def test_submit_reconciles_missing_child_rows_before_freezing(client, monkeypatc
 def test_unknown_section_is_404(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/not_a_real_section", json=[])
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"not_a_real_section": []}})
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "unknown_section"
 
@@ -523,7 +556,7 @@ def test_section_belonging_to_the_other_kind_is_404(client, monkeypatch, _clear)
     a section actually belongs to) would wrongly accept this."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/ip_assets", json=[])
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"ip_assets": []}})
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "unknown_section"
 
@@ -531,9 +564,9 @@ def test_section_belonging_to_the_other_kind_is_404(client, monkeypatch, _clear)
 def test_unknown_entry_field_is_422(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"milestones": [
         {"milestone": "x", "not_a_real_field": "y"},
-    ])
+    ]}})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "unknown_field"
 
@@ -547,9 +580,9 @@ def test_milestone_status_value_is_validated(client, monkeypatch, _clear):
     have carried forward into every future report forever."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"milestones": [
         {"milestone": "x", "owner": "y", "status": "done", "notes": ""},
-    ])
+    ]}})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "invalid_value"
     assert r.json()["detail"]["field"] == "status"
@@ -562,9 +595,9 @@ def test_collaboration_bucket_value_is_validated(client, monkeypatch, _clear):
     from next quarter's collaborations register with no error."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/collaborations", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"entries": {"collaborations": [
         {"bucket": "Active", "collaborator": "x"},
-    ])
+    ]}})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "invalid_value"
     assert r.json()["detail"]["field"] == "bucket"
@@ -573,9 +606,9 @@ def test_collaboration_bucket_value_is_validated(client, monkeypatch, _clear):
 def test_int_field_rejects_a_non_numeric_value(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/asks", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"asks": [
         {"priority": "high", "category": "hiring_referrals", "ask": "help"},
-    ])
+    ]}})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "invalid_value"
     assert r.json()["detail"]["field"] == "priority"
@@ -586,9 +619,9 @@ def test_int_field_rejects_a_bool_value(client, monkeypatch, _clear):
     `True` — so a naive `isinstance` check would silently accept it."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/asks", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"asks": [
         {"priority": True, "category": "hiring_referrals", "ask": "help"},
-    ])
+    ]}})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "invalid_value"
     assert r.json()["detail"]["field"] == "priority"
@@ -597,18 +630,18 @@ def test_int_field_rejects_a_bool_value(client, monkeypatch, _clear):
 def test_numeric_field_accepts_a_number(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/collaborations", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"entries": {"collaborations": [
         {"bucket": "active", "collaborator": "x", "funding_lakh": 12.5},
-    ])
+    ]}})
     assert r.status_code == 200, r.text
 
 
 def test_date_field_rejects_a_non_iso_value(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/publications", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"entries": {"publications": [
         {"bucket": "published", "kind": "journal", "date": "31/12/2026"},
-    ])
+    ]}})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "invalid_value"
     assert r.json()["detail"]["field"] == "date"
@@ -617,18 +650,18 @@ def test_date_field_rejects_a_non_iso_value(client, monkeypatch, _clear):
 def test_date_field_accepts_an_iso_value(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/publications", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"entries": {"publications": [
         {"bucket": "published", "kind": "journal", "date": "2026-12-31"},
-    ])
+    ]}})
     assert r.status_code == 200, r.text
 
 
 def test_int_field_rejects_a_non_integral_float(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/asks", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"asks": [
         {"priority": 3.5, "category": "hiring_referrals", "ask": "help"},
-    ])
+    ]}})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "invalid_value"
     assert r.json()["detail"]["field"] == "priority"
@@ -637,9 +670,9 @@ def test_int_field_rejects_a_non_integral_float(client, monkeypatch, _clear):
 def test_int_field_accepts_a_whole_number(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/asks", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"asks": [
         {"priority": 3, "category": "hiring_referrals", "ask": "help"},
-    ])
+    ]}})
     assert r.status_code == 200, r.text
 
 
@@ -649,9 +682,9 @@ def test_date_field_rejects_basic_format_without_dashes(client, monkeypatch, _cl
     `YYYY-MM-DD`."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/publications", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"entries": {"publications": [
         {"bucket": "published", "kind": "journal", "date": "20261231"},
-    ])
+    ]}})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "invalid_value"
     assert r.json()["detail"]["field"] == "date"
@@ -663,9 +696,9 @@ def test_date_field_rejects_iso_week_date_format(client, monkeypatch, _clear):
     a founder typing that string meant."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/publications", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"entries": {"publications": [
         {"bucket": "published", "kind": "journal", "date": "2026-W01-1"},
-    ])
+    ]}})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "invalid_value"
     assert r.json()["detail"]["field"] == "date"
@@ -674,9 +707,9 @@ def test_date_field_rejects_iso_week_date_format(client, monkeypatch, _clear):
 def test_date_field_rejects_an_invalid_calendar_date(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/publications", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"entries": {"publications": [
         {"bucket": "published", "kind": "journal", "date": "2026-13-01"},
-    ])
+    ]}})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "invalid_value"
     assert r.json()["detail"]["field"] == "date"
@@ -685,9 +718,9 @@ def test_date_field_rejects_an_invalid_calendar_date(client, monkeypatch, _clear
 def test_date_field_round_trips_normalised(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/publications", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"entries": {"publications": [
         {"bucket": "published", "kind": "journal", "date": "2026-12-31"},
-    ])
+    ]}})
     assert r.status_code == 200, r.text
     row = r.json()["entries"]["publications"][0]
     assert row["data"]["date"] == "2026-12-31"
@@ -699,18 +732,18 @@ def test_a_null_entry_value_is_always_accepted(client, monkeypatch, _clear):
     supplied."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"milestones": [
         {"milestone": "x", "owner": None, "status": None, "notes": None},
-    ])
+    ]}})
     assert r.status_code == 200, r.text
 
 
 def test_supplying_trl_level_actual_is_422(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"metrics": [
         {"metric_key": "trl_level", "actual": 5},
-    ])
+    ]})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "computed_metric"
 
@@ -718,9 +751,9 @@ def test_supplying_trl_level_actual_is_422(client, monkeypatch, _clear):
 def test_unknown_metric_key_is_422(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"metrics": [
         {"metric_key": "not_a_real_metric", "actual": 1},
-    ])
+    ]})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "unknown_field"
 
@@ -728,9 +761,9 @@ def test_unknown_metric_key_is_422(client, monkeypatch, _clear):
 def test_needs_gap_series_is_rejected_as_computed(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/financials", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"financials": [
         {"series": "needs_gap", "bucket": "Q1 (Current)", "amount": 100},
-    ])
+    ]})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "computed_metric"
 
@@ -738,9 +771,9 @@ def test_needs_gap_series_is_rejected_as_computed(client, monkeypatch, _clear):
 def test_unknown_headcount_category_is_422(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/headcount", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"headcount": [
         {"category": "not_a_real_category", "current_count": 1},
-    ])
+    ]})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "unknown_field"
 
@@ -764,7 +797,7 @@ def test_another_applications_period_is_not_reachable(client, monkeypatch, _clea
     assert r.json()["period"]["id"] != "foreign-period"
 
     # And the foreign row is untouched by our submit.
-    client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"submit": True})
     foreign = next(p for p in fake.tables["vip_mis_periods"] if p["id"] == "foreign-period")
     assert foreign["status"] == "draft"
 
@@ -848,9 +881,9 @@ def test_trl_level_is_snapshotted_at_submit_and_frozen_thereafter(client, monkey
         })
     client.get("/founder/mis")
     # Fix 1: clear the in-order gate before submitting CUR_MONTH itself.
-    client.post("/founder/mis/monthly/2026-06/submit")
-    client.post("/founder/mis/monthly/2026-07/submit")
-    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    client.post("/founder/mis/monthly/2026-06/import/commit", json={"submit": True})
+    client.post("/founder/mis/monthly/2026-07/import/commit", json={"submit": True})
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
     trl = next(m for m in r.json()["metrics"] if m["metric_key"] == "trl_level")
     assert trl["actual"] == 4
@@ -879,9 +912,9 @@ def test_trl_level_snapshot_is_null_when_unverified_at_submit_time(client, monke
     _install(monkeypatch)
     client.get("/founder/mis")
     # Fix 1: clear the in-order gate before submitting CUR_MONTH itself.
-    client.post("/founder/mis/monthly/2026-06/submit")
-    client.post("/founder/mis/monthly/2026-07/submit")
-    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/submit")
+    client.post("/founder/mis/monthly/2026-06/import/commit", json={"submit": True})
+    client.post("/founder/mis/monthly/2026-07/import/commit", json={"submit": True})
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
     trl = next(m for m in r.json()["metrics"] if m["metric_key"] == "trl_level")
     assert trl["actual"] is None
@@ -895,8 +928,8 @@ def test_quarterly_submit_does_not_touch_trl_level(client, monkeypatch, _clear):
     client.get("/founder/mis")
     # Fix 1: FY26-27-Q1 must be submitted first, or the in-order gate
     # 409s CUR_QUARTER — unrelated to what this test actually checks.
-    client.post("/founder/mis/quarterly/FY26-27-Q1/submit")
-    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/submit")
+    client.post("/founder/mis/quarterly/FY26-27-Q1/import/commit", json={"submit": True})
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"submit": True})
     assert r.status_code == 200, r.text
     assert r.json()["metrics"] == []
 
@@ -987,9 +1020,9 @@ def test_entries_race_converges_instead_of_duplicating(client, monkeypatch, _cle
 
     monkeypatch.setattr(mis_router, "get_admin_client", lambda: _InjectPhantomOnce(fake))
 
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"milestones": [
         {"milestone": "Alpha launch", "owner": "Asha", "status": "On Track", "notes": ""},
-    ])
+    ]}})
     assert r.status_code == 200, r.text
     rows = r.json()["entries"]["milestones"]
     assert len(rows) == 1
@@ -1006,16 +1039,16 @@ def test_entries_delete_is_scoped_to_its_own_section(client, monkeypatch, _clear
     to `period_id` alone would have passed them all just as easily."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+    client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"milestones": [
         {"milestone": "Alpha", "owner": "Asha", "status": "On Track", "notes": ""},
-    ])
-    client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/risks", json=[
+    ]}})
+    client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"risks": [
         {"severity": "amber", "what_happened": "vendor delay",
          "impact": "2wk slip", "mitigation": "backup vendor"},
-    ])
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
+    ]}})
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"milestones": [
         {"milestone": "Beta", "owner": "Ravi", "status": "At Risk", "notes": ""},
-    ])
+    ]}})
     assert r.status_code == 200, r.text
     entries = r.json()["entries"]
     assert len(entries["milestones"]) == 1
@@ -1032,9 +1065,9 @@ def test_next_milestones_is_reachable_via_section_extra_entries(client, monkeypa
     SECTION_EXTRA_ENTRIES into its section-id lookup."""
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/entries/next_milestones", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"entries": {"next_milestones": [
         {"milestone": "Ship v2", "target_date": "2026-10-01"},
-    ])
+    ]}})
     assert r.status_code == 200, r.text
     rows = r.json()["entries"]["next_milestones"]
     assert len(rows) == 1
@@ -1046,9 +1079,9 @@ def test_next_milestones_is_reachable_via_section_extra_entries(client, monkeypa
 def test_invalid_rag_value_is_422(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"metrics": [
         {"metric_key": "revenue_month", "rag": "purple"},
-    ])
+    ]})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "invalid_value"
 
@@ -1056,10 +1089,10 @@ def test_invalid_rag_value_is_422(client, monkeypatch, _clear):
 def test_duplicate_metric_key_in_payload_is_422(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"metrics": [
         {"metric_key": "revenue_month", "actual": 1},
         {"metric_key": "revenue_month", "actual": 2},
-    ])
+    ]})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "duplicate_key"
 
@@ -1067,10 +1100,10 @@ def test_duplicate_metric_key_in_payload_is_422(client, monkeypatch, _clear):
 def test_duplicate_financials_key_in_payload_is_422(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/financials", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"financials": [
         {"series": "needs_total", "bucket": "Q1 (Current)", "amount": 1},
         {"series": "needs_total", "bucket": "Q1 (Current)", "amount": 2},
-    ])
+    ]})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "duplicate_key"
 
@@ -1078,10 +1111,10 @@ def test_duplicate_financials_key_in_payload_is_422(client, monkeypatch, _clear)
 def test_duplicate_headcount_category_in_payload_is_422(client, monkeypatch, _clear):
     _install(monkeypatch)
     client.get("/founder/mis")
-    r = client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/headcount", json=[
+    r = client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"headcount": [
         {"category": "startup", "current_count": 1},
         {"category": "startup", "current_count": 2},
-    ])
+    ]})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "duplicate_key"
 
@@ -1109,9 +1142,9 @@ def test_metrics_upsert_includes_label_and_group_key(client, monkeypatch, _clear
         "period_start": "2026-08-01", "period_end": "2026-08-31",
         "due_date": "2026-09-05", "status": "draft", "narrative": {},
     })
-    r = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+    r = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"metrics": [
         {"metric_key": "revenue_month", "actual": 5},
-    ])
+    ]})
     assert r.status_code == 200, r.text
     row = next(m for m in fake.tables["vip_mis_metrics"] if m["metric_key"] == "revenue_month")
     expected = next(m for m in cat.METRICS if m["key"] == "revenue_month")
@@ -1137,22 +1170,22 @@ def test_every_write_kind_stamps_updated_at(client, monkeypatch, _clear):
     assert not monthly.get("updated_at")
     assert not quarterly.get("updated_at")
 
-    client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
-        {"metric_key": "revenue_month", "actual": 1}])
+    client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"metrics": [
+        {"metric_key": "revenue_month", "actual": 1}]})
     assert monthly.get("updated_at")
 
     monthly["updated_at"] = None  # isolate the next write's own stamp
-    client.put(f"/founder/mis/monthly/{CUR_MONTH}/entries/milestones", json=[
-        {"milestone": "x", "owner": "y", "status": "On Track", "notes": ""}])
+    client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"entries": {"milestones": [
+        {"milestone": "x", "owner": "y", "status": "On Track", "notes": ""}]}})
     assert monthly.get("updated_at")
 
-    client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/financials", json=[
-        {"series": "needs_total", "bucket": "Q1 (Current)", "amount": 1}])
+    client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"financials": [
+        {"series": "needs_total", "bucket": "Q1 (Current)", "amount": 1}]})
     assert quarterly.get("updated_at")
 
     quarterly["updated_at"] = None  # isolate the next write's own stamp
-    client.put(f"/founder/mis/quarterly/{CUR_QUARTER}/headcount", json=[
-        {"category": "startup", "current_count": 1}])
+    client.post(f"/founder/mis/quarterly/{CUR_QUARTER}/import/commit", json={"headcount": [
+        {"category": "startup", "current_count": 1}]})
     assert quarterly.get("updated_at")
 
 

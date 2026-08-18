@@ -39,8 +39,8 @@ period_bundle's response by `_with_trl` as a response-shaping step, since
 TRL sourcing needs `air_query`/`air_scoring` knowledge that belongs at this
 router boundary rather than inside `mis_query`'s own period-shape logic.
 `_with_trl` only overlays the live value for a DRAFT period, though:
-`submit_period` snapshots the then-current verified TRL into that period's
-own `vip_mis_metrics.actual` at submit time, and a submitted period is read
+`_finalize_submission` snapshots the then-current verified TRL into that
+period's own `vip_mis_metrics.actual` at submit time, and a submitted period is read
 back exactly as stored from then on ("submitted means frozen" — see
 `_current_verified_trl`'s and `_with_trl`'s own docstrings for the
 concrete bug this closes).
@@ -165,7 +165,7 @@ def _current_verified_trl(application_id: str) -> int | None:
     here to a value that lives in another module's tables entirely.
 
     A SUBMITTED period is the one exception (Ruling, part 1 — "submitted
-    means frozen"): `submit_period` below writes this function's result
+    means frozen"): `_finalize_submission` below writes this function's result
     into that period's own `vip_mis_metrics.actual` for `trl_level` ONCE,
     at submit time, and `_with_trl` stops overlaying once a period is no
     longer a draft. Without that snapshot, a submitted report's TRL would
@@ -205,7 +205,7 @@ def _with_trl(bundle: dict, application_id: str) -> dict:
     with the live-computed verified AIR level, for a DRAFT monthly period
     only (Ruling, part 1 — "submitted means frozen"; quarterly bundles
     carry no metrics at all regardless of status). A SUBMITTED period is
-    left exactly as `mis_query.period_bundle` returned it: `submit_period`
+    left exactly as `mis_query.period_bundle` returned it: `_finalize_submission`
     already wrote the true submit-time value into `vip_mis_metrics.actual`
     for that row, and overlaying the CURRENT quarter's live level on top of
     that stored snapshot would silently move a statutory report's TRL
@@ -382,7 +382,6 @@ _RAG_VALUES = {"green", "amber", "red"}
 _EDITABLE_LABEL_KEYS = {"product_metric_1", "product_metric_2"}
 
 
-@router.put("/{kind}/{period_key}/metrics")
 async def put_metrics(
     kind: str, period_key: str, body: list[MetricIn],
     ctx: Annotated[dict, Depends(require_vip)],
@@ -452,7 +451,6 @@ async def put_metrics(
 
 # ── narrative (merge into the existing blob) ──────────────────────────────
 
-@router.put("/{kind}/{period_key}/narrative")
 async def put_narrative(
     kind: str, period_key: str, body: dict[str, str | None],
     ctx: Annotated[dict, Depends(require_vip)],
@@ -637,7 +635,6 @@ def _validate_entry_value(field: dict, value: Any) -> Any:
     return value
 
 
-@router.put("/{kind}/{period_key}/entries/{section}")
 async def put_entries(
     kind: str, period_key: str, section: str, body: list[dict[str, Any]],
     ctx: Annotated[dict, Depends(require_vip)],
@@ -685,7 +682,6 @@ def _fy_start_year(period_start: date) -> int:
     return period_start.year if period_start.month >= 4 else period_start.year - 1
 
 
-@router.put("/{kind}/{period_key}/financials")
 async def put_financials(
     kind: str, period_key: str, body: list[FinancialAmountIn],
     ctx: Annotated[dict, Depends(require_vip)],
@@ -749,7 +745,6 @@ async def put_financials(
 _HEADCOUNT_KEYS = {c["key"] for c in cat.HEADCOUNT_CATEGORIES}
 
 
-@router.put("/{kind}/{period_key}/headcount")
 async def put_headcount(
     kind: str, period_key: str, body: list[HeadcountRowIn],
     ctx: Annotated[dict, Depends(require_vip)],
@@ -792,8 +787,10 @@ def _reject_out_of_order_submit(ctx: dict, kind: str, period: dict) -> None:
     """Fix 1 (the important one): a period may only be submitted once
     every EARLIER period of the same kind is no longer `draft`.
 
-    Without this gate, `submit_period` had no ordering check at all: a
-    founder could submit August while July was still a draft. Derived
+    Without this gate, the founder-facing submit route (since retired --
+    submission is now `_finalize_submission`, invoked from
+    `commit_mis_import`) had no ordering check at all: a founder could
+    submit August while July was still a draft. Derived
     comparisons (`vs_last` on metrics, headcount `net_change`) are
     computed on read from whichever period is immediately preceding,
     *regardless of that predecessor's own status*
@@ -842,12 +839,16 @@ def _reject_out_of_order_submit(ctx: dict, kind: str, period: dict) -> None:
         })
 
 
-@router.post("/{kind}/{period_key}/submit")
-async def submit_period(
-    kind: str, period_key: str, ctx: Annotated[dict, Depends(require_vip)],
-) -> dict:
-    """Freezes the period (constraint 6) and, for a monthly period, writes
-    a one-time snapshot of the CURRENT verified AIR TRL into that period's
+def _finalize_submission(ctx: dict, kind: str, period: dict) -> None:
+    """The write side of what used to be `POST /{kind}/{period_key}/submit`
+    (Ruling — "submission is no longer a founder act"). Callable only from
+    `commit_mis_import` below, when the caller's `submit` flag is set.
+    `period` must already be `_own_draft_period`'s return value — this
+    function re-checks ordering (`_reject_out_of_order_submit`) but not
+    ownership/freeze, which the caller has already established.
+
+    Freezes the period (constraint 6) and, for a monthly period, writes a
+    one-time snapshot of the CURRENT verified AIR TRL into that period's
     own `vip_mis_metrics.actual` for `trl_level` (Ruling, part 1 —
     "submitted means frozen"). This is the only write this router ever
     makes to `trl_level.actual` — `put_metrics` above rejects a founder
@@ -879,10 +880,9 @@ async def submit_period(
     because it happens here, ahead of the status write below.
     `_reconcile_children` never touches `vip_mis_periods` itself (only
     `vip_mis_metrics`/`vip_mis_financials`/`vip_mis_headcount`), so
-    `period` — already fetched above — needs no re-read afterwards; every
-    write below still keys off this same `period["id"]`.
+    `period` — already fetched by the caller — needs no re-read afterwards;
+    every write below still keys off this same `period["id"]`.
     """
-    period = _own_draft_period(ctx, kind, period_key)
     _reject_out_of_order_submit(ctx, kind, period)
 
     sb = get_admin_client()
@@ -897,7 +897,6 @@ async def submit_period(
     sb.table("vip_mis_periods").update({
         "status": "submitted", "submitted_at": now, "updated_at": now,
     }).eq("id", period["id"]).execute()
-    return _bundle(ctx, kind, period_key)
 
 
 # ── docx import: upload-and-parse (preview only) + commit (spec §5.6) ────
@@ -1048,6 +1047,7 @@ class MisImportCommitBody(BaseModel):
     financials: list[FinancialAmountIn] | None = None
     headcount: list[HeadcountRowIn] | None = None
     entries: dict[str, list[dict[str, Any]]] | None = None
+    submit: bool = False
 
 
 def _merged_rows(ctx, kind, period_key, rows, bundle_key, id_field):
@@ -1087,15 +1087,30 @@ async def commit_mis_import(
     kind: str, period_key: str, body: MisImportCommitBody,
     ctx: Annotated[dict, Depends(require_vip)],
 ) -> dict:
-    """Writes exactly the confirmed subset, through the SAME handlers a
-    direct PUT call uses -- see the module note above this section. A
-    period no longer `draft` 409s here too, before any of the delegated
-    calls even run (each of them re-checks on its own regardless, since
-    they are also reachable directly)."""
+    """Writes exactly the confirmed subset, through the SAME handlers the
+    founder-facing PUT routes used to call directly -- see the module note
+    above this section. Those five handlers (`put_narrative`/`put_metrics`/
+    `put_financials`/`put_headcount`/`put_entries`) kept their bodies but
+    lost their own HTTP routes (Task 1 -- "the founder write endpoints are
+    retired"); this endpoint is now the only way any of them run. A period
+    no longer `draft` 409s here too, before any of the delegated calls even
+    run (each of them re-checks `_own_draft_period` on its own regardless,
+    since they are still called as plain functions, not HTTP-reachable on
+    their own).
+
+    `submit`: when true, finalizes the period (freeze + TRL snapshot for a
+    monthly period) via `_finalize_submission`, AFTER every confirmed
+    section above has been written -- so a single commit can both fill in
+    the confirmed subset and submit it in one call, the same one-shot
+    ingest a future email-triggered import needs (D4, deferred). Defaults
+    false: see this endpoint's own docstring history / the plan's "the
+    submit flag's own shape" note for why this is an explicit opt-in field
+    rather than every commit auto-submitting.
+    """
     if kind not in cat.KINDS:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
                             detail={"code": "unknown_kind"})
-    _own_draft_period(ctx, kind, period_key)
+    period = _own_draft_period(ctx, kind, period_key)
 
     if body.narrative:
         await put_narrative(kind, period_key, body.narrative, ctx)
@@ -1112,5 +1127,8 @@ async def commit_mis_import(
     if body.entries:
         for section, rows in body.entries.items():
             await put_entries(kind, period_key, section, rows, ctx)
+
+    if body.submit:
+        _finalize_submission(ctx, kind, period)
 
     return _bundle(ctx, kind, period_key)
