@@ -95,7 +95,8 @@ sam deploy \
     "AwsRegionParam=ap-south-1" \
     "TirSubmissionsClosed=${TIR_SUBMISSIONS_CLOSED:-false}" \
     "SipSubmissionsClosed=${SIP_SUBMISSIONS_CLOSED:-false}" \
-    "FounderPortalAllowlist=${FOUNDER_PORTAL_ALLOWLIST:-}"
+    "FounderPortalAllowlist=${FOUNDER_PORTAL_ALLOWLIST:?refusing to deploy: FOUNDER_PORTAL_ALLOWLIST is unset. An empty value WIPES the soft-launch gate and opens the founder portal to every offered/onboarded founder. Set it in .env.prod (use FOUNDER_PORTAL_ALLOWLIST= for a deliberate open launch).}" \
+    "FounderResourcesEnabled=${FOUNDER_RESOURCES_ENABLED:-}"
 
 echo ""
 echo "✓ Deploy complete. Stack outputs:"

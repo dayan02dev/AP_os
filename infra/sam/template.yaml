@@ -85,6 +85,17 @@ Parameters:
       "true" closes the SIP/VIP track to new intake (no new VIP account
       creation, no new draft, no submission). Existing VIP applicants keep
       sign-in / view / edit-window access; TIR is unaffected. Reversible.
+  FounderResourcesEnabled:
+    Type: String
+    Default: ""
+    Description: >-
+      Comma-separated Founders Resources items that have been RELEASED:
+      store, fundraising, partners, assets, support. Empty string (the
+      default) locks all five — the code behind them is live, but the
+      business relationships behind them are not, so they are gated rather
+      than deleted. Add an item here and redeploy to release it; no
+      frontend deploy is needed.
+
   FounderPortalAllowlist:
     Type: String
     Default: ""
@@ -141,6 +152,7 @@ Globals:
         SIP_SUBMISSIONS_CLOSED: !Ref SipSubmissionsClosed
         # Founder Portal soft-launch allow-list (see the parameter above).
         FOUNDER_PORTAL_ALLOWLIST: !Ref FounderPortalAllowlist
+        FOUNDER_RESOURCES_ENABLED: !Ref FounderResourcesEnabled
 
 Resources:
   # ── Lambda function ─────────────────────────────────────────────
