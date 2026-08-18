@@ -1,0 +1,1076 @@
+{
+  "slug": "facility-v1",
+  "source_file": "facility_agreement_2026-08-06.docx",
+  "blocks": [
+    {
+      "type": "paragraph",
+      "index": 0,
+      "style": "Normal",
+      "text": "FACILITY AGREEMENT ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 1,
+      "style": "Normal",
+      "text": "This facility agreement (“Agreement”) is entered into on [month], [date], 2026 (“Execution Date”) by and between:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 2,
+      "style": "Default",
+      "text": "I-HUB FOR ROBOTICS AND AUTONOMOUS SYSTEMS INNOVATION FOUNDATION, a Company registered under Section 8 of the Companies Act, 2013 having its registered office at Society for Innovation and Development, Innovation Centre Building, Indian Institute of Science, Bangalore - 560012, India (hereinafter referred to as “ARTPARK” which expression shall, unless it is repugnant to the context or meaning thereof be deemed to include its successors and permitted assigns) of the FIRST PART; ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 3,
+      "style": "Normal",
+      "text": "AND",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 4,
+      "style": "Body Text",
+      "text": "[•], having PAN [•], s/o/d/o [•], resident of [•] (hereinafter referred to as the “Collaborator 1”, which expression shall, unless repugnant to the context or meaning thereof, be deemed to mean and include its affiliates and permitted assigns) of the SECOND PART;  ",
+      "placeholder_count": 4
+    },
+    {
+      "type": "paragraph",
+      "index": 5,
+      "style": "Normal",
+      "text": "AND",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 6,
+      "style": "Body Text",
+      "text": "[•], having PAN [•], s/o/d/o [•], resident of [•] (hereinafter referred to as the “Collaborator 2”, which expression shall, unless repugnant to the context or meaning thereof, be deemed to mean and include its affiliates and permitted assigns) of the THIRD PART;  ",
+      "placeholder_count": 4
+    },
+    {
+      "type": "paragraph",
+      "index": 7,
+      "style": "Normal",
+      "text": "AND",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 8,
+      "style": "Body Text",
+      "text": "[•], having PAN [•], s/o/d/o [•], resident of [•] (hereinafter referred to as the “Collaborator 3”, which expression shall, unless repugnant to the context or meaning thereof, be deemed to mean and include its affiliates and permitted assigns) of the FOURTH PART.  ",
+      "placeholder_count": 4
+    },
+    {
+      "type": "paragraph",
+      "index": 9,
+      "style": "Normal",
+      "text": "Collaborator 1, Collaborator 2 and Collaborator 3 shall be individually referred to as “Collaborator” and collectively referred to as “Collaborators”.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 10,
+      "style": "Normal",
+      "text": "ARTPARK and Collaborators may also be referred to individually as “Party” and collectively as “Parties”.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 11,
+      "style": "Normal",
+      "text": "WHEREAS: ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 12,
+      "style": "Normal",
+      "text": "ARTPARK is a not-for-profit Company, set up as a Technology Innovation Hub, seed-funded by the Department of Science & Technology (“DST”), Government of India, under the National Mission on Interdisciplinary Cyber-Physical Systems (“NM-ICPS”) and the Government of Karnataka. ARTPARK promotes advances in robotics, autonomous systems, and AI, and serves as an incubator for deep-tech startups. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 13,
+      "style": "Normal",
+      "text": "The Parties have entered into a Collaboration Agreement dated [•], which sets out the terms of the collaboration between the Parties (“Collaboration Agreement”). ",
+      "placeholder_count": 1
+    },
+    {
+      "type": "paragraph",
+      "index": 14,
+      "style": "Normal",
+      "text": "The Collaborators shall use the facilities and services provided in accordance with this Agreement and ARTPARK’s policies and procedures for the promotion of its business. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 15,
+      "style": "Normal",
+      "text": "Terms not defined in this Agreement shall have the meaning ascribed to them in the Collaboration Agreement. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 16,
+      "style": "Normal",
+      "text": "IN CONSIDERATION OF THE MUTUAL COVENANTS AND AGREEMENTS SET FORTH HEREIN AND FOR OTHER GOOD AND VALUABLE CONSIDERATION, THE PARTIES HERETO AGREE AS FOLLOWS:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 17,
+      "style": "List Paragraph",
+      "text": "SCOPE OF THE AGREEMENT AND EFFECTIVE DATE ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 18,
+      "style": "List Paragraph",
+      "text": "By means of this Agreement, the Parties agree to establish the terms and conditions regarding the use of the facilities and premises of ARTPARK.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 19,
+      "style": "List Paragraph",
+      "text": "Unless stated otherwise, the Parties agree that this Agreement shall be effective on and from [month], [date], 2026 (“Effective Date”).",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 20,
+      "style": "List Paragraph",
+      "text": "TERMS AND CONDITIONS OF USE OF FACILITIES ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 21,
+      "style": "List Paragraph",
+      "text": "ARTPARK shall provide to the Collaborators non-exclusive, non-transferable and revocable access to certain premises (“Premises”) as enumerated in Schedule I: Premises, to use for research and development, testing, experimentation and other ancillary business operations approved in writing by ARTPARK (“Permitted Use”). ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 22,
+      "style": "List Paragraph",
+      "text": "ARTPARK shall, subject to availability and at its sole discretion, provide services and facilities, which may include dedicated and shared seating arrangements, non-exclusive laboratory space, computing resources, wireless internet access, conference rooms, and administrative identification badges (collectively, the “Facilities”) and as specifically enumerated in Schedule II: Facilities. ARTPARK expressly reserves the right to amend, modify, substitute, or discontinue any or all such Facilities at any time, with or without notice, and the Collaborators acknowledge and agree that no claim for damages or compensation shall arise from any such modification or withdrawal",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 23,
+      "style": "List Paragraph",
+      "text": "Under this Agreement, the License will not be granted in exchange for any rent, license fee or monetary consideration payable by the Collaborators.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 24,
+      "style": "List Paragraph",
+      "text": "This Agreement shall not create rights relating to tenancy, lease, exclusive possession, easement, or any other interest in land or property in favor of the Collaborators. The Collaborators shall retain complete possession, management, supervision and control of the Facilities at all times.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 25,
+      "style": "List Paragraph",
+      "text": "The  Collaborators are required to provide a list of their full-time and part-time employees to ARTPARK, as and when changes take place, besides at the beginning of the relationship. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 26,
+      "style": "List Paragraph",
+      "text": "ARTPARK may identify professionals for IP, legal, accounting and management expertise on a part-time basis. The Collaborators may avail the services on prescribed charges. Any direct services provided to the Collaborators would have to be paid for by the Collaborators to the service provider on their mutually agreed terms and conditions. ARTPARK acts merely as a facilitator for any such services and the Collaborators shall have to make an agreement with the service provider towards terms and conditions for availing the services. The Collaborators are warranted limited access to the use of ARTPARK name, address, logo and brand as specified below:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 27,
+      "style": "List Paragraph",
+      "text": "Collaborators shall obtain written permission of ARTPARK for using phrases, such as \"Incubated by ARTPARK\" or similar phrases, on physical or virtual platforms for promotional purposes;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 28,
+      "style": "List Paragraph",
+      "text": "Collaborators shall, under no circumstances, use the ARTPARK logo as its own or in any manner that may imply ownership or affiliation beyond what is expressly permitted by ARTPARK;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 29,
+      "style": "List Paragraph",
+      "text": "Names of ARTPARK's board members cannot be used under any circumstances; and",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 30,
+      "style": "List Paragraph",
+      "text": "Names of any other faculty or staff members of ARTPARK shall not be used without explicit authorization from ARTPARK.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 31,
+      "style": "List Paragraph",
+      "text": "The Collaborators shall abide by and follow procedures set by ARTPARK from time to time during the Term of this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 32,
+      "style": "List Paragraph",
+      "text": "Any other services or benefits provided by ARTPARK may be subject to separate written agreements. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 33,
+      "style": "List Paragraph",
+      "text": "TERM AND TERMINATION",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 34,
+      "style": "List Paragraph",
+      "text": "This Agreement shall come into force on the Effective Date and shall continue to be valid and in force for a period of [•] ([•]) months, unless terminated earlier in accordance with the provisions hereof (“Term”).",
+      "placeholder_count": 2
+    },
+    {
+      "type": "paragraph",
+      "index": 35,
+      "style": "List Paragraph",
+      "text": "Termination by ARTPARK: ARTPARK may terminate this Agreement by providing 2 (two) months’ prior written notice to the Collaborators if:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 36,
+      "style": "List Paragraph",
+      "text": "The Collaborators commit a material breach of the terms of this Agreement and fails to remedy the aforementioned breach within 7 (seven) days of written notice issued by ARTPARK;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 37,
+      "style": "List Paragraph",
+      "text": "The Collaborator become bankrupt or insolvent, has a receivership order issued against it, compounds with its creditors, or, if a corporation, a resolution is passed or order is made for its winding up (other than a voluntary liquidation for purposes of amalgamation or reconstruction), or if a receiver is appointed over its undertaking or assets, or if the Collaborators take or suffer any analogous action in consequence of debt;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 38,
+      "style": "List Paragraph",
+      "text": "The Collaborator’s continued access poses a risk to the health, safety, security, lawful operations, regulatory compliance or the reputation of ARTPARK or other persons; ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 39,
+      "style": "List Paragraph",
+      "text": "The Collaborators engage in any activity that is unlawful, fraudulent, hazardous, disruptive or prohibited activity, or materially misuses the Premises, Facilities, equipment, access credentials or ARTPARK property, or breaches any anti-bribery, anti-corruption or site security requirement or contrary to ARTPARK's policies;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 40,
+      "style": "List Paragraph",
+      "text": "The Collaboration Agreement is terminated by ARTPARK; or",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 41,
+      "style": "List Paragraph",
+      "text": "Any other circumstance where ARTPARK, in its sole discretion, deems it necessary for the Collaborators to vacate the TIR program. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 42,
+      "style": "List Paragraph",
+      "text": "Consequences of Termination under Clause 5.1: In the event of termination under Clause 3.2:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 43,
+      "style": "List Paragraph",
+      "text": "ARTPARK shall have the right to recover from the Collaborators any damages or losses suffered by ARTPARK or any third party arising out of such termination. Such recovery shall be in addition to any bank guarantees provided by the Collaborators; and",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 44,
+      "style": "List Paragraph",
+      "text": "The Collaborators shall vacate the premises and return all assets, equipment, and other belongings obtained from ARTPARK in their original condition, subject to normal wear and tear.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 45,
+      "style": "List Paragraph",
+      "text": "If the Collaborators fail to:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 46,
+      "style": "List Paragraph",
+      "text": "Vacate or deliver the premises and/or assets, ARTPARK shall be entitled to take possession by removing the Collaborators and their belongings in any manner deemed fit. Any expenses incurred by ARTPARK in such removal shall be fully recoverable from the Collaborators; or",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 47,
+      "style": "List Paragraph",
+      "text": "Promptly remove all personal belongings and User Equipment brought in by it, ARTPARK may, at its sole discretion, remove, store, or dispose of such items, and ARTPARK shall be liable to ARTPARK for all costs associated therewith. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 48,
+      "style": "List Paragraph",
+      "text": "Termination by the Collaborators: The Collaborators shall not terminate this Agreement without the prior written consent of ARTPARK. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 49,
+      "style": "List Paragraph",
+      "text": "Consequences of Termination under Clause 3.4: In the event of termination under Clause 5.3, the Collaborators shall vacate the premises and return all assets, equipment, and other belongings obtained from ARTPARK in their original condition subject to normal wear and tear. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 50,
+      "style": "List Paragraph",
+      "text": "ACCESS TO PREMISES AND USE OF FACILITIES ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 51,
+      "style": "List Paragraph",
+      "text": "Permitted Use and Restrictions: The Collaborators shall utilize the Premises and Facilities solely for bona fide research, development, testing, and related scholarly activities consistent with the scope of the collaboration agreed between the parties. Any form of subleasing, sublicensing, assignment, or third-party use of the Premises and Facilities or any portion thereof by the Collaborators are strictly prohibited and shall constitute a material breach of this Agreement, entitling ARTPARK to seek immediate injunctive relief and/or termination hereof. The Collaborators shall ensure that its contractors, agents, or any other individuals accessing the Premises and Facilities on its behalf (collectively, “Collaborator Personnel”) comply with the terms of this Agreement, and ARTPARK shall be fully responsible and liable for any breach, misconduct, or negligence by any such Collaborator Personnel.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 52,
+      "style": "List Paragraph",
+      "text": "Access Control and Condition of Premises: ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 53,
+      "style": "List Paragraph",
+      "text": "ARTPARK retains exclusive control over access to its premises and may impose, amend, or enforce entry protocols, security measures, and operational policies at its sole discretion. Access to Premises and Facilities shall be limited to ARTPARK’s designated working hours, currently defined as Monday through Friday during business hours, subject to prior notification of any changes.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 54,
+      "style": "Headings 3",
+      "text": "ARTPARK may, in its absolute discretion: (a) vary the allocation of space or equipment made available to the Collaborators; (b) temporarily suspend access to all or parts of the Premises and Facilities; (c) impose additional conditions when reasonable and necessary. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 55,
+      "style": "Headings 3",
+      "text": "ARTPARK shall have the right to enter any part of the Premises at any time for inspection, maintenance, safety check, or any legitimate purpose. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 56,
+      "style": "List Paragraph",
+      "text": "Lab Space and Equipment Usage",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 57,
+      "style": "List Paragraph",
+      "text": "ARTPARK hereby grants the Collaborators a limited, non-exclusive, non-transferable license to access and use the designated and/or shared laboratory space (“Lab Space”) and equipment (“Lab Equipment”), as specified in Part A of Schedule III: Lab Space and Equipment, solely during the Term and exclusively for the permitted purposes set out in Part B of Schedule III: Lab Space and Equipment.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 58,
+      "style": "List Paragraph",
+      "text": "The Collaborators shall not, without the prior written consent of ARTPARK, affix, attach, install, or otherwise make any modifications, additions, or accessories to the Lab Equipment. The Lab Equipment may only be accessed or operated by the Collaborators and the Collaborator Personnel who have been expressly authorized in writing by ARTPARK and have completed any training or orientation programs as may be prescribed by ARTPARK from time to time. The Collaborators shall ensure that all such use is conducted strictly in accordance with (i) ARTPARK’s instructions and standard operating procedures; (ii) applicable laws and safety regulations; and (iii) any user guidelines or restrictions notified by ARTPARK. The Collaborators shall be fully responsible for ensuring that the Lab Equipment is used in a safe, responsible, and compliant manner by all such authorized individuals. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 59,
+      "style": "List Paragraph",
+      "text": "The Collaborators may bring into the Lab Space only such personal equipment belonging to the Collaborators (“User Equipment”) with the prior written consent of ARTPARK. The Collaborators shall ensure that any such User Equipment is fit for safe operation in the Lab Space and is operated in a responsible and safe manner. ARTPARK shall not be responsible for any loss of or damage to the User Equipment.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 60,
+      "style": "Headings 3",
+      "text": "The Collaborators acknowledge that ARTPARK retains full ownership of, and all right, title, and interest in and to, the Lab Equipment. Nothing in this Agreement shall be construed as transferring any ownership interest in the Lab Equipment to the Collaborators.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 61,
+      "style": "Headings 3",
+      "text": "ARTPARK personnel may observe the Collaborator’s use of the Lab Equipment, but such observation shall not constitute supervision. The Collaborators shall be solely responsible for their own conduct, safety, and compliance with all applicable protocols and safety requirements while using the Lab Equipment.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 62,
+      "style": "Headings 3",
+      "text": "The Collaborators shall ensure that any materials, including user equipment, are not to be placed in the common areas such as shared walkways and open areas. The Collaborators must move such materials within their designated facility area and avoid obstruction on priority to ensure upkeep and decorum of common areas. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 63,
+      "style": "Headings 3",
+      "text": "The Collaborators acknowledge that ARTPARK, at its sole discretion, made available the facilities. If dedicated space is made available by ARTPARK, Collaborators acknowledge that the facility will be provided with ARTPARK-standard tables, fixtures, flooring and ceiling. The Collaborator can upgrade the facility by fitting its own additional equipment such as air-conditioning, noise isolators, etc. at its own expense after the prior written approval from ARTPARK. During such modifications, any structural changes are not permitted to the facility, and the Collaborator ensure and take full responsibility during commissioning & operations of such changes.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 64,
+      "style": "Headings 3",
+      "text": "The Collaborators may request ARTPARK for additional space beyond the initial allocation decision of ARTPARK. The Collaborators understand that ARTPARK will provide such additional facility subject to its internal evaluation and sole discretion, subject to additional standard consideration for such engagement. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 65,
+      "style": "Headings 3",
+      "text": "The Collaborators understand that ARTPARK may request realignment of spaces in order to address the needs. In such events, the Collaborators shall help ARTPARK with such realignment. This may include but is not limited to relocating the work immediately to alternate temporary space provided.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 66,
+      "style": "Headings 3",
+      "text": "Compliance with Laws and Policies: The Collaborators shall, at all times during the Term, ensure full compliance with all applicable laws, rules, and regulations, including but not limited to environmental, health, and safety regulations, as well as all operational, security, administrative, and safety policies, protocols, and procedures prescribed by ARTPARK. The Collaborators shall further ensure that all Collaborator Personnel accessing or using the Premises, Facilities, Lab Space, or Lab Equipment are made aware of and comply with the aforementioned legal and institutional requirements. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 67,
+      "style": "Headings 3",
+      "text": "Damages and Restoration. The Collaborators shall use the Lab Space, Lab Equipment and Facilities responsibly and shall return them in the same condition as at the commencement of the Term, subject to reasonable wear and tear. The Collaborators shall be responsible for any damage to, or loss of, the Lab Space, Lab Equipment, or Facilities arising from its use or the use by any Collaborator Personnel, including damage due to negligence, misuse, or non-compliance with safety procedures. Any such damage or loss must be reported to ARTPARK immediately. ARTPARK may undertake necessary repairs or replacements, and the Collaborators shall reimburse ARTPARK for all costs incurred in connection therewith. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 68,
+      "style": "Headings 3",
+      "text": "INTELLECTUAL PROPERTY",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 69,
+      "style": "Headings 2",
+      "text": "All intellectual property related issues shall be governed by the Collaboration Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 70,
+      "style": "Headings 3",
+      "text": "CONFIDENTIALITY ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 71,
+      "style": "Headings 2",
+      "text": "All non-public, proprietary and commercially sensitive information disclosed by either party during the Term of this Agreement shall be treated as confidential for a period of 3 (three) years following the expiry or termination of this Agreement (“Confidential Information”). During such period, the Parties will not: (i) disclose the Confidential Information of the disclosing Party (“Disclosing Party”) to any third party, using at least the same degree of care as it uses to protect its own confidential information, but not less than the degree of care that a reasonable person will take for information of a similar nature; or (ii) use such information for any purpose other than to perform its obligations under this Agreement. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 72,
+      "style": "Headings 2",
+      "text": "The receiving Party (“Receiving Party”) shall not disclose Confidential Information of the Disclosing Party except (i) to the Receiving Party’s officers, directors, employees, agents, on a strict ‘need to know’ basis and who shall be bound by obligations of confidentiality similar to the ones in this Agreement or (ii) if required to be disclosed by law, government regulation, or court order, provided that the Receiving Party promptly notifies the Disclosing Party upon learning of any such legal requirement, and cooperates with the Disclosing Party in the exercise of its right to protect the confidentiality, and shall continue to treat the information as confidential for all other purposes. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 73,
+      "style": "Headings 2",
+      "text": "It is clarified that Confidential Information does not include information which (i) has previously been made generally available to the public, (ii) becomes publicly known, without fault on the part of the Receiving Party, subsequent to disclosure by the Disclosing Party of such information to the Receiving Party, (iii) is received by the Receiving Party at any time from a source, other than the Disclosing Party, lawfully having possession of and the right to disclose such information, (iv) otherwise lawfully becomes known by the Receiving Party prior to disclosure by the Disclosing Party to the receiving party of such information, or (v) is independently developed by the Receiving Party without use of such information. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 74,
+      "style": "Headings 2",
+      "text": "Upon the expiration or termination of this Agreement, or upon written request by the Disclosing Party, the Receiving Party shall promptly return or destroy all Confidential Information in its possession or control, including all copies, summaries, or extracts thereof, and certify such return or destruction in writing, except to the extent retention is required under applicable law.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 75,
+      "style": "Headings 2",
+      "text": "INDEMNIFICATION",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 76,
+      "style": "Headings 2",
+      "text": "ARTPARK shall not be responsible or liable, whether financially, legally, reputationally, or otherwise, for any commitments, obligations, representations, or activities undertaken by the Collaborators during the Term. ARTPARK shall not be liable for any injury, accident, damage, or loss (including to people, property, or data) arising in connection with the Collaborator’s activities, including but not limited to use of the Lab Space or Lab Equipment. The Collaborators shall be solely responsible for taking appropriate precautions, including insurance coverage, to address any such risks.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 77,
+      "style": "Headings 2",
+      "text": "The Collaborators agrees to, jointly and severally, indemnify, defend, and hold harmless ARTPARK, its affiliates, officers, employees, and representatives (each, an “Indemnified Party”) from and against any and all claims, demands, losses, damages, liabilities, penalties, fines, costs, and expenses (including reasonable legal fees and costs) (“Claims”) arising out of or in connection with:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 78,
+      "style": "Headings 4",
+      "text": "the Collaborator’s use of the Lab Space or Lab Equipment;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 79,
+      "style": "Headings 4",
+      "text": "any breach of this Agreement by the Collaborators; or",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 80,
+      "style": "Headings 4",
+      "text": "any fraud, gross negligence, wilful misconduct, or violation of applicable laws by the Collaborators.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 81,
+      "style": "Headings 2",
+      "text": "This indemnity shall survive the expiry or termination of this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 82,
+      "style": "Headings 2",
+      "text": "DISCLAIMER AND LIMITATION OF LIABILITY ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 83,
+      "style": "Headings 2",
+      "text": "The Premises and Facilities are provided on an \"as is\" and \"as available\" basis. ARTPARK makes no warranties, express or implied, regarding the suitability of the Facilities for any particular purpose, or the continuous, uninterrupted availability of any equipment or services.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 84,
+      "style": "Headings 2",
+      "text": "To the maximum extent permitted by applicable law, ARTPARK shall not be liable to the Collaborators for any indirect, consequential, incidental, special, or punitive damages, or for any loss of profits, revenue, data, or business opportunity, arising out of or in connection with this Agreement or the Collaborator’s use of the Facilities, even if ARTPARK has been advised of the possibility of such damages.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 85,
+      "style": "Headings 2",
+      "text": "Nothing in this Agreement shall limit or exclude either Party's liability for death or personal injury caused by negligence, fraud or fraudulent misrepresentation, or any other liability that cannot be excluded or limited by applicable law.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 86,
+      "style": "Headings 2",
+      "text": "INSURANCE",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 87,
+      "style": "Headings 2",
+      "text": "The Collaborators shall obtain and maintain insurance cover, including but not limited to:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 88,
+      "style": "List Paragraph",
+      "text": "Public liability insurance with a limit of not less than [•] per occurrence;",
+      "placeholder_count": 1
+    },
+    {
+      "type": "paragraph",
+      "index": 89,
+      "style": "List Paragraph",
+      "text": "Employer's liability insurance (or equivalent) as required by law;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 90,
+      "style": "List Paragraph",
+      "text": "Insurance for the Collaborator’s own equipment, materials, and prototypes brought onto the Facilities.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 91,
+      "style": "Headings 2",
+      "text": "The Collaborators shall provide evidence of such insurance to ARTPARK upon request and shall ensure that ARTPARK is named as an additional insured where reasonably required.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 92,
+      "style": "Headings 2",
+      "text": "ARTPARK does not insure the Collaborator's property, equipment, Personnel or intellectual property, and shall not be liable for any loss of or damage to such items howsoever caused.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 93,
+      "style": "Headings 2",
+      "text": "INDEPENDENT CONTRACTOR STATUS ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 94,
+      "style": "Headings 2",
+      "text": "Neither Party is, nor shall be deemed to be, an employee, agent, partner, joint venture, or legal representative of the other Party for any purpose whatsoever. Neither Party shall have any authority to act for, bind, or otherwise create or assume any obligation or responsibility, express or implied, on behalf of the other Party, nor shall either Party hold itself out as having such authority.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 95,
+      "style": "Headings 1",
+      "text": "ARBITRATION ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 96,
+      "style": "Headings 2",
+      "text": "If any dispute arises in connection with this Agreement, the Parties shall attempt, in fair dealing and in good faith, to settle such dispute in the best interests of the Parties. In the event the Parties fail to reach an amicable settlement within 30 (thirty) days of initiation of such dispute, either Party may initiate an arbitration proceeding.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 97,
+      "style": "Headings 2",
+      "text": "Any dispute or difference or claim arising out of or in relation to this Agreement including construction, validity, performance or breach thereof which is not amicably settled under Clause 12.1, shall be referred to and resolved by way of arbitration under the Arbitration and Conciliation Act, 1996. The arbitration shall be presided by a sole arbitrator mutually appointed by the Parties. If the Parties fail to agree on the sole arbitrator within thirty (30) days of a written request by either Party to do so, the arbitrator shall be appointed in accordance with the Arbitration and Conciliation Act, 1996, on the application of either Party to the competent court at Bengaluru. The seat of arbitration shall be Bengaluru. The language to be used in the arbitration proceedings shall be English. The arbitral award shall be final and binding on the Parties, and the Parties waive any right of appeal to the extent permitted by law.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 98,
+      "style": "Headings 2",
+      "text": "The Parties may seek provisional measures from Courts at Bengaluru, including provisional injunctive relief, provided that the final resolution of the dispute is through the arbitrator appointed in accordance with this Clause 12.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 99,
+      "style": "Headings 3",
+      "text": "MISCELLANEOUS ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 100,
+      "style": "Headings 2",
+      "text": "Amendments: This Agreement may only be extended, renewed or otherwise amended by the mutual written consent of Parties hereto. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 101,
+      "style": "Headings 2",
+      "text": "Entire Agreement: This Agreement, together with its schedules, constitutes the entire agreement and understanding between the Parties with respect to the subject matter hereof and related matters. It supersedes and extinguishes all prior drafts, agreements, undertakings, representations, warranties, and arrangements of any kind, whether oral or written, relating to the subject matter hereof, except as expressly set out in this Agreement or in any other agreement expressly executed pursuant to it.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 102,
+      "style": "Headings 2",
+      "text": "Joint and Several Obligations: All obligations, undertakings, representations, warranties, covenants, liabilities and indemnities of the Collaborators under this Agreement shall be joint and several. ARTPARK shall be entitled to enforce any or all of such obligations against any one or more of the Collaborators, individually or collectively, without first proceeding against, or joining, any other Collaborator. No Collaborator shall be discharged from any obligation or liability under this Agreement by reason of any waiver, release, compromise, extension of time or other indulgence granted by ARTPARK to any other Collaborator.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 103,
+      "style": "Headings 2",
+      "text": "Survival: The provisions of Clauses 5 (Intellectual Property), 6 (Confidentiality), 7 (Indemnification), 11 (Arbitration) and 12 (Miscellaneous) and any other provision which by its nature is intended to survive termination or expiration shall survive termination or expiration of this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 104,
+      "style": "Headings 2",
+      "text": "Assignment: Neither Party hereto may assign, sub-contract, cede, or transfer any of its rights or obligations under this Agreement without the prior written consent of the other Party, whether by merger, acquisition, sale, operation of law, or otherwise.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 105,
+      "style": "Headings 2",
+      "text": "Waiver: No waiver of any term, provision or condition of this Agreement, whether by conduct or otherwise in any one or more instances shall be deemed to be or construed as a further or continuing waiver of any such term, provision or condition, or of any other term, provision or condition of this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 106,
+      "style": "Headings 2",
+      "text": "Notices: All notices pertaining to or required by this Agreement shall be in writing, shall be signed by an authorized representative and shall be delivered to the postal address and/or email address indicated in the signature page of this Agreement. For the avoidance of doubt, any other electronic communication shall not qualify as a written notice or document under this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 107,
+      "style": "Headings 2",
+      "text": "Severability: If any provisions of this Agreement and/or any Project should be held to be illegal, invalid or unenforceable, the validity, legality and enforceability of the remaining provisions shall not in any way be affected or impaired thereby. The Parties shall substitute the illegal, invalid, or unenforceable provision by a legal, valid or enforceable one, approximating as closely as possible the original commercial intent of the Parties.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 108,
+      "style": "Headings 2",
+      "text": "Governing Law and Exclusive Jurisdiction: This Agreement shall be construed, interpreted, and governed by the laws of India, and to the extent applicable, the laws of the State of Karnataka. The courts at Bengaluru, Karnataka shall have exclusive jurisdiction over all disputes arising out of or in connection with this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 109,
+      "style": "Headings 2",
+      "text": "Force Majeure:  Neither Party shall lose any rights hereunder or be liable to the other Party for damages or losses on account of failure of performance by the defaulting Party if the failure is occasioned by war, strike, fire, act of God, pandemic, earthquake, flood, lockout, embargo, governmental acts or orders or restrictions, failure of suppliers, or any other reason where failure to perform is beyond the reasonable control and not caused by the negligence or intentional conduct or misconduct of the nonperforming Party, and such Party has exerted all reasonable efforts to avoid or remedy such force majeure; provided, however, that in no event shall a Party be required to settle any labour dispute or disturbance.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 110,
+      "style": "Headings 2",
+      "text": "Specific Performance and Cumulative Remedies. The Collaborators acknowledge that any breach of their obligations under this Agreement would cause ARTPARK irreparable harm for which damages alone would not be an adequate remedy, and accordingly ARTPARK shall be entitled to seek injunctive relief and specific performance without the need to prove special damage or to furnish security. The rights and remedies of ARTPARK under this Agreement are cumulative and in addition to, and not in substitution for, any rights or remedies available at law or in equity.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 111,
+      "style": "Headings 2",
+      "text": "Counterparts and Electronic Execution. This Agreement may be executed in any number of counterparts, each of which when executed and delivered shall constitute an original and all of which together shall constitute one and the same instrument. Delivery of an executed counterpart by electronic means (including a scanned PDF or a recognised electronic signature) shall be effective as delivery of an original.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 112,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 113,
+      "style": "Normal",
+      "text": "IN WITNESS WHEREOF the Parties hereto have executed this Agreement under seal as of the day and year first above written by their respective authorized signatories. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 114,
+      "style": "Normal",
+      "text": "For I-HUB FOR ROBOTICS AND AUTONOMOUS SYSTEMS INNOVATION FOUNDATION ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 115,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 116,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 117,
+      "style": "Normal",
+      "text": "Name: Raghuram Dharmaraju",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 118,
+      "style": "Normal",
+      "text": "Designation: CEO ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 119,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 120,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 121,
+      "style": "Normal",
+      "text": "SCHEDULE I: PREMISES",
+      "placeholder_count": 0
+    },
+    {
+      "type": "table",
+      "index": 122,
+      "rows": [
+        [
+          "S. No.",
+          "Location Description",
+          "Building Name / Identifier",
+          "Floor / Wing",
+          "Access Hours",
+          "Notes"
+        ],
+        [
+          "1.",
+          "ARTPARK: ARTgarage facility (HMT, Jalahalli)\nMaximum of 500SqFT of facility will be allocated to the project",
+          "Located in: HINDUSTAN MACHINE TOOLS(H M T -Bangalore Complex)\nAddress: 177, HMT Colony, HMT Staff Quaters, HMT Estate, Jalahalli, Bengaluru, Karnataka 560013\n",
+          "Ground Floor as temporary allocation ",
+          "Office hours",
+          "Location subject to change with prior notice of 2 weeks by ARTPARK"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      ]
+    },
+    {
+      "type": "paragraph",
+      "index": 123,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 124,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 125,
+      "style": "Normal",
+      "text": "SCHEDULE II: FACILITIES",
+      "placeholder_count": 0
+    },
+    {
+      "type": "table",
+      "index": 126,
+      "rows": [
+        [
+          "S. No.",
+          "Facility Description",
+          "Type (Exclusive/Shared)",
+          "Availability Window",
+          "Additional Remarks"
+        ],
+        [
+          "1.",
+          "Dedicated Seating",
+          "Exclusive + Shared",
+          "[•]",
+          "4 seats- Exclusive within the allocated area for Sarva project team. Additional rampup by utilizing the shared areas"
+        ],
+        [
+          "2.",
+          "Laboratory Space",
+          "Exclusive + Shared",
+          "[•]",
+          "Exclusive within the allocated area for the project team. \nShared facilities can be utilized by the team as per ARTPARK procedures."
+        ],
+        [
+          "3.",
+          "Computing Resources",
+          "Exclusive laptops/Desktops",
+          "[•]",
+          "Marked against the project assets. All licenses to be procured by project and adequate measures put in place to use only authorized software."
+        ],
+        [
+          "4.",
+          "Wireless Internet",
+          "Shared",
+          "[•]",
+          "Available for common usage; Network security is responsibility of project.  Additional bandwidth to be managed by project through separate request outside ARTPARK after taking approval."
+        ],
+        [
+          "5.",
+          "Conference Rooms",
+          "Shared",
+          "[•]",
+          "Booking based on First come-First Serve basis in general"
+        ],
+        [
+          "6.",
+          "Administrative ID / Access Badge",
+          "Exclusive",
+          "[•]",
+          "Made available by ARTPARK as one time allocation and usage to adhere as per ARTPARK policy "
+        ]
+      ]
+    },
+    {
+      "type": "paragraph",
+      "index": 127,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 128,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 129,
+      "style": "Normal",
+      "text": "SCHEDULE III: LAB SPACE AND EQUIPMENT",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 130,
+      "style": "Normal",
+      "text": "Part A: Lab Space and Equipment Allocation",
+      "placeholder_count": 0
+    },
+    {
+      "type": "table",
+      "index": 131,
+      "rows": [
+        [
+          "S. No.",
+          "Lab Space Description",
+          "Lab Name / Location",
+          "Equipment Provided",
+          "Equipment ID / Serial No.",
+          "Notes"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      ]
+    },
+    {
+      "type": "paragraph",
+      "index": 132,
+      "style": "Normal",
+      "text": "Part B: Permitted Purposes",
+      "placeholder_count": 0
+    },
+    {
+      "type": "table",
+      "index": 133,
+      "rows": [
+        [
+          "S. No.",
+          "Description of Activity",
+          "Associated Lab / Equipment",
+          "Remarks"
+        ],
+        [
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "",
+          "",
+          "",
+          ""
+        ]
+      ]
+    },
+    {
+      "type": "paragraph",
+      "index": 134,
+      "style": "Headings 3",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 135,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 136,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    }
+  ]
+}
