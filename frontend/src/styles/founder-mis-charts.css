@@ -1,0 +1,105 @@
+/* FounderMis.jsx's own page chrome (spec §5) — the graphical, read-only MIS
+   view. Reuses founder-portal.css's generic classes (.hint, .eir-os-view-*)
+   directly rather than re-declaring them. Shared chart-card chrome
+   (.mis-chart-card, .mis-chart-title, .mis-chart-empty, the expand modal)
+   lives in mis-charts.css, owned by MisLineChart.jsx/MisChartCard.jsx —
+   never redefined here.
+
+   .mis-shell/.mis-kind-tabs/.mis-kind-tab are copied forward verbatim from
+   founder-mis.css (deleted once the form shell it belonged to is removed) —
+   same rules, new owner. */
+
+.mis-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.mis-kind-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.mis-kind-tab {
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 6px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.mis-kind-tab:hover {
+  color: var(--ink);
+}
+.mis-kind-tab.is-active {
+  color: var(--artblue);
+  border-bottom-color: var(--artblue);
+}
+
+/* -- four-chart grid (G2's own sibling — replaces the grid with a single
+      full-width empty-copy paragraph when nothing submitted qualifies). -- */
+.mis-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.mis-charts-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ink-soft);
+  border: 1px dashed var(--line-strong);
+  border-radius: 2px;
+}
+
+/* -- period cards: the record of what's been received, per kind. -------- */
+.mis-period-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mis-period-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+}
+.mis-period-card-label {
+  font-weight: 500;
+  color: var(--ink);
+}
+.mis-period-card-status {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 2px;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+}
+.mis-period-card-status.is-submitted {
+  color: var(--accent-green);
+  border-color: var(--accent-green);
+}
+.mis-period-card-status.is-draft {
+  color: var(--ink-soft);
+  border-color: var(--line-strong);
+}
+.mis-period-card-date {
+  flex: none;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+}

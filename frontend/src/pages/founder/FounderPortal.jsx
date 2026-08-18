@@ -44,7 +44,7 @@ const COHORT_TIR = { group: "Cohort management", locked: "cohort", items: [
 
 const COHORT_VIP = { group: "Cohort management", locked: "cohort", items: [
   { sec: "tlr", num: "01", label: "TLR evaluation", to: "/founder/tlr" },
-  { sec: "mis", num: "02", label: "MIS filling", to: "/founder/mis" },
+  { sec: "mis", num: "02", label: "MIS", to: "/founder/mis" },
 ]};
 
 const NAV_TAIL = [

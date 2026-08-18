@@ -41,7 +41,7 @@ describe("FounderPortal shell", () => {
     vi.spyOn(founderApi, "me").mockResolvedValue(me("sip"));
     renderPortal();
     await waitFor(() => expect(screen.getByText("TLR evaluation")).toBeInTheDocument());
-    expect(screen.getByText("MIS filling")).toBeInTheDocument();
+    expect(screen.getByText("MIS")).toBeInTheDocument();
     expect(screen.queryByText("Approach")).not.toBeInTheDocument();
     expect(screen.queryByText("Organization")).not.toBeInTheDocument();
     expect(screen.queryByText("Expense management")).not.toBeInTheDocument();
