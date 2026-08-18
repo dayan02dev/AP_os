@@ -119,7 +119,8 @@ Established by the TIR pages; VIP must match them, not invent a second dialect.
 
 ## Decisions the user still owes
 
-1. **The MOU a VIP founder signs is TIR's** — it has them acknowledge full-time presence at ARTPARK campus, the residency expense account, and post-25L equity, stamped `tir-mou-v2`. The user scoped MOU changes to "afterwards". **Must be settled before any VIP founder is added to `FOUNDER_PORTAL_ALLOWLIST`**, because it is a signed legal artefact.
+1. ~~**The MOU a VIP founder signs is TIR's**~~ — **settled 2026-08-18.** VIP signs the ARTPARK **Facility Agreement** only; TIR signs Facility + Collaboration. See `specs/2026-08-18-mou-agreements-and-resource-lock-design.md`. Original note follows.
+   **The MOU a VIP founder signs is TIR's** — it has them acknowledge full-time presence at ARTPARK campus, the residency expense account, and post-25L equity, stamped `tir-mou-v2`. The user scoped MOU changes to "afterwards". **Must be settled before any VIP founder is added to `FOUNDER_PORTAL_ALLOWLIST`**, because it is a signed legal artefact.
 2. **AIR source quirks** — three duplicate option→level mappings (`supply_chain` Q3 A/B → 8; `reliability` Q2 A/B → 6, Q3 A/B → 8). Preserved deliberately and guarded by a test. Worth ARTPARK confirming the intended levels; affects real scores.
 3. **Unreachable AIR levels** — `supply_chain` can never claim AIR 3, `reliability` can never claim 2 or 4. Faithful to the source (no option maps there), but a founder cannot express those states.
 4. **Evidence from prior AIR rounds is unreachable** — all three evidence endpoints resolve only the current quarter's round. Deliberately deferred to the admin phase.
