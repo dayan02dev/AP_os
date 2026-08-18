@@ -139,7 +139,23 @@ Established by the TIR pages; VIP must match them, not invent a second dialect.
 - **Submitted means frozen** (ruling P3-R5): writes 409, reads stay open, `trl_level` snapshots at submit, no reconciliation into submitted periods (submit reconciles once, while still a draft, at the freeze boundary).
 - **MIS periods submit in order** (ruling P3-R7). `POST /founder/mis/{kind}/{period_key}/submit` 409s `mis_earlier_period_open` — with the blocking period's `period_key` and `label` in the detail — while any earlier period of the same kind is still draft. Monthly and quarterly are independent ladders. The forms UI (Phase 5) must present periods oldest-first and surface that 409 as a link to the blocking period, not as a generic error. Rejected alternative: snapshotting the comparison basis at submit, which would permanently freeze a NULL delta for any period filed before its predecessor.
 - **Entry values are validated, not coerced.** `"12"` for a numeric field is a 422 `invalid_value`, dates must be strict `YYYY-MM-DD`, ints reject floats. Forms send JSON numbers and `null` for empty — never `""`.
-- **Tests must guard what they claim.** Every test whose name asserts a property gets broken in memory to prove it fails. Phase 2's final review found three that passed against deliberately broken code; Phase 3 found several more.
+- **Tests must guard what they claim — and a plan-supplied test is not exempt.**
+  Every test whose name asserts a property gets broken in memory to prove it
+  fails. Beyond that: **run each new test against the UNMODIFIED code first and
+  confirm it fails for the right reason.** Five separate vacuous tests have now
+  been caught this way, and every one was handed down in a plan:
+    - a read-only assertion whose fixture rendered zero inputs, so "no enabled
+      inputs" was trivially true;
+    - a metrics-grid test asserting only that `"12"` appeared *somewhere*, which
+      survived swapping the Target and Actual columns;
+    - `test_founder_write_routes_are_gone`, which 404'd because its precondition
+      never created the period — not because the route was gone;
+    - the same test's financials/headcount cases, run against a monthly period
+      where those endpoints 404 on kind-mismatch regardless;
+    - a sort test whose fixture happened to be pre-sorted, so a function with no
+      sort passed.
+  The failure mode is always the same: the test passes for a reason unrelated to
+  what it names. Writing it is not enough; watch it fail first.
 - **Enumerate derived values whose formula the spec does not state**, and require them raised as questions rather than resolved silently. This is the lesson from the `net_change` Critical: the spec said "computed, not typed" and stopped, an implementer invented a formula, and three reviews read it without flagging it because the only checkable question was "is it computed?".
 - `sqlglot` parses every migration in `backend/migrations/` via `tests/test_migrations_parse.py` — this project's DDL is hand-pasted into Studio with no CI gate.
 
