@@ -107,27 +107,8 @@ export const founderApi = {
   // ("2026-05", "FY26-27-Q1") — never construct one client-side, the
   // calendar is server-owned and IST-anchored.
   //
-  // Every write below returns the whole period bundle, so callers replace
-  // state wholesale rather than merging: `overdue`, `vs_last`, `needs_gap`
-  // and headcount `net_change` are all derived server-side and re-derive on
-  // each response.
-  //
-  // The API validates rather than coerces — send JSON numbers and `null`
-  // for empty, never `""`, or the call 422s `invalid_value`.
+  // Read-only: the founder write routes were retired when submission moved
+  // onto the docx-import/commit path (import path is the only writer now).
   getMis: () => api.get("/founder/mis"),
   getMisPeriod: (kind, periodKey) => api.get(`/founder/mis/${kind}/${periodKey}`),
-  putMisMetrics: (kind, periodKey, items) =>
-    api.put(`/founder/mis/${kind}/${periodKey}/metrics`, items),
-  putMisNarrative: (kind, periodKey, patch) =>
-    api.put(`/founder/mis/${kind}/${periodKey}/narrative`, patch),
-  putMisEntries: (kind, periodKey, section, rows) =>
-    api.put(`/founder/mis/${kind}/${periodKey}/entries/${section}`, rows),
-  putMisFinancials: (kind, periodKey, rows) =>
-    api.put(`/founder/mis/${kind}/${periodKey}/financials`, rows),
-  putMisHeadcount: (kind, periodKey, rows) =>
-    api.put(`/founder/mis/${kind}/${periodKey}/headcount`, rows),
-  // 409s `mis_earlier_period_open` (with the blocking period's key + label
-  // in the detail) while any earlier period of the same kind is still draft.
-  submitMisPeriod: (kind, periodKey) =>
-    api.post(`/founder/mis/${kind}/${periodKey}/submit`),
 };
