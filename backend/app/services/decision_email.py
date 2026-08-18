@@ -48,12 +48,22 @@ def notify_applicant_decided(sb, *, track: str, application_id: str, decision: s
         log.warning("notify_applicant_decided failed for %s/%s", track, application_id, exc_info=True)
 
 
-# Gate-2 decisions used to notify the applicant of nothing at all. Two of the
-# four now do: `offered` sends a track-specific selection email, and `rejected`
-# reuses the SAME gracious decline gate-1 already sends — the applicant should
-# not be able to tell which round declined them. `waitlisted` and `on_hold` stay
-# silent, as they did before, because neither is a final answer.
-_GATE2_SILENT = ("waitlisted", "on_hold")
+# Gate-2 decisions used to notify the applicant of nothing at all. Today exactly
+# one does: `rejected` reuses the SAME gracious decline gate-1 already sends, so
+# the applicant cannot tell which round declined them. `waitlisted` and `on_hold`
+# stay silent because neither is a final answer.
+#
+# `offered` is SILENT ON PURPOSE. The selection templates
+# (applicant_selected_{tir,vip}) and EmailService.send_applicant_selected are
+# built and tested, but must not fire until three things are true:
+#   1. VIP's funding amount and duration are confirmed — the VIP template still
+#      renders a DRAFT banner without them;
+#   2. the VIP portal (TLR evaluation / MIS filling) is live in production, not
+#      just staging;
+#   3. FOUNDER_PORTAL_ALLOWLIST is opened up, or the mail invites a founder into
+#      a portal that will refuse them.
+# Move "offered" out of this tuple to switch selection mail on.
+_GATE2_SILENT = ("waitlisted", "on_hold", "offered")
 
 
 def notify_applicant_gate2(sb, *, track: str, application_id: str, decision: str) -> None:
@@ -61,7 +71,7 @@ def notify_applicant_gate2(sb, *, track: str, application_id: str, decision: str
     committed by the time this runs, so nothing here may raise."""
     if decision in _GATE2_SILENT:
         return
-    if decision not in ("offered", "rejected"):
+    if decision != "rejected":
         return
     try:
         table = f"{track}_applications"
@@ -90,18 +100,19 @@ def notify_applicant_gate2(sb, *, track: str, application_id: str, decision: str
                 program_label="VIP" if track == "sip" else "TIR",
             )
             return
-
-        get_email_service().send_applicant_selected(
-            to=email, applicant_name=name, track=track,
-            venture=_venture_name(sb, track, application_id),
-        )
     except Exception:  # noqa: BLE001
         log.warning("notify_applicant_gate2 failed for %s/%s", track, application_id, exc_info=True)
 
 
 def _venture_name(sb, track: str, application_id: str) -> str:
-    """AI-derived project name, used only to personalise the greeting. Any
-    failure yields '' — a missing venture name must never block the email."""
+    """AI-derived project name, used only to personalise the greeting.
+
+    Currently unused: it feeds the selection email, which is built but not yet
+    wired (see _GATE2_SILENT). Retained deliberately alongside
+    send_applicant_selected and the applicant_selected_* templates so switching
+    selection mail on is a one-line change. Any failure yields '' — a missing
+    venture name must never block the email.
+    """
     try:
         rows = (
             sb.table("ai_screening")
