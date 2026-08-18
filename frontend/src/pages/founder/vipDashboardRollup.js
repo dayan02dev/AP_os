@@ -6,6 +6,11 @@
 // that fetches; every component (Tasks 2-6) receives these functions'
 // output as plain props.
 //
+// `misEmptyReason`/`misEmptyCopy` used to live in this file; they are now
+// defined in `frontend/src/lib/misEmptyState.js` (shared with the admin MIS
+// charts surface) and re-exported below so this file's own callers need no
+// import change.
+//
 // The plan this file implements (docs/superpowers/plans/2026-08-17-vip-
 // phase6-dashboard.md) names six "Open questions" — gaps where the spec
 // gives a tile/panel but not the formula behind it, or asks for data no
@@ -33,6 +38,8 @@
 //      `submitted_at`/`verified_at`, MIS period `submitted_at`/
 //      `reopened_at`).
 
+import { sortByDueDateAsc, misEmptyCopy, misEmptyReason } from "../../lib/misEmptyState.js";
+
 // ── date helpers (pure — never read the system clock) ──────────────────
 
 function toUtcMs(iso) {
@@ -56,59 +63,11 @@ function fmtDate(iso) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString();
 }
 
-function sortByDueDateAsc(rows) {
-  return [...rows].sort((a, b) => {
-    if (a.due_date < b.due_date) return -1;
-    if (a.due_date > b.due_date) return 1;
-    return 0;
-  });
-}
-
-// ── misEmptyReason ───────────────────────────────────────────────────────
-
-// `periodRows` is one kind's array (e.g. `mis.monthly`), never the combined
-// `{monthly, quarterly}` index — see `reportingCompliance`/`nextDue` for the
-// functions that DO take the whole index.
-//
-// States 6 and 7 (the table in the plan) are the sharpest instance of this
-// build's own failure mode: a null with two distinct causes rendered with
-// one message true for only one of them. Both are composed purely from
-// `status`/`overdue`, never from a frontend `due_date <= today` comparison.
-// The copy for the reason `misEmptyReason` returns. It lives here, beside the
-// function that produces the reason, rather than in each panel: three panels
-// render this same sentence, and three verbatim copies of it is precisely how
-// the two causes drift back into one message. This build has already paid for
-// that mistake five times, and this codebase has a longer history of
-// hand-synced pairs silently diverging (rbac.py/rbac.js, state_machine.py/
-// statusMachine.js — the latter drifted badly enough to need a mirror test).
-// One definition, one place to fix.
-export function misEmptyCopy(reason) {
-  if (!reason) return null;
-  if (reason.cause === "overdue_backlog") {
-    return `No monthly update filed yet — ${reason.count} period(s) are overdue, starting with ${reason.oldest_label} (due ${reason.oldest_due}).`;
-  }
-  return `No monthly update filed yet — your first one is due ${reason.due_date}.`;
-}
-
-export function misEmptyReason(periodRows) {
-  const rows = periodRows || [];
-  if (rows.some((r) => r.status === "submitted")) return null; // not empty
-
-  const overdue = rows.filter((r) => r.overdue);
-  if (overdue.length > 0) {
-    const oldest = sortByDueDateAsc(overdue)[0];
-    return {
-      cause: "overdue_backlog",
-      count: overdue.length,
-      oldest_label: oldest.label,
-      oldest_due: oldest.due_date,
-    };
-  }
-
-  if (rows.length === 0) return null; // nothing generated yet — not reachable for an onboarded founder
-  const soonest = sortByDueDateAsc(rows)[0];
-  return { cause: "not_due_yet", due_date: soonest.due_date, due_label: soonest.label };
-}
+// `misEmptyReason`/`misEmptyCopy` themselves now live in
+// `frontend/src/lib/misEmptyState.js` (imported above, alongside
+// `sortByDueDateAsc` which `nextDue` below still needs) — re-exported here
+// so every existing caller of this module keeps working unchanged.
+export { misEmptyCopy, misEmptyReason };
 
 // ── reportingCompliance ──────────────────────────────────────────────────
 
