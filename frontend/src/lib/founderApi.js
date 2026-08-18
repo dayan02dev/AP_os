@@ -4,15 +4,23 @@ import { api } from "./api.js";
 export const founderApi = {
   me: () => api.get("/founder/me"),
 
-  // MOU
+  // MOU — a founder's track can require more than one agreement
+  // (agreements.TRACK_AGREEMENTS); one set of 1-3 collaborator party
+  // details feeds every agreement, previewed and signed together.
   getMou: () => api.get("/founder/mou"),
-  signMou: (signerName, signaturePng, acknowledgements = []) =>
+  previewMou: (collaborators) => api.post("/founder/mou/preview", { collaborators }),
+  signMou: (signerName, signaturePng, acknowledgements = [], collaborators = []) =>
     api.post("/founder/mou/sign", {
       signer_name: signerName,
       signature_png: signaturePng,
       acknowledgements,
+      collaborators,
     }),
-  mouSignedUrl: () => api.get("/founder/mou/signed-url"),
+  // agreement omitted -> the row's primary (first-signed) document, same
+  // shape as before this task; pass a slug (e.g. "collaboration-v1") to
+  // fetch that specific agreement's own signed PDF.
+  mouSignedUrl: (agreement) =>
+    api.get(agreement ? `/founder/mou/signed-url?agreement=${encodeURIComponent(agreement)}` : "/founder/mou/signed-url"),
 
   // Approach
   getApproach: () => api.get("/founder/approach"),
