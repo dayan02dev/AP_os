@@ -13,7 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi import status as http_status
 
-from ..config import settings
+from ..config import RESOURCE_ITEMS, settings
 from ..deps import get_current_user
 from ..models.founder import (
     ApproachIn,
@@ -113,6 +113,9 @@ async def get_me(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
         "locked": {
             "cohort": ctx["status"] != "onboarded",
             "dashboard": ctx["status"] != "onboarded",
+        },
+        "resources_available": {
+            item: settings.resource_available(item) for item in RESOURCE_ITEMS
         },
     }
 

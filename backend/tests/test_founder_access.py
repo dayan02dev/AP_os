@@ -141,3 +141,27 @@ def test_multi_entry_allowlist_parses(client, monkeypatch, _clear, _allowlist):
     app.dependency_overrides[get_current_user] = _override_user("u1", "founder@artpark.in")
     r = client.get("/founder/me")
     assert r.status_code == 200, r.text
+
+
+# ── Founders Resources availability map (server-driven, per-item release) ──
+
+
+def test_me_reports_all_resources_locked_by_default(client, monkeypatch, _clear):
+    _install(monkeypatch, _OFFERED_APP)
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.get("/founder/me")
+    assert r.json()["resources_available"] == {
+        "store": False, "fundraising": False, "partners": False,
+        "assets": False, "support": False,
+    }
+
+
+def test_me_reports_only_enabled_resources_as_available(client, monkeypatch, _clear):
+    from app.config import settings
+    monkeypatch.setattr(settings, "founder_resources_enabled", "store, assets")
+    _install(monkeypatch, _OFFERED_APP)
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    body = client.get("/founder/me").json()
+    assert body["resources_available"]["store"] is True
+    assert body["resources_available"]["assets"] is True
+    assert body["resources_available"]["fundraising"] is False

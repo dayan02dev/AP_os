@@ -42,6 +42,12 @@ APP_VERSION = _read_app_version()
 
 DEV_ADMIN_KEY_SENTINEL = "dev-only-do-not-use-in-prod-____________"
 
+# The five Founders Resources tabs, keyed the same way the frontend nav +
+# `/founder/*` sub-routers use ("store" == Art Infra, "fundraising" ==
+# ArtConnect, "partners" == ArtPartners, "assets" == Art Assets, "support" ==
+# Art Support). Single source of truth for the availability map shape.
+RESOURCE_ITEMS: tuple[str, ...] = ("store", "fundraising", "partners", "assets", "support")
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -160,6 +166,17 @@ class Settings(BaseSettings):
     # keep a value set during the soft launch. Matching is case-insensitive.
     founder_portal_allowlist: str = ""
 
+    # ── Founders Resources availability (server-driven, per-item release) ──
+    # The five Founders Resources tabs (store, fundraising, partners, assets,
+    # support) are fully working against the founder_catalog.py reference
+    # data (migration 041) but the underlying vendor/investor/partner
+    # relationships are not real yet. Comma-separated resource keys currently
+    # released to founders. Unlike founder_portal_allowlist (empty = open),
+    # empty here means "everything locked" — the safe default for a surface
+    # that isn't launched. Flip via FOUNDER_RESOURCES_ENABLED; releasing an
+    # item is an env-var change, never a frontend deploy.
+    founder_resources_enabled: str = ""
+
     # ─── Normalisers ────────────────────────────────────────────
     @field_validator("env")
     @classmethod
@@ -217,6 +234,19 @@ class Settings(BaseSettings):
         if not allowed:
             return True
         return bool(email) and email.strip().lower() in allowed
+
+    @property
+    def founder_resources_enabled_set(self) -> frozenset[str]:
+        """Parsed, lowercased set of released Founders Resources items."""
+        return frozenset(
+            e.strip().lower()
+            for e in self.founder_resources_enabled.split(",")
+            if e.strip()
+        )
+
+    def resource_available(self, item: str) -> bool:
+        """True if `item` (one of RESOURCE_ITEMS) has been released."""
+        return item in self.founder_resources_enabled_set
 
     @property
     def support_recipients_list(self) -> list[str]:
