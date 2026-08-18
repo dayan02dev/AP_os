@@ -55,13 +55,19 @@ match of the Word file. Fonts, indents and numbering are ours.
 **Founder-supplied (12)** — per collaborator, up to three:
 `name`, `pan`, `parent_name` (s/o/d/o), `address`.
 
-**ARTPARK constants (6)** — `term_months` (appears twice: numeral and words),
-`insurance_limit`, `collaboration_agreement_date`, and the execution
-`[month]`/`[date]`. Set once in code.
+**ARTPARK constants (4)** — `term_months` (appears twice: numeral and words),
+`insurance_limit`, and `collaboration_agreement_date`. Set once in code. The
+execution `[month]`/`[date]` use the bracket-word convention, not `[•]`, and are
+stamped at signing time.
 
-**Facilities schedule (4)** — the "Availability Window" cells for Dedicated
-Seating, Laboratory Space, Computing Resources and the remaining row. ARTPARK's
-allocation, not the founder's. Constants.
+**Facilities schedule (6)** — the "Availability Window" cell in every data row
+of Schedule II: Dedicated Seating, Laboratory Space, Computing Resources,
+Wireless Internet, Conference Rooms, and Administrative ID / Access Badge.
+ARTPARK's allocation, not the founder's. Constants.
+
+*(Corrected 2026-08-18: this section first said 4 schedule cells and 6
+paragraph constants. Verified against the document — 16 `[•]` in paragraphs,
+6 in table cells. The split is 12 + 4 + 6.)*
 
 Tables 2 and 3 (lab space, activities) ship as-is; they are empty schedules in
 the source.
