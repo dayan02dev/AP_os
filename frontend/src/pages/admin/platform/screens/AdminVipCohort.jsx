@@ -12,7 +12,7 @@ import { useAuth } from "../../../../hooks/useAuth.jsx";
 import { hasCapability } from "../../../../lib/rbac.js";
 import "../../../../styles/admin-vip-cohort.css";
 import { AdminVipAirQueue } from "./AdminVipAirQueue.jsx";
-import { AdminVipMisMatrix } from "./AdminVipMisMatrix.jsx";
+import { AdminVipMisCharts } from "./AdminVipMisCharts.jsx";
 
 const SUBTABS = [
   ["air", "AIR verification"],
@@ -41,7 +41,7 @@ export function AdminVipCohort() {
         ))}
       </div>
 
-      {tab === "air" ? <AdminVipAirQueue canWrite={canWrite} /> : <AdminVipMisMatrix canWrite={canWrite} />}
+      {tab === "air" ? <AdminVipAirQueue canWrite={canWrite} /> : <AdminVipMisCharts canWrite={canWrite} />}
     </div>
   );
 }

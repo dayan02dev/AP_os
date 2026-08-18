@@ -6,6 +6,7 @@
 //   POST /admin/platform/vip/air/assessments/{id}/levers/{lever}/verify
 //   POST /admin/platform/vip/air/assessments/{id}/confirm-all
 //   GET  /admin/platform/vip/mis/matrix?kind=monthly|quarterly
+//   GET  /admin/platform/vip/mis/charts
 //   GET  /admin/platform/vip/mis/{applicationId}/{kind}/{periodKey}
 //   POST /admin/platform/vip/mis/{applicationId}/{kind}/{periodKey}/reopen
 //
@@ -33,6 +34,8 @@ export const adminVipApi = {
     api.post(`${BASE}/air/assessments/${encodeURIComponent(assessmentId)}/confirm-all`, {}),
 
   getMisMatrix: (kind) => api.get(`${BASE}/mis/matrix?kind=${encodeURIComponent(kind)}`),
+
+  getMisCharts: () => api.get(`${BASE}/mis/charts`),
 
   getMisPeriod: (applicationId, kind, periodKey) =>
     api.get(

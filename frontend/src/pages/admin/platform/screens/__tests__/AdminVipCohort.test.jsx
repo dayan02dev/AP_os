@@ -18,8 +18,8 @@ vi.mock("../../../../../hooks/useAuth.jsx", () => ({ useAuth: vi.fn() }));
 vi.mock("../AdminVipAirQueue.jsx", () => ({
   AdminVipAirQueue: (props) => <div data-testid="air-queue" data-canwrite={String(!!props.canWrite)} />,
 }));
-vi.mock("../AdminVipMisMatrix.jsx", () => ({
-  AdminVipMisMatrix: (props) => <div data-testid="mis-matrix" data-canwrite={String(!!props.canWrite)} />,
+vi.mock("../AdminVipMisCharts.jsx", () => ({
+  AdminVipMisCharts: (props) => <div data-testid="mis-charts" data-canwrite={String(!!props.canWrite)} />,
 }));
 
 import { useAuth } from "../../../../../hooks/useAuth.jsx";
@@ -34,13 +34,13 @@ describe("AdminVipCohort — sub-nav", () => {
   it("defaults to the AIR verification queue", () => {
     render(<AdminVipCohort />);
     expect(screen.getByTestId("air-queue")).toBeTruthy();
-    expect(screen.queryByTestId("mis-matrix")).toBeNull();
+    expect(screen.queryByTestId("mis-charts")).toBeNull();
   });
 
   it("switches to MIS submissions and back", () => {
     render(<AdminVipCohort />);
     fireEvent.click(screen.getByRole("tab", { name: /mis submissions/i }));
-    expect(screen.getByTestId("mis-matrix")).toBeTruthy();
+    expect(screen.getByTestId("mis-charts")).toBeTruthy();
     expect(screen.queryByTestId("air-queue")).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: /air verification/i }));
@@ -71,7 +71,7 @@ describe("AdminVipCohort — capability gate", () => {
     useAuth.mockReturnValue({ user: { roles: ["reviewer"] } });
     render(<AdminVipCohort />);
     fireEvent.click(screen.getByRole("tab", { name: /mis submissions/i }));
-    expect(screen.getByTestId("mis-matrix").dataset.canwrite).toBe("false");
+    expect(screen.getByTestId("mis-charts").dataset.canwrite).toBe("false");
   });
 
   it("does not crash before the user resolves (canWrite=false while loading)", () => {

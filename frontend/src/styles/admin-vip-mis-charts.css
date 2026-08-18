@@ -1,0 +1,61 @@
+/* AdminVipMisCharts.jsx — the admin cohort MIS charts screen (spec §6/§7).
+   Scoped under .adm-portal, same convention as admin-vip-cohort.css (which
+   already owns .vipc-subnav/.vipc-subnav-btn — reused here unchanged, not
+   redefined). Shared chart-card chrome (.mis-chart-card, .mis-chart-title,
+   .mis-chart-empty, the expand modal) lives in mis-charts.css, owned by
+   MisLineChart.jsx/MisChartCard.jsx — never redefined here either.
+
+   .mis-charts-grid/.mis-charts-empty are this screen's own copies of the
+   layout classnames FounderMis.jsx also uses (owned there by
+   founder-mis-charts.css) — duplicated rather than imported, because that
+   file is founder-page-scoped chrome this admin screen has no business
+   depending on as a side-effect import. */
+
+.adm-portal .mis-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.adm-portal .mis-charts-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-soft);
+  border: 1px dashed var(--line-strong);
+  border-radius: 2px;
+}
+
+.adm-portal .mis-cohort-rollup {
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.adm-portal .mis-cohort-rollup h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.adm-portal .mis-cohort-rollup-note {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  max-width: 62ch;
+}
+
+.adm-portal .mis-startup-section {
+  margin-bottom: 24px;
+}
+.adm-portal .mis-startup-section h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.adm-portal .mis-startup-latest {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
