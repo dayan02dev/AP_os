@@ -150,11 +150,13 @@ shape, and neither is resolved silently:
 |---|---|
 | **Backend — retire founder writes, add admin charts** | |
 | `backend/app/routers/founder_mis.py` | *Modify.* Strip 6 route decorators; add `_finalize_submission`; extend `MisImportCommitBody`. |
-| `backend/tests/test_mis_endpoints.py` | *Modify.* Migrate write/submit tests onto the import-commit path; add 6 route-gone tests. |
+| `backend/tests/test_mis_endpoints.py` | *Modify.* Migrate ~80 write/submit call sites onto the import-commit path; add 6 route-gone tests. |
 | `backend/tests/test_mis_import.py` | *Modify.* Add `submit` flag + ingest-ordering-guard tests. |
+| `backend/tests/test_admin_vip_mis_export.py` | *Modify.* Blast radius: one setup call now 404. |
+| `backend/scripts/smoke_vip_portal.py` | *Modify.* Blast radius: the `--writes` section's 3 call sites. |
 | `backend/app/services/admin_vip_query.py` | *Modify.* Add `MIS_GRAPH`, `_onboarded_vip_application_ids`, `fetch_mis_charts`. |
 | `backend/app/routers/admin_vip.py` | *Modify.* Add `GET /mis/charts`. |
-| `backend/tests/test_admin_vip.py` | *Modify.* Tests for the new endpoint, including the roll-up default. |
+| `backend/tests/test_admin_vip.py` | *Modify (Task 1 + Task 2).* Task 1: fix `_submit_mis_period` helper + one PUT call (blast radius). Task 2: add tests for the new endpoint, including the roll-up default. |
 | `backend/scripts/seed_vip_mis_data.py` | *Rewrite.* Cohort of 3 ventures, filled via import/commit (the old PUT/submit routes it called are gone). |
 | **Frontend — shared chart infrastructure** | |
 | `frontend/package.json` | *Modify.* `npm install chart.js`. |
@@ -191,6 +193,12 @@ never edited.
 - Modify: `backend/app/routers/founder_mis.py`
 - Modify: `backend/tests/test_mis_endpoints.py`
 - Modify: `backend/tests/test_mis_import.py`
+- Modify: `backend/tests/test_admin_vip.py` (blast radius, not new coverage —
+  see Step 6)
+- Modify: `backend/tests/test_admin_vip_mis_export.py` (blast radius — one
+  setup call, see Step 6)
+- Modify: `backend/scripts/smoke_vip_portal.py` (blast radius — the
+  `--writes` section, see Step 6)
 
 **Interfaces:**
 - Removes: the HTTP surface of `PUT .../metrics`, `PUT .../narrative`,
@@ -220,13 +228,9 @@ never edited.
       _install(monkeypatch)
       client.get(f"/founder/mis/monthly/{CUR_MONTH}")  # ensure the period row exists
       kwargs = {"json": body} if body is not None else {}
-      resp = getattr(client, method)(f"/founder/mis/monthly{CUR_MONTH and ''}"
-                                      f"/{CUR_MONTH}{suffix}", **kwargs)
+      resp = getattr(client, method)(f"/founder/mis/monthly/{CUR_MONTH}{suffix}", **kwargs)
       assert resp.status_code == 404
   ```
-
-  (Fix the double-slash typo before running — the intent is
-  `f"/founder/mis/monthly/{CUR_MONTH}{suffix}"`.)
 
   Add to `test_mis_import.py` (new tests, using its existing `_install`/
   `_user`/`FakeSupabase` fixtures):
@@ -358,72 +362,163 @@ never edited.
 
 - [ ] **Step 5: Migrate the existing write/submit tests off the dead routes**
 
-  `test_mis_endpoints.py` has ~30 tests that PUT/POST directly against the
-  six now-404 routes. Two worked examples — apply the same transform to the
-  rest by name (listed below):
+  `test_mis_endpoints.py` has **over 80 call sites** across ~50 tests that
+  PUT/POST directly against the six now-404 routes (confirmed by
+  `grep -c 'client\.put(f\?"/founder/mis\|client\.post(f\?"/founder/mis.*submit"'
+  tests/test_mis_endpoints.py` before starting — re-run that count after
+  this step and expect zero). Enumerating them by test name is exactly the
+  kind of list that silently misses one (a setup call inside a test whose
+  *name* is about something else) — apply this mechanical, exhaustive rule
+  instead, call site by call site, not test by test:
 
-  *Before* (`test_metrics_put_round_trips`):
+  | Original call | Replacement |
+  |---|---|
+  | `client.put(f".../{kind}/{key}/metrics", json=X)` | `client.post(f".../{kind}/{key}/import/commit", json={"metrics": X})` |
+  | `client.put(f".../{kind}/{key}/narrative", json=X)` | `client.post(f".../{kind}/{key}/import/commit", json={"narrative": X})` |
+  | `client.put(f".../{kind}/{key}/entries/{section}", json=X)` | `client.post(f".../{kind}/{key}/import/commit", json={"entries": {section: X}})` |
+  | `client.put(f".../{kind}/{key}/financials", json=X)` | `client.post(f".../{kind}/{key}/import/commit", json={"financials": X})` |
+  | `client.put(f".../{kind}/{key}/headcount", json=X)` | `client.post(f".../{kind}/{key}/import/commit", json={"headcount": X})` |
+  | `client.post(f".../{kind}/{key}/submit")` | `client.post(f".../{kind}/{key}/import/commit", json={"submit": True})` |
+
+  **One call site becomes one commit call — never batch two original calls
+  into one commit body.** A test with two sequential PUTs to the same
+  section (testing upsert/overwrite behaviour, e.g.
+  `test_entries_delete_is_scoped_to_its_own_section`) must keep two
+  sequential commit calls, in the same order, each still going through
+  `import/commit` — the endpoint accepts a partial body and a draft period
+  accepts any number of commits before (optionally) being finalized, so
+  this preserves every test's original semantics exactly.
+
+  **The assertions inside every test stay unchanged** — only the request
+  shape moves; Step 2 left every validation function's body untouched, so
+  the same 422/409/200 outcomes fire for the same reasons.
+
+  `test_submitted_period_rejects_every_write_but_serves_every_read` becomes
+  a commit-path assertion: PUT-equivalents via `import/commit` now 409
+  `mis_already_submitted` (from `_own_draft_period` inside
+  `commit_mis_import` itself, checked before any of the delegated writes
+  run), GETs stay 200 unchanged.
+
+  Verify completeness before moving on:
+  ```bash
+  grep -n 'client\.put(f\?"/founder/mis\|client\.post(f\?"/founder/mis/[^"]*submit"' tests/test_mis_endpoints.py
+  ```
+  Expect no output.
+
+- [ ] **Step 6: Fix `test_admin_vip.py`'s own MIS fixture helper**
+
+  `test_admin_vip.py`'s docstring states its own philosophy plainly:
+  *"Fixtures deliberately build state through the REAL founder-side routers
+  ... an assessment/period only ever reaches `submitted` the way a real
+  founder would put it there."* Its `_submit_mis_period` helper (line 137)
+  and one inline call (line 527, inside
+  `test_reopen_returns_a_submitted_period_to_draft`) both call routes this
+  step just removed — leaving this file red until Task 2 touches it would
+  break "every task ends green." Fix both now, same transform as Step 5:
+
+  *Before:*
   ```python
-  resp = client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=rows)
+  def _submit_mis_period(client, kind: str, period_key: str):
+      r = client.post(f"/founder/mis/{kind}/{period_key}/submit")
+      assert r.status_code == 200, r.text
+      return r.json()
   ```
   *After:*
   ```python
-  resp = client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit",
-                      json={"metrics": rows})
-  ```
-
-  *Before* (`test_submit_with_earlier_draft_predecessor_409s_and_names_blocker`):
-  ```python
-  resp = client.post(f"/founder/mis/monthly/{later_key}/submit")
-  ```
-  *After:*
-  ```python
-  resp = client.post(f"/founder/mis/monthly/{later_key}/import/commit",
+  def _submit_mis_period(client, kind: str, period_key: str):
+      r = client.post(f"/founder/mis/{kind}/{period_key}/import/commit",
                       json={"submit": True})
+      assert r.status_code == 200, r.text
+      return r.json()
   ```
 
-  Apply this transform to every test in the file whose name starts with
-  `test_metrics_`, `test_narrative_`, `test_entries_`, `test_financials_`,
-  `test_headcount_`, `test_submit_`, `test_duplicate_`, `test_invalid_rag_`,
-  `test_unknown_`, `test_int_field_`, `test_numeric_field_`,
-  `test_date_field_`, `test_a_null_entry_value_`, `test_supplying_trl_level_`,
-  `test_needs_gap_series_`, `test_regression_submitted_periods_vs_last_`,
-  `test_trl_level_is_snapshotted_at_submit_`,
-  `test_trl_level_snapshot_is_null_when_unverified_at_submit_time`,
-  `test_quarterly_submit_does_not_touch_trl_level`,
-  `test_metrics_upsert_includes_label_and_group_key`,
-  `test_every_write_kind_stamps_updated_at`,
-  `test_submit_reconciles_missing_child_rows_before_freezing`,
-  `test_entries_race_converges_instead_of_duplicating`,
-  `test_entries_delete_is_scoped_to_its_own_section`,
-  `test_next_milestones_is_reachable_via_section_extra_entries` — wrap the
-  PUT body under the right top-level key (`metrics`/`narrative`/`entries`/
-  `financials`/`headcount`), and any PUT to `/entries/{section}` becomes
-  `{"entries": {section: rows}}`. Any test that asserted `submit`'s own
-  behaviour adds `"submit": True` to the commit body and drops the separate
-  submit call. **The assertions inside every one of these tests stay
-  unchanged** — only the request shape moves; the underlying validation is
-  the same code, called the same way, per Step 2.
+  And in `test_reopen_returns_a_submitted_period_to_draft`:
 
-  `test_submitted_period_rejects_every_write_but_serves_every_read` becomes a
-  commit-path assertion: PUT-equivalents via `import/commit` now 409
-  `mis_already_submitted` (from `_own_draft_period` inside `commit_mis_import`
-  itself, checked before any of the delegated writes run), GETs stay 200
-  unchanged.
+  *Before:*
+  ```python
+      r2 = client.put("/founder/mis/monthly/2026-06/metrics", json=[])
+      assert r2.status_code == 200, r2.text
+  ```
+  *After:*
+  ```python
+      r2 = client.post("/founder/mis/monthly/2026-06/import/commit", json={"metrics": []})
+      assert r2.status_code == 200, r2.text
+  ```
 
-  Tests that were purely about the HTTP shape of a route that no longer
-  exists (none currently in this file check that, but verify) can be
-  deleted outright rather than migrated — do not delete anything that
-  asserts a validation rule the underlying function still enforces.
+  Every other caller of `_submit_mis_period` (lines 492, 517, 557-559) needs
+  no change — they call the helper, not the route, directly.
 
-- [ ] **Step 6: Run every changed/added file — all green**
+  `test_admin_vip_mis_export.py` has one setup call site of its own
+  (`test_export_startup_scope_xlsx`), same table-driven transform:
+
+  *Before:*
+  ```python
+  client.put(f"/founder/mis/monthly/{CUR_MONTH}/metrics", json=[
+      {"metric_key": "revenue_month", "actual": 12.5, "target": 10},
+  ])
+  ```
+  *After:*
+  ```python
+  client.post(f"/founder/mis/monthly/{CUR_MONTH}/import/commit", json={"metrics": [
+      {"metric_key": "revenue_month", "actual": 12.5, "target": 10},
+  ]})
+  ```
+
+  Confirm no other call sites remain in either file:
+  ```bash
+  grep -n 'client\.put(f\?"/founder/mis\|client\.post(f\?"/founder/mis/[^"]*submit"' tests/test_admin_vip.py tests/test_admin_vip_mis_export.py
+  ```
+  Expect no output.
+
+  `backend/scripts/smoke_vip_portal.py` (the `--writes` section,
+  VIP_BUILD_STATE.md's own documented staging smoke tool) has three more
+  call sites demonstrating real, still-true behaviour — full-row upsert and
+  the out-of-order guard — that must keep working through the new surface,
+  not be deleted:
+
+  *Before:*
+  ```python
+  call("PUT", "/founder/mis/monthly/2026-05/metrics",
+       [{"metric_key": "revenue_month", "target": 10, "actual": 4, "commentary": "keep me"}])
+  code, b = call("PUT", "/founder/mis/monthly/2026-05/metrics",
+       [{"metric_key": "revenue_month", "actual": 7}])
+  ...
+  code, b = call("PUT", "/founder/mis/monthly/2026-05/metrics",
+       [{"metric_key": "revenue_month", "actual": "12"}])
+  ...
+  code, b = call("POST", "/founder/mis/monthly/2026-08/submit")
+  ```
+  *After:*
+  ```python
+  call("POST", "/founder/mis/monthly/2026-05/import/commit",
+       {"metrics": [{"metric_key": "revenue_month", "target": 10, "actual": 4, "commentary": "keep me"}]})
+  code, b = call("POST", "/founder/mis/monthly/2026-05/import/commit",
+       {"metrics": [{"metric_key": "revenue_month", "actual": 7}]})
+  ...
+  code, b = call("POST", "/founder/mis/monthly/2026-05/import/commit",
+       {"metrics": [{"metric_key": "revenue_month", "actual": "12"}]})
+  ...
+  code, b = call("POST", "/founder/mis/monthly/2026-08/import/commit", {"submit": True})
+  ```
+  The `out.append(...)` lines that follow each call keep their existing
+  text (they read `code`/`b`, not the request shape) — only rename the
+  first tuple element of each (`"PUT metrics..."` → `"commit metrics..."`,
+  `"POST submit out of order"` → `"commit with submit, out of order"`) so
+  the printed report still describes what actually ran.
+
+- [ ] **Step 7: Run every changed/added file — all green**
 
   ```bash
   cd backend
-  $PY -m pytest tests/test_mis_endpoints.py tests/test_mis_import.py -q --no-cov
+  $PY -m pytest tests/test_mis_endpoints.py tests/test_mis_import.py tests/test_admin_vip.py tests/test_admin_vip_mis_export.py -q --no-cov
   ```
 
-- [ ] **Step 7: Mutation-check**
+  `smoke_vip_portal.py` has no pytest coverage by nature (manual, staging
+  HTTP script, same as Task 3's seeder) — its fix is verified by reading the
+  diff, not by a test run here; it will be exercised for real the next time
+  someone runs it against staging with `--writes`.
+
+- [ ] **Step 8: Mutation-check**
 
   Comment out the `_reject_out_of_order_submit(ctx, kind, period)` call
   inside `_finalize_submission` and confirm
@@ -432,10 +527,10 @@ never edited.
   `test_commit_without_submit_leaves_the_period_draft` fails. Restore.
   Report both.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
   ```bash
-  git add backend/app/routers/founder_mis.py backend/tests/test_mis_endpoints.py backend/tests/test_mis_import.py
+  git add backend/app/routers/founder_mis.py backend/tests/test_mis_endpoints.py backend/tests/test_mis_import.py backend/tests/test_admin_vip.py backend/tests/test_admin_vip_mis_export.py backend/scripts/smoke_vip_portal.py
   git commit -m "feat(vip-mis): retire founder write routes, submission moves to import/commit"
   ```
 
@@ -480,36 +575,77 @@ never edited.
 
 - [ ] **Step 1: Write the failing tests**
 
-  Add to `test_admin_vip.py` (mirroring its existing `_install`-style
-  fixture — read the file's own fixture helper first and match it):
+  Add to `test_admin_vip.py`, reusing its own established fixture idioms
+  exactly: `_install(monkeypatch, extra_sip_apps=[...])`,
+  `_founder_user(app_id=..., user_id=...)`/`_admin_user()`/`_as(...)`, the
+  `_frozen_mis_today` fixture (onboarded 2026-06-01, frozen "today"
+  2026-08-16 → monthly periods 2026-06/07/08 — the exact same calendar
+  `test_mis_matrix_shows_startups_and_derives_overdue` already relies on),
+  and — since Task 1 already ran — `import/commit` (with `"submit": true`)
+  as the only way left to get a period into `submitted`:
 
   ```python
-  def test_mis_charts_includes_a_venture_with_zero_periods_as_has_any_period_false(client, monkeypatch, _clear):
-      # sip_applications has an onboarded venture with no vip_mis_periods rows at all
-      ...
+  def test_mis_charts_includes_a_venture_with_zero_periods_as_has_any_period_false(client, monkeypatch, _clear, _frozen_mis_today):
+      _install(monkeypatch, extra_sip_apps=[
+          {"id": "sapp_never_opened", "user_id": "u2", "status": "onboarded",
+           "submitted_at": "2026-01-01", "basic_org": "NeverOpened Co"},
+      ])
+      _as(_founder_user())  # sapp1/u1 opens MIS; sapp_never_opened never does
+      client.get("/founder/mis")
+
+      _as(_admin_user())
       resp = client.get("/admin/platform/vip/mis/charts")
+      assert resp.status_code == 200, resp.text
       startup = next(s for s in resp.json()["startups"] if s["application_id"] == "sapp_never_opened")
       assert startup["has_any_period"] is False
       assert startup["series"]["revenue"] == []
 
-  def test_mis_charts_per_startup_series_is_submitted_only_oldest_first(client, monkeypatch, _clear):
-      ...  # two submitted monthly periods (2026-05, 2026-06) + one draft (2026-07)
-      resp = client.get("/admin/platform/vip/mis/charts")
-      startup = ...
-      assert [p["period_key"] for p in startup["series"]["revenue"]] == ["2026-05", "2026-06"]
+  def test_mis_charts_per_startup_series_is_submitted_only_oldest_first(client, monkeypatch, _clear, _frozen_mis_today):
+      _install(monkeypatch)
+      _as(_founder_user())
+      client.get("/founder/mis")  # generates 2026-06, 2026-07, 2026-08
+      client.post("/founder/mis/monthly/2026-06/import/commit",
+                  json={"metrics": [{"metric_key": "revenue_month", "actual": 4.5}], "submit": True})
+      client.post("/founder/mis/monthly/2026-07/import/commit",
+                  json={"metrics": [{"metric_key": "revenue_month", "actual": 6.2}], "submit": True})
+      # 2026-08 stays draft — must NOT appear in the series.
 
-  def test_mis_charts_cohort_rollup_sums_only_startups_that_reported_that_period_never_zero_fills(client, monkeypatch, _clear):
-      # startup A submits 2026-05 revenue=10; startup B has no 2026-05 period at all
-      ...
-      resp = client.get("/admin/platform/vip/mis/charts")
-      row = next(r for r in resp.json()["cohort"]["series"]["revenue"] if r["period_key"] == "2026-05")
-      assert row["value"] == 10  # NOT 5 (zero-filled average) and not None (gated on full cohort)
+      _as(_admin_user())
+      startup = next(s for s in client.get("/admin/platform/vip/mis/charts").json()["startups"]
+                     if s["application_id"] == "sapp1")
+      assert [p["period_key"] for p in startup["series"]["revenue"]] == ["2026-06", "2026-07"]
+      assert [p["value"] for p in startup["series"]["revenue"]] == [4.5, 6.2]
 
-  def test_mis_charts_a_metric_null_in_every_submitted_period_still_appears_as_null_points(client, monkeypatch, _clear):
-      # active_customers left null in every submitted metrics row
-      ...
-      resp = client.get("/admin/platform/vip/mis/charts")
-      startup = ...
+  def test_mis_charts_cohort_rollup_sums_only_startups_that_reported_never_zero_fills(client, monkeypatch, _clear, _frozen_mis_today):
+      _install(monkeypatch, extra_sip_apps=[
+          {"id": "sapp2", "user_id": "u2", "status": "onboarded",
+           "submitted_at": "2026-01-01", "basic_org": "Beta Sensors"},
+      ])
+      _as(_founder_user())  # sapp1/u1
+      client.get("/founder/mis")
+      client.post("/founder/mis/monthly/2026-06/import/commit",
+                  json={"metrics": [{"metric_key": "revenue_month", "actual": 10}], "submit": True})
+      # sapp2/u2 never opens MIS at all — contributes nothing to 2026-06.
+
+      _as(_admin_user())
+      row = next(r for r in client.get("/admin/platform/vip/mis/charts").json()["cohort"]["series"]["revenue"]
+                 if r["period_key"] == "2026-06")
+      assert row["value"] == 10  # NOT 5 (zero-filled average), not None (gated on full cohort)
+
+  def test_mis_charts_a_metric_null_in_every_submitted_period_still_appears_as_null_points(client, monkeypatch, _clear, _frozen_mis_today):
+      _install(monkeypatch)
+      _as(_founder_user())
+      client.get("/founder/mis")
+      client.post("/founder/mis/monthly/2026-06/import/commit",
+                  json={"metrics": [{"metric_key": "revenue_month", "actual": 4.5}], "submit": True})
+      client.post("/founder/mis/monthly/2026-07/import/commit",
+                  json={"metrics": [{"metric_key": "revenue_month", "actual": 6.2}], "submit": True})
+      # active_customers ("paying") is never sent in either commit — stays
+      # null, seeded blank by ensure_periods.
+
+      _as(_admin_user())
+      startup = next(s for s in client.get("/admin/platform/vip/mis/charts").json()["startups"]
+                     if s["application_id"] == "sapp1")
       assert all(p["value"] is None for p in startup["series"]["paying"])
       assert len(startup["series"]["paying"]) == 2  # points still present, not dropped
   ```
@@ -1623,8 +1759,8 @@ never edited.
     );
   }
 
-  function PeriodCards({ bundles }) {
-    const sorted = [...(bundles || [])].sort((a, b) => (a.period.period_key < b.period.period_key ? 1 : -1));
+  function PeriodCards({ periodBundles }) {
+    const sorted = [...(periodBundles || [])].sort((a, b) => (a.period.period_key < b.period.period_key ? 1 : -1));
     if (sorted.length === 0) {
       return <p className="hint">No periods yet — check back once your first one opens.</p>;
     }
@@ -1723,7 +1859,7 @@ never edited.
           ))}
         </div>
 
-        <PeriodCards bundles={bundles[kind]} />
+        <PeriodCards periodBundles={bundles[kind]} />
       </div>
     );
   }
@@ -1851,8 +1987,23 @@ does either.
 
 - [ ] **Step 2: Write the failing tests**
 
+  This test file lives in `screens/__tests__/` — five directories below
+  `src/` (`pages/admin/platform/screens/__tests__/`), one deeper than the
+  component itself, matching the depth `AdminVipMisMatrix.test.jsx`'s own
+  existing `vi.mock("../../../../../lib/adminVipApi.js", ...)` already
+  uses — **not** the four-level depth `AdminVipMisCharts.jsx` itself uses
+  (Step 3), which is one directory shallower. Same seams-mocked shape as
+  that file (network mocked, `useAsync` real):
+
   ```jsx
-  vi.mock("../../../../components/MisChartCard.jsx", () => ({
+  import React from "react";
+  import { describe, it, expect, vi } from "vitest";
+  import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+
+  vi.mock("../../../../../lib/adminVipApi.js", () => ({
+    adminVipApi: { getMisCharts: vi.fn() },
+  }));
+  vi.mock("../../../../../components/MisChartCard.jsx", () => ({
     default: (props) => <div data-testid={`card-${props.chartKey}`} />,
     GRAPH: [
       { key: "revenue", title: "Revenue (₹L per month)", metricKey: "revenue_month" },
@@ -1862,6 +2013,9 @@ does either.
     ],
   }));
   vi.mock("../AdminVipMisMatrix.jsx", () => ({ AdminVipMisMatrix: () => <div data-testid="matrix" /> }));
+
+  import { adminVipApi } from "../../../../../lib/adminVipApi.js";
+  import { AdminVipMisCharts } from "../AdminVipMisCharts.jsx";
 
   // G6: zero onboarded ventures
   it("shows the no-startups empty state when the cohort is empty", async () => {
