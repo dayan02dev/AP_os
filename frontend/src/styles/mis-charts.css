@@ -1,0 +1,29 @@
+/* Owned by MisLineChart.jsx / MisChartCard.jsx (frontend/src/components/).
+   Self-contained: no dependency on founder-portal.css/founder-mis.css/
+   founder-mis-grids.css/vip-dashboard.css's own scoped conventions
+   (`.founder-portal .modal-bg`/`.modal` only render correctly under a
+   `.founder-portal` ancestor; admin's `.os-modal`/`.os-modal-backdrop` is a
+   different, also-scoped convention) — this component is shared by both
+   the founder and admin portals, so it cannot borrow either. */
+
+.mis-linechart-wrap { position: relative; width: 100%; height: 160px; }
+.mis-linechart-wrap.is-enlarged { height: 380px; }
+
+.mis-chart-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(20, 20, 24, 0.5);
+  display: flex; align-items: center; justify-content: center;
+  padding: 32px; z-index: 1000;
+}
+.mis-chart-modal {
+  background: var(--bg-paper, #fff); border-radius: 4px;
+  max-width: 720px; width: 92vw; max-height: 86vh; overflow: auto;
+}
+.mis-chart-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px; border-bottom: 1px solid var(--line, #e2e2e6);
+}
+.mis-chart-modal-close {
+  background: none; border: none; font-size: 22px; cursor: pointer;
+  color: var(--ink-dim, #6b6b74); line-height: 1;
+}
+.mis-chart-modal-body { padding: 16px 24px 24px; }
