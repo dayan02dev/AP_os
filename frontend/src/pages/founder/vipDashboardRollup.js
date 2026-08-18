@@ -38,7 +38,7 @@
 //      `submitted_at`/`verified_at`, MIS period `submitted_at`/
 //      `reopened_at`).
 
-import { sortByDueDateAsc, misEmptyCopy, misEmptyReason } from "../../lib/misEmptyState.js";
+import { sortByDueDateAsc } from "../../lib/misEmptyState.js";
 
 // ── date helpers (pure — never read the system clock) ──────────────────
 
@@ -65,9 +65,6 @@ function fmtDate(iso) {
 
 // `misEmptyReason`/`misEmptyCopy` themselves now live in
 // `frontend/src/lib/misEmptyState.js` (imported above, alongside
-// `sortByDueDateAsc` which `nextDue` below still needs) — re-exported here
-// so every existing caller of this module keeps working unchanged.
-export { misEmptyCopy, misEmptyReason };
 
 // ── reportingCompliance ──────────────────────────────────────────────────
 

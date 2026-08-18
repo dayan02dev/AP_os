@@ -18,7 +18,8 @@ import AirTrajectoryPanel from "./components/AirTrajectoryPanel.jsx";
 import ActivityFeedPanel from "./components/ActivityFeedPanel.jsx";
 import MetricTrendPanel from "./components/MetricTrendPanel.jsx";
 import MilestonesRisksPanel from "./components/MilestonesRisksPanel.jsx";
-import { activityFeed, airTile, cashRunway, metricTrend, milestonesAndRisks, misEmptyCopy, misEmptyReason, nextDue, reportingCompliance } from "./vipDashboardRollup.js";
+import { activityFeed, airTile, cashRunway, metricTrend, milestonesAndRisks, nextDue, reportingCompliance } from "./vipDashboardRollup.js";
+import { misEmptyCopy, misEmptyReason } from "../../lib/misEmptyState.js";
 import "../../styles/vip-dashboard.css";
 
 // The one place in this file that reads the browser clock — display-only

@@ -17,7 +17,7 @@
 // that upstream guarantee were ever weakened, without this render layer
 // silently trusting whatever keys the input object happens to carry. See
 // this task's mutation check.
-import { misEmptyCopy } from "../vipDashboardRollup.js";
+import { misEmptyCopy } from "../../../lib/misEmptyState.js";
 const MILESTONE_STATUSES = ["On Track", "At Risk", "Blocked"];
 
 const MILESTONE_STATUS_COLOR = {

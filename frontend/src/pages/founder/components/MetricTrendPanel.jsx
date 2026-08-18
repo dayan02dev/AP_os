@@ -27,7 +27,7 @@
 // scale (cash-in-bank and headcount are different units). A series whose
 // every point is null (or whose max is otherwise <= 0) renders every bar at
 // 0%, not a crash and not a divide-by-zero NaN height.
-import { misEmptyCopy } from "../vipDashboardRollup.js";
+import { misEmptyCopy } from "../../../lib/misEmptyState.js";
 function barHeightPct(value, max) {
   if (value == null || !(max > 0)) return 0;
   return Math.max(0, Math.min(100, (value / max) * 100));
