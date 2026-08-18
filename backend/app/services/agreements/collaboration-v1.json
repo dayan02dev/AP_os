@@ -1,0 +1,1267 @@
+{
+  "slug": "collaboration-v1",
+  "source_file": "collaboration_agreement_2026-08-15.docx",
+  "blocks": [
+    {
+      "type": "paragraph",
+      "index": 0,
+      "style": "Normal",
+      "text": "COLLABORATION AGREEMENT",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 1,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 2,
+      "style": "Normal",
+      "text": "This Collaboration Agreement (hereinafter referred to as the “Agreement”) is made and entered into on [month], [date], 2026 (also referred to as the “Execution Date”).  ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 3,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 4,
+      "style": "Normal",
+      "text": "BETWEEN",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 5,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 6,
+      "style": "Body Text",
+      "text": "I-Hub for Robotics and Autonomous Systems Innovation Foundation, a Section 8 company, incorporated under the Companies Act, 2013, with its registered office at Society for Innovation and Development, Innovation Centre Building, Indian Institute of Science, Bangalore 560012 (hereinafter referred to as “ARTPARK”, which expression shall, unless repugnant to the context or meaning thereof, be deemed to mean and include its affiliates and permitted assigns) of the FIRST PART; ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 7,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 8,
+      "style": "Normal",
+      "text": "AND",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 9,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 10,
+      "style": "Body Text",
+      "text": "[Name of first founder], having PAN [PAN Number], s/o/d/o [Father’s full name / Mother’s full name], resident of [Address] (hereinafter referred to as the “Collaborator 1”, which expression shall, unless repugnant to the context or meaning thereof, be deemed to mean and include its affiliates and permitted assigns) of the SECOND PART;  ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 11,
+      "style": "Normal",
+      "text": "AND",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 12,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 13,
+      "style": "Body Text",
+      "text": "[Name of first founder], having PAN [PAN Number], s/o/d/o [Father’s full name / Mother’s full name], resident of [Address] (hereinafter referred to as the “Collaborator 2”, which expression shall, unless repugnant to the context or meaning thereof, be deemed to mean and include its affiliates and permitted assigns) of the THIRD PART;  ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 14,
+      "style": "Normal",
+      "text": "AND",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 15,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 16,
+      "style": "Body Text",
+      "text": "[Name of first founder], having PAN [PAN Number], s/o/d/o [Father’s full name / Mother’s full name], resident of [Address] (hereinafter referred to as the “Collaborator 3”, which expression shall, unless repugnant to the context or meaning thereof, be deemed to mean and include its affiliates and permitted assigns) of the FOURTH PART.  ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 17,
+      "style": "Normal",
+      "text": "Collaborator 1, Collaborator 2 and Collaborator 3 shall be individually referred to as a “Collaborator” and collectively referred to as “Collaborators”.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 18,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 19,
+      "style": "Normal",
+      "text": "ARTPARK and the Collaborators shall be individually referred to as a “Party” and collectively referred to as “Parties”. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 20,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 21,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 22,
+      "style": "Normal",
+      "text": "WHEREAS:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 23,
+      "style": "Normal",
+      "text": " ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 24,
+      "style": "List Paragraph",
+      "text": "ARTPARK is promoted by the Indian Institute of Science and supported by Department of Science and Technology, Government of India and set up with the objective of operating as an innovation hub in the field of Artificial Intelligence (AI) and Robotics with the aim of creating an eco-system for technology development and deployment through, inter alia, collaborating with research and development institutions and other organizations for developing technologies, prototypes, proofs of concepts and translating them into products.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 25,
+      "style": "List Paragraph",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 26,
+      "style": "List Paragraph",
+      "text": "The Collaborators are individuals possessing complementary expertise in the field of [insert areas] (“Research Area”), and have jointly expressed its interest in undertaking exploratory research and development activities in the Research Area.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 27,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 28,
+      "style": "List Paragraph",
+      "text": "ARTPARK has agreed to provide the Collaborators with access to its resources, including physical infrastructure, laboratory and workshop facilities, utilities, mentorship and such other support services as may be made available at the sole discretion of ARTPARK, subject to its internal policies, procedures, and availability of funds. ARTPARK has also agreed, subject to the terms of this Agreement and availability of funds, to provide funding support to the Collaborators for the purpose of facilitating research, development, and related activities under this collaboration.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 29,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 30,
+      "style": "List Paragraph",
+      "text": "The Collaborators shall utilize ARTPARK’s facilities and resources strictly in accordance with the Facility Agreement (as defined below), ARTPARK’s policies, procedures, and any other guidelines as may be notified from time to time.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 31,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 32,
+      "style": "Normal",
+      "text": "Now, therefore, in consideration of the mutual covenants and agreements hereinafter set forth, the parties agree as follows:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 33,
+      "style": "Headings 1",
+      "text": "DEFINITIONS",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 34,
+      "style": "Headings 2",
+      "text": "“Confidential Information” shall mean and include all research, models, formulae, assays, programs, algorithms, processes, techniques, Intellectual Property, trade secrets or other information of any kind, including, without limitation, proprietary information (whether or not patentable) regarding a Party’s IP or its technology, products, business, customers, employees, strategies or objectives, and information regarding the existence or terms of this Agreement, which is confidential to such Party, whether or not expressly designated as such, and whether disclosed prior or subsequent to the date of this Agreement. It shall also include all technical, corporate, financial, economic, legal or other information or knowledge generally concerning the Collaborators or ARTPARK, whether disclosed orally or in the form of written material, computer data or programs, before or during the Term of this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 35,
+      "style": "Headings 2",
+      "text": "“Intellectual Property” or “IP” shall mean, whether subject to statutory protection or not, including but not limited to inventions, designs, trademark, discoveries, manner, method or process of manufacture, biological material, patents, petty patents, utility models, drawings, know-how, prototypes, integrated circuit, circuit layout or semiconductor chip layout or design, plan, drawing or design, or scientific, technical or engineering information or document trademarks, copyright or other rights in the nature of copyright subsisting in any works, computer software (in source and object format); improvement, modification or development of any of the foregoing, trade secret, know-how  and any similar right recognized from time to time in any jurisdiction. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 36,
+      "style": "Headings 2",
+      "text": "“Project IP” means all Intellectual Property that vests in and is assigned to ARTPARK under Clause 4.1, and includes all Improvement IP that is so assigned.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 37,
+      "style": "Headings 2",
+      "text": "“Improvement IP” means any improvement, enhancement, modification, adaptation, or derivative of, or any Intellectual Property that incorporates or is based upon, the Project IP, as further addressed in Clause 4.5.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 38,
+      "style": "Headings 2",
+      "text": "“New Entity” means the company incorporated by the Collaborators for the commercialization of the Project IP, as referred to in Clauses 4 and 5.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 39,
+      "style": "Headings 2",
+      "text": "“Diligence Milestones” means the development, reporting and commercialization milestones set out in the milestone plan mutually agreed in writing between the Parties from time to time, as the same may be updated only by the written agreement of the Parties.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 40,
+      "style": "Headings 2",
+      "text": "“Affiliate” means, in relation to a person, any other person that directly or indirectly controls, is controlled by, or is under common control with, that person, where “control” means the power to direct the management or policies of a person, whether through ownership of voting securities, by contract, or otherwise.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 41,
+      "style": "Headings 2",
+      "text": "Terms not defined in this Agreement shall have the meaning ascribed to them in the Facility Agreement. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 42,
+      "style": "Headings 1",
+      "text": "SCOPE ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 43,
+      "style": "Headings 2",
+      "text": "This Agreement establishes a framework under which ARTPARK will provide the Collaborators with non-exclusive access to its workspace, research facilities, mentorship and related resources for the purpose of conducting exploratory research. This Agreement is intended to be, and is, legally binding on the Parties and operates as the agreement pursuant to which the Parties shall negotiate and execute, in good faith, the following definitive agreements (together, the “Definitive Agreements”): (i) an intellectual property licence agreement giving effect to the Commercialization Licence (the “IP Licence Agreement”); (ii) a share subscription agreement pursuant to which equity in the New Entity is issued to ARTPARK (the “Share Subscription Agreement”); and (iii) a shareholders’ agreement governing the rights and obligations of the shareholders of the New Entity (the “Shareholders’ Agreement”, and together with the Share Subscription Agreement, the “Definitive Equity Documents”). This Agreement, the IP Licence Agreement and the Definitive Equity Documents are intended to be read together and to form part of a single, integrated transaction, and shall be interpreted consistently with one another. Pending execution of the Definitive Agreements, the terms of this Agreement shall govern; and in the event of any conflict, a duly executed Definitive Agreement shall prevail over this Agreement to the extent of the conflict. The Collaborators shall not enter into any arrangement with any third party that is inconsistent with, or that would frustrate, the arrangements contemplated by this Agreement or the Definitive Agreements.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 44,
+      "style": "Headings 2",
+      "text": "ARTPARK may provide funding to the Collaborators, subject to the achievement of mutually agreed milestones, timely reporting and review completion and the availability of funds.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 45,
+      "style": "Headings 1",
+      "text": "TERMS AND CONDITIONS ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 46,
+      "style": "Headings 2",
+      "text": "Use of Facilities",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 47,
+      "style": "Headings 3",
+      "text": "The Collaborators shall use the premises and facilities provided by ARTPARK strictly in accordance with the terms of the Facility Agreement dated [Date of agreement] entered into between the Parties (“Facility Agreement”). ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 48,
+      "style": "Headings 2",
+      "text": "Full-Time Commitment. The Collaborators, and each founder or key person constituting the Collaborators, shall dedicate their full working time, attention, skill and effort exclusively to the research, development and commercialization activities contemplated under this Agreement and the associated startup venture during the Term of this Agreement. The Collaborators shall not, without ARTPARK’s prior written consent, engage in any other employment, consultancy, business, trade, profession or venture (whether for remuneration or otherwise) which is inconsistent with, or which detracts from, such full-time commitment. Any pre-existing engagement shall be disclosed in writing to ARTPARK at the outset and shall be subject to ARTPARK’s prior written approval for its continuation.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 49,
+      "style": "Headings 2",
+      "text": "On-Site Presence. The Collaborators shall, on a full-time basis, be physically present and operate from an ARTPARK facility (as may be designated by ARTPARK from time to time) throughout the Term of this Agreement, save and except for any period of remote or off-site work as may be agreed with ARTPARK in writing in advance. The Collaborators shall comply with the access, attendance, safety and conduct requirements applicable at such facility.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 50,
+      "style": "Headings 2",
+      "text": "Reporting and Performance Monitoring. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 51,
+      "style": "Headings 3",
+      "text": "The Collaborators shall provide on-demand and periodic technical/managerial progress reports and participate in performance evaluation meetings at such intervals as may be reasonably determined by ARTPARK, in alignment with a mutually agreed reporting schedule.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 52,
+      "style": "Headings 3",
+      "text": "ARTPARK shall, from time to time, publish or update its monitoring, reporting, and governance processes (the “Monitoring Framework”). The Collaborators shall comply with and adhere to the Monitoring Framework in full and shall provide accurate, complete, and timely reports in the formats, templates, and systems prescribed by ARTPARK. The Collaborators shall also make themselves reasonably available for assessments, reviews, meetings, and audits as required by ARTPARK, within timelines determined by ARTPARK.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 53,
+      "style": "Headings 3",
+      "text": "Without limitation, the Monitoring Framework may include the following requirements:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 54,
+      "style": "Headings 3",
+      "text": "(a) xRL Evaluations: Periodic stage-gate evaluations to assess progress and improvements across defined technology and business dimensions, as specified by ARTPARK;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 55,
+      "style": "Headings 3",
+      "text": "(b) Monthly Reports: Submission of monthly progress reports during the first week of each calendar month, in the format prescribed by ARTPARK. ARTPARK may require review meetings or clarifications in connection with such reports;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 56,
+      "style": "Headings 3",
+      "text": "(c) Quarterly Governance Meetings: Participation in quarterly governance or review meetings, typically held during the first week of each calendar quarter, subject to the availability of the governance panel designated by ARTPARK; and",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 57,
+      "style": "Headings 3",
+      "text": "(d) Additional Reporting: Submission of any additional information or reports reasonably required by ARTPARK to meet its internal governance, statutory, agency, or funding-source obligations.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 58,
+      "style": "Headings 3",
+      "text": "The Collaborators shall ensure that all data, information, and metrics required under this Clause are made available in the systems designated by ARTPARK, in the formats defined by ARTPARK, and are kept current, accurate, and refreshed at such intervals as may be specified by ARTPARK. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 59,
+      "style": "Headings 2",
+      "text": "Funding and Disbursement Framework. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 60,
+      "style": "Headings 3",
+      "text": "Subject to the achievement of the milestones set forth in the milestone plan mutually agreed in writing between the Parties from time to time (the “Milestone Schedule”), Reporting compliance and contingent upon the continued technical feasibility, strategic alignment, and demonstrable funding requirements of the project, ARTPARK shall internally allocate budgets for the purpose of supporting the execution of the project. For clarity, ARTPARK shall not disburse any funds directly to the Collaborators. Instead, ARTPARK shall, at its sole and absolute discretion, directly incur and settle eligible project-related expenses in accordance with the approved budget and scope of work.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 61,
+      "style": "Headings 3",
+      "text": "The Collaborators shall, in relation to any proposed expenditure under the project, submit to ARTPARK a written requisition detailing:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 62,
+      "style": "Headings 4",
+      "text": "the nature and purpose of the expense;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 63,
+      "style": "Headings 4",
+      "text": "the corresponding milestone or project activity to which the expense relates;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 64,
+      "style": "Headings 4",
+      "text": "supporting documentation including pro forma invoices, quotations, vendor details, or any other information as may be reasonably required by ARTPARK.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 65,
+      "style": "Headings 3",
+      "text": "Such requisition shall be submitted in the prescribed format (if any) and within reasonable timelines in advance of the proposed procurement or activity. ARTPARK shall review such requisitions and, subject to its internal approvals and satisfaction as to necessity, reasonableness, and budgetary alignment, may proceed to directly incur the expense, engage vendors, or make relevant payments.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 66,
+      "style": "Headings 3",
+      "text": "ARTPARK reserves the right, at any time and from time to time, to review, reassess, or modify the funding structure and budgetary allocations. ARTPARK may, in its sole and absolute discretion, withhold, defer, curtail, or discontinue incurring further expenses in the event that:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 67,
+      "style": "Headings 4",
+      "text": "the Collaborators fail to achieve one or more milestones as per the Milestone Schedule within the prescribed timeline;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 68,
+      "style": "Headings 4",
+      "text": "the progress of the project is deemed unsatisfactory or materially deviates from the approved scope or deliverables; or",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 69,
+      "style": "Headings 4",
+      "text": "ARTPARK determines, acting reasonably, that the remaining funding is no longer necessary or proportionate to the outcomes expected.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 70,
+      "style": "Headings 3",
+      "text": "The Collaborators shall maintain detailed, accurate, and up-to-date records of all requisitions, communications, and documentation submitted to ARTPARK under this Clause, and shall furnish such records to ARTPARK upon request for audit, inspection, or verification. All procurements, services, equipment, or other expenditures made by ARTPARK in support of the project shall remain the sole property of ARTPARK, unless otherwise expressly agreed in writing.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 71,
+      "style": "Headings 3",
+      "text": "Nothing in this Clause shall be construed as creating any obligation on ARTPARK to approve or incur expenses that are not within the approved budget, are not aligned with the objectives of the project, or are not supported by sufficient justification and documentation. The final decision in respect of the incurrence, quantum, and timing of any expense shall rest exclusively with ARTPARK.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 72,
+      "style": "Headings 3",
+      "text": "Where any funds are raised under the ARTPARK umbrella (that is, any grant, sponsored-research, philanthropic, governmental, or other non-equity funds received by or through ARTPARK for, or applied to, the Project, but excluding equity investment received directly by the New Entity) in connection with the Project, the Collaborators acknowledge and agree that ARTPARK shall retain a certain percent  of all such funds allocated to the Project (\"Administrative Reserve\") for ARTPARK's internal operational overhead as deemed fit and mutually agreed. Such overhead shall include, without limitation, costs associated with fund administration, regulatory compliance, progress reporting and submissions, utilization reporting, and internal and external audit activities. The Administrative Reserve shall be deducted prior to the disbursement or application of any remaining funds towards project-related expenditures.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 73,
+      "style": "Headings 1",
+      "text": "INTELLECTUAL PROPERTY ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 74,
+      "style": "Headings 2",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 75,
+      "style": "Headings 2",
+      "text": "IP Ownership. Any Intellectual Property that is developed, created, discovered, or conceived (whether or not patentable or registrable) by the Collaborators or the Collaborator Personnel, whether solely or jointly, during the course of or as a result of access to or use of the (i) Premises; (ii) Facilities; (iii) Lab Space; and/or (iv) Lab Equipment or other resources made available under this Agreement (collectively, the “Project IP”) shall, during the Term of this Agreement, be jointly owned by the Collaborators and ARTPARK. Each Party undertakes not to license, assign, encumber or otherwise deal with the Project IP during the Term without the prior written consent of the other. Upon incorporation of the New Entity and execution of the Definitive Agreements, the Collaborators and ARTPARK shall assign, and hereby agree to assign, all right, title and interest in and to the Project IP to the New Entity, and each Party shall promptly execute all documents and do all acts reasonably required to give effect to such assignment. From and after such assignment, the New Entity shall be the sole legal and beneficial owner of the Project IP, subject only to ARTPARK’s equity in, and other contractual rights against, the New Entity as set out in this Agreement and the Definitive Agreements, and to the Reversion Right set out in Clause 4.4.2. The Collaborators shall promptly disclose all Project IP to ARTPARK as and when it is identified or created and shall cooperate in good faith with ARTPARK to ensure adequate documentation and protection of the Project IP. The Collaborators shall procure that each Collaborator Personnel enters into a written assignment of their contributions to the Project IP in favour of the Collaborators (and, upon its incorporation, the New Entity) before undertaking any work hereunder.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 76,
+      "style": "Headings 2",
+      "text": "The Collaborators shall comply with and strictly adhere to ARTPARK’s configuration management policy and guidelines, as amended from time to time, with respect to the creation, identification, storage, version control, access management, maintenance, backup, and archival of all Intellectual Property–related artifacts and all corresponding knowledge artifacts generated, used, or modified in connection with this Agreement. Such artifacts shall include, without limitation, designs, specifications, source code, data, models, documentation, methodologies, process descriptions, and any other materials embodying or supporting the IP.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 77,
+      "style": "Headings 2",
+      "text": "The Collaborators shall ensure that all such artifacts are maintained in a complete, accurate, current, and traceable manner and are preserved in repositories and systems approved by ARTPARK. Compliance with the configuration management policy shall be subject to periodic or ad hoc audits by ARTPARK or its authorized representatives upon reasonable notice. The Collaborators shall provide full cooperation during such audits and promptly remediate any non-compliance identified. Any material deviation from the configuration management policy without prior written approval from ARTPARK shall constitute a breach of this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 78,
+      "style": "Headings 2",
+      "text": "Rights to Use and Commercialize IP.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 79,
+      "style": "Headings 3",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 80,
+      "style": "Headings 3",
+      "text": "The Collaborators shall incorporate a new entity for the purposes of commercialization of the Project IP (a “New Entity”, as defined in Clause 5 below), with a mutually agreed shareholding structure, pursuant to documentation jointly executed by all Parties. Upon incorporation of the New Entity and execution of the Definitive Agreements, the Project IP shall be assigned to and vest in the New Entity in accordance with Clause 4.1, and the New Entity shall thereafter be free to develop, manufacture, market, sublicense, sell, import and otherwise commercialize the Project IP in all fields of use, worldwide, without further consent from ARTPARK, subject only to (a) ARTPARK’s equity in, and other rights against, the New Entity under the Definitive Equity Documents, (b) the Diligence Milestones, and (c) the Reversion Right set out in Clause 4.4.2. For the avoidance of doubt, no exclusive commercialization period, licence-back structure, or ARTPARK retention of legal title shall apply to the Project IP once it has vested in the New Entity.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 81,
+      "style": "Headings 3",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 82,
+      "style": "Headings 3",
+      "text": "Notwithstanding the assignment of the Project IP to the New Entity under Clause 4.1, if any of the following events occurs (each a “Reversion Event”): (a) the Collaborators exit the residency without incorporating a New Entity; (b) the New Entity or the Collaborators elect not to pursue, discontinue, or abandon the commercialization of the Project IP; (c) the New Entity or the Collaborators fail over any 12 (Twelve) consecutive months to pursue commercialization of the Project IP in a bona fide manner; (d) the New Entity becomes insolvent, is wound up, enters into liquidation or ceases business; (e) the New Entity fails to meet the Diligence Milestones and such failure remains uncured for 60 (Sixty) days following written notice from ARTPARK; or (f) a change of control of the New Entity is effected to a competitor of ARTPARK without ARTPARK’s prior written consent — then the Project IP shall, at ARTPARK’s election exercised by written notice, automatically revert to ARTPARK on a fully paid-up, royalty-free, worldwide, perpetual and irrevocable basis, and the Collaborators and the New Entity shall promptly execute all documents and do all acts reasonably required to give effect to such reversion. Upon a Reversion Event, ARTPARK shall have the right (but not the obligation) to commercialize the reverted Project IP, whether by itself or through any affiliate, licensee or nominee. For the purposes of this Clause, ARTPARK may hold, assign or transfer the reverted Project IP to a wholly-owned affiliate or special purpose vehicle established to hold intellectual property (an “IP Holding Entity”), and may grant and administer any subsequent licences through such IP Holding Entity.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 83,
+      "style": "Headings 2",
+      "text": "Costs and Assistance. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 84,
+      "style": "Headings 3",
+      "text": "ARTPARK may, subject to and within the approved and allocated budget, bear the reasonable costs incurred for the filing, prosecution, securing, protection, and maintenance of intellectual property rights relating to the IP in the mutually agreed jurisdictions. Each Party shall provide all reasonable cooperation and assistance, including execution of requisite documents, furnishing of declarations, affidavits or confirmations, and undertaking such other acts as may be reasonably required for the registration, continued maintenance, enforcement, and commercialization of the IP.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 85,
+      "style": "Headings 2",
+      "text": "Background IP",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 86,
+      "style": "Headings 3",
+      "text": "Each Party shall retain ownership of any Intellectual Property developed, created, discovered, conceived, acquired, or otherwise obtained by them prior to or outside the scope of this Agreement (“Background IP”). ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 87,
+      "style": "Headings 3",
+      "text": "Subject to Clause 4.7.3, nothing in this Agreement shall be construed as granting any ownership or license rights in one Party’s Background IP to the other, except as may be expressly agreed on a case-by-case basis. Any such Background IP disclosed shall be treated as Confidential Information and governed by Section 7 (Confidentiality).",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 88,
+      "style": "Headings 3",
+      "text": "In the event the Collaborators use, incorporate, reference, or otherwise rely upon any Intellectual Property created under this Agreement as background or base intellectual property in any subsequent development, product, service, or derivative work, any improvements, enhancements, modifications, adaptations, or derivative intellectual property arising therefrom (“Improvement IP”) shall be deemed dependent intellectual property. For the avoidance of doubt: (a) all Improvement IP that is created during the Term, or that is created using the Project IP, the Premises, the Facilities, the Lab Space, the Lab Equipment, or any other resources of ARTPARK, shall constitute Project IP and shall vest in and be owned by ARTPARK in accordance with Clause 4.1; and (b) any improvement that is created by the New Entity after the Term wholly independently of ARTPARK’s resources and Confidential Information shall be owned by the New Entity, but shall not be used to circumvent, challenge, or diminish ARTPARK’s title to the Project IP, and the New Entity shall grant ARTPARK a perpetual, irrevocable, worldwide, royalty-free, non-exclusive licence to use such improvement for its own research, academic and internal non-commercial purposes.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 89,
+      "style": "Headings 3",
+      "text": "Such Improvement IP shall not limit, dilute, or extinguish the rights, title, or interests vested under this Agreement in the underlying Intellectual Property and shall remain subject to all applicable ownership, license, commercialization, reporting, audit, and commercial consideration provisions of this Agreement, as in force at the time of such use.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 90,
+      "style": "Headings 2",
+      "text": "Warranty and Indemnity - Background IP",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 91,
+      "style": "Headings 3",
+      "text": "The Collaborators, jointly and severally, represent and warrant that:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 92,
+      "style": "Headings 4",
+      "text": "all Background IP used or provided by the Collaborators under this Agreement is either original to them or lawfully acquired/licensed;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 93,
+      "style": "Headings 4",
+      "text": "the use of such Background IP does not infringe any third-party rights; and",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 94,
+      "style": "Headings 4",
+      "text": "such Background IP will be disclosed to ARTPARK prior to its use.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 95,
+      "style": "Headings 3",
+      "text": "In the event of any claim or allegation of infringement relating to the Collaborators’ Background IP, the Collaborators shall indemnify and hold harmless ARTPARK, its affiliates, officers, directors, and employees from all losses, damages, and expenses (including legal fees) arising therefrom.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 96,
+      "style": "Headings 3",
+      "text": "Where such Background IP is used to develop IP, the Collaborators shall license the Background IP to ARTPARK on an exclusive basis for the purpose of commercializing the resulting IP, on a worldwide, perpetual, irrevocable, royalty-free basis to the extent necessary to develop, use, make, have made, and commercialize the resulting Project IP; and the Collaborators shall, in addition, grant the New Entity a direct licence of such Background IP on equivalent terms and co-extensive with the Commercialization Licence, so that no sublicensing by ARTPARK or by the New Entity is required or permitted. The Collaborators shall identify all such Background IP in writing before it is used.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 97,
+      "style": "Headings 2",
+      "text": "Residual Matters. Any intellectual property related issues not specifically addressed in this Agreement shall be governed by ARTPARK’s intellectual property policy, to the extent applicable and not inconsistent with this Agreement. In the event of any conflict between such policy and this Agreement, this Agreement shall prevail.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 98,
+      "style": "Headings 2",
+      "text": "Use of ARTPARK Name and Branding. The Collaborators shall not, without ARTPARK’s prior written consent, use ARTPARK’s name, logo, or trademarks in any promotional, advertising, or public facing material. Use of the names of ARTPARK’s faculty, staff, board members, or affiliates is strictly prohibited without express written authorization.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 99,
+      "style": "Headings 2",
+      "text": "Knowledge Documentation and Transfer",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 100,
+      "style": "Headings 3",
+      "text": "In the event that the Collaborators elect not to pursue, discontinue, or otherwise fails to actively pursue commercialization of the Intellectual Property within the agreed exclusive commercialization period or Termination, the Collaborators shall, without any additional financial or commercial consideration, fully document and transfer all knowledge and know-how relating to such IP to ARTPARK.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 101,
+      "style": "Headings 3",
+      "text": "Such transfer shall be affected through clear, structured, and complete documentation and through formal knowledge-transfer sessions, sufficient to enable ARTPARK or its nominees to independently use, maintain, further develop, or commercialize the IP without material reliance on the Collaborator.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 102,
+      "style": "Headings 3",
+      "text": "The Collaborators shall complete the preparation of all knowledge artifacts and conduct the required knowledge-transfer sessions within three (3) months from the date of written notification issued by ARTPARK. The documentation and transfer shall be subject to review and acceptance by ARTPARK, and the Collaborators shall promptly address any reasonable deficiencies identified. ARTPARK shall have the right to audit or verify the completeness and usability of the transferred materials, directly or through an authorized third party.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 103,
+      "style": "Headings 3",
+      "text": "Failure to comply with this obligation within the stipulated timeframe shall constitute a material breach of this Agreement, entitling ARTPARK to seek appropriate remedies, including specific performance and damages. This obligation shall survive the termination or expiry of this Agreement until fully and satisfactorily completed.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 104,
+      "style": "Headings 1",
+      "text": "Equity Issuance Upon Formation of Future Entity",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 105,
+      "style": "Headings 2",
+      "text": "Obligation to Issue Equity. In the event the Collaborators, directly or indirectly, incorporate, establish, acquire, or otherwise cause to exist any company, partnership, limited liability entity, special purpose vehicle, or other legal entity (whether in India or any other jurisdiction) for the purpose of (i) owning, holding, developing, commercializing, or exploiting any Intellectual Property developed under this Agreement; or (ii) carrying on any business substantially similar to or derived from the activities, research, or outcomes of this collaboration (a “New Entity”), the Collaborators shall ensure that ARTPARK is issued equity securities in such New Entity. The Collaborators shall not, whether directly or indirectly and whether alone or with any third party, develop, commercialize, exploit, or assist any person to develop, commercialize or exploit, the Project IP or any technology, product or business that is substantially similar to or derived from the Project IP otherwise than through the New Entity and in accordance with this Agreement, nor shall they circumvent, or attempt to circumvent, ARTPARK’s ownership of the Project IP or its equity entitlement. This obligation shall apply during the Term and for so long as ARTPARK holds title to the Project IP.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 106,
+      "style": "Headings 2",
+      "text": "Equity Percentage. The equity issued to ARTPARK shall be such percentage of the fully diluted share capital of the New Entity as may be mutually agreed in writing between the Parties, failing which ARTPARK shall be entitled to a shareholding percentage of the fully diluted equity of the New Entity in accordance with Schedule I. ARTPARK’s shareholding shall be calculated on a fully diluted basis (including all outstanding and reserved options, warrants, and convertible instruments) and shall not be reduced below the percentage determined under Schedule I by reason of any issuance until the New Entity has raised aggregate external equity financing of not less than the threshold agreed in the definitive shareholders’ agreement (the “Anti-Dilution Floor”). ARTPARK shall further have a pro-rata right to participate in future issuances so as to maintain its percentage, and a customary right of first offer over transfers of the New Entity’s securities.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 107,
+      "style": "Headings 2",
+      "text": "Conditions and Rights. The equity issued to ARTPARK shall be free and clear of all encumbrances and shall carry customary shareholder rights, including rights relating to information, transfer, anti-dilution, and participation in future issuances, as may be applicable to similarly situated shareholders of the New Entity.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 108,
+      "style": "Headings 2",
+      "text": "Right of First Refusal on Investment. For so long as the Collaborators, the New Entity or any of their respective founders remain incubated at, or are otherwise receiving residency, infrastructure, mentorship or funding support from, ARTPARK, and for a period of 12 (Twelve) months thereafter, ARTPARK and its designated affiliates, investment vehicles, funds and partner investment programs (collectively, the “ARTPARK Investor Group”) shall have a right of first refusal to participate in any proposed round of external equity, quasi-equity or convertible-instrument financing raised by the Collaborators or the New Entity for the purpose of commercialization of the Project IP. Before soliciting or accepting any such financing from a third party, the Collaborators or the New Entity (as applicable) shall give the ARTPARK Investor Group written notice of the proposed round, specifying the amount, valuation, instrument and other material terms, and the ARTPARK Investor Group shall have a period of 30 (Thirty) days from receipt of such notice within which to elect, in whole or in part, to subscribe on the same terms. Any portion of the round not taken up by the ARTPARK Investor Group within such period may thereafter be offered to third parties on terms no more favourable than those offered to the ARTPARK Investor Group. This right of first refusal shall apply in addition to, and without prejudice to, any pro-rata or other participation right of ARTPARK under the Definitive Equity Documents.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 109,
+      "style": "Headings 2",
+      "text": "Further Assurances. The Collaborators shall procure that the New Entity and its shareholders execute all necessary agreements, deeds, and documents, and take all actions required, to give full effect to this Clause, including execution of shareholders’ agreements, subscription documents, and corporate authorizations.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 110,
+      "style": "Headings 2",
+      "text": "Link to Shareholders’ Agreement and Share Subscription Agreement. ARTPARK’s equity in the New Entity shall be subscribed and issued pursuant to the Share Subscription Agreement, and shall be held subject to and governed by the Shareholders’ Agreement, in each case in a form consistent with this Agreement. The Collaborators shall procure that the New Entity, the Collaborators, and every other shareholder of the New Entity execute the Share Subscription Agreement and the Shareholders’ Agreement contemporaneously with, and as a condition to, the issue of any equity to founders or investors, and in any event no later than the date of incorporation or the first external financing of the New Entity, whichever is earlier. The Share Subscription Agreement shall provide for the issue of equity to ARTPARK as set out in this Clause 5 and Schedule I. The Shareholders’ Agreement shall record ARTPARK’s information, anti-dilution, pro-rata participation, first-offer and transfer rights, and shall not be amended in any manner adverse to ARTPARK without ARTPARK’s prior written consent. This Agreement, the Share Subscription Agreement and the Shareholders’ Agreement shall be read together as one integrated arrangement; and to the extent the Definitive Equity Documents are silent on a matter addressed in this Agreement, the terms of this Agreement shall apply.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 111,
+      "style": "Headings 1",
+      "text": "INDEMNIFICATION",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 112,
+      "style": "Headings 2",
+      "text": "ARTPARK shall not be responsible or liable, whether financially, legally, reputationally, or otherwise, for any commitments, obligations, representations, or activities undertaken by the Collaborators during the Term. ARTPARK shall not be liable for any injury, accident, damage, or loss (including to persons, property, or data) arising in connection with the Collaborators’ activities, including but not limited to use of the Lab Space or Lab Equipment. The Collaborators shall be solely responsible for taking appropriate precautions, including insurance coverage, to address any such risks.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 113,
+      "style": "Headings 2",
+      "text": "The Collaborators agree to, jointly and severally, indemnify, defend, and hold harmless ARTPARK, its affiliates, officers, employees, and representatives (each, an “Indemnified Party”) from and against any and all claims, demands, losses, damages, liabilities, penalties, fines, costs, and expenses (including reasonable legal fees and costs) (“Claims”) arising out of or in connection with:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 114,
+      "style": "Headings 4",
+      "text": "the Collaborators’ use of the Lab Space or Lab Equipment;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 115,
+      "style": "Headings 4",
+      "text": "any breach of this Agreement by the Collaborators;",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 116,
+      "style": "Headings 4",
+      "text": "any fraud, gross negligence, wilful misconduct, or violation of applicable laws by the Collaborators; or",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 117,
+      "style": "Headings 4",
+      "text": "any infringement or alleged infringement of third-party Intellectual Property rights by the Collaborators’ Background IP or other materials used by the Collaborator.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 118,
+      "style": "Headings 2",
+      "text": "This indemnity shall survive the expiry or termination of this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 119,
+      "style": "Headings 1",
+      "text": "TERMINATION",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 120,
+      "style": "Headings 2",
+      "text": "ARTPARK may terminate this Agreement (i) with 2 (Two) months’ prior written notice to the Collaborators; (ii) or immediately upon the occurrence of any of the following events:",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 121,
+      "style": "Headings 3",
+      "text": "Failure by the Collaborators to make good faith efforts to achieve the targets and deliverables set out in the Milestone Schedule; ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 122,
+      "style": "Headings 3",
+      "text": "Non-compliance with, or breach of, any obligations under this Agreement by the Collaborators; or ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 123,
+      "style": "Headings 3",
+      "text": "Any other circumstances where ARTPARK reasonably determines that continued collaboration is no longer viable or appropriate.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 124,
+      "style": "Headings 2",
+      "text": "The Collaborators shall not terminate this Agreement without the prior written consent of ARTPARK. For the avoidance of doubt, ARTPARK’s ownership of the Project IP, the assignment and further-assurances obligations, the commercialization and licence arrangements, ARTPARK’s equity entitlement, and the Collaborators’ confidentiality, knowledge-transfer, non-circumvention and indemnity obligations shall survive and continue in full force notwithstanding any expiry or termination of this Agreement, however arising. Termination shall not relieve the Collaborators of any accrued obligation or liability.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 125,
+      "style": "Headings 1",
+      "text": "CONFIDENTIALITY",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 126,
+      "style": "Headings 2",
+      "text": "Confidential Information shall be treated as confidential during the Term of this Agreement and for a period of 5 (Five) years thereafter; provided that any Confidential Information that constitutes a trade secret, source code, or relates to the Project IP shall remain confidential for so long as it retains its confidential character, without limit of time. During such period, the Parties will not: (i) disclose the Confidential Information of the disclosing Party (“Disclosing Party”) to any third party, using at least the same degree of care as it uses to protect its own confidential information, but not less than the degree of care that a reasonable person will take for information of a similar nature or (ii) use such information for any purpose other than to perform its obligations under this Agreement. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 127,
+      "style": "Headings 2",
+      "text": "The receiving Party (“Receiving Party”) shall not disclose Confidential Information of the Disclosing Party except (i) to the Receiving Party’s officers, directors, employees, agents, on a strict ‘need to know’ basis and who shall be bound by obligations of confidentiality similar to the ones in this Agreement or (ii) if required to be disclosed by law, government regulation, or court order, provided that the Receiving Party promptly notifies the Disclosing Party upon learning of any such legal requirement, and cooperates with the Disclosing Party in the exercise of its right to protect the confidentiality, and shall continue to treat the information as confidential for all other purposes. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 128,
+      "style": "Headings 2",
+      "text": "It is clarified that Confidential Information does not include information which (i) has previously been made generally available to the public, (ii) becomes publicly known, without fault on the part of the Receiving Party, subsequent to disclosure by the Disclosing Party of such information to the Receiving Party, (iii) is received by the Receiving Party at any time from a source, other than the Disclosing Party, lawfully having possession of and the right to disclose such information, (iv) otherwise lawfully becomes known by the Receiving Party prior to disclosure by the Disclosing Party to the receiving party of such information, or (v) is independently developed by the Receiving Party without use of such information. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 129,
+      "style": "Headings 2",
+      "text": "Upon the expiration or termination of this Agreement, or upon written request by the Disclosing Party, the Receiving Party shall promptly return or destroy all Confidential Information in its possession or control, including all copies, summaries, or extracts thereof, and certify such return or destruction in writing, except to the extent retention is required under applicable law.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 130,
+      "style": "Headings 1",
+      "text": "ARBITRATION ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 131,
+      "style": "Headings 2",
+      "text": "If any dispute arises in connection with this Agreement, the Parties shall attempt, in fair dealing and in good faith, to settle such dispute in the best interests of Parties. In the event the Parties fail to reach an amicable settlement within 30 (Thirty) days of initiation of such dispute, either Party may initiate an arbitration proceeding.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 132,
+      "style": "Headings 2",
+      "text": "Any dispute or difference or claim arising out of or in relation to this Agreement including construction, validity performance or breach thereof which is not amicably settled under Clause 8.1, shall be referred to and resolved by way of arbitration under the Arbitration and Conciliation Act, 1996. The arbitration shall be presided by a sole arbitrator mutually appointed by the Parties. If the Parties fail to agree on the sole arbitrator within thirty (30) days of a written request by either Party to do so, the arbitrator shall be appointed in accordance with the Arbitration and Conciliation Act, 1996, on the application of either Party to the competent court at Bengaluru. The seat of arbitration shall be Bengaluru. The language to be used in the arbitration proceedings shall be English. The arbitral award shall be final and binding on the Parties, and the Parties waive any right of appeal to the extent permitted by law.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 133,
+      "style": "Headings 2",
+      "text": "The Parties may seek provisional measures from Courts at Bengaluru, including provisional injunctive relief, provided that the final resolution of the dispute is through the arbitrator appointed in accordance with this Clause 8.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 134,
+      "style": "Headings 1",
+      "text": "MISCELLANEOUS",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 135,
+      "style": "Headings 2",
+      "text": "Amendments. This Agreement may only be extended, renewed or otherwise amended by the mutual written consent of Parties hereto. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 136,
+      "style": "Headings 2",
+      "text": "Entire Agreement. This Agreement, together with its schedules, constitutes the entire agreement and understanding between the Parties with respect to the subject matter hereof and related matters. It supersedes and extinguishes all prior drafts, agreements, undertakings, representations, warranties, and arrangements of any kind, whether oral or written, relating to the subject matter hereof, except as expressly set out in this Agreement or in any other agreement expressly executed pursuant to it.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 137,
+      "style": "Headings 2",
+      "text": "Joint and Several Obligations: All obligations, undertakings, representations, warranties, covenants, liabilities and indemnities of the Collaborators under this Agreement shall be joint and several. ARTPARK shall be entitled to enforce any or all of such obligations against any one or more of the Collaborators, individually or collectively, without first proceeding against, or joining, any other Collaborator. No Collaborator shall be discharged from any obligation or liability under this Agreement by reason of any waiver, release, compromise, extension of time or other indulgence granted by ARTPARK to any other Collaborator.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 138,
+      "style": "Headings 2",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 139,
+      "style": "Headings 2",
+      "text": "Survival. The provisions of Clauses 4 (Intellectual Property), Clause 5 (Equity Issuance Upon Formation of Future Entity),, 6 (Indemnification), 8 (Confidentiality) and 9 (Arbitration) and 10 (Miscellaneous) any other provision which by its nature is intended to survive termination or expiration shall survive termination or expiration of this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 140,
+      "style": "Headings 2",
+      "text": "Assignment. Neither Party hereto may assign, sub-contract, cede, or transfer any of its rights or obligations under this Agreement without the prior written consent of the other Party, whether by merger, acquisition, sale, operation of law, or otherwise. Notwithstanding the foregoing, ARTPARK may, without the consent of the Collaborators, assign or transfer this Agreement, the Project IP, or any of its rights hereunder to any Affiliate or to an IP Holding Entity, and may grant security over its rights, provided that the assignee agrees in writing to be bound by this Agreement; and any purported assignment by the Collaborators in breach of this Clause shall be void.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 141,
+      "style": "Headings 2",
+      "text": "Waiver. No waiver of any term, provision or condition of this Agreement whether by conduct or otherwise in any one or more instances shall be deemed to be or construed as a further or continuing waiver of any such term, provision or condition, or of any other term, provision or condition of this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 142,
+      "style": "Headings 2",
+      "text": "Notices. All notices pertaining to or required by this Agreement shall be in writing, shall be signed by an authorized representative and shall be delivered to the postal address and/or email address indicated in the signature page of this Agreement. For the avoidance of doubt, any other electronic communication shall not qualify as a written notice or document under this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 143,
+      "style": "Headings 2",
+      "text": "Severability. If any provisions of this Agreement and/or any Project should be held to be illegal, invalid or unenforceable, the validity, legality and enforceability of the remaining provisions shall not in any way be affected or impaired thereby. The Parties shall substitute the illegal, invalid, or unenforceable provision by a legal, valid or enforceable one, approximating as closely as possible the original commercial intent of the Parties.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 144,
+      "style": "Headings 2",
+      "text": "Governing Law and Exclusive Jurisdiction. This Agreement shall be construed, interpreted, and governed by the laws of India, and to the extent applicable, the laws of the State of Karnataka. The courts at Bengaluru, Karnataka shall have exclusive jurisdiction over all disputes arising out of or in connection with this Agreement.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 145,
+      "style": "Headings 2",
+      "text": "Force Majeure.  Neither Party shall lose any rights hereunder or be liable to the other Party for damages or losses on account of failure of performance by the defaulting Party if the failure is occasioned by war, strike, fire, act of God, pandemic, earthquake, flood, lockout, embargo, governmental acts or orders or restrictions, failure of suppliers, or any other reason where failure to perform is beyond the reasonable control and not caused by the negligence or intentional conduct or misconduct of the nonperforming Party, and such Party has exerted all reasonable efforts to avoid or remedy such force majeure; provided, however, that in no event shall a Party be required to settle any labour dispute or disturbance.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 146,
+      "style": "Headings 2",
+      "text": "No Partnership or Agency. Nothing in this Agreement shall be deemed to create a partnership, joint venture, employment, or agency relationship between the Parties. No Party has authority to bind, or to incur any obligation on behalf of, any other Party, and no Collaborator shall hold itself out as having such authority.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 147,
+      "style": "Headings 2",
+      "text": "Specific Performance and Cumulative Remedies. The Collaborators acknowledge that any breach of their obligations under this Agreement would cause ARTPARK irreparable harm for which damages alone would not be an adequate remedy, and accordingly ARTPARK shall be entitled to seek injunctive relief and specific performance without the need to prove special damage or to furnish security. The rights and remedies of ARTPARK under this Agreement are cumulative and in addition to, and not in substitution for, any rights or remedies available at law or in equity.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 148,
+      "style": "Headings 2",
+      "text": "Counterparts and Electronic Execution. This Agreement may be executed in any number of counterparts, each of which when executed and delivered shall constitute an original and all of which together shall constitute one and the same instrument. Delivery of an executed counterpart by electronic means (including a scanned PDF or a recognised electronic signature) shall be effective as delivery of an original.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 149,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 150,
+      "style": "Normal",
+      "text": "IN WITNESS WHEREOF the Parties hereto have executed this Agreement under seal as of the day and year first above written by their respective authorized signatories. ",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 151,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 152,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 153,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 154,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 155,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 156,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 157,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 158,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 159,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 160,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "table",
+      "index": 161,
+      "rows": [
+        [
+          "ARTPARK            \n\n\n______________________\nBy its authorized signatory                                \n\nName: \nTitle: \nE-mail Address:\nAddress: \n\n",
+          "Collaborator 1\n\n\n______________________\n\n\nE-mail Address:\nAddress: \n\n"
+        ],
+        [
+          "Collaborator  2\n\n\n______________________\n\n\nE-mail Address:\nAddress: \n\n",
+          "Collaborator  3\n\n\n______________________\n\n\nE-mail Address:\nAddress: \n\n"
+        ]
+      ]
+    },
+    {
+      "type": "paragraph",
+      "index": 162,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 163,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 164,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 165,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 166,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 167,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 168,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 169,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 170,
+      "style": "Normal",
+      "text": "SCHEDULE I: Funding and Equity Conversion",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 171,
+      "style": "Normal",
+      "text": "This table outlines the fundamental equity structure and the operational framework for the incubation program.",
+      "placeholder_count": 0
+    },
+    {
+      "type": "table",
+      "index": 172,
+      "rows": [
+        [
+          "Feature",
+          "Detail",
+          "ART-PARK Equity Charge"
+        ],
+        [
+          "Exploratory Incubation Period",
+          "First 6 months or ₹25 Lakh whichever is lower",
+          "None (Grant Equity)"
+        ],
+        [
+          "Annual Service Fee",
+          "Charged for ongoing incubation services beyond the exploratory incubation period",
+          "2% per year"
+        ],
+        [
+          "Innovation Grant Equity",
+          "Charged for non-dilutive grant funding provided by ARTPARK to meet budget requirements beyond the initial exploratory grant.",
+          "1% for every ₹50 Lakh of spent grant funding."
+        ],
+        [
+          "Maximum Incubation Period",
+          "Initial term of 1 years, with a possible yearly extension towards completion of program towards successful launch of startup capping maximum of 2 years period in sole discretion of ARTPARK.  Subject to approval by ARTPARK",
+          ""
+        ],
+        [
+          "Annual Review",
+          "Continuation in the program is contingent upon a review by the Evaluation Committee (Internal and External members) to assess progress, milestones, and commitment of the startup/Innovators to the program timelines.",
+          "Continuation in the program is contingent upon a review by the Evaluation Committee (Internal and External members) to assess progress, milestones, and commitment of the startup/Innovators to the program timelines."
+        ]
+      ]
+    },
+    {
+      "type": "paragraph",
+      "index": 173,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    },
+    {
+      "type": "paragraph",
+      "index": 174,
+      "style": "Normal",
+      "text": "",
+      "placeholder_count": 0
+    }
+  ]
+}

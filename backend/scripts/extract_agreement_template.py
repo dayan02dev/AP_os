@@ -5,16 +5,34 @@ to the repo and is what the runtime loads (app/services/agreements.py never
 opens a .docx — the production Lambda has no Word file on disk).
 
 This script has NO knowledge of what any field means: it does not know which
-[.] is a founder's name versus ARTPARK's insurance limit. That interpretation
-belongs entirely to app/services/agreements.py, which reads the committed
-JSON for a specific agreement slug. Keeping this generic is what makes it
-reusable for the Collaboration Agreement (or any future agreement) later.
+[.] or [Named Token] is a founder's name versus ARTPARK's insurance limit.
+That interpretation belongs entirely to app/services/agreements.py, which
+reads the committed JSON for a specific agreement slug. Keeping this generic
+is what makes it reusable for any future agreement.
 
 Body children are walked via document.element.body.iterchildren() rather
 than the higher-level document.paragraphs / document.tables properties.
 Those flattened lists lose each table's position relative to the
 surrounding paragraphs -- walking the raw body XML in order is the only way
 to preserve real document order when paragraphs and tables interleave.
+
+TRACKED CHANGES. A redlined .docx (e.g. a reviewer's accepted-but-not-yet-
+"Accept All"-clicked edits) stores insertions inside <w:ins> and deletions
+inside <w:del>/<w:delText>, both nested one level below <w:p> or <w:tc> --
+one level deeper than the direct-child <w:r> runs python-docx's own
+Paragraph.text / _Cell.text walk. That shallow walk silently DROPS both
+sides of any tracked change: neither the old deleted text nor the newly
+inserted replacement ever reaches .text, leaving orphaned fragments (e.g.
+"having PAN s/o/d/o resident of" where "[•]"/"[PAN Number]" used to be).
+_accepted_paragraph_text()/_accepted_cell_text() below fix this by collecting
+every <w:t> descendant at any nesting depth. This works because deleted
+text always uses the
+DISTINCT <w:delText> tag rather than <w:t> -- so a plain <w:t> walk is
+exactly the "all revisions accepted" reading, with no need to special-case
+<w:ins>/<w:del> explicitly. This is a strict superset of the old behaviour:
+a document with no tracked changes (e.g. the Facility Agreement) round-trips
+identically either way, since every one of its <w:t> elements is already a
+direct child of a <w:r> that is itself a direct child of <w:p>/<w:tc>.
 """
 from __future__ import annotations
 
@@ -23,14 +41,37 @@ import sys
 from pathlib import Path
 
 import docx
+from docx.oxml.ns import qn
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
 
+def _accepted_paragraph_text(p_element) -> str:
+    """Accepted-revisions text for a single <w:p> element: every <w:t>
+    descendant, regardless of how deeply it is nested inside <w:ins>
+    wrappers. Deleted content uses <w:delText> (a different tag) and is
+    therefore never collected."""
+    return "".join(t.text or "" for t in p_element.iter(qn("w:t")))
+
+
+def _accepted_cell_text(tc_element) -> str:
+    """Accepted-revisions text for a <w:tc> table cell: its direct-child
+    <w:p> paragraphs joined with "\\n", matching python-docx's own
+    _Cell.text behaviour for multi-paragraph cells (walking every <w:t> in
+    the whole cell subtree flat, with no separator, would silently glue
+    adjacent paragraphs' words together)."""
+    return "\n".join(
+        _accepted_paragraph_text(p) for p in tc_element.findall(qn("w:p"))
+    )
+
+
 def extract(docx_path: Path) -> dict:
     """Walk a .docx's body in document order and return a JSON-serializable
-    template: an ordered list of paragraph/table blocks. [.] markers and
-    table cell text are preserved verbatim -- no substitution happens here.
+    template: an ordered list of paragraph/table blocks. Placeholder markers
+    ("[•]" or named "[Tokens]") and table structure are preserved verbatim
+    -- no substitution happens here. Text reflects tracked changes as if
+    every insertion were accepted and every deletion applied (see module
+    docstring) -- never the raw, as-typed XML text.
     """
     document = docx.Document(str(docx_path))
     blocks: list[dict] = []
@@ -38,7 +79,7 @@ def extract(docx_path: Path) -> dict:
         tag = child.tag.split("}")[-1]
         if tag == "p":
             para = Paragraph(child, document)
-            text = para.text
+            text = _accepted_paragraph_text(child)
             blocks.append(
                 {
                     "type": "paragraph",
@@ -54,7 +95,9 @@ def extract(docx_path: Path) -> dict:
                 {
                     "type": "table",
                     "index": i,
-                    "rows": [[cell.text for cell in row.cells] for row in table.rows],
+                    "rows": [
+                        [_accepted_cell_text(cell._tc) for cell in row.cells] for row in table.rows
+                    ],
                 }
             )
         # any other body-level tag (e.g. sectPr) carries no template content
