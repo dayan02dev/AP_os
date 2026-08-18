@@ -74,6 +74,19 @@ done < <(find .aws-sam/build \( -name '.env' -o -name '.env.*' \) 2>/dev/null)
 echo "   ${_stripped} file(s) removed"
 
 echo "→ Deploying to AWS ap-south-1 (stack: artpark-eir-api-production)…"
+# SAM's shorthand --parameter-overrides syntax rejects an empty value
+# ("FounderResourcesEnabled= is not a valid format"), so pass the parameter
+# only when something is actually released. The template's own Default: ""
+# then applies, which is the locked state — the same outcome, expressed in a
+# way the CLI accepts.
+_RESOURCES_OVERRIDE=""
+if [[ -n "${FOUNDER_RESOURCES_ENABLED:-}" ]]; then
+  _RESOURCES_OVERRIDE="FounderResourcesEnabled=${FOUNDER_RESOURCES_ENABLED}"
+  echo "→ Founders Resources released: ${FOUNDER_RESOURCES_ENABLED}"
+else
+  echo "→ Founders Resources: all five locked (FOUNDER_RESOURCES_ENABLED empty)"
+fi
+
 sam deploy \
   --config-env production \
   --no-confirm-changeset \
@@ -96,7 +109,7 @@ sam deploy \
     "TirSubmissionsClosed=${TIR_SUBMISSIONS_CLOSED:-false}" \
     "SipSubmissionsClosed=${SIP_SUBMISSIONS_CLOSED:-false}" \
     "FounderPortalAllowlist=${FOUNDER_PORTAL_ALLOWLIST:?refusing to deploy: FOUNDER_PORTAL_ALLOWLIST is unset. An empty value WIPES the soft-launch gate and opens the founder portal to every offered/onboarded founder. Set it in .env.prod (use FOUNDER_PORTAL_ALLOWLIST= for a deliberate open launch).}" \
-    "FounderResourcesEnabled=${FOUNDER_RESOURCES_ENABLED:-}"
+    ${_RESOURCES_OVERRIDE}
 
 echo ""
 echo "✓ Deploy complete. Stack outputs:"
