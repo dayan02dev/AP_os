@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi import status as http_status
 
 from .founder import require_founder_access
+from ..config import settings
 from ..models.founder_resources import (
     BookingIn,
     CartItemIn,
@@ -31,6 +32,26 @@ from ..supabase_client import get_admin_client
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/founder", tags=["founder-resources"])
+
+
+def require_resource(item: str):
+    """Dependency factory composed on top of require_founder_access: 403s a
+    request against a Founders Resources item that hasn't been released yet
+    (settings.founder_resources_enabled), even for a caller who otherwise
+    passes ownership + offered/onboarded status. This is the backend half of
+    the lock — /founder/me *reporting* an item as unavailable (Task 1) does
+    not by itself stop the API from answering a direct call; this does.
+    """
+    async def _check(
+        ctx: Annotated[dict, Depends(require_founder_access)],
+    ) -> dict:
+        if not settings.resource_available(item):
+            raise HTTPException(
+                status_code=http_status.HTTP_403_FORBIDDEN,
+                detail={"code": "resource_not_available", "item": item},
+            )
+        return ctx
+    return _check
 
 
 def _owned_or_404(sb, table: str, row_id: str, application_id: str) -> dict:
@@ -55,12 +76,12 @@ def _find_request(sb, application_id: str, kind: str, ref_id: str) -> dict | Non
 
 # ── Store ───────────────────────────────────────────────────────────────
 @router.get("/store")
-async def get_store(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def get_store(ctx: Annotated[dict, Depends(require_resource("store"))]) -> dict:
     return frq.store_bundle(ctx["application_id"])
 
 
 @router.post("/store/cart")
-async def add_to_cart(body: CartItemIn, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def add_to_cart(body: CartItemIn, ctx: Annotated[dict, Depends(require_resource("store"))]) -> dict:
     if not founder_catalog.catalog_by_id(body.product_id):
         raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                             detail={"code": "unknown_product"})
@@ -86,7 +107,7 @@ async def add_to_cart(body: CartItemIn, ctx: Annotated[dict, Depends(require_fou
 
 @router.patch("/store/cart/{product_id}")
 async def set_cart_qty(product_id: str, body: CartQtyIn,
-                       ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+                       ctx: Annotated[dict, Depends(require_resource("store"))]) -> dict:
     sb = get_admin_client()
     application_id = ctx["application_id"]
     if body.qty <= 0:
@@ -112,7 +133,7 @@ async def set_cart_qty(product_id: str, body: CartQtyIn,
 
 
 @router.delete("/store/cart/{product_id}")
-async def remove_cart_item(product_id: str, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def remove_cart_item(product_id: str, ctx: Annotated[dict, Depends(require_resource("store"))]) -> dict:
     sb = get_admin_client()
     application_id = ctx["application_id"]
     sb.table("founder_cart_items").delete() \
@@ -121,7 +142,7 @@ async def remove_cart_item(product_id: str, ctx: Annotated[dict, Depends(require
 
 
 @router.post("/store/quote-request")
-async def request_quote(body: QuoteRequestIn, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def request_quote(body: QuoteRequestIn, ctx: Annotated[dict, Depends(require_resource("store"))]) -> dict:
     if not founder_catalog.catalog_by_id(body.product_id):
         raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                             detail={"code": "unknown_product"})
@@ -135,7 +156,7 @@ async def request_quote(body: QuoteRequestIn, ctx: Annotated[dict, Depends(requi
 
 
 @router.post("/store/push-to-procurement")
-async def push_to_procurement(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def push_to_procurement(ctx: Annotated[dict, Depends(require_resource("store"))]) -> dict:
     sb = get_admin_client()
     application_id = ctx["application_id"]
     cart = frq.fetch_cart(application_id)
@@ -165,12 +186,12 @@ async def push_to_procurement(ctx: Annotated[dict, Depends(require_founder_acces
 
 # ── Fundraising & connects ────────────────────────────────────────────────
 @router.get("/fundraising")
-async def get_fundraising(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def get_fundraising(ctx: Annotated[dict, Depends(require_resource("fundraising"))]) -> dict:
     return frq.fundraising_bundle(ctx["application_id"])
 
 
 @router.post("/fundraising/intro")
-async def toggle_intro(body: IntroIn, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def toggle_intro(body: IntroIn, ctx: Annotated[dict, Depends(require_resource("fundraising"))]) -> dict:
     if not founder_catalog.investor_by_id(body.investor_id):
         raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                             detail={"code": "unknown_investor"})
@@ -188,12 +209,12 @@ async def toggle_intro(body: IntroIn, ctx: Annotated[dict, Depends(require_found
 
 # ── Corporate partners ─────────────────────────────────────────────────────
 @router.get("/partners")
-async def get_partners(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def get_partners(ctx: Annotated[dict, Depends(require_resource("partners"))]) -> dict:
     return frq.partners_bundle(ctx["application_id"])
 
 
 @router.post("/partners/request")
-async def toggle_partner(body: PartnerRequestIn, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def toggle_partner(body: PartnerRequestIn, ctx: Annotated[dict, Depends(require_resource("partners"))]) -> dict:
     if not founder_catalog.partner_by_id(body.partner_id):
         raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                             detail={"code": "unknown_partner"})
@@ -211,12 +232,12 @@ async def toggle_partner(body: PartnerRequestIn, ctx: Annotated[dict, Depends(re
 
 # ── Book ARTPARK assets ─────────────────────────────────────────────────────
 @router.get("/assets")
-async def get_assets(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def get_assets(ctx: Annotated[dict, Depends(require_resource("assets"))]) -> dict:
     return frq.assets_bundle(ctx["application_id"])
 
 
 @router.post("/assets/bookings")
-async def create_booking(body: BookingIn, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def create_booking(body: BookingIn, ctx: Annotated[dict, Depends(require_resource("assets"))]) -> dict:
     asset = founder_catalog.asset_by_id(body.asset_id)
     if not asset:
         raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -234,7 +255,7 @@ async def create_booking(body: BookingIn, ctx: Annotated[dict, Depends(require_f
 
 
 @router.delete("/assets/bookings/{row_id}", status_code=http_status.HTTP_204_NO_CONTENT, response_model=None)
-async def delete_booking(row_id: str, ctx: Annotated[dict, Depends(require_founder_access)]) -> None:
+async def delete_booking(row_id: str, ctx: Annotated[dict, Depends(require_resource("assets"))]) -> None:
     sb = get_admin_client()
     _owned_or_404(sb, "founder_bookings", row_id, ctx["application_id"])
     sb.table("founder_bookings").delete().eq("id", row_id).execute()
@@ -242,12 +263,12 @@ async def delete_booking(row_id: str, ctx: Annotated[dict, Depends(require_found
 
 # ── IT & Facilities support ──────────────────────────────────────────────
 @router.get("/support")
-async def get_support(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def get_support(ctx: Annotated[dict, Depends(require_resource("support"))]) -> dict:
     return frq.support_bundle(ctx["application_id"])
 
 
 @router.post("/support/tickets")
-async def create_ticket(body: TicketIn, ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
+async def create_ticket(body: TicketIn, ctx: Annotated[dict, Depends(require_resource("support"))]) -> dict:
     sb = get_admin_client()
     application_id = ctx["application_id"]
     existing = frq.fetch_tickets(application_id)

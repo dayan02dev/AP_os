@@ -35,8 +35,18 @@ _APP = {"id": "app1", "user_id": "u1", "status": "onboarded",
         "grant_amount": 2500000, "submitted_at": "2026-07-01"}
 
 
+@pytest.fixture
+def _enable_all(monkeypatch):
+    """Grant access to every Founders Resources item — these tests exercise
+    the underlying CRUD, not the lock, so they opt in to full availability."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "founder_resources_enabled", ",".join(
+        ["store", "fundraising", "partners", "assets", "support"]
+    ))
+
+
 # ── Store ───────────────────────────────────────────────────────────────
-def test_get_store_merges_cart_and_quote_flags(client, monkeypatch, _clear):
+def test_get_store_merges_cart_and_quote_flags(client, monkeypatch, _clear, _enable_all):
     _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_cart_items": [
@@ -59,7 +69,7 @@ def test_get_store_merges_cart_and_quote_flags(client, monkeypatch, _clear):
     assert body["cart_subtotal"] == 8200 * 2
 
 
-def test_add_to_cart_then_get_reflects_qty(client, monkeypatch, _clear):
+def test_add_to_cart_then_get_reflects_qty(client, monkeypatch, _clear, _enable_all):
     fake = _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_cart_items": [],
@@ -80,7 +90,7 @@ def test_add_to_cart_then_get_reflects_qty(client, monkeypatch, _clear):
     assert c3["in_cart_qty"] == 3
 
 
-def test_set_cart_qty_zero_deletes_line(client, monkeypatch, _clear):
+def test_set_cart_qty_zero_deletes_line(client, monkeypatch, _clear, _enable_all):
     fake = _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_cart_items": [
@@ -94,7 +104,7 @@ def test_set_cart_qty_zero_deletes_line(client, monkeypatch, _clear):
     assert fake.tables["founder_cart_items"] == []
 
 
-def test_quote_request_is_idempotent(client, monkeypatch, _clear):
+def test_quote_request_is_idempotent(client, monkeypatch, _clear, _enable_all):
     fake = _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_cart_items": [],
@@ -108,7 +118,7 @@ def test_quote_request_is_idempotent(client, monkeypatch, _clear):
     assert len(fake.tables["founder_resource_requests"]) == 1
 
 
-def test_push_to_procurement_inserts_and_clears_cart(client, monkeypatch, _clear):
+def test_push_to_procurement_inserts_and_clears_cart(client, monkeypatch, _clear, _enable_all):
     fake = _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_cart_items": [
@@ -138,7 +148,7 @@ def test_push_to_procurement_inserts_and_clears_cart(client, monkeypatch, _clear
 
 
 # ── Fundraising & connects ────────────────────────────────────────────────
-def test_fundraising_investors_and_intro_toggle(client, monkeypatch, _clear):
+def test_fundraising_investors_and_intro_toggle(client, monkeypatch, _clear, _enable_all):
     fake = _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_resource_requests": [],
@@ -161,7 +171,7 @@ def test_fundraising_investors_and_intro_toggle(client, monkeypatch, _clear):
 
 
 # ── Corporate partners ─────────────────────────────────────────────────────
-def test_partners_request_toggle(client, monkeypatch, _clear):
+def test_partners_request_toggle(client, monkeypatch, _clear, _enable_all):
     fake = _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_resource_requests": [],
@@ -178,7 +188,7 @@ def test_partners_request_toggle(client, monkeypatch, _clear):
 
 
 # ── Book ARTPARK assets ─────────────────────────────────────────────────────
-def test_create_booking_appears_in_get(client, monkeypatch, _clear):
+def test_create_booking_appears_in_get(client, monkeypatch, _clear, _enable_all):
     _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_bookings": [],
@@ -198,7 +208,7 @@ def test_create_booking_appears_in_get(client, monkeypatch, _clear):
     assert body["bookings"][0]["asset_id"] == "a1"
 
 
-def test_create_booking_unknown_asset_422(client, monkeypatch, _clear):
+def test_create_booking_unknown_asset_422(client, monkeypatch, _clear, _enable_all):
     _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_bookings": [],
@@ -211,7 +221,7 @@ def test_create_booking_unknown_asset_422(client, monkeypatch, _clear):
 
 
 # ── IT & Facilities support ──────────────────────────────────────────────
-def test_create_ticket_generates_ref_and_appears_in_get(client, monkeypatch, _clear):
+def test_create_ticket_generates_ref_and_appears_in_get(client, monkeypatch, _clear, _enable_all):
     _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_tickets": [],
@@ -234,7 +244,7 @@ def test_create_ticket_generates_ref_and_appears_in_get(client, monkeypatch, _cl
     assert len(body["tickets"]) == 2
 
 
-def test_cannot_delete_another_apps_booking(client, monkeypatch, _clear):
+def test_cannot_delete_another_apps_booking(client, monkeypatch, _clear, _enable_all):
     _install(monkeypatch, {
         "tir_applications": [_APP],
         "founder_bookings": [{"id": "bk-other", "application_id": "app-OTHER",
@@ -244,3 +254,21 @@ def test_cannot_delete_another_apps_booking(client, monkeypatch, _clear):
     app.dependency_overrides[get_current_user] = _override_user("u1")
     r = client.delete("/founder/assets/bookings/bk-other")
     assert r.status_code == 404
+
+
+# ── Backend gate: a locked item's API refuses, not just the sidebar ────────
+def test_get_store_403_when_not_enabled(client, monkeypatch, _clear):
+    _install(monkeypatch, {"tir_applications": [_APP]})
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.get("/founder/store")
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "resource_not_available"
+
+
+def test_enabling_one_item_does_not_open_another(client, monkeypatch, _clear):
+    from app.config import settings
+    monkeypatch.setattr(settings, "founder_resources_enabled", "store")
+    _install(monkeypatch, {"tir_applications": [_APP], "founder_cart_items": [], "founder_resource_requests": []})
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    assert client.get("/founder/store").status_code == 200
+    assert client.get("/founder/fundraising").status_code == 403
