@@ -21,13 +21,14 @@ from ..models.founder import (
     BomItemPatch,
     EquipmentItemIn,
     EquipmentItemPatch,
+    MouPreviewRequest,
     MouSignRequest,
     ProcurementItemIn,
     ProcurementItemPatch,
     TeamMemberIn,
     TeamMemberPatch,
 )
-from ..services import founder_mou, founder_query
+from ..services import agreements, founder_mou, founder_query
 from ..supabase_client import get_admin_client
 
 log = logging.getLogger(__name__)
@@ -123,12 +124,24 @@ async def get_me(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
 @router.get("/mou")
 async def get_mou(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
     mou = founder_query.fetch_mou(ctx["application_id"])
-    body = founder_mou.render_body(
-        founder_name=_signer_default(ctx), venture=_project_name(ctx["app"]), date_str=""
-    )
+    # Report the SIGNED ROW's own recorded version — never the current
+    # constant. Bug fixed here: this used to always return
+    # founder_mou.TEMPLATE_VERSION (whatever the code constant currently
+    # says), so the one pre-existing tir-mou-v2 row would have silently
+    # relabelled itself the instant this shipped. A row that HAS signed
+    # keeps reporting exactly what it recorded at signing time, forever;
+    # only when nothing has been signed yet do we show what's currently on
+    # offer (current_template_version()), which is informational, not a
+    # record of anything having happened.
+    version = (mou or {}).get("template_version") or founder_mou.current_template_version()
     return {
-        "template_version": founder_mou.TEMPLATE_VERSION,
-        "body": body,
+        "template_version": version,
+        # Same catalog pattern as the AIR surface: the field schema for
+        # every agreement this track requires comes from the backend, so a
+        # wording change needs no frontend deploy. An agreement absent from
+        # this list (e.g. a track with none configured) renders no card at
+        # all on the frontend — there is nothing here to mislabel.
+        "agreements": agreements.agreements_for_track(founder_mou.FOUNDER_TRACK),
         "signed": mou is not None,
         "signed_at": (mou or {}).get("signed_at"),
         "signer_name": (mou or {}).get("signer_name"),
@@ -140,12 +153,48 @@ async def get_mou(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict
 
 
 def _signer_default(ctx: dict) -> str:
-    # best-effort: profile full_name; falls back to empty (FE prefills)
+    # best-effort: profile full_name; falls back to empty (FE prefills).
+    # No longer called from get_mou (the free-text `body` it used to prefill
+    # is gone — the Facility/Collaboration Agreements substitute real
+    # collaborator details instead), kept importable as a signer-name
+    # prefill helper for the sign wizard.
     rows = (
         get_admin_client().table("profiles").select("full_name")
         .eq("id", ctx["user_id"]).limit(1).execute().data or []
     )
     return (rows[0].get("full_name") if rows else "") or ""
+
+
+@router.post("/mou/preview")
+async def preview_mou(
+    payload: MouPreviewRequest,
+    ctx: Annotated[dict, Depends(require_founder_access)],
+) -> dict:
+    """Render every agreement the founder's track requires from ONE set of
+    1-3 collaborator details — never persisted, purely a read: the founder
+    reviews this before signing. Shares agreements._resolve_blocks with the
+    signed PDF (via render_preview_text/render_agreement_pdf) so preview
+    and signed document can never diverge."""
+    collaborators = [c.model_dump() for c in payload.collaborators]
+    try:
+        previews = [
+            {
+                "slug": meta["slug"],
+                "name": meta["name"],
+                "rendered_text": agreements.render_preview_text(collaborators, slug=meta["slug"]),
+            }
+            for meta in agreements.agreements_for_track(founder_mou.FOUNDER_TRACK)
+        ]
+    except ValueError as exc:
+        # Defense in depth: the pydantic bound above already enforces 1-3
+        # collaborators, but agreements.py has its own independent check —
+        # if that ever disagrees with this model, fail as a normal 422
+        # rather than an unhandled 500.
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_collaborators", "message": str(exc)},
+        ) from exc
+    return {"previews": previews}
 
 
 @router.post("/mou/sign")
@@ -158,9 +207,8 @@ async def sign_mou(
             application_id=ctx["application_id"],
             user_id=ctx["user_id"],
             signer_name=payload.signer_name,
-            founder_name=payload.signer_name,
-            venture=_project_name(ctx["app"]),
             signature_png=payload.signature_png,
+            collaborators=[c.model_dump() for c in payload.collaborators],
             acknowledgements=payload.acknowledgements,
         )
     except ValueError as exc:
@@ -172,9 +220,44 @@ async def sign_mou(
 
 
 @router.get("/mou/signed-url")
-async def mou_signed_url(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict:
-    url = founder_mou.signed_pdf_url(ctx["application_id"])
+async def mou_signed_url(
+    ctx: Annotated[dict, Depends(require_founder_access)],
+    agreement: str | None = None,
+) -> dict:
+    """Download URL for a signed MOU document. `agreement` (optional,
+    query param) selects which one — omitted (or the frontend's own default
+    choice) gets the primary document, same shape as before this task;
+    passing a specific slug (e.g. "collaboration-v1") gets that agreement's
+    own PDF. This is how every agreement the track required becomes
+    individually retrievable after signing."""
+    valid_slugs = {a["slug"] for a in agreements.agreements_for_track(founder_mou.FOUNDER_TRACK)}
+    if agreement is not None and agreement not in valid_slugs:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "unknown_agreement", "agreement": agreement},
+        )
+    # Two distinct empty states, two distinct codes: nothing signed at all
+    # (no row) vs. this particular agreement wasn't part of what was signed
+    # (a row exists — e.g. the legacy tir-mou-v2 row, or a future track
+    # whose required agreements changed — but never produced this slug's
+    # PDF). Collapsing these into one 404 is exactly the kind of ambiguity
+    # this project has shipped as a bug before.
+    mou = founder_query.fetch_mou(ctx["application_id"])
+    if mou is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "mou_not_signed"},
+        )
+    if agreement is not None and agreement not in founder_mou.signed_agreement_slugs(mou):
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "agreement_not_signed", "agreement": agreement},
+        )
+    url = founder_mou.signed_pdf_url(ctx["application_id"], agreement=agreement)
     if not url:
+        # Data anomaly (a row with no path recorded) rather than a normal
+        # not-yet-signed state — still surfaced as mou_not_signed since
+        # there is, functionally, nothing to download.
         raise HTTPException(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail={"code": "mou_not_signed"},

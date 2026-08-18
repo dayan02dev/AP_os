@@ -102,4 +102,110 @@ def test_signed_pdf_embeds_acknowledgement_text():
 
 
 def test_template_version_bumped_for_acknowledgements():
+    """The legacy free-text renderer's own version constant — untouched by
+    this task, kept only because the one pre-existing production row was
+    signed under it."""
     assert founder_mou.TEMPLATE_VERSION == "tir-mou-v2"
+
+
+# ── multi-agreement signing (Task 7) ────────────────────────────────────
+
+
+def test_facility_template_version_constant():
+    assert founder_mou.FACILITY_TEMPLATE_VERSION == "facility-v1"
+
+
+def test_current_template_version_joins_every_track_agreement():
+    from app.services import agreements
+    assert founder_mou.current_template_version("tir") == ",".join(agreements.TRACK_AGREEMENTS["tir"])
+    assert founder_mou.current_template_version("sip") == ",".join(agreements.TRACK_AGREEMENTS["sip"])
+
+
+def test_current_template_version_defaults_to_the_founder_track():
+    assert founder_mou.current_template_version() == founder_mou.current_template_version(
+        founder_mou.FOUNDER_TRACK
+    )
+
+
+def test_signed_agreement_slugs_parses_a_new_style_row():
+    row = {"template_version": "facility-v1,collaboration-v1"}
+    assert founder_mou.signed_agreement_slugs(row) == ["facility-v1", "collaboration-v1"]
+
+
+def test_signed_agreement_slugs_on_the_legacy_row_matches_no_real_agreement():
+    """The one pre-existing production row: its template_version is the old
+    free-text tag, not a slug list. It must not be mistaken for having
+    signed 'facility-v1' just because that happens to be a real slug now."""
+    row = {"template_version": "tir-mou-v2"}
+    slugs = founder_mou.signed_agreement_slugs(row)
+    assert slugs == ["tir-mou-v2"]
+    assert "facility-v1" not in slugs
+    assert "collaboration-v1" not in slugs
+
+
+def test_signed_agreement_slugs_handles_a_missing_version_gracefully():
+    assert founder_mou.signed_agreement_slugs({}) == []
+    assert founder_mou.signed_agreement_slugs({"template_version": None}) == []
+
+
+# ── signed_pdf_url: direct unit coverage (not fronted by the router's own
+# belt-and-braces check — this proves the guard lives inside the function
+# itself, not only in routers/founder.py's caller) ─────────────────────
+
+
+class _Bucket:
+    def create_signed_url(self, path, expires_in):
+        return {"signedURL": f"https://x/{path}"}
+
+
+class _Storage:
+    def from_(self, bucket):
+        return _Bucket()
+
+
+def _fake_with_mou(monkeypatch, rows):
+    from tests.fixtures.fake_supabase import FakeSupabase
+    fake = FakeSupabase({"founder_mou": rows})
+    fake.storage = _Storage()
+    monkeypatch.setattr(founder_mou, "get_admin_client", lambda: fake)
+    return fake
+
+
+def test_signed_pdf_url_returns_none_when_nothing_signed(monkeypatch):
+    _fake_with_mou(monkeypatch, [])
+    assert founder_mou.signed_pdf_url("app-none") is None
+
+
+def test_signed_pdf_url_serves_the_legacy_rows_own_path_by_default(monkeypatch):
+    _fake_with_mou(monkeypatch, [{
+        "application_id": "app1", "signer_name": "OOOO",
+        "template_version": "tir-mou-v2", "signed_pdf_path": "app1/mou/signed.pdf",
+    }])
+    assert founder_mou.signed_pdf_url("app1") == "https://x/app1/mou/signed.pdf"
+
+
+def test_signed_pdf_url_refuses_a_slug_the_legacy_row_never_signed(monkeypatch):
+    """The one production row never produced per-slug PDFs — asking this
+    function directly for 'facility-v1' or 'collaboration-v1' against it
+    must return None, not a guessed-at path."""
+    _fake_with_mou(monkeypatch, [{
+        "application_id": "app1", "signer_name": "OOOO",
+        "template_version": "tir-mou-v2", "signed_pdf_path": "app1/mou/signed.pdf",
+    }])
+    assert founder_mou.signed_pdf_url("app1", agreement="facility-v1") is None
+    assert founder_mou.signed_pdf_url("app1", agreement="collaboration-v1") is None
+
+
+def test_signed_pdf_url_resolves_each_agreement_for_a_new_style_row(monkeypatch):
+    _fake_with_mou(monkeypatch, [{
+        "application_id": "app2", "signer_name": "Priya",
+        "template_version": "facility-v1,collaboration-v1",
+        "signed_pdf_path": "app2/mou/facility-v1.pdf",
+    }])
+    assert founder_mou.signed_pdf_url("app2") == "https://x/app2/mou/facility-v1.pdf"
+    assert founder_mou.signed_pdf_url("app2", agreement="facility-v1") == (
+        "https://x/app2/mou/facility-v1.pdf"
+    )
+    assert founder_mou.signed_pdf_url("app2", agreement="collaboration-v1") == (
+        "https://x/app2/mou/collaboration-v1.pdf"
+    )

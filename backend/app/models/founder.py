@@ -1,9 +1,10 @@
 """Request/response models for the /founder post-onboarding portal (TIR)."""
 from __future__ import annotations
 
+import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 EmploymentType = Literal["full-time", "part-time", "contract", "advisor", "intern"]
 ProcurementStatus = Literal["estimate", "quoted", "po", "received"]
@@ -11,6 +12,35 @@ ProcurementCategory = Literal["BOM", "Equipment", "Other", "Service"]
 
 _TEXT = 300
 _LONG = 2000
+
+_PAN_RE = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$")
+
+
+class CollaboratorIn(BaseModel):
+    """One collaborator's party details for the agreements this founder's
+    track requires. The founder supplies exactly ONE set of these per
+    collaborator (1-3 of them) and the same values feed every agreement --
+    keys mirror app.services.agreements._COLLAB_FIELDS exactly: name, pan,
+    parent_name (s/o/d/o), address."""
+
+    model_config = ConfigDict(extra="ignore")
+    name: str = Field(min_length=1, max_length=200)
+    pan: str = Field(min_length=10, max_length=10)
+    parent_name: str = Field(min_length=1, max_length=200)
+    address: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("pan")
+    @classmethod
+    def _upper_pan(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not _PAN_RE.match(v):
+            raise ValueError("PAN must be 5 letters, 4 digits, 1 letter (e.g. ABCDE1234F)")
+        return v
+
+
+class MouPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    collaborators: list[CollaboratorIn] = Field(min_length=1, max_length=3)
 
 
 class MouSignRequest(BaseModel):
@@ -23,6 +53,9 @@ class MouSignRequest(BaseModel):
     # enforced there (sign_and_onboard) so the rule holds for every caller,
     # not just this request shape.
     acknowledgements: list[str] = Field(default_factory=list, max_length=32)
+    # 1-3 collaborators; the same values feed every agreement the founder's
+    # track requires (agreements.TRACK_AGREEMENTS) in one signing action.
+    collaborators: list[CollaboratorIn] = Field(min_length=1, max_length=3)
 
 
 class TeamMemberIn(BaseModel):

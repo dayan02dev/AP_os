@@ -19,19 +19,44 @@ def _all_acks() -> list[str]:
     return list(founder_mou.REQUIRED_ACK_IDS)
 
 
+_ONE_COLLABORATOR = [
+    {"name": "Priya", "pan": "ABCDE1234F", "parent_name": "Rajesh", "address": "1 MG Road, Bengaluru"},
+]
+_TWO_COLLABORATORS = _ONE_COLLABORATOR + [
+    {"name": "Kiran Shah", "pan": "PQRSX5678L", "parent_name": "Manoj Shah", "address": "4 Church St, Bengaluru"},
+]
+_THREE_COLLABORATORS = _TWO_COLLABORATORS + [
+    {"name": "Divya Nair", "pan": "LMNOQ9012Z", "parent_name": "Ravi Nair", "address": "9 Brigade Rd, Bengaluru"},
+]
+
+
 def _sign_body(**over) -> dict:
-    """A complete, valid sign payload — all four acknowledgements ticked."""
+    """A complete, valid sign payload — all four acknowledgements ticked,
+    one collaborator's party details supplied."""
     return {"signer_name": "Priya", "signature_png": _PNG,
-            "acknowledgements": _all_acks(), **over}
+            "acknowledgements": _all_acks(), "collaborators": _ONE_COLLABORATOR, **over}
 
 
 class _Bucket:
-    def upload(self, *a, **k): return {"path": a[0] if a else ""}
+    def __init__(self, uploaded_paths):
+        self._uploaded_paths = uploaded_paths
+
+    def upload(self, path, *a, **k):
+        # Recorded so tests can assert an agreement's PDF was ACTUALLY
+        # uploaded, not merely that its signed-url is derivable (the fake
+        # create_signed_url below is happy to sign a path for a file that
+        # was never uploaded, so that alone can't prove the upload ran).
+        self._uploaded_paths.append(path)
+        return {"path": path}
+
     def create_signed_url(self, path, expires_in): return {"signedURL": f"https://x/{path}"}
 
 
 class _Storage:
-    def from_(self, bucket): return _Bucket()
+    def __init__(self):
+        self.uploaded_paths: list[str] = []
+
+    def from_(self, bucket): return _Bucket(self.uploaded_paths)
 
 
 @pytest.fixture
@@ -106,7 +131,8 @@ def test_sign_without_acknowledgements_is_422(client, monkeypatch, _clear):
     fake = _install(monkeypatch, _offered_tables())
     app.dependency_overrides[get_current_user] = _override_user("u1")
     r = client.post("/founder/mou/sign",
-                    json={"signer_name": "Priya", "signature_png": _PNG})
+                    json={"signer_name": "Priya", "signature_png": _PNG,
+                          "collaborators": _ONE_COLLABORATOR})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "acknowledgements_required"
     assert set(r.json()["detail"]["missing"]) == set(_all_acks())
@@ -134,6 +160,210 @@ def test_get_mou_serves_the_acknowledgement_checklist(client, monkeypatch, _clea
     assert [a["id"] for a in body["acknowledgements"]] == _all_acks()
     assert all(a["text"].strip() for a in body["acknowledgements"])
     assert body["accepted_acknowledgements"] == []
+
+
+# ── agreements catalog + preview (Task 7) ──────────────────────────────
+
+
+def test_get_mou_includes_the_track_agreement_catalog(client, monkeypatch, _clear):
+    """Same catalog pattern as the AIR surface: field labels come from the
+    backend, not hardcoded frontend copy."""
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    body = client.get("/founder/mou").json()
+    slugs = [a["slug"] for a in body["agreements"]]
+    assert slugs == ["facility-v1", "collaboration-v1"], "TIR signs both, in TRACK_AGREEMENTS order"
+    for entry in body["agreements"]:
+        assert entry["min_collaborators"] == 1 and entry["max_collaborators"] == 3
+        field_keys = [f["key"] for f in entry["fields"]]
+        assert field_keys == ["name", "pan", "parent_name", "address"]
+
+
+def test_get_mou_reports_current_version_before_anything_is_signed(client, monkeypatch, _clear):
+    """Not started: nothing has happened yet, so this is informational
+    ('what would I be signing'), never a record of a real event."""
+    from app.services import agreements
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    body = client.get("/founder/mou").json()
+    assert body["signed"] is False
+    assert body["template_version"] == ",".join(agreements.TRACK_AGREEMENTS["tir"])
+
+
+def test_get_mou_reports_the_signed_rows_own_version_not_the_current_constant(client, monkeypatch, _clear):
+    """The exact bug this task fixes: production holds one founder_mou row
+    signed under 'tir-mou-v2'. It must keep reporting that value forever,
+    never the current code's idea of what the latest version is — even
+    though the current version now looks completely different in shape
+    (comma-joined agreement slugs, not a single free-text version tag)."""
+    _install(monkeypatch, {
+        "tir_applications": [{"id": "app1", "user_id": "u1", "status": "onboarded",
+                              "grant_amount": 2500000, "submitted_at": "2026-07-01"}],
+        "founder_mou": [{"application_id": "app1", "signer_name": "OOOO",
+                         "template_version": "tir-mou-v2", "signed_pdf_path": "app1/mou/signed.pdf",
+                         "signed_at": "2026-08-13", "acknowledgements": []}],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    body = client.get("/founder/mou").json()
+    assert body["template_version"] == "tir-mou-v2"
+    assert body["signed"] is True
+
+
+def test_preview_mou_renders_every_track_agreement_from_one_set_of_details(client, monkeypatch, _clear):
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post("/founder/mou/preview", json={"collaborators": _ONE_COLLABORATOR})
+    assert r.status_code == 200, r.text
+    previews = r.json()["previews"]
+    assert [p["slug"] for p in previews] == ["facility-v1", "collaboration-v1"]
+    for p in previews:
+        assert "Priya" in p["rendered_text"]
+        assert "[•]" not in p["rendered_text"]
+
+
+def test_preview_mou_rejects_zero_collaborators(client, monkeypatch, _clear):
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post("/founder/mou/preview", json={"collaborators": []})
+    assert r.status_code == 422
+
+
+def test_preview_mou_rejects_more_than_three_collaborators(client, monkeypatch, _clear):
+    """Asserts the pydantic-shaped (list) detail specifically -- proving
+    the MouPreviewRequest bound itself catches this, not only
+    agreements.py's own independent 1-3 check (which preview_mou also
+    guards against turning into a 500, see its ValueError handler)."""
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post("/founder/mou/preview", json={"collaborators": _THREE_COLLABORATORS + [
+        {"name": "Extra", "pan": "ZZZZZ0000Z", "parent_name": "X", "address": "Y"}
+    ]})
+    assert r.status_code == 422
+    assert isinstance(r.json()["detail"], list), r.json()
+
+
+def test_sign_rejects_a_malformed_pan(client, monkeypatch, _clear):
+    """Correct LENGTH (10 chars) but wrong FORMAT (all digits, no letters)
+    -- this must be caught by the PAN regex validator itself, not by the
+    min/max_length=10 constraint (which a 10-digit string already satisfies
+    and would let a format-invalid PAN silently through)."""
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    bad = [{**_ONE_COLLABORATOR[0], "pan": "1234567890"}]
+    r = client.post("/founder/mou/sign", json=_sign_body(collaborators=bad))
+    assert r.status_code == 422
+
+
+# ── multi-agreement signing (Task 7) ────────────────────────────────────
+
+
+def test_sign_mou_stamps_every_track_agreement_as_the_version(client, monkeypatch, _clear):
+    from app.services import agreements
+    fake = _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post("/founder/mou/sign", json=_sign_body())
+    assert r.status_code == 200, r.text
+    assert fake.tables["founder_mou"][0]["template_version"] == ",".join(agreements.TRACK_AGREEMENTS["tir"])
+
+
+def test_sign_mou_with_three_collaborators_succeeds(client, monkeypatch, _clear):
+    fake = _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post("/founder/mou/sign", json=_sign_body(collaborators=_THREE_COLLABORATORS))
+    assert r.status_code == 200, r.text
+    assert fake.tables["founder_mou"][0]["signed_pdf_path"]
+
+
+def test_sign_mou_rejects_four_collaborators(client, monkeypatch, _clear):
+    """The model-level bound itself, not agreements.py's own internal 1-3
+    check (a second, independent guard — sign_and_onboard would also 422
+    via that ValueError path even with this model bound relaxed, so we
+    assert the pydantic validation-error SHAPE specifically: a list under
+    "detail", not the service layer's {"code": "invalid_signature", ...}
+    dict — to prove THIS guard, not just "some" guard, caught it)."""
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    four = _THREE_COLLABORATORS + [{"name": "Extra", "pan": "AAAAA1111A", "parent_name": "X", "address": "Y"}]
+    r = client.post("/founder/mou/sign", json=_sign_body(collaborators=four))
+    assert r.status_code == 422
+    assert isinstance(r.json()["detail"], list), r.json()
+
+
+def test_sign_mou_generates_a_retrievable_pdf_for_every_track_agreement(client, monkeypatch, _clear):
+    """The deliverable: sign once, get every agreement's PDF back,
+    individually, afterwards."""
+    from app.services import agreements
+    fake = _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post("/founder/mou/sign", json=_sign_body())
+    assert r.status_code == 200, r.text
+
+    slugs = agreements.TRACK_AGREEMENTS["tir"]
+    # A real upload happened for EVERY agreement's PDF — not just that a
+    # signed-url can be derived for its path (the fake create_signed_url
+    # would happily sign a path nothing was ever uploaded to).
+    for slug in slugs:
+        assert f"app1/mou/{slug}.pdf" in fake.storage.uploaded_paths, (
+            f"expected an actual upload for {slug}, got {fake.storage.uploaded_paths}"
+        )
+
+    urls = {}
+    for slug in slugs:
+        resp = client.get(f"/founder/mou/signed-url?agreement={slug}")
+        assert resp.status_code == 200, resp.text
+        urls[slug] = resp.json()["url"]
+    # every agreement resolves to its OWN distinct document
+    assert len(set(urls.values())) == len(slugs)
+
+    # the no-slug default still works (backward compatible) and matches
+    # the primary (first) agreement's document
+    default_url = client.get("/founder/mou/signed-url").json()["url"]
+    assert default_url == urls[slugs[0]]
+
+
+def test_signed_url_for_an_agreement_the_track_never_requires_is_404(client, monkeypatch, _clear):
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    client.post("/founder/mou/sign", json=_sign_body())
+    r = client.get("/founder/mou/signed-url?agreement=not-a-real-agreement")
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "unknown_agreement"
+
+
+def test_signed_url_before_signing_is_mou_not_signed(client, monkeypatch, _clear):
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.get("/founder/mou/signed-url")
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "mou_not_signed"
+    r2 = client.get("/founder/mou/signed-url?agreement=collaboration-v1")
+    assert r2.status_code == 404
+    assert r2.json()["detail"]["code"] == "mou_not_signed", (
+        "before ANY signing, every agreement is 'nothing signed yet', not "
+        "'this specific agreement was skipped'"
+    )
+
+
+def test_signed_url_for_the_legacy_row_only_serves_its_own_recorded_path(client, monkeypatch, _clear):
+    """The one production row (template_version='tir-mou-v2') never
+    produced per-slug PDFs — asking for a specific new-style agreement
+    against it must be a distinct 'agreement not signed' 404, not a guess
+    at a path that was never generated, and not a silent 200."""
+    _install(monkeypatch, {
+        "tir_applications": [{"id": "app1", "user_id": "u1", "status": "onboarded",
+                              "grant_amount": 2500000, "submitted_at": "2026-07-01"}],
+        "founder_mou": [{"application_id": "app1", "signer_name": "OOOO",
+                         "template_version": "tir-mou-v2", "signed_pdf_path": "app1/mou/signed.pdf",
+                         "signed_at": "2026-08-13", "acknowledgements": []}],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    default = client.get("/founder/mou/signed-url")
+    assert default.status_code == 200
+    assert default.json()["url"] == "https://x/app1/mou/signed.pdf"
+
+    specific = client.get("/founder/mou/signed-url?agreement=facility-v1")
+    assert specific.status_code == 404
+    assert specific.json()["detail"]["code"] == "agreement_not_signed"
 
 
 def test_me_reports_mou_signed_and_unlocked(client, monkeypatch, _clear):
