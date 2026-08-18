@@ -471,3 +471,156 @@ def reopen_period(
         after={"application_id": application_id, "kind": kind, "period_key": period_key},
     )
     return fetch_mis_period(application_id, kind, period_key)
+
+
+# ── MIS charts (cohort roll-up + per-startup) ────────────────────────────
+
+# Hand-synced with frontend/src/components/MisChartCard.jsx's own `GRAPH`
+# constant — same convention as rbac.py/rbac.js (core domain invariant:
+# change one, change the other). All four are monthly-only metrics
+# (mis_catalog.METRICS); quarterly periods carry no metrics at all, so this
+# never touches vip_mis_financials/vip_mis_headcount.
+MIS_GRAPH = (
+    ("revenue", "revenue_month"),
+    ("burn", "net_burn_month"),
+    ("headcount", "headcount_eom"),
+    ("paying", "active_customers"),
+)
+_MIS_GRAPH_METRIC_KEYS = {mk for _, mk in MIS_GRAPH}
+
+
+def _onboarded_vip_application_ids() -> list[str]:
+    """Every VIP (sip) application currently `onboarded` — the roster the
+    per-startup chart section walks, INCLUDING a venture with zero
+    `vip_mis_periods` rows (one that has never opened its own MIS tab —
+    periods are only ever lazily created by a founder's own `GET
+    /founder/mis`, mis_query's own module docstring). `fetch_mis_matrix`
+    deliberately does NOT do this — it derives its startup list purely from
+    existing period rows, silently omitting a never-visited venture — but
+    this view's own empty-state contract (G5: "hasn't opened MIS reporting
+    yet") requires seeing that venture in order to say so, distinctly from
+    G6 (no onboarded ventures at all, so `startups` itself is empty).
+    """
+    sb = get_admin_client()
+    rows = _fetch_all(
+        lambda: sb.table("sip_applications").select("id").eq("status", "onboarded")
+    )
+    return sorted({r["id"] for r in rows})
+
+
+def fetch_mis_charts() -> dict:
+    """Cohort roll-up + per-startup series for the four MIS_GRAPH metrics,
+    read from every SUBMITTED monthly period across the VIP cohort (spec
+    §6). A quarterly period carries no chart metrics at all (same rule
+    `mis_query.period_bundle` already applies), so only `kind == "monthly"`
+    periods are ever read here.
+
+    Two distinguishable empty states, never collapsed into one:
+      * `startups == []` — no VIP venture is currently onboarded at all
+        (G6, page-level: "No VIP startups are onboarded yet.").
+      * a startup row with `has_any_period is False` — that venture IS
+        onboarded but has never once opened its own MIS page, so no
+        `vip_mis_periods` row exists for it yet (G5, per-startup: "Hasn't
+        opened MIS reporting yet."). This is distinct from a startup that
+        HAS opened MIS (`has_any_period is True`) but simply hasn't
+        submitted anything yet — that startup's `monthly_status` is
+        non-empty (drafts) while its `series` stay empty arrays.
+
+    OPEN QUESTION, deliberately not resolved here: what a cohort month's
+    total means when startups do not share a reporting calendar. Shipped
+    default — a partial sum over whichever startups reported that exact
+    period_key, mirroring `mis_query._partial_sum`'s own "partial entry is
+    still useful information" rule. NOT zero-filled, NOT gated on every
+    onboarded venture having reported. This is a product decision this
+    function does not have the authority to make silently — see this
+    plan's own "invented formulas" section before treating this number as
+    authoritative.
+    """
+    sb = get_admin_client()
+    application_ids = _onboarded_vip_application_ids()
+    names = _startup_names(application_ids)
+    app_id_set = set(application_ids)
+
+    periods = _fetch_all(
+        lambda: sb.table("vip_mis_periods").select("*").eq("kind", "monthly")
+    )
+    periods = [mis_query._normalise_period(p) for p in periods if p["application_id"] in app_id_set]
+
+    by_app_periods: dict[str, list[dict]] = {aid: [] for aid in application_ids}
+    for p in periods:
+        by_app_periods[p["application_id"]].append(p)
+
+    submitted_period_ids = [p["id"] for p in periods if p["status"] == "submitted"]
+    metrics_by_period: dict[str, dict[str, float | int | None]] = {}
+    if submitted_period_ids:
+        # PostgREST's ~1000-row cap has silently truncated list reads in
+        # this codebase three times before (admin_query.py's own module
+        # docstring) — _fetch_all, not a bare .execute(), even though a
+        # single cohort is unlikely to hit it soon.
+        metric_rows = _fetch_all(
+            lambda: sb.table("vip_mis_metrics").select("period_id,metric_key,actual")
+            .in_("period_id", submitted_period_ids)
+        )
+        for r in metric_rows:
+            if r["metric_key"] not in _MIS_GRAPH_METRIC_KEYS:
+                continue
+            metrics_by_period.setdefault(r["period_id"], {})[r["metric_key"]] = r.get("actual")
+
+    today = mis_periods.today_ist()
+    startups = []
+    cohort_by_period: dict[str, dict[str, list[float]]] = {}
+    period_labels: dict[str, str] = {}
+
+    for aid in application_ids:
+        app_periods = sorted(by_app_periods[aid], key=lambda p: p["period_key"])
+        submitted = [p for p in app_periods if p["status"] == "submitted"]
+
+        series: dict[str, list[dict]] = {ck: [] for ck, _ in MIS_GRAPH}
+        for p in submitted:
+            values = metrics_by_period.get(p["id"], {})
+            period_labels.setdefault(p["period_key"], p["label"])
+            for chart_key, metric_key in MIS_GRAPH:
+                value = values.get(metric_key)
+                series[chart_key].append(
+                    {"period_key": p["period_key"], "label": p["label"], "value": value}
+                )
+                if value is not None:
+                    cohort_by_period.setdefault(p["period_key"], {}).setdefault(
+                        chart_key, []
+                    ).append(value)
+
+        monthly_status = [
+            {"period_key": p["period_key"], "label": p["label"], "status": p["status"],
+             "due_date": p["due_date"], "overdue": mis_periods.is_overdue(p, today)}
+            for p in app_periods
+        ]
+        latest = submitted[-1] if submitted else None
+
+        startups.append({
+            "application_id": aid,
+            "startup": names.get(aid, "(unnamed)"),
+            "has_any_period": len(app_periods) > 0,
+            "monthly_status": monthly_status,
+            "latest_period": (
+                {"period_key": latest["period_key"], "label": latest["label"],
+                 "submitted_at": latest.get("submitted_at")}
+                if latest else None
+            ),
+            "series": series,
+        })
+    startups.sort(key=lambda s: s["startup"])
+
+    cohort_period_keys = sorted(cohort_by_period.keys())
+    cohort_series: dict[str, list[dict]] = {ck: [] for ck, _ in MIS_GRAPH}
+    for pk in cohort_period_keys:
+        for chart_key, _ in MIS_GRAPH:
+            values = cohort_by_period[pk].get(chart_key, [])
+            cohort_series[chart_key].append({
+                "period_key": pk, "label": period_labels[pk],
+                "value": sum(values) if values else None,
+            })
+
+    return {
+        "cohort": {"period_keys": cohort_period_keys, "series": cohort_series},
+        "startups": startups,
+    }

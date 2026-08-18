@@ -146,7 +146,8 @@ def _submit_mis_period(client, kind: str, period_key: str):
 def test_reads_require_view_all_apps(client, monkeypatch, _clear):
     _install(monkeypatch)
     _as(lambda: {"user_id": "r1", "email": "r1@x.com", "roles": ["reviewer"]})
-    for path in ("/admin/platform/vip/air/queue", "/admin/platform/vip/mis/matrix?kind=monthly"):
+    for path in ("/admin/platform/vip/air/queue", "/admin/platform/vip/mis/matrix?kind=monthly",
+                 "/admin/platform/vip/mis/charts"):
         r = client.get(path)
         assert r.status_code == 403, path
 
@@ -574,3 +575,136 @@ def test_reopen_refuses_when_a_later_period_is_already_submitted(client, monkeyp
     # With 2026-08 no longer submitted, 2026-07 now reopens too.
     r3 = client.post("/admin/platform/vip/mis/sapp1/monthly/2026-07/reopen")
     assert r3.status_code == 200, r3.text
+
+
+# ── MIS charts (cohort roll-up + per-startup) ───────────────────────────────
+
+def test_mis_charts_includes_a_venture_with_zero_periods_as_has_any_period_false(
+    client, monkeypatch, _clear, _frozen_mis_today,
+):
+    _install(monkeypatch, extra_sip_apps=[
+        {"id": "sapp_never_opened", "user_id": "u2", "status": "onboarded",
+         "submitted_at": "2026-01-01", "basic_org": "NeverOpened Co"},
+    ])
+    _as(_founder_user())  # sapp1/u1 opens MIS; sapp_never_opened never does
+    client.get("/founder/mis")
+
+    _as(_admin_user())
+    resp = client.get("/admin/platform/vip/mis/charts")
+    assert resp.status_code == 200, resp.text
+    startup = next(s for s in resp.json()["startups"] if s["application_id"] == "sapp_never_opened")
+    assert startup["has_any_period"] is False
+    assert startup["series"]["revenue"] == []
+    assert startup["monthly_status"] == []
+    assert startup["latest_period"] is None
+
+
+def test_mis_charts_per_startup_series_is_submitted_only_oldest_first(
+    client, monkeypatch, _clear, _frozen_mis_today,
+):
+    _install(monkeypatch)
+    _as(_founder_user())
+    client.get("/founder/mis")  # generates 2026-06, 2026-07, 2026-08
+    client.post("/founder/mis/monthly/2026-06/import/commit",
+                json={"metrics": [{"metric_key": "revenue_month", "actual": 4.5}], "submit": True})
+    client.post("/founder/mis/monthly/2026-07/import/commit",
+                json={"metrics": [{"metric_key": "revenue_month", "actual": 6.2}], "submit": True})
+    # 2026-08 stays draft — must NOT appear in the series.
+
+    _as(_admin_user())
+    startup = next(s for s in client.get("/admin/platform/vip/mis/charts").json()["startups"]
+                   if s["application_id"] == "sapp1")
+    assert [p["period_key"] for p in startup["series"]["revenue"]] == ["2026-06", "2026-07"]
+    assert [p["value"] for p in startup["series"]["revenue"]] == [4.5, 6.2]
+    assert startup["latest_period"]["period_key"] == "2026-07"
+
+
+def test_mis_charts_cohort_rollup_sums_only_startups_that_reported_never_zero_fills(
+    client, monkeypatch, _clear, _frozen_mis_today,
+):
+    _install(monkeypatch, extra_sip_apps=[
+        {"id": "sapp2", "user_id": "u2", "status": "onboarded",
+         "submitted_at": "2026-01-01", "basic_org": "Beta Sensors"},
+    ])
+    _as(_founder_user())  # sapp1/u1
+    client.get("/founder/mis")
+    client.post("/founder/mis/monthly/2026-06/import/commit",
+                json={"metrics": [{"metric_key": "revenue_month", "actual": 10}], "submit": True})
+    # sapp2/u2 never opens MIS at all — contributes nothing to 2026-06.
+
+    _as(_admin_user())
+    cohort = client.get("/admin/platform/vip/mis/charts").json()["cohort"]
+    revenue_row = next(r for r in cohort["series"]["revenue"] if r["period_key"] == "2026-06")
+    assert revenue_row["value"] == 10  # NOT 5 (zero-filled average), not None (gated on full cohort)
+    # A different metric no one reported that same period must stay null, not
+    # silently zero-filled just because the period_key exists in the cohort
+    # at all — mutation-check target: sum([]) must stay None, never become 0.
+    burn_row = next(r for r in cohort["series"]["burn"] if r["period_key"] == "2026-06")
+    assert burn_row["value"] is None
+
+
+def test_mis_charts_a_metric_null_in_every_submitted_period_still_appears_as_null_points(
+    client, monkeypatch, _clear, _frozen_mis_today,
+):
+    _install(monkeypatch)
+    _as(_founder_user())
+    client.get("/founder/mis")
+    client.post("/founder/mis/monthly/2026-06/import/commit",
+                json={"metrics": [{"metric_key": "revenue_month", "actual": 4.5}], "submit": True})
+    client.post("/founder/mis/monthly/2026-07/import/commit",
+                json={"metrics": [{"metric_key": "revenue_month", "actual": 6.2}], "submit": True})
+    # active_customers ("paying") is never sent in either commit — stays
+    # null, seeded blank by ensure_periods.
+
+    _as(_admin_user())
+    startup = next(s for s in client.get("/admin/platform/vip/mis/charts").json()["startups"]
+                   if s["application_id"] == "sapp1")
+    assert all(p["value"] is None for p in startup["series"]["paying"])
+    assert len(startup["series"]["paying"]) == 2  # points still present, not dropped
+
+
+def test_mis_charts_empty_cohort_when_no_ventures_onboarded(client, monkeypatch, _clear):
+    """G6: zero onboarded VIP ventures at all. Distinct in shape from G5
+    (a startup with has_any_period False among an otherwise non-empty
+    roster) — this is startups == [] at the page level, not one row with a
+    false flag. The one sip_applications row is flipped to a non-onboarded
+    status rather than deleted, so this also proves the roster is filtered
+    by status='onboarded' and not merely "every row in the table"."""
+    fake = _install(monkeypatch)
+    fake.tables["sip_applications"][0]["status"] = "offered"  # not yet onboarded
+
+    _as(_admin_user())
+    body = client.get("/admin/platform/vip/mis/charts").json()
+    assert body == {
+        "cohort": {"period_keys": [], "series": {"revenue": [], "burn": [], "headcount": [], "paying": []}},
+        "startups": [],
+    }
+
+
+def test_mis_charts_distinguishes_never_opened_from_opened_but_not_yet_submitted(
+    client, monkeypatch, _clear, _frozen_mis_today,
+):
+    """G5 (never opened its own MIS page, so no vip_mis_periods rows exist)
+    vs. a venture that HAS opened MIS (periods exist) but hasn't submitted
+    anything yet — two different causes for an all-empty chart that must
+    not collapse into the same has_any_period value or the same explanation."""
+    _install(monkeypatch, extra_sip_apps=[
+        {"id": "sapp_opened_only", "user_id": "u2", "status": "onboarded",
+         "submitted_at": "2026-01-01", "basic_org": "OpenedOnly Co"},
+    ])
+    _as(_founder_user(app_id="sapp_opened_only", user_id="u2"))
+    client.get("/founder/mis")  # periods created, nothing submitted
+    # sapp1/u1 never opens MIS at all.
+
+    _as(_admin_user())
+    startups = client.get("/admin/platform/vip/mis/charts").json()["startups"]
+    never_opened = next(s for s in startups if s["application_id"] == "sapp1")
+    opened_only = next(s for s in startups if s["application_id"] == "sapp_opened_only")
+
+    assert never_opened["has_any_period"] is False
+    assert never_opened["monthly_status"] == []
+
+    assert opened_only["has_any_period"] is True
+    assert opened_only["monthly_status"] != []
+    assert opened_only["series"]["revenue"] == []  # nothing submitted yet -> no points
+    assert opened_only["latest_period"] is None

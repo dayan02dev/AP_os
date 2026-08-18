@@ -94,6 +94,13 @@ async def get_mis_matrix(kind: Literal["monthly", "quarterly"]) -> dict[str, Any
     return vq.fetch_mis_matrix(kind)
 
 
+@router.get("/mis/charts", dependencies=[Depends(require_capability("view_all_apps"))])
+async def get_mis_charts() -> dict[str, Any]:
+    """Cohort roll-up + per-startup series for the four MIS chart metrics
+    (spec §6)."""
+    return vq.fetch_mis_charts()
+
+
 @router.get(
     "/mis/{application_id}/{kind}/{period_key}",
     dependencies=[Depends(require_capability("view_all_apps"))],
