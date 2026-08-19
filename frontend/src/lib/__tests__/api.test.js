@@ -14,6 +14,18 @@ function jsonResponse(status, body, extra = {}) {
   });
 }
 
+function pdfResponse(status, bytes = "%PDF-1.4 fake pdf bytes") {
+  // A string body (not `new Blob([bytes])`) -- jsdom's fetch polyfill in
+  // this test environment truncates a Blob-typed Response body when read
+  // back via .blob(), which is an environment quirk unrelated to api.js;
+  // a string body round-trips correctly and still exercises the same
+  // Response.blob() code path in apiCall.
+  return new Response(bytes, {
+    status,
+    headers: { "Content-Type": "application/pdf" },
+  });
+}
+
 describe("apiCall", () => {
   beforeEach(() => {
     _resetSessionForTests();
@@ -125,5 +137,106 @@ describe("apiCall", () => {
     expect(opts.body).toBe(fd);
     // Browser sets its own multipart Content-Type with boundary — we don't override.
     expect(opts.headers.get("Content-Type")).toBeNull();
+  });
+
+  // ── blob path (binary responses, e.g. the MOU PDF preview) ───────────────
+  describe("opts.blob — binary responses", () => {
+    it("returns a Blob instead of parsed JSON when opts.blob is set", async () => {
+      globalThis.fetch.mockResolvedValue(pdfResponse(200));
+      const result = await apiCall("/founder/mou/preview/pdf?slug=facility-v1", {
+        method: "POST",
+        body: { collaborators: [] },
+        blob: true,
+      });
+      expect(result).toBeInstanceOf(Blob);
+      // jsdom's Blob shim doesn't implement .text()/.arrayBuffer() — assert
+      // on size/type instead, which is enough to prove the real response
+      // body came through untouched rather than being JSON-parsed.
+      expect(result.type).toBe("application/pdf");
+      expect(result.size).toBe(new Blob(["%PDF-1.4 fake pdf bytes"]).size);
+    });
+
+    it("still JSON-serialises the request body and sets Content-Type", async () => {
+      globalThis.fetch.mockResolvedValue(pdfResponse(200));
+      await apiCall("/founder/mou/preview/pdf?slug=facility-v1", {
+        method: "POST",
+        body: { collaborators: [{ name: "Aditi" }] },
+        blob: true,
+      });
+      const [, opts] = globalThis.fetch.mock.calls[0];
+      expect(typeof opts.body).toBe("string");
+      expect(JSON.parse(opts.body)).toEqual({ collaborators: [{ name: "Aditi" }] });
+      expect(opts.headers.get("Content-Type")).toBe("application/json");
+    });
+
+    it("still attaches the Authorization header, same as the JSON path", async () => {
+      saveSession({ access_token: "access-1", refresh_token: "refresh-1" });
+      globalThis.fetch.mockResolvedValue(pdfResponse(200));
+      await apiCall("/founder/mou/preview/pdf?slug=facility-v1", {
+        method: "POST",
+        body: { collaborators: [] },
+        blob: true,
+      });
+      const [, opts] = globalThis.fetch.mock.calls[0];
+      expect(opts.headers.get("Authorization")).toBe("Bearer access-1");
+    });
+
+    it("refreshes then retries once on 401, same as the JSON path", async () => {
+      saveSession({ access_token: "stale", refresh_token: "refresh-1" });
+      globalThis.fetch
+        .mockResolvedValueOnce(jsonResponse(401, { error: { code: "expired" } }))
+        .mockResolvedValueOnce(
+          jsonResponse(200, { access_token: "fresh", refresh_token: "refresh-2" }),
+        )
+        .mockResolvedValueOnce(pdfResponse(200));
+
+      const result = await apiCall("/founder/mou/preview/pdf?slug=facility-v1", {
+        method: "POST",
+        body: { collaborators: [] },
+        blob: true,
+      });
+      expect(result).toBeInstanceOf(Blob);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+      const retryHeaders = globalThis.fetch.mock.calls[2][1].headers;
+      expect(retryHeaders.get("Authorization")).toBe("Bearer fresh");
+    });
+
+    it("throws ApiError with the backend's detail.code shape on a non-2xx blob request, same as the JSON path", async () => {
+      globalThis.fetch.mockResolvedValue(
+        jsonResponse(422, { detail: { code: "invalid_signature", message: "bad png" } }),
+      );
+      await expect(
+        apiCall("/founder/mou/preview/pdf?slug=facility-v1", {
+          method: "POST",
+          body: { collaborators: [] },
+          blob: true,
+        }),
+      ).rejects.toMatchObject({
+        name: "ApiError",
+        status: 422,
+        code: "invalid_signature",
+        message: "bad png",
+      });
+    });
+
+    it("applies the same timeout behaviour as the JSON path", async () => {
+      vi.useFakeTimers();
+      globalThis.fetch.mockImplementation(
+        (_url, { signal }) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+          }),
+      );
+      const promise = apiCall("/founder/mou/preview/pdf?slug=facility-v1", {
+        method: "POST",
+        body: { collaborators: [] },
+        blob: true,
+        timeoutMs: 5000,
+      });
+      const assertion = expect(promise).rejects.toMatchObject({ code: "timeout" });
+      await vi.advanceTimersByTimeAsync(5000);
+      await assertion;
+      vi.useRealTimers();
+    });
   });
 });

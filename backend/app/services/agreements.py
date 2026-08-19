@@ -435,7 +435,7 @@ def _build_body_pdf(blocks: list[dict]) -> bytes:
 
 
 def _build_signature_page_pdf(
-    signer_name: str, date_str: str, signature_png: str, accepted_acks: list[str] | None
+    signer_name: str, date_str: str, signature_png: str | None, accepted_acks: list[str] | None
 ) -> bytes:
     # Reuses the exact image-embed approach founder_mou.render_signed_pdf
     # already proves works against the Lambda runtime's reportlab.
@@ -446,7 +446,12 @@ def _build_signature_page_pdf(
 
     from .founder_mou import _wrap, acknowledgement_text, decode_signature_png
 
-    raw_png = decode_signature_png(signature_png)
+    # signature_png is absent for a PRE-signing preview (nothing has been
+    # drawn yet, or the founder hasn't reached the Sign step) -- decode is
+    # skipped entirely rather than passed a sentinel, so the signed path
+    # below (signature_png truthy) is untouched byte-for-byte from before
+    # this became optional.
+    raw_png = decode_signature_png(signature_png) if signature_png else None
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
@@ -462,14 +467,20 @@ def _build_signature_page_pdf(
             c.drawString(x + 4 * mm, y, ("[x] " if i == 0 else "    ") + line)
             y -= 4.6 * mm
         y -= 1.5 * mm
-    try:
-        img = ImageReader(io.BytesIO(raw_png))
-        c.drawImage(
-            img, x, y - 20 * mm, width=55 * mm, height=18 * mm,
-            preserveAspectRatio=True, mask="auto",
-        )
-    except Exception:  # noqa: BLE001 -- never fail the PDF over an image glitch
-        pass
+    if raw_png is not None:
+        try:
+            img = ImageReader(io.BytesIO(raw_png))
+            c.drawImage(
+                img, x, y - 20 * mm, width=55 * mm, height=18 * mm,
+                preserveAspectRatio=True, mask="auto",
+            )
+        except Exception:  # noqa: BLE001 -- never fail the PDF over an image glitch
+            pass
+    else:
+        # No signature yet: the blank ruled line a paper form would show at
+        # this spot -- never a fabricated mark, never placeholder text.
+        c.setLineWidth(0.75)
+        c.line(x, y - 18 * mm, x + 70 * mm, y - 18 * mm)
     c.showPage()
     c.save()
     return buf.getvalue()
@@ -480,7 +491,7 @@ def render_agreement_pdf(
     collaborators: list[dict],
     signer_name: str,
     date_str: str,
-    signature_png: str,
+    signature_png: str | None = None,
     accepted_acks: list[str] | None = None,
     slug: str = "facility-v1",
 ) -> bytes:
@@ -488,7 +499,13 @@ def render_agreement_pdf(
     body (real paragraphs, real tables) with a canvas-drawn signature page
     merged on at the end via pypdf. Shares _resolve_blocks with
     render_preview_text() so the signed PDF can never diverge from what the
-    founder reviewed."""
+    founder reviewed.
+
+    signature_png is optional: the live preview a founder sees while still
+    typing (or before drawing a signature) calls this with none at all, and
+    gets back the same document with a blank ruled signature line instead
+    of an image -- exactly what the paper form looks like unsigned. The
+    signed path (signature_png provided) is unchanged."""
     from pypdf import PdfReader, PdfWriter
 
     blocks = _resolve_blocks(collaborators, slug)

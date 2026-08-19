@@ -8,9 +8,10 @@ router enforces application_id ↔ user_id ownership.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi import status as http_status
 
 from ..config import RESOURCE_ITEMS, settings
@@ -21,6 +22,7 @@ from ..models.founder import (
     BomItemPatch,
     EquipmentItemIn,
     EquipmentItemPatch,
+    MouPreviewPdfRequest,
     MouPreviewRequest,
     MouSignRequest,
     ProcurementItemIn,
@@ -195,6 +197,60 @@ async def preview_mou(
             detail={"code": "invalid_collaborators", "message": str(exc)},
         ) from exc
     return {"previews": previews}
+
+
+@router.post("/mou/preview/pdf")
+async def preview_mou_pdf(
+    slug: str,
+    payload: MouPreviewPdfRequest,
+    ctx: Annotated[dict, Depends(require_founder_access)],
+) -> Response:
+    """The embedded document itself -- real PDF bytes for ONE agreement,
+    built live from whatever the founder has typed (and, once they've
+    reached the Sign step, whatever they've drawn) so far. This is what the
+    frontend fetches as a blob and shows in an <iframe> on the Review and
+    Sign steps -- never persisted, purely a read, called again on every
+    debounced edit. Shares render_agreement_pdf with the signed path
+    (agreements.py), so the preview can never diverge from what actually
+    gets signed; the only difference is signature_png being absent (blank
+    ruled line) until the founder has actually drawn one.
+    """
+    valid_slugs = {a["slug"] for a in agreements.agreements_for_track(founder_mou.FOUNDER_TRACK)}
+    if slug not in valid_slugs:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "unknown_agreement", "agreement": slug},
+        )
+    # Validated (and its own distinct error code) BEFORE the render call --
+    # render_agreement_pdf's own ValueError catch below is for a
+    # collaborator/template defect, not a malformed signature; decoding
+    # here first keeps the two failure modes from being conflated into the
+    # wrong code (see mouErrorCopy in FounderMou.jsx, which renders each
+    # differently).
+    if payload.signature_png:
+        try:
+            founder_mou.decode_signature_png(payload.signature_png)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "invalid_signature", "message": str(exc)},
+            ) from exc
+    collaborators = [c.model_dump() for c in payload.collaborators]
+    try:
+        pdf = agreements.render_agreement_pdf(
+            collaborators=collaborators,
+            signer_name=payload.signer_name,
+            date_str=datetime.now(UTC).strftime("%d %b %Y"),
+            signature_png=payload.signature_png,
+            accepted_acks=None,
+            slug=slug,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_collaborators", "message": str(exc)},
+        ) from exc
+    return Response(content=pdf, media_type="application/pdf")
 
 
 @router.post("/mou/sign")

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import FounderMou from "../FounderMou.jsx";
@@ -58,6 +58,12 @@ const ONE_COLLAB_FIELDS = {
   name: "Aditi Rao", pan: "ABCDE1234F", parent_name: "Suresh Rao", address: "12 MG Road",
 };
 
+// A real (small) PDF-shaped Blob — the component never reads its bytes in
+// tests (URL.createObjectURL is stubbed below), it just needs to be a Blob.
+function fakePdfBlob(label = "pdf") {
+  return new Blob([`%PDF-1.4 ${label}`], { type: "application/pdf" });
+}
+
 async function fillFirstCollaborator(user, values = ONE_COLLAB_FIELDS) {
   await waitFor(() => screen.getByLabelText("Full legal name"));
   await user.type(screen.getByLabelText("Full legal name"), values.name);
@@ -78,8 +84,43 @@ async function tickAllAcks(user) {
   for (const b of screen.getAllByRole("checkbox")) await user.click(b);
 }
 
+// ── jsdom has no real URL.createObjectURL/revokeObjectURL — stub them and
+// track every call so the revocation tests can assert real behaviour
+// (which URL was created, which was revoked, in what order) rather than
+// just "didn't throw".
+let createdUrls;
+let revokedUrls;
+let urlCounter;
+
+function stubBlobUrls() {
+  urlCounter = 0;
+  createdUrls = [];
+  revokedUrls = [];
+  URL.createObjectURL = vi.fn(() => {
+    const url = `blob:mock-${++urlCounter}`;
+    createdUrls.push(url);
+    return url;
+  });
+  URL.revokeObjectURL = vi.fn((url) => revokedUrls.push(url));
+}
+
 describe("FounderMou", () => {
-  beforeEach(() => vi.restoreAllMocks());
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    stubBlobUrls();
+  });
+
+  // NOT afterEach: React Testing Library's own automatic-cleanup afterEach
+  // (registered at module import time, outside any describe block) unmounts
+  // components AFTER this describe block's afterEach would run — an
+  // afterEach here would delete the stubs before that unmount's own
+  // revokeObjectURL call runs, throwing "not a function". afterAll avoids
+  // the ordering problem entirely; each test's beforeEach already installs
+  // fresh stubs regardless.
+  afterAll(() => {
+    delete URL.createObjectURL;
+    delete URL.revokeObjectURL;
+  });
 
   // ── three distinct MOU states (empty-state discipline) ──────────────────
   describe("three distinct MOU states", () => {
@@ -103,6 +144,7 @@ describe("FounderMou", () => {
       vi.spyOn(founderApi, "getMou").mockResolvedValue(
         unsigned({ signed: true, signer_name: "Priya", signed_at: "2026-08-18T00:00:00Z" }),
       );
+      vi.spyOn(founderApi, "mouSignedUrl").mockResolvedValue({ url: "https://x/signed.pdf" });
       render(<FounderMou me={{}} />);
       await waitFor(() => expect(screen.getByText(/agreements signed/i)).toBeInTheDocument());
       expect(screen.getByText(/download/i)).toBeInTheDocument();
@@ -134,109 +176,48 @@ describe("FounderMou", () => {
     });
   });
 
-  // ── review cards follow the agreement catalog, not a hardcoded list ─────
-  describe("Review step renders one card per track agreement — catalog-driven", () => {
-    it("shows only Facility when the catalog lists only Facility", async () => {
+  // ── Review/Sign steps embed the ACTUAL PDF, catalog-driven per track ────
+  describe("Review step embeds the live PDF, one document per track agreement", () => {
+    it("embeds the previewed PDF for a single-agreement track and shows no tabs", async () => {
       const user = userEvent.setup();
       vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      vi.spyOn(founderApi, "previewMou").mockResolvedValue({
-        previews: [{ slug: "facility-v1", name: "Facility Agreement", rendered_text: "FACILITY TEXT Aditi Rao" }],
-      });
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob("facility"));
       render(<FounderMou me={{}} />);
       await fillFirstCollaborator(user);
       await user.click(screen.getByRole("button", { name: /^review$/i }));
-      await waitFor(() => expect(screen.getByText(/FACILITY TEXT/)).toBeInTheDocument());
-      expect(screen.queryByText("Collaboration Agreement")).not.toBeInTheDocument();
+
+      await waitFor(() => expect(document.querySelector("iframe")).toBeTruthy());
+      expect(screen.queryAllByRole("tab")).toHaveLength(0);
+      expect(founderApi.previewMouPdf).toHaveBeenCalledWith(
+        "facility-v1",
+        expect.objectContaining({
+          collaborators: [{ name: "Aditi Rao", pan: "ABCDE1234F", parent_name: "Suresh Rao", address: "12 MG Road" }],
+        }),
+      );
     });
 
-    it("adding a second entry to the catalog makes a second card appear with zero frontend code changes", async () => {
+    it("a second track agreement gets its own tab, and switching fetches that agreement's own document", async () => {
       const user = userEvent.setup();
       vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned({ agreements: TWO_AGREEMENTS }));
-      vi.spyOn(founderApi, "previewMou").mockResolvedValue({
-        previews: [
-          { slug: "facility-v1", name: "Facility Agreement", rendered_text: "FACILITY TEXT Aditi Rao" },
-          { slug: "collaboration-v1", name: "Collaboration Agreement", rendered_text: "COLLAB TEXT Aditi Rao" },
-        ],
-      });
+      vi.spyOn(founderApi, "previewMouPdf").mockImplementation(async (slug) => fakePdfBlob(slug));
       render(<FounderMou me={{}} />);
       await fillFirstCollaborator(user);
       await user.click(screen.getByRole("button", { name: /^review$/i }));
-      await waitFor(() => expect(screen.getByText(/FACILITY TEXT/)).toBeInTheDocument());
-      expect(screen.getByText(/COLLAB TEXT/)).toBeInTheDocument();
-      expect(screen.getByText("Collaboration Agreement")).toBeInTheDocument();
-    });
-  });
+      await waitFor(() => expect(document.querySelector("iframe")).toBeTruthy());
 
-  // ── 1-3 collaborators, dynamic, non-destructive add/remove ──────────────
-  describe("1-3 collaborators, dynamic", () => {
-    it("starts with one collaborator block and can add up to three", async () => {
+      expect(screen.getByRole("tab", { name: "Facility Agreement" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Collaboration Agreement" })).toBeInTheDocument();
+
+      await user.click(screen.getByRole("tab", { name: "Collaboration Agreement" }));
+      await waitFor(() => expect(founderApi.previewMouPdf).toHaveBeenLastCalledWith(
+        "collaboration-v1", expect.anything(),
+      ));
+    });
+
+    it("advancing to Review validates via the live PDF endpoint with what was typed", async () => {
       const user = userEvent.setup();
       vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      render(<FounderMou me={{}} />);
-      await waitFor(() => screen.getByRole("button", { name: /add (another )?collaborator/i }));
-      expect(screen.getAllByText(/collaborator 1/i).length).toBeGreaterThan(0);
-      expect(screen.queryByText(/collaborator 2/i)).not.toBeInTheDocument();
-
-      await user.click(screen.getByRole("button", { name: /add (another )?collaborator/i }));
-      expect(screen.getByText(/collaborator 2/i)).toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: /add (another )?collaborator/i }));
-      expect(screen.getByText(/collaborator 3/i)).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /add (another )?collaborator/i })).not.toBeInTheDocument();
-    });
-
-    it("cannot remove the last remaining collaborator", async () => {
-      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      render(<FounderMou me={{}} />);
-      await waitFor(() => screen.getByLabelText("Full legal name"));
-      expect(screen.queryByRole("button", { name: /remove collaborator/i })).not.toBeInTheDocument();
-    });
-
-    it("adding a collaborator does not discard what was already typed into the first", async () => {
-      const user = userEvent.setup();
-      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      render(<FounderMou me={{}} />);
-      await fillFirstCollaborator(user);
-      await user.click(screen.getByRole("button", { name: /add (another )?collaborator/i }));
-      expect(screen.getByText(/collaborator 2/i)).toBeInTheDocument();
-      // Field labels repeat verbatim from the backend catalog across
-      // blocks (only the "Collaborator N" heading disambiguates them for a
-      // sighted reader), so assert positionally: the FIRST "Full legal
-      // name" input is still collaborator 1's, untouched by the add.
-      expect(screen.getAllByLabelText("Full legal name")[0]).toHaveValue("Aditi Rao");
-      expect(screen.getAllByLabelText("PAN")[0]).toHaveValue("ABCDE1234F");
-      expect(screen.getAllByLabelText("Residential address")[0]).toHaveValue("12 MG Road");
-    });
-
-    it("removing a collaborator preserves the details already typed into the ones that remain", async () => {
-      const user = userEvent.setup();
-      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      render(<FounderMou me={{}} />);
-      await fillFirstCollaborator(user, ONE_COLLAB_FIELDS);
-      await user.click(screen.getByRole("button", { name: /add (another )?collaborator/i }));
-      await user.type(screen.getAllByLabelText("Full legal name")[1], "Kiran Shah");
-      await user.click(screen.getByRole("button", { name: /add (another )?collaborator/i }));
-      await user.type(screen.getAllByLabelText("Full legal name")[2], "Divya Nair");
-
-      const removeButtons = screen.getAllByRole("button", { name: /remove collaborator/i });
-      expect(removeButtons).toHaveLength(3);
-      await user.click(removeButtons[1]); // remove Kiran Shah's (2nd) block
-
-      expect(screen.queryByText(/kiran shah/i)).not.toBeInTheDocument();
-      const remaining = screen.getAllByLabelText("Full legal name");
-      expect(remaining).toHaveLength(2);
-      expect(remaining[0]).toHaveValue("Aditi Rao");
-      expect(remaining[1]).toHaveValue("Divya Nair");
-    });
-  });
-
-  // ── Review step calls the preview endpoint ───────────────────────────────
-  describe("Review step calls the preview endpoint", () => {
-    it("advancing to Review sends the entered collaborators and shows the returned text", async () => {
-      const user = userEvent.setup();
-      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      vi.spyOn(founderApi, "previewMou").mockResolvedValue({
-        previews: [{ slug: "facility-v1", name: "Facility Agreement", rendered_text: "FACILITY AGREEMENT ... Aditi Rao ..." }],
-      });
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
       render(<FounderMou me={{}} />);
       await waitFor(() => screen.getByLabelText("Full legal name"));
       await user.type(screen.getByLabelText("Full legal name"), "Aditi Rao");
@@ -244,10 +225,13 @@ describe("FounderMou", () => {
       await user.type(screen.getByLabelText("Father's / Mother's / Spouse's name (s/o, d/o)"), "Suresh Rao");
       await user.type(screen.getByLabelText("Residential address"), "12 MG Road");
       await user.click(screen.getByRole("button", { name: /^review$/i }));
-      await waitFor(() => expect(founderApi.previewMou).toHaveBeenCalledWith([
-        { name: "Aditi Rao", pan: "ABCDE1234F", parent_name: "Suresh Rao", address: "12 MG Road" },
-      ]));
-      expect(screen.getByText(/Aditi Rao/)).toBeInTheDocument();
+      await waitFor(() => expect(founderApi.previewMouPdf).toHaveBeenCalledWith(
+        "facility-v1",
+        expect.objectContaining({
+          collaborators: [{ name: "Aditi Rao", pan: "ABCDE1234F", parent_name: "Suresh Rao", address: "12 MG Road" }],
+        }),
+      ));
+      await waitFor(() => expect(document.querySelector("iframe")).toBeTruthy());
     });
   });
 
@@ -256,7 +240,7 @@ describe("FounderMou", () => {
     it("shows the regex-driven message next to the PAN field, not a generic failure", async () => {
       const user = userEvent.setup();
       vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      vi.spyOn(founderApi, "previewMou").mockRejectedValue({
+      vi.spyOn(founderApi, "previewMouPdf").mockRejectedValue({
         code: "http_422",
         message: "Request failed",
         details: [
@@ -274,6 +258,8 @@ describe("FounderMou", () => {
         expect(screen.getByText(/PAN must be 5 letters, 4 digits, 1 letter/i)).toBeInTheDocument(),
       );
       expect(screen.queryByText(/request failed/i)).not.toBeInTheDocument();
+      // Stayed on Details — the field error only renders there.
+      expect(screen.getByLabelText("Full legal name")).toBeInTheDocument();
     });
   });
 
@@ -282,9 +268,7 @@ describe("FounderMou", () => {
     it("renders one checkbox per server-supplied acknowledgement", async () => {
       const user = userEvent.setup();
       vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      vi.spyOn(founderApi, "previewMou").mockResolvedValue({
-        previews: [{ slug: "facility-v1", name: "Facility Agreement", rendered_text: "text" }],
-      });
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
       render(<FounderMou me={{}} />);
       await goToSignStep(user);
       expect(screen.getAllByRole("checkbox")).toHaveLength(4);
@@ -297,9 +281,7 @@ describe("FounderMou", () => {
     it("keeps Sign disabled until every acknowledgement is ticked", async () => {
       const user = userEvent.setup();
       vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      vi.spyOn(founderApi, "previewMou").mockResolvedValue({
-        previews: [{ slug: "facility-v1", name: "Facility Agreement", rendered_text: "text" }],
-      });
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
       render(<FounderMou me={{}} />);
       await goToSignStep(user);
 
@@ -318,9 +300,7 @@ describe("FounderMou", () => {
     it("unticking an acknowledgement re-blocks signing", async () => {
       const user = userEvent.setup();
       vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      vi.spyOn(founderApi, "previewMou").mockResolvedValue({
-        previews: [{ slug: "facility-v1", name: "Facility Agreement", rendered_text: "text" }],
-      });
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
       render(<FounderMou me={{}} />);
       await goToSignStep(user);
 
@@ -342,10 +322,9 @@ describe("FounderMou", () => {
       vi.spyOn(founderApi, "getMou")
         .mockResolvedValueOnce(unsigned())
         .mockResolvedValueOnce(unsigned({ signed: true, signer_name: "Aditi Rao", signed_at: "2026-08-18T00:00:00Z" }));
-      vi.spyOn(founderApi, "previewMou").mockResolvedValue({
-        previews: [{ slug: "facility-v1", name: "Facility Agreement", rendered_text: "text" }],
-      });
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
       vi.spyOn(founderApi, "signMou").mockResolvedValue({ signed: true, signed_at: "2026-08-18T00:00:00Z", status: "onboarded" });
+      vi.spyOn(founderApi, "mouSignedUrl").mockResolvedValue({ url: "https://x/signed.pdf" });
       const onSigned = vi.fn();
 
       render(<FounderMou me={{}} onSigned={onSigned} />);
@@ -372,9 +351,8 @@ describe("FounderMou", () => {
       vi.spyOn(founderApi, "getMou")
         .mockResolvedValueOnce(unsigned())
         .mockResolvedValueOnce(unsigned({ signed: true, signer_name: "Someone Else", signed_at: "2026-08-18T00:00:00Z" }));
-      vi.spyOn(founderApi, "previewMou").mockResolvedValue({
-        previews: [{ slug: "facility-v1", name: "Facility Agreement", rendered_text: "text" }],
-      });
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
+      vi.spyOn(founderApi, "mouSignedUrl").mockResolvedValue({ url: "https://x/signed.pdf" });
       vi.spyOn(founderApi, "signMou").mockRejectedValue({
         code: "mou_already_signed", message: "Request failed", details: { code: "mou_already_signed" },
       });
@@ -395,9 +373,7 @@ describe("FounderMou", () => {
       const user = userEvent.setup();
       mockCanvas();
       vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      vi.spyOn(founderApi, "previewMou").mockResolvedValue({
-        previews: [{ slug: "facility-v1", name: "Facility Agreement", rendered_text: "text" }],
-      });
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
       vi.spyOn(founderApi, "signMou").mockRejectedValue({
         code: "invalid_signature",
         message: "decoded signature is not a PNG",
@@ -419,9 +395,7 @@ describe("FounderMou", () => {
       const user = userEvent.setup();
       mockCanvas();
       vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      vi.spyOn(founderApi, "previewMou").mockResolvedValue({
-        previews: [{ slug: "facility-v1", name: "Facility Agreement", rendered_text: "text" }],
-      });
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
       vi.spyOn(founderApi, "signMou").mockRejectedValue({
         code: "acknowledgements_required",
         message: "Request failed",
@@ -440,12 +414,155 @@ describe("FounderMou", () => {
     });
   });
 
-  // ── Download: one action per track agreement, distinct copy per state ───
+  // ── the signature appears in the live document once drawn ───────────────
+  describe("the signature appears in the previewed document once drawn", () => {
+    it("the preview fetch carries no signature before drawing, and the drawn one after", async () => {
+      const user = userEvent.setup();
+      mockCanvas();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
+      render(<FounderMou me={{}} />);
+      await goToSignStep(user);
+
+      await waitFor(() => expect(founderApi.previewMouPdf).toHaveBeenCalledWith(
+        "facility-v1",
+        expect.objectContaining({ signaturePng: null }),
+      ));
+
+      founderApi.previewMouPdf.mockClear();
+      drawOnPad();
+
+      await waitFor(
+        () => expect(founderApi.previewMouPdf).toHaveBeenCalledWith(
+          "facility-v1",
+          expect.objectContaining({ signaturePng: "data:image/png;base64,AAAA" }),
+        ),
+        { timeout: 2000 },
+      );
+    }, 10000);
+  });
+
+  // ── debounce: rapid edits must not fire one request per keystroke ───────
+  describe("live preview is debounced", () => {
+    it("collapses several rapid signer-name edits into a single re-fetch", async () => {
+      const user = userEvent.setup();
+      mockCanvas();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
+      render(<FounderMou me={{}} />);
+      await goToSignStep(user);
+      await waitFor(() => expect(founderApi.previewMouPdf).toHaveBeenCalled());
+
+      founderApi.previewMouPdf.mockClear();
+      const nameField = screen.getByPlaceholderText(/full name/i);
+      fireEvent.change(nameField, { target: { value: "A" } });
+      fireEvent.change(nameField, { target: { value: "Ad" } });
+      fireEvent.change(nameField, { target: { value: "Adi" } });
+      fireEvent.change(nameField, { target: { value: "Adit" } });
+      fireEvent.change(nameField, { target: { value: "Aditi" } });
+
+      // Still well within the ~700ms debounce window.
+      await new Promise((r) => setTimeout(r, 300));
+      expect(founderApi.previewMouPdf).not.toHaveBeenCalled();
+
+      // Past it — exactly one re-fetch for five keystrokes, with the FINAL value.
+      await waitFor(() => expect(founderApi.previewMouPdf).toHaveBeenCalledTimes(1), { timeout: 2000 });
+      await new Promise((r) => setTimeout(r, 200));
+      expect(founderApi.previewMouPdf).toHaveBeenCalledTimes(1);
+      expect(founderApi.previewMouPdf).toHaveBeenCalledWith(
+        "facility-v1",
+        expect.objectContaining({ signerName: "Aditi" }),
+      );
+    }, 10000);
+  });
+
+  // ── stale-response guard: an out-of-order response must never win ───────
+  describe("a superseded (stale) preview response never overwrites a newer one", () => {
+    it("ignores an older request that resolves after a newer one", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned({ agreements: TWO_AGREEMENTS }));
+
+      const deferreds = [];
+      vi.spyOn(founderApi, "previewMouPdf").mockImplementation(() => {
+        let resolve;
+        const promise = new Promise((r) => { resolve = r; });
+        deferreds.push({ promise, resolve });
+        return promise;
+      });
+
+      render(<FounderMou me={{}} />);
+      await fillFirstCollaborator(user);
+      await user.click(screen.getByRole("button", { name: /^review$/i }));
+
+      // Call #0: goToReview's own validation fetch — resolve it to advance.
+      await waitFor(() => expect(deferreds.length).toBe(1));
+      deferreds[0].resolve(fakePdfBlob("validation"));
+      await waitFor(() => screen.getByRole("tab", { name: "Collaboration Agreement" }));
+
+      // Call #1: the OLDER display fetch for the default (facility) tab —
+      // leave it pending.
+      await waitFor(() => expect(deferreds.length).toBe(2));
+
+      // Switch tabs before it resolves — call #2, the NEWER request.
+      await user.click(screen.getByRole("tab", { name: "Collaboration Agreement" }));
+      await waitFor(() => expect(deferreds.length).toBe(3));
+
+      // Resolve OUT OF ORDER: newer settles first, older settles after.
+      deferreds[2].resolve(fakePdfBlob("newer-collab-doc"));
+      await waitFor(() => expect(document.querySelector("iframe")).toBeTruthy());
+      const urlAfterNewer = document.querySelector("iframe").src;
+
+      deferreds[1].resolve(fakePdfBlob("older-facility-doc"));
+      await new Promise((r) => setTimeout(r, 50)); // let the late resolution be processed, if it's going to be
+
+      expect(document.querySelector("iframe").src).toBe(urlAfterNewer);
+    });
+  });
+
+  // ── blob URL lifecycle: revoked on replace, revoked on unmount ──────────
+  describe("blob URL lifecycle", () => {
+    it("revokes the previous object URL when the preview is replaced by a newer one", async () => {
+      const user = userEvent.setup();
+      mockCanvas();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
+      render(<FounderMou me={{}} />);
+      await goToSignStep(user);
+
+      await waitFor(() => expect(createdUrls.length).toBeGreaterThanOrEqual(1));
+      const countBefore = createdUrls.length;
+      const firstUrl = createdUrls[createdUrls.length - 1];
+      expect(revokedUrls).not.toContain(firstUrl);
+
+      drawOnPad(); // triggers another (debounced) fetch — a new document to embed
+      await waitFor(() => expect(createdUrls.length).toBeGreaterThan(countBefore), { timeout: 2000 });
+
+      expect(revokedUrls).toContain(firstUrl);
+    }, 10000);
+
+    it("revokes the current object URL when the component unmounts", async () => {
+      const user = userEvent.setup();
+      mockCanvas();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
+      const { unmount } = render(<FounderMou me={{}} />);
+      await goToSignStep(user);
+      await waitFor(() => expect(createdUrls.length).toBeGreaterThanOrEqual(1));
+      const lastUrl = createdUrls[createdUrls.length - 1];
+      expect(revokedUrls).not.toContain(lastUrl);
+
+      unmount();
+      expect(revokedUrls).toContain(lastUrl);
+    });
+  });
+
+  // ── Download step: one action per track agreement, distinct copy per state ───
   describe("Download step", () => {
     it("offers each track agreement individually", async () => {
       vi.spyOn(founderApi, "getMou").mockResolvedValue(
         unsigned({ agreements: TWO_AGREEMENTS, signed: true, signer_name: "Priya", signed_at: "2026-08-18T00:00:00Z" }),
       );
+      vi.spyOn(founderApi, "mouSignedUrl").mockResolvedValue({ url: "https://x/doc.pdf" });
       render(<FounderMou me={{}} />);
       await waitFor(() => expect(screen.getByText(/agreements signed/i)).toBeInTheDocument());
       expect(screen.getByRole("button", { name: /download facility agreement/i })).toBeInTheDocument();

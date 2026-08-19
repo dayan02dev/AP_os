@@ -43,6 +43,35 @@ class MouPreviewRequest(BaseModel):
     collaborators: list[CollaboratorIn] = Field(min_length=1, max_length=3)
 
 
+class MouPreviewPdfRequest(BaseModel):
+    """Body for the live PDF preview (POST /founder/mou/preview/pdf?slug=...).
+    Same 1-3 collaborators as MouPreviewRequest, plus the two fields that
+    only exist once the founder has reached the Sign step: the name they've
+    typed and whatever they've drawn on the signature pad so far, if
+    anything. Both are optional and blank by default -- a preview fetched
+    from the Review step (before Sign) never has either, and
+    render_agreement_pdf renders the signature area as blank ruled space in
+    that case rather than requiring a fake value here."""
+
+    model_config = ConfigDict(extra="ignore")
+    collaborators: list[CollaboratorIn] = Field(min_length=1, max_length=3)
+    signer_name: str = Field(default="", max_length=200)
+    # data URL: "data:image/png;base64,...." -- or None/absent before the
+    # founder has drawn anything. Not the same min_length=32 floor as
+    # MouSignRequest's signature_png: that field is REQUIRED at sign time,
+    # this one is optional at preview time, so an empty/blank canvas must
+    # be representable, not rejected.
+    signature_png: str | None = Field(default=None, max_length=2_000_000)
+
+    @field_validator("signature_png")
+    @classmethod
+    def _blank_to_none(cls, v: str | None) -> str | None:
+        # An empty string (e.g. a canvas that was cleared) means "no
+        # signature", same as omitting the field entirely -- never passed
+        # through to decode_signature_png as a truthy-but-empty value.
+        return v if v else None
+
+
 class MouSignRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
     signer_name: str = Field(min_length=1, max_length=200)

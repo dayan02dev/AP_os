@@ -149,7 +149,11 @@ async function _runRequest(path, opts) {
  * @param {object} [opts.headers]
  * @param {number} [opts.timeoutMs]
  * @param {AbortSignal} [opts.signal]
- * @returns {Promise<any>} parsed JSON or null for 204
+ * @param {boolean} [opts.blob] Return the raw response Blob instead of
+ *   parsing JSON (e.g. a PDF preview). Auth, timeout, retry-on-401 and the
+ *   error shape are unchanged — this only affects how a *successful*
+ *   response body is read.
+ * @returns {Promise<any>} parsed JSON, a Blob (opts.blob), or null for 204
  */
 export async function apiCall(path, opts = {}) {
   let response;
@@ -194,6 +198,10 @@ export async function apiCall(path, opts = {}) {
   if (response.status === 204) return null;
 
   if (response.ok) {
+    // Binary path (e.g. the MOU PDF preview) — everything above this line
+    // (auth header, 401 refresh-and-retry, timeout/abort handling) is
+    // identical to the JSON path; this is the only branch point.
+    if (opts.blob) return response.blob();
     const contentType = response.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       return response.json();
@@ -211,6 +219,9 @@ export const api = {
   patch: (path, body, opts = {}) => apiCall(path, { ...opts, method: "PATCH", body }),
   put: (path, body, opts = {}) => apiCall(path, { ...opts, method: "PUT", body }),
   del: (path, opts = {}) => apiCall(path, { ...opts, method: "DELETE" }),
+  // Binary POST — returns a Blob (e.g. the MOU PDF preview). Same auth/
+  // timeout/error handling as api.post; only the response body parsing differs.
+  postBlob: (path, body, opts = {}) => apiCall(path, { ...opts, method: "POST", body, blob: true }),
 
   // Edit a SUBMITTED application by id (edit-after-submit window).
   editSubmitted(track, id, patch) {

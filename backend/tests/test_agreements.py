@@ -441,3 +441,119 @@ def test_pdf_is_longer_with_more_collaborators(_configured):
             accepted_acks=[], slug=slug,
         )
         assert len(big) > len(small)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Optional signature — the PDF preview must render before signing, when
+# there is no signature yet. The signature AREA becomes the blank ruled
+# space it would be on paper: no image, and no fabricated placeholder mark.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_render_agreement_pdf_without_signature_does_not_raise(_configured):
+    for slug in ALL_SLUGS:
+        pdf = agreements.render_agreement_pdf(
+            collaborators=ONE, signer_name="Aditi Rao", date_str="18 Aug 2026",
+            signature_png=None, accepted_acks=[], slug=slug,
+        )
+        assert pdf[:5] == b"%PDF-"
+
+
+def test_render_agreement_pdf_signature_defaults_to_none_when_omitted(_configured):
+    """signature_png is optional -- omitting the kwarg entirely (not just
+    passing None explicitly) must work, since the preview endpoint never
+    has one to pass."""
+    pdf = agreements.render_agreement_pdf(
+        collaborators=ONE, signer_name="Aditi Rao", date_str="18 Aug 2026",
+        accepted_acks=[], slug="facility-v1",
+    )
+    assert pdf[:5] == b"%PDF-"
+
+
+def test_unsigned_preview_embeds_no_signature_image():
+    """The signature block must contain NO image XObject at all when no
+    signature was supplied -- proves the blank-ruled-space path is really
+    blank, not a silently-swapped default/placeholder image."""
+    from pypdf import PdfReader
+
+    pdf = agreements.render_agreement_pdf(
+        collaborators=ONE, signer_name="Aditi Rao", date_str="18 Aug 2026",
+        signature_png=None, accepted_acks=[], slug="facility-v1",
+    )
+    sig_page = PdfReader(io.BytesIO(pdf)).pages[-1]
+    assert list(sig_page.images) == []
+
+
+def test_signed_render_embeds_exactly_one_signature_image():
+    """Sanity counterpart to the test above -- the signed path still embeds
+    the real signature image, so "no image" for the unsigned case above is
+    a meaningful assertion and not just an artifact of extraction failing
+    for both cases alike."""
+    from pypdf import PdfReader
+
+    pdf = agreements.render_agreement_pdf(
+        collaborators=ONE, signer_name="Aditi Rao", date_str="18 Aug 2026",
+        signature_png=_PNG, accepted_acks=[], slug="facility-v1",
+    )
+    sig_page = PdfReader(io.BytesIO(pdf)).pages[-1]
+    assert len(list(sig_page.images)) == 1
+
+
+def test_unsigned_preview_contains_no_placeholder_token_either():
+    """The blank-signature path reuses the same discipline as every other
+    unset field in this module: no literal placeholder token, ever."""
+    from pypdf import PdfReader
+
+    for slug in ALL_SLUGS:
+        pdf = agreements.render_agreement_pdf(
+            collaborators=THREE, signer_name="", date_str="18 Aug 2026",
+            signature_png=None, accepted_acks=[], slug=slug,
+        )
+        extracted = "".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
+        for tok in agreements._LEFTOVER_TOKENS:
+            assert tok not in extracted
+
+
+# The exact byte output of a SIGNED render, hashed BEFORE signature_png
+# became optional on render_agreement_pdf -- proves the refactor changed
+# nothing about the already-shipped signed path. Regenerate only if the
+# signature-page layout is deliberately redesigned.
+_GOLDEN_SIGNED_SHA256 = {
+    "facility-v1": "55127ae5a4ac2ee61c5fa1ebba675139a6fd7b995312bc1db95f2c44ef3ab990",
+    "collaboration-v1": "646bcb8b0605b11912cd080d1aaaf319776c696adfb746f0d98c747e841c5d98",
+}
+
+
+def test_unsigned_signature_page_text_matches_signed_signature_page_text():
+    """A drawn line (unsigned) and an embedded image (signed) both produce
+    zero extractable text -- the last page's TEXT content must be IDENTICAL
+    either way. This is what actually rules out a fabricated label sneaking
+    into the blank-signature branch (e.g. "Not yet signed", "[sign here]")
+    -- an image-count check alone would miss stray drawString calls."""
+    from pypdf import PdfReader
+
+    signed = agreements.render_agreement_pdf(
+        collaborators=ONE, signer_name="Aditi Rao", date_str="18 Aug 2026",
+        signature_png=_PNG, accepted_acks=[], slug="facility-v1",
+    )
+    unsigned = agreements.render_agreement_pdf(
+        collaborators=ONE, signer_name="Aditi Rao", date_str="18 Aug 2026",
+        signature_png=None, accepted_acks=[], slug="facility-v1",
+    )
+    signed_text = PdfReader(io.BytesIO(signed)).pages[-1].extract_text() or ""
+    unsigned_text = PdfReader(io.BytesIO(unsigned)).pages[-1].extract_text() or ""
+    assert signed_text == unsigned_text
+
+
+@pytest.mark.parametrize("slug", ALL_SLUGS)
+def test_signed_render_is_byte_identical_to_pre_refactor_golden(slug):
+    """Deliberately NOT using the `_configured` fixture -- the golden hash
+    was captured against the real shipped state (every ARTPARK constant
+    still unset), which is also the only state that currently exists in
+    production."""
+    import hashlib
+
+    pdf = agreements.render_agreement_pdf(
+        collaborators=ONE, signer_name="Aditi Rao", date_str="18 Aug 2026",
+        signature_png=_PNG, accepted_acks=["full_time_presence"], slug=slug,
+    )
+    assert hashlib.sha256(pdf).hexdigest() == _GOLDEN_SIGNED_SHA256[slug]

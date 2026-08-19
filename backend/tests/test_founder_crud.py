@@ -242,6 +242,96 @@ def test_preview_mou_rejects_more_than_three_collaborators(client, monkeypatch, 
     assert isinstance(r.json()["detail"], list), r.json()
 
 
+# ── live PDF preview (embedded-document redesign) ────────────────────────
+
+
+def test_preview_mou_pdf_returns_real_pdf_bytes(client, monkeypatch, _clear):
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post(
+        "/founder/mou/preview/pdf?slug=facility-v1",
+        json={"collaborators": _ONE_COLLABORATOR},
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("application/pdf")
+    assert r.content[:5] == b"%PDF-"
+
+
+def test_preview_mou_pdf_works_before_any_signature_is_drawn(client, monkeypatch, _clear):
+    """The whole point: this must succeed with no signer_name and no
+    signature_png at all -- the founder hasn't reached the Sign step yet."""
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post(
+        "/founder/mou/preview/pdf?slug=collaboration-v1",
+        json={"collaborators": _ONE_COLLABORATOR},
+    )
+    assert r.status_code == 200, r.text
+    assert r.content[:5] == b"%PDF-"
+
+
+def test_preview_mou_pdf_embeds_the_signature_once_drawn(client, monkeypatch, _clear):
+    """The deliverable: once a signature is drawn (but before Sign &
+    Submit), the SAME preview call embeds it in the document."""
+    import io as _io
+
+    from pypdf import PdfReader
+
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+
+    without = client.post(
+        "/founder/mou/preview/pdf?slug=facility-v1",
+        json={"collaborators": _ONE_COLLABORATOR},
+    )
+    with_sig = client.post(
+        "/founder/mou/preview/pdf?slug=facility-v1",
+        json={"collaborators": _ONE_COLLABORATOR, "signer_name": "Priya", "signature_png": _PNG},
+    )
+    assert without.status_code == 200 and with_sig.status_code == 200
+
+    without_images = list(PdfReader(_io.BytesIO(without.content)).pages[-1].images)
+    with_images = list(PdfReader(_io.BytesIO(with_sig.content)).pages[-1].images)
+    assert without_images == []
+    assert len(with_images) == 1
+
+
+def test_preview_mou_pdf_unknown_slug_is_404(client, monkeypatch, _clear):
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post(
+        "/founder/mou/preview/pdf?slug=not-a-real-agreement",
+        json={"collaborators": _ONE_COLLABORATOR},
+    )
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "unknown_agreement"
+
+
+def test_preview_mou_pdf_rejects_a_malformed_signature_with_its_own_code(client, monkeypatch, _clear):
+    """A bad signature_png must surface as invalid_signature, not the
+    collaborator-shaped invalid_collaborators code -- the frontend maps
+    each to different copy (lib/founderApi.js mouErrorCopy)."""
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post(
+        "/founder/mou/preview/pdf?slug=facility-v1",
+        json={
+            "collaborators": _ONE_COLLABORATOR,
+            "signer_name": "Priya",
+            "signature_png": "data:image/gif;base64,AAAA",
+        },
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_signature"
+
+
+def test_preview_mou_pdf_rejects_zero_collaborators(client, monkeypatch, _clear):
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post("/founder/mou/preview/pdf?slug=facility-v1", json={"collaborators": []})
+    assert r.status_code == 422
+
+
 def test_sign_rejects_a_malformed_pan(client, monkeypatch, _clear):
     """Correct LENGTH (10 chars) but wrong FORMAT (all digits, no letters)
     -- this must be caught by the PAN regex validator itself, not by the

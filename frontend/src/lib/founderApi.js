@@ -9,6 +9,16 @@ export const founderApi = {
   // details feeds every agreement, previewed and signed together.
   getMou: () => api.get("/founder/mou"),
   previewMou: (collaborators) => api.post("/founder/mou/preview", { collaborators }),
+  // The embedded live preview: real PDF bytes (a Blob) for ONE agreement,
+  // built from the collaborator details typed so far and, once the founder
+  // has reached the Sign step, whatever they've drawn on the pad. Works
+  // before signing -- signerName/signaturePng are optional.
+  previewMouPdf: (slug, { collaborators, signerName, signaturePng, signal } = {}) =>
+    api.postBlob(
+      `/founder/mou/preview/pdf?slug=${encodeURIComponent(slug)}`,
+      { collaborators, signer_name: signerName || "", signature_png: signaturePng || null },
+      { signal },
+    ),
   signMou: (signerName, signaturePng, acknowledgements = [], collaborators = []) =>
     api.post("/founder/mou/sign", {
       signer_name: signerName,

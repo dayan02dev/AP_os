@@ -96,7 +96,6 @@ export default function FounderMou({ me, onSigned }) {
   const [furthest, setFurthest] = useState(0);
 
   const [collaborators, setCollaborators] = useState([]);
-  const [previews, setPreviews] = useState([]);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewError, setReviewError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -105,11 +104,26 @@ export default function FounderMou({ me, onSigned }) {
   const [busy, setBusy] = useState(false);
   const [signError, setSignError] = useState(null);
   const [hasInk, setHasInk] = useState(false);
+  const [strokeCount, setStrokeCount] = useState(0);
   const [acked, setAcked] = useState([]);
   const canvasRef = useRef(null);
   const drawing = useRef(false);
 
   const [downloadErrors, setDownloadErrors] = useState({});
+
+  // ── Live embedded PDF preview (Review + Sign steps) ────────────────────
+  // Which document tab is showing, the current object URL the <iframe>
+  // points at, and an unobtrusive loading/error state around it. Lifted up
+  // here (not local to a step) so the fetched document survives moving
+  // between Review and Sign.
+  const [activeSlug, setActiveSlug] = useState(null);
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState(null);
+  const objectUrlRef = useRef(null);
+  const requestSeqRef = useRef(0);
+  const prevActiveSlugRef = useRef(null);
+  const prevStepRef = useRef(0);
 
   const fields = mou?.agreements?.[0]?.fields || [];
 
@@ -130,6 +144,92 @@ export default function FounderMou({ me, onSigned }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mou, fields.length]);
 
+  // Default the active document tab to the track's first required
+  // agreement once the catalog is known. Data-driven — never a hardcoded
+  // slug — so a track with one agreement (VIP) or two (TIR) both "just
+  // work" with zero branching here.
+  useEffect(() => {
+    if (mou?.agreements?.length && !activeSlug) {
+      setActiveSlug(mou.agreements[0].slug);
+    }
+  }, [mou, activeSlug]);
+
+  // Revoke the last object URL on unmount — this page can re-render a
+  // 16-page PDF many times over a signing session; a leaked blob URL per
+  // edit is a real memory bug.
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    };
+  }, []);
+
+  // The live preview's object URL is dead weight once signed — the Signed
+  // panel embeds the real signed PDF via its own presigned-URL fetch, not
+  // this blob. Revoke it rather than leaving it dangling for the rest of
+  // the component's lifetime.
+  useEffect(() => {
+    if (mou?.signed && objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+      setPdfUrl(null);
+    }
+  }, [mou?.signed]);
+
+  // The live embedded PDF itself. Fires on the Review and Sign steps only
+  // (there's nothing to show while still on "Your details"); debounced
+  // ~700ms so a 16-page re-render doesn't happen on every keystroke, but
+  // switching document tabs or moving between steps refreshes immediately
+  // rather than waiting out the debounce. Every fetch is tagged with a
+  // sequence number and its own AbortController — a response that arrives
+  // after a newer request has already been kicked off is discarded rather
+  // than overwriting what's on screen (the out-of-order bug this project
+  // has already shipped once).
+  useEffect(() => {
+    if (!mou || mou.signed) return;
+    if (step === 0 || !activeSlug) return;
+
+    const slugChanged = prevActiveSlugRef.current !== activeSlug;
+    const stepChanged = prevStepRef.current !== step;
+    prevActiveSlugRef.current = activeSlug;
+    prevStepRef.current = step;
+    const firstPaint = pdfUrl === null;
+    const delay = firstPaint || slugChanged || stepChanged ? 0 : 700;
+
+    const seq = ++requestSeqRef.current;
+    const controller = new AbortController();
+    setPdfLoading(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const signaturePng =
+          step === 2 && hasInk ? canvasRef.current?.toDataURL("image/png") : null;
+        const blob = await founderApi.previewMouPdf(activeSlug, {
+          collaborators: collaboratorsPayload(),
+          signerName: step === 2 ? signerName.trim() : "",
+          signaturePng,
+          signal: controller.signal,
+        });
+        if (seq !== requestSeqRef.current) return; // superseded — never overwrite a newer preview
+        const url = URL.createObjectURL(blob);
+        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = url;
+        setPdfUrl(url);
+        setPdfError(null);
+      } catch (e) {
+        if (seq !== requestSeqRef.current) return;
+        setPdfError(mouErrorCopy(e));
+      } finally {
+        if (seq === requestSeqRef.current) setPdfLoading(false);
+      }
+    }, delay);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSlug, step, JSON.stringify(collaborators), signerName, hasInk, strokeCount, mou]);
+
   // signature pad — unchanged mechanics from the pre-rewrite component,
   // just gated on the Sign step instead of "unsigned".
   useEffect(() => {
@@ -145,7 +245,10 @@ export default function FounderMou({ me, onSigned }) {
     };
     const start = (e) => { drawing.current = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); e.preventDefault(); };
     const move = (e) => { if (!drawing.current) return; const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); setHasInk(true); e.preventDefault(); };
-    const end = () => { drawing.current = false; };
+    // A completed stroke, not every pointer-move, is what triggers the live
+    // preview to re-fetch with the updated signature — otherwise a single
+    // signing gesture would fire dozens of PDF re-renders.
+    const end = () => { if (drawing.current) setStrokeCount((n) => n + 1); drawing.current = false; };
     c.addEventListener("pointerdown", start); c.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end);
     return () => { c.removeEventListener("pointerdown", start); c.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end); };
@@ -176,13 +279,19 @@ export default function FounderMou({ me, onSigned }) {
 
   const status = collaboratorStatus(collaborators, fields);
 
+  // Validates the collaborator details BEFORE leaving the Details step —
+  // same server-side check (CollaboratorIn, e.g. the PAN regex) the
+  // signing endpoint itself enforces, just run early via the PDF preview
+  // endpoint so a bad field is caught here rather than after advancing.
+  // The rendered PDF itself is discarded; the live-preview effect above
+  // fetches the one actually shown once we land on the Review step.
   const goToReview = async () => {
     setReviewError(null);
     setFieldErrors({});
     setReviewBusy(true);
     try {
-      const { previews: p } = await founderApi.previewMou(collaboratorsPayload());
-      setPreviews(p || []);
+      const slug = mou?.agreements?.[0]?.slug;
+      await founderApi.previewMouPdf(slug, { collaborators: collaboratorsPayload() });
       go(1);
     } catch (e) {
       const fe = pydanticFieldErrors(e?.details);
@@ -287,7 +396,11 @@ export default function FounderMou({ me, onSigned }) {
         {step === 1 && (
           <ReviewStep
             agreements={mou.agreements || []}
-            previews={previews}
+            activeSlug={activeSlug}
+            onSelectSlug={setActiveSlug}
+            pdfUrl={pdfUrl}
+            pdfLoading={pdfLoading}
+            pdfError={pdfError}
             onBack={() => go(0)}
             onSign={() => go(2)}
           />
@@ -295,6 +408,12 @@ export default function FounderMou({ me, onSigned }) {
 
         {step === 2 && (
           <SignStep
+            agreements={mou.agreements || []}
+            activeSlug={activeSlug}
+            onSelectSlug={setActiveSlug}
+            pdfUrl={pdfUrl}
+            pdfLoading={pdfLoading}
+            pdfError={pdfError}
             ackList={ackList}
             acked={acked}
             toggleAck={toggleAck}
@@ -383,28 +502,80 @@ function DetailsStep({ fields, collaborators, status, fieldErrors, onFieldChange
   );
 }
 
+// ============ Shared: document tabs + embedded PDF viewer ============
+// Data-driven from the backend's `agreements` list (never a hardcoded
+// track check) — TIR's two agreements get two tabs, VIP's one gets none
+// (nothing to switch between). Used by both the Review and Sign steps so
+// the fetched document survives moving between them.
+function DocTabs({ agreements, active, onChange }) {
+  if (agreements.length <= 1) return null;
+  return (
+    <div className="fj-doc-tabs" role="tablist" style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+      {agreements.map((a) => (
+        <button
+          key={a.slug}
+          type="button"
+          role="tab"
+          aria-selected={active === a.slug}
+          className={active === a.slug ? "btn btn-primary" : "btn-ghost"}
+          onClick={() => onChange(a.slug)}
+        >
+          {a.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AgreementPreview({ agreements, activeSlug, onSelectSlug, pdfUrl, pdfLoading, pdfError }) {
+  const activeName = agreements.find((a) => a.slug === activeSlug)?.name || "your agreement";
+  return (
+    <div className="card" style={{ marginBottom: 16, padding: 12 }}>
+      <DocTabs agreements={agreements} active={activeSlug} onChange={onSelectSlug} />
+      <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 18, marginBottom: 6 }}>
+        {pdfLoading && (
+          <span className="fj-doc-updating" aria-live="polite" style={{ fontSize: 12.5, color: "var(--ink-dim)" }}>
+            Updating…
+          </span>
+        )}
+      </div>
+      {pdfError && <div className="fj-inline-error" role="alert" style={{ marginBottom: 8 }}>{pdfError}</div>}
+      {pdfUrl ? (
+        <iframe
+          src={pdfUrl}
+          title={`${activeName} preview`}
+          style={{ width: "100%", height: "70vh", minHeight: 420, border: "1px solid var(--line-strong)", borderRadius: 2 }}
+        />
+      ) : (
+        !pdfError && (
+          <div style={{ padding: 40, textAlign: "center", color: "var(--ink-dim)" }}>
+            Preparing your document…
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
 // ============ STEP 1 · REVIEW ============
-function ReviewStep({ agreements, previews, onBack, onSign }) {
+function ReviewStep({ agreements, activeSlug, onSelectSlug, pdfUrl, pdfLoading, pdfError, onBack, onSign }) {
   return (
     <div className="fj-wizard">
       <span className="eyebrow eyebrow-rule">Review before signing</span>
       <h1 className="fj-h1">Review each agreement</h1>
       <p className="fj-help">
         These are the {agreements.length === 1 ? "document" : "documents"} your track requires,
-        rendered from what you just entered. Read them through before continuing to sign.
+        rendered live from what you just entered. Read them through before continuing to sign.
       </p>
 
-      {agreements.map((a) => {
-        const p = previews.find((pv) => pv.slug === a.slug);
-        return (
-          <div className="card" style={{ marginBottom: 16, padding: 18 }} key={a.slug}>
-            <div className="ttl" style={{ marginBottom: 8 }}>{a.name}</div>
-            <pre style={{ whiteSpace: "pre-wrap", fontFamily: "var(--font-body)", fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.6, margin: 0 }}>
-              {p ? p.rendered_text : "Loading…"}
-            </pre>
-          </div>
-        );
-      })}
+      <AgreementPreview
+        agreements={agreements}
+        activeSlug={activeSlug}
+        onSelectSlug={onSelectSlug}
+        pdfUrl={pdfUrl}
+        pdfLoading={pdfLoading}
+        pdfError={pdfError}
+      />
 
       <div className="fj-actions">
         <button className="btn-ghost" type="button" onClick={onBack}>← Back</button>
@@ -415,11 +586,26 @@ function ReviewStep({ agreements, previews, onBack, onSign }) {
 }
 
 // ============ STEP 2 · SIGN ============
-function SignStep({ ackList, acked, toggleAck, allAcked, signerName, setSignerName, canvasRef, clearPad, sign, busy, hasInk, error, onBack }) {
+function SignStep({
+  agreements, activeSlug, onSelectSlug, pdfUrl, pdfLoading, pdfError,
+  ackList, acked, toggleAck, allAcked, signerName, setSignerName, canvasRef, clearPad, sign, busy, hasInk, error, onBack,
+}) {
   return (
     <div className="fj-wizard">
       <span className="eyebrow eyebrow-rule">Sign to accept</span>
       <h1 className="fj-h1">Sign your agreements</h1>
+      <p className="fj-help">
+        Your signature appears in the document below as soon as you draw it.
+      </p>
+
+      <AgreementPreview
+        agreements={agreements}
+        activeSlug={activeSlug}
+        onSelectSlug={onSelectSlug}
+        pdfUrl={pdfUrl}
+        pdfLoading={pdfLoading}
+        pdfError={pdfError}
+      />
 
       <div className="panel">
         <div className="panel-h">Sign to accept</div>
@@ -463,8 +649,31 @@ function SignStep({ ackList, acked, toggleAck, allAcked, signerName, setSignerNa
 }
 
 // ============ SIGNED + DOWNLOAD ============
+// After signing, the same embedded-document experience continues: the
+// final signed PDF (with the real signature already in it) shown in the
+// page, still individually downloadable per agreement. The signed PDF is
+// served from Supabase Storage as a presigned URL (GET /founder/mou/signed-url)
+// — no auth header needed to load it, so the <iframe> points at it directly
+// rather than going through the blob-fetch path the live preview uses.
 function SignedPanel({ mou, onDownload, downloadErrors }) {
   const agreements = mou.agreements || [];
+  const [activeSlug, setActiveSlug] = useState(agreements[0]?.slug || null);
+  const [embedUrl, setEmbedUrl] = useState(null);
+  const [embedError, setEmbedError] = useState(null);
+
+  useEffect(() => {
+    if (!activeSlug) return;
+    let cancelled = false;
+    setEmbedUrl(null);
+    setEmbedError(null);
+    founderApi.mouSignedUrl(activeSlug)
+      .then((r) => { if (!cancelled) setEmbedUrl(r.url); })
+      .catch((e) => { if (!cancelled) setEmbedError(mouErrorCopy(e)); });
+    return () => { cancelled = true; };
+  }, [activeSlug]);
+
+  const activeName = agreements.find((a) => a.slug === activeSlug)?.name || "your agreement";
+
   return (
     <div>
       <span className="eyebrow eyebrow-rule">Onboarding · Your agreements</span>
@@ -474,6 +683,24 @@ function SignedPanel({ mou, onDownload, downloadErrors }) {
           Signed by {mou.signer_name}{mou.signed_at ? ` on ${new Date(mou.signed_at).toLocaleDateString()}` : ""}.
           Your cohort tabs are unlocked.
         </div>
+
+        {agreements.length > 0 && (
+          <div className="card" style={{ margin: "14px 0", padding: 12 }}>
+            <DocTabs agreements={agreements} active={activeSlug} onChange={setActiveSlug} />
+            {embedError ? (
+              <div style={{ padding: 24, color: "var(--ink-dim)" }}>{embedError}</div>
+            ) : embedUrl ? (
+              <iframe
+                src={embedUrl}
+                title={`${activeName} — signed`}
+                style={{ width: "100%", height: "70vh", minHeight: 420, border: "1px solid var(--line-strong)", borderRadius: 2 }}
+              />
+            ) : (
+              <div style={{ padding: 40, textAlign: "center", color: "var(--ink-dim)" }}>Loading your document…</div>
+            )}
+          </div>
+        )}
+
         <div className="frame" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {agreements.map((a) => (
             <div key={a.slug} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
