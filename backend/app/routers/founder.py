@@ -136,8 +136,25 @@ async def get_mou(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict
     # offer (current_template_version()), which is informational, not a
     # record of anything having happened.
     version = (mou or {}).get("template_version") or founder_mou.current_template_version()
+
+    # A signature made before the agreements changed records slugs that no
+    # longer appear in this track's list. Without saying so, the UI showed
+    # "Agreements signed" above a row per document reading "Not part of what
+    # you signed" — both statements true, together nonsense, and exactly the
+    # one-message-two-causes shape this codebase keeps shipping. Name the
+    # cause here rather than leaving the frontend to infer it from a pile of
+    # per-document failures.
+    signature_is_legacy = bool(mou) and agreements.is_legacy_signature(
+        (mou or {}).get("template_version"), founder_mou.FOUNDER_TRACK
+    )
+
     return {
         "template_version": version,
+        # True when the founder HAS signed, but under a version predating
+        # every agreement now on offer — so none of the current documents is
+        # retrievable for them. Distinct from "not signed" and from "signed,
+        # documents available".
+        "signature_is_legacy": signature_is_legacy,
         # Same catalog pattern as the AIR surface: the field schema for
         # every agreement this track requires comes from the backend, so a
         # wording change needs no frontend deploy. An agreement absent from

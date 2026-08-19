@@ -557,3 +557,46 @@ def test_signed_render_is_byte_identical_to_pre_refactor_golden(slug):
         signature_png=_PNG, accepted_acks=["full_time_presence"], slug=slug,
     )
     assert hashlib.sha256(pdf).hexdigest() == _GOLDEN_SIGNED_SHA256[slug]
+
+
+# ── legacy signatures ─────────────────────────────────────────────────
+# A row signed before the agreements changed retrieves none of the current
+# documents. Production carried exactly one such row (signer OOOO,
+# template_version "tir-mou-v2"), and every future version bump recreates
+# the state for everyone who signed before it. The UI used to render
+# "Agreements signed" above one row per document reading "Not part of what
+# you signed" — each true, the combination meaningless.
+
+def test_a_superseded_version_label_is_legacy():
+    assert agreements.is_legacy_signature("tir-mou-v2", "tir") is True
+
+
+def test_the_current_slug_list_is_not_legacy():
+    assert agreements.is_legacy_signature("facility-v1,collaboration-v1", "tir") is False
+
+
+def test_partial_overlap_is_not_legacy():
+    """Signed facility-v1 before collaboration-v1 existed: one current
+    document IS still retrievable, so this is the ordinary per-document
+    case, not the legacy one. Treating it as legacy would hide a document
+    the founder is entitled to download."""
+    assert agreements.is_legacy_signature("facility-v1", "tir") is False
+
+
+def test_vip_signature_is_not_legacy_for_its_single_agreement():
+    assert agreements.is_legacy_signature("facility-v1", "sip") is False
+
+
+def test_a_tir_only_signature_is_legacy_for_vip():
+    """collaboration-v1 is not on VIP's list at all, so a row carrying only
+    it has nothing retrievable on that track."""
+    assert agreements.is_legacy_signature("collaboration-v1", "sip") is True
+
+
+def test_unsigned_is_never_legacy():
+    assert agreements.is_legacy_signature(None, "tir") is False
+    assert agreements.is_legacy_signature("", "tir") is False
+
+
+def test_whitespace_and_stray_commas_do_not_defeat_the_match():
+    assert agreements.is_legacy_signature(" facility-v1 , ", "tir") is False

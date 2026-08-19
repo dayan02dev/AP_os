@@ -674,6 +674,29 @@ function SignedPanel({ mou, onDownload, downloadErrors }) {
 
   const activeName = agreements.find((a) => a.slug === activeSlug)?.name || "your agreement";
 
+  // A signature recorded before the agreements changed retrieves none of the
+  // documents now on offer. Rendering the normal panel produced "Agreements
+  // signed" above a row per document reading "Not part of what you signed" —
+  // each true, together nonsense. Say what actually happened instead, and
+  // offer nothing to download rather than a list that only fails.
+  if (mou.signature_is_legacy) {
+    return (
+      <div>
+        <span className="eyebrow eyebrow-rule">Onboarding · Your agreements</span>
+        <div className="signed">
+          <div className="top"><span className="ttl">Signed under a previous version</span></div>
+          <div className="sub">
+            {mou.signer_name} signed
+            {mou.signed_at ? ` on ${new Date(mou.signed_at).toLocaleDateString()}` : ""} under an
+            earlier version of the agreements, so the current documents aren't available to
+            download here. Your cohort tabs stay unlocked. ARTPARK will be in touch if the
+            agreements need re-signing.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <span className="eyebrow eyebrow-rule">Onboarding · Your agreements</span>

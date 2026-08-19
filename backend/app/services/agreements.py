@@ -368,6 +368,29 @@ def render_preview_text(collaborators: list[dict], slug: str = "facility-v1") ->
     return "\n".join(lines)
 
 
+def is_legacy_signature(recorded_version: str | None, track: str) -> bool:
+    """True when a signature was recorded under agreements that no longer
+    apply to `track` — so none of the documents now on offer is retrievable.
+
+    `recorded_version` is the comma-joined slug list stamped on the row at
+    signing time (older rows carry a single opaque label such as
+    "tir-mou-v2"). Legacy means ZERO overlap with the current set. Partial
+    overlap is deliberately NOT legacy: a founder who signed facility-v1
+    before collaboration-v1 existed can still retrieve the facility
+    document, and calling that state legacy would hide a document they are
+    entitled to.
+
+    Exists because the UI previously rendered "Agreements signed" above one
+    row per document reading "Not part of what you signed" — each statement
+    true, the combination meaningless.
+    """
+    if not recorded_version:
+        return False
+    signed = {p.strip() for p in recorded_version.split(",") if p.strip()}
+    current = {x["slug"] for x in agreements_for_track(track)}
+    return not (signed & current)
+
+
 def agreements_for_track(track: str) -> list[dict]:
     """Which agreements a founder on `track` must sign, and the field
     schema for each. Driven by TRACK_AGREEMENTS -- tracks with no entry
