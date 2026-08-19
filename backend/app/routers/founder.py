@@ -360,12 +360,17 @@ async def mou_source_docx(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail={"code": "unknown_agreement", "agreement": agreement},
         )
-    path = agreements.source_docx_path(agreement)
-    return Response(
-        content=path.read_bytes(),
-        media_type=_DOCX_MEDIA_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="{path.name}"'},
-    )
+    # Served as a signed URL, NOT as bytes through this response.
+    # API Gateway + Lambda cap a response payload at 6MB; the Collaboration
+    # Agreement is 7.9MB (embedded fonts and images), so streaming it here
+    # returned a bare 500 in production while the 55KB Facility Agreement
+    # worked fine — a size cliff, not a code path difference. Signed URLs
+    # go straight from storage to the browser and have no such ceiling, and
+    # it is the same mechanism the signed PDFs already use.
+    #
+    # Uploads on first request if the object is absent, so this needs no
+    # separate seeding step and self-heals in any environment.
+    return {"url": founder_mou.source_docx_signed_url(agreement)}
 
 
 def _owned_or_404(sb, table: str, row_id: str, application_id: str) -> dict:

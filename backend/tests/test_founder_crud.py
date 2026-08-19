@@ -473,18 +473,66 @@ def test_me_reports_mou_signed_and_unlocked(client, monkeypatch, _clear):
 # ── original source .docx download (MOU tab rebuild) ────────────────────
 
 
-def test_mou_source_docx_serves_the_real_committed_bytes(client, monkeypatch, _clear):
-    from app.services import agreements
+def test_mou_source_docx_returns_a_signed_url_not_the_bytes(client, monkeypatch, _clear):
+    """The original .docx comes back as a signed storage URL.
+
+    It used to be streamed as response bytes, which worked for the 55KB
+    Facility Agreement and returned a bare 500 in production for the 7.9MB
+    Collaboration Agreement: API Gateway caps a Lambda response payload at
+    6MB. A size cliff, not a code-path difference — which is why it looked
+    like "one document is broken". Signed URLs go straight from storage to
+    the browser and have no such ceiling.
+    """
+    from app.services import founder_mou as fm
+
     _install(monkeypatch, _offered_tables())
     app.dependency_overrides[get_current_user] = _override_user("u1")
+
+    seen: list[str] = []
+
+    def _fake_signed(slug, ttl_seconds=300):
+        seen.append(slug)
+        return f"https://signed.example/{slug}.docx"
+
+    monkeypatch.setattr(fm, "source_docx_signed_url", _fake_signed)
+
     r = client.get("/founder/mou/source?agreement=facility-v1")
     assert r.status_code == 200, r.text
-    assert r.headers["content-type"] == (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
-    assert "attachment" in r.headers["content-disposition"]
-    assert r.headers["content-disposition"].rstrip('"').lower().endswith(".docx")
-    assert r.content == agreements.source_docx_path("facility-v1").read_bytes()
+    assert r.json() == {"url": "https://signed.example/facility-v1.docx"}
+    assert seen == ["facility-v1"], "the requested slug must be the one signed"
+    # The bytes must NOT come back through the API — that is the whole point.
+    assert "officedocument" not in r.headers.get("content-type", "")
+
+
+def test_source_docx_signed_url_uploads_the_committed_file_when_absent(monkeypatch):
+    """First request in a fresh environment uploads the committed source,
+    so no environment needs a seeding step and a new project self-heals."""
+    from app.services import agreements, founder_mou as fm
+
+    uploaded: dict = {}
+
+    class _Bucket:
+        def __init__(self):
+            self.have = False
+
+        def create_signed_url(self, path, ttl):
+            if not self.have:
+                raise RuntimeError("Object not found")
+            return {"signedURL": f"https://signed.example/{path}"}
+
+        def upload(self, path, data, opts):
+            uploaded["path"] = path
+            uploaded["bytes"] = len(data)
+            self.have = True
+
+    bucket = _Bucket()
+    monkeypatch.setattr(fm, "get_admin_client", lambda: type("C", (), {"storage": type("S", (), {"from_": staticmethod(lambda _b: bucket)})()})())
+
+    url = fm.source_docx_signed_url("facility-v1")
+    assert url.startswith("https://signed.example/")
+    assert uploaded["path"].endswith(".docx")
+    assert uploaded["bytes"] == len(agreements.source_docx_path("facility-v1").read_bytes()), \
+        "must upload the real committed file, byte for byte"
 
 
 def test_mou_source_docx_unknown_agreement_is_404(client, monkeypatch, _clear):

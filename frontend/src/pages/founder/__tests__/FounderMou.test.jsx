@@ -617,13 +617,21 @@ describe("FounderMou", () => {
       const user = userEvent.setup();
       vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
       vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
-      vi.spyOn(founderApi, "mouSourceDocx").mockResolvedValue(
-        new Blob(["PK fake docx"], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
-      );
+      // Returns {url} — a signed storage URL, not the file. The
+      // Collaboration Agreement is 7.9MB and API Gateway caps a Lambda
+      // response at 6MB, so the bytes cannot come back through the API.
+      vi.spyOn(founderApi, "mouSourceDocx").mockResolvedValue({ url: "https://signed.example/facility.docx" });
+      const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
       render(<FounderMou me={{}} />);
       const btn = await screen.findByRole("button", { name: /download the original.*facility agreement/i });
       await user.click(btn);
       await waitFor(() => expect(founderApi.mouSourceDocx).toHaveBeenCalledWith("facility-v1"));
+      // Asserting the call alone would pass against any implementation,
+      // including one that drops the response on the floor. Prove the URL
+      // is actually followed.
+      await waitFor(() =>
+        expect(openSpy).toHaveBeenCalledWith("https://signed.example/facility.docx", "_blank", "noopener"),
+      );
     });
 
     it("a failed original download gets its own error, distinct from the not-yet-downloaded default", async () => {

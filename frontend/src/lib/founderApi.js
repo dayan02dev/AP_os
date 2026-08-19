@@ -38,8 +38,11 @@ export const founderApi = {
   // The ORIGINAL committed .docx for one agreement -- exactly what was
   // legally verified, served verbatim. A Blob, same as previewMouPdf; the
   // caller triggers the actual browser download (see FounderMou.jsx).
+  // Returns {url}: a short-lived signed storage URL, not the file itself.
+  // The Collaboration Agreement is 7.9MB and API Gateway caps a Lambda
+  // response at 6MB, so the bytes cannot come back through the API.
   mouSourceDocx: (agreement) =>
-    api.getBlob(`/founder/mou/source?agreement=${encodeURIComponent(agreement)}`),
+    api.get(`/founder/mou/source?agreement=${encodeURIComponent(agreement)}`),
 
   // Approach
   getApproach: () => api.get("/founder/approach"),

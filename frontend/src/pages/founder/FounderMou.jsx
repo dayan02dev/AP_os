@@ -390,14 +390,12 @@ export default function FounderMou({ me, onSigned }) {
       return next;
     });
     try {
-      const blob = await founderApi.mouSourceDocx(slug);
-      const name = mou?.agreements?.find((a) => a.slug === slug)?.name || slug;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${name}.docx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      // A signed storage URL, not response bytes: the Collaboration
+      // Agreement is 7.9MB and API Gateway caps a Lambda response at 6MB,
+      // so streaming it through the API 500'd for that document while the
+      // 55KB Facility Agreement worked.
+      const { url } = await founderApi.mouSourceDocx(slug);
+      window.open(url, "_blank", "noopener");
     } catch (e) {
       setSourceDownloadErrors((prev) => ({ ...prev, [slug]: mouErrorCopy(e) }));
     }

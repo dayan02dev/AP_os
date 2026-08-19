@@ -339,6 +339,38 @@ def sign_and_onboard(*, application_id: str, user_id: str, signer_name: str,
     return row
 
 
+from app.services.agreements import source_docx_path as agreements_source_path
+
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def source_docx_signed_url(slug: str, ttl_seconds: int = 300) -> str:
+    """A short-lived signed URL for an agreement's ORIGINAL .docx.
+
+    Not served as response bytes: API Gateway + Lambda cap a response at
+    6MB, and the Collaboration Agreement is 7.9MB, so the byte-streaming
+    version 500'd in production for that document while the 55KB Facility
+    Agreement worked. The failure was a size cliff, not a code path — which
+    is exactly the kind of bug that looks like "one document is broken".
+
+    Uploads the committed source on first request if the object is not yet
+    in the bucket, so no environment needs a seeding step and a fresh
+    project self-heals. Upload is idempotent via upsert.
+    """
+    sb = get_admin_client()
+    path = agreements_source_path(slug)
+    object_path = f"_source/{path.name}"
+    try:
+        return sb.storage.from_(BUCKET).create_signed_url(object_path, ttl_seconds)["signedURL"]
+    except Exception:
+        sb.storage.from_(BUCKET).upload(
+            object_path,
+            path.read_bytes(),
+            {"content-type": _DOCX_MIME, "upsert": "true"},
+        )
+        return sb.storage.from_(BUCKET).create_signed_url(object_path, ttl_seconds)["signedURL"]
+
+
 def signed_pdf_url(application_id: str, agreement: str | None = None) -> str | None:
     """Signed download URL for a founder's MOU document(s).
 
