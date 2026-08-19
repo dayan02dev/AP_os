@@ -600,3 +600,171 @@ def test_unsigned_is_never_legacy():
 
 def test_whitespace_and_stray_commas_do_not_defeat_the_match():
     assert agreements.is_legacy_signature(" facility-v1 , ", "tir") is False
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Field schema for the founder-facing MOU tab (rebuild task): every real
+# blank in each template becomes a labelled field, tagged with its owner
+# (founder-editable vs ARTPARK constant). Derived from the SAME
+# _AGREEMENT_RULES mapping the renderer itself uses, not re-guessed.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _entry(track: str, slug: str) -> dict:
+    return next(a for a in agreements.agreements_for_track(track) if a["slug"] == slug)
+
+
+def test_facility_constant_schema_covers_every_non_collaborator_blank():
+    """The Facility Agreement has 22 total positional '[•]' blanks: 12 are
+    the collaborator party details (already in `fields`, 4 per slot x 3
+    slots) and the other 10 are ARTPARK business constants -- 9 DISTINCT
+    fields, because term_months alone fills 2 of the 10 (the numeral and
+    its word form, via the virtual term_months_words key)."""
+    entry = _entry("tir", "facility-v1")
+    keys = [c["key"] for c in entry["constants"]]
+    assert keys == [
+        "collaboration_agreement_date", "term_months", "insurance_limit",
+        "availability_windows.dedicated_seating", "availability_windows.lab_space",
+        "availability_windows.computing", "availability_windows.wifi",
+        "availability_windows.conference_rooms", "availability_windows.access_badge",
+    ]
+    assert all(c["owner"] == "artpark" for c in entry["constants"])
+    assert all(c["label"].strip() for c in entry["constants"])
+    for c in entry["constants"]:
+        assert "[•]" not in c["label"]
+        assert "None" not in c["label"]
+
+
+def test_collaboration_constant_schema_covers_its_two_named_blanks():
+    """[insert areas] (research_area) and [Date of agreement]
+    (facility_agreement_date) -- the Collaboration Agreement's own two
+    ARTPARK-owned named tokens (agreements._AGREEMENT_RULES['collaboration-v1']
+    ['named_token_fills'])."""
+    entry = _entry("tir", "collaboration-v1")
+    keys = [c["key"] for c in entry["constants"]]
+    assert keys == ["research_area", "facility_agreement_date"]
+    assert all(c["owner"] == "artpark" for c in entry["constants"])
+    assert all(c["label"].strip() for c in entry["constants"])
+
+
+def test_constant_schema_values_reflect_the_real_unset_state():
+    """As shipped, every ARTPARK constant is None -- the schema must report
+    that truthfully: never a fabricated value, never silently omitted."""
+    facility = _entry("tir", "facility-v1")
+    assert all(c["value"] is None for c in facility["constants"])
+    collab = _entry("tir", "collaboration-v1")
+    assert all(c["value"] is None for c in collab["constants"])
+
+
+def test_constant_schema_values_reflect_configured_constants(_configured):
+    by_key = {c["key"]: c["value"] for c in _entry("tir", "facility-v1")["constants"]}
+    assert by_key["term_months"] == 6
+    assert by_key["insurance_limit"] == "TEST-INSURANCE-LIMIT-VALUE"
+    assert by_key["collaboration_agreement_date"] == "TEST-COLLAB-AGREEMENT-DATE"
+    assert by_key["availability_windows.dedicated_seating"] == "TEST-WINDOW-DEDICATED-SEATING"
+    assert by_key["availability_windows.access_badge"] == "TEST-WINDOW-ACCESS-BADGE"
+
+    by_key2 = {c["key"]: c["value"] for c in _entry("tir", "collaboration-v1")["constants"]}
+    assert by_key2["research_area"] == "TEST-RESEARCH-AREA-ROBOTICS"
+    assert by_key2["facility_agreement_date"] == "TEST-FACILITY-AGREEMENT-DATE"
+
+
+def test_founder_editable_fields_are_unchanged_by_the_constants_addition():
+    """Adding `constants` must not disturb the pre-existing `fields` list
+    that test_founder_crud.py's router test already pins."""
+    entry = _entry("tir", "facility-v1")
+    assert [f["key"] for f in entry["fields"]] == ["name", "pan", "parent_name", "address"]
+
+
+def test_facility_constants_are_grouped_into_the_documents_own_two_sections():
+    """The reader-facing UI groups these the way the document itself does:
+    the three business terms (paragraphs 13/34/88) first, then Schedule
+    II's six-row facilities table -- in the document's own order, not an
+    arbitrary one."""
+    entry = _entry("tir", "facility-v1")
+    sections = [(c["key"], c["section"]) for c in entry["constants"]]
+    assert sections == [
+        ("collaboration_agreement_date", "Agreement terms"),
+        ("term_months", "Agreement terms"),
+        ("insurance_limit", "Agreement terms"),
+        ("availability_windows.dedicated_seating", "Facilities schedule (Schedule II)"),
+        ("availability_windows.lab_space", "Facilities schedule (Schedule II)"),
+        ("availability_windows.computing", "Facilities schedule (Schedule II)"),
+        ("availability_windows.wifi", "Facilities schedule (Schedule II)"),
+        ("availability_windows.conference_rooms", "Facilities schedule (Schedule II)"),
+        ("availability_windows.access_badge", "Facilities schedule (Schedule II)"),
+    ]
+
+
+def test_collaboration_constants_are_all_in_the_single_agreement_terms_section():
+    entry = _entry("tir", "collaboration-v1")
+    assert all(c["section"] == "Agreement terms" for c in entry["constants"])
+
+
+def test_sip_facility_entry_also_carries_the_constant_schema():
+    """The constant schema is per-agreement, not per-track -- SIP's single
+    Facility Agreement entry gets the same 9 constants TIR's does."""
+    entry = _entry("sip", "facility-v1")
+    assert [c["key"] for c in entry["constants"]] == [
+        c["key"] for c in _entry("tir", "facility-v1")["constants"]
+    ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Original source .docx — served verbatim so a founder can read exactly
+# what was legally verified, never converted or regenerated.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_source_docx_path_resolves_to_the_real_committed_file():
+    for slug in ALL_SLUGS:
+        path = agreements.source_docx_path(slug)
+        assert path.exists(), f"{slug}: {path} does not exist"
+        assert path.suffix == ".docx"
+        # A .docx is a zip archive -- confirms this is the real binary, not
+        # a stub or a text file with a renamed extension.
+        assert path.read_bytes()[:2] == b"PK"
+
+
+def test_source_docx_path_rejects_an_unknown_slug():
+    with pytest.raises(KeyError):
+        agreements.source_docx_path("not-a-real-agreement")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Venture name — printed ONLY on the signature/annexure page this module
+# generates itself, never inserted into either agreement's verified legal
+# body text. Optional and additive: omitting it must reproduce the exact
+# pre-existing golden-hash output (see
+# test_signed_render_is_byte_identical_to_pre_refactor_golden below).
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_venture_name_is_absent_from_the_signature_page_by_default(_configured):
+    pdf = agreements.render_agreement_pdf(
+        collaborators=ONE, signer_name="Aditi Rao", date_str="18 Aug 2026",
+        signature_png=_PNG, accepted_acks=[], slug="facility-v1",
+    )
+    extracted = PdfReader(io.BytesIO(pdf)).pages[-1].extract_text() or ""
+    assert "Venture" not in extracted
+
+
+def test_venture_name_appears_on_the_signature_page_when_provided(_configured):
+    pdf = agreements.render_agreement_pdf(
+        collaborators=ONE, signer_name="Aditi Rao", date_str="18 Aug 2026",
+        signature_png=_PNG, accepted_acks=[], slug="facility-v1",
+        venture_name="Sarva Robotics",
+    )
+    extracted = PdfReader(io.BytesIO(pdf)).pages[-1].extract_text() or ""
+    assert "Sarva Robotics" in extracted
+
+
+def test_venture_name_only_appears_on_the_signature_page_never_the_body(_configured):
+    """The explicit product decision: this is OUR page, not the verified
+    legal text -- so the venture name must never leak into any body page."""
+    pdf = agreements.render_agreement_pdf(
+        collaborators=ONE, signer_name="Aditi Rao", date_str="18 Aug 2026",
+        signature_png=_PNG, accepted_acks=[], slug="facility-v1",
+        venture_name="Sarva Robotics",
+    )
+    pages = PdfReader(io.BytesIO(pdf)).pages
+    body_text = "".join(p.extract_text() or "" for p in pages[:-1])
+    assert "Sarva Robotics" not in body_text
+    assert "Sarva Robotics" in (pages[-1].extract_text() or "")

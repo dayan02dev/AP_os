@@ -340,6 +340,7 @@ describe("FounderMou", () => {
         "data:image/png;base64,AAAA",
         expect.arrayContaining(ACK_IDS),
         [{ name: "Aditi Rao", pan: "ABCDE1234F", parent_name: "Suresh Rao", address: "12 MG Road" }],
+        "", // no venture name -- me={{}} has no project_name and none was typed
       ));
       await waitFor(() => expect(screen.getByText(/agreements signed/i)).toBeInTheDocument());
       expect(onSigned).toHaveBeenCalled();
@@ -599,6 +600,238 @@ describe("FounderMou", () => {
       await user.click(screen.getByRole("button", { name: /download facility agreement/i }));
       await waitFor(() => expect(screen.getByText(/not part of what you signed/i)).toBeInTheDocument());
       expect(screen.queryByText(/request failed/i)).not.toBeInTheDocument();
+    });
+  });
+
+  // ── original source .docx download (MOU tab rebuild) ────────────────────
+  describe("original source .docx download", () => {
+    it("offers a Download the original link for every track agreement, before any details are filled in", async () => {
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned({ agreements: TWO_AGREEMENTS }));
+      render(<FounderMou me={{}} />);
+      await waitFor(() => screen.getByLabelText("Full legal name"));
+      expect(screen.getByRole("button", { name: /download the original.*facility agreement/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /download the original.*collaboration agreement/i })).toBeInTheDocument();
+    });
+
+    it("clicking a document's original-download button fetches that agreement's own .docx", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      vi.spyOn(founderApi, "mouSourceDocx").mockResolvedValue(
+        new Blob(["PK fake docx"], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
+      );
+      render(<FounderMou me={{}} />);
+      const btn = await screen.findByRole("button", { name: /download the original.*facility agreement/i });
+      await user.click(btn);
+      await waitFor(() => expect(founderApi.mouSourceDocx).toHaveBeenCalledWith("facility-v1"));
+    });
+
+    it("a failed original download gets its own error, distinct from the not-yet-downloaded default", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      vi.spyOn(founderApi, "mouSourceDocx").mockRejectedValue({ code: "network_error", message: "Network error" });
+      render(<FounderMou me={{}} />);
+      const btn = await screen.findByRole("button", { name: /download the original.*facility agreement/i });
+      // Idle default: no error text at all before the click.
+      expect(screen.queryByText(/couldn.t reach the server/i)).not.toBeInTheDocument();
+      await user.click(btn);
+      await waitFor(() => expect(screen.getByText(/couldn.t reach the server/i)).toBeInTheDocument());
+    });
+  });
+
+  // ── ARTPARK constants render as read-only context, never an input ───────
+  // Shown on the DETAILS step itself, grouped the way the document groups
+  // them, so filling the form reads like walking the agreement — not
+  // hidden behind Review.
+  describe("ARTPARK-owned blanks render as read-only context, grouped by document section", () => {
+    const FACILITY_CONSTANTS_UNSET = [
+      { key: "collaboration_agreement_date", label: "Date the Collaboration Agreement was signed", owner: "artpark", section: "Agreement terms", value: null },
+      { key: "term_months", label: "Facility Agreement term length (months)", owner: "artpark", section: "Agreement terms", value: null },
+      { key: "availability_windows.dedicated_seating", label: "Availability window — Dedicated Seating", owner: "artpark", section: "Facilities schedule (Schedule II)", value: null },
+    ];
+
+    it("shows the label and a distinct blank-state message when ARTPARK hasn't set a value yet, right on the Details step", async () => {
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned({
+        agreements: [{ ...ONE_AGREEMENT[0], constants: FACILITY_CONSTANTS_UNSET }],
+      }));
+      render(<FounderMou me={{}} />);
+      await waitFor(() => screen.getByLabelText("Full legal name"));
+
+      expect(screen.getByText("Facility Agreement term length (months)")).toBeInTheDocument();
+      expect(screen.getAllByText(/not yet set by artpark/i).length).toBeGreaterThan(0);
+      // Never an editable input for an ARTPARK constant.
+      expect(screen.queryByLabelText(/facility agreement term length/i)).not.toBeInTheDocument();
+    });
+
+    it("groups constants into the document's own sections, in document order", async () => {
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned({
+        agreements: [{ ...ONE_AGREEMENT[0], constants: FACILITY_CONSTANTS_UNSET }],
+      }));
+      render(<FounderMou me={{}} />);
+      await waitFor(() => screen.getByLabelText("Full legal name"));
+
+      expect(screen.getByText("Agreement terms")).toBeInTheDocument();
+      expect(screen.getByText("Facilities schedule (Schedule II)")).toBeInTheDocument();
+      // Order: "Agreement terms" section content precedes the schedule's.
+      const html = document.body.innerHTML;
+      expect(html.indexOf("Facility Agreement term length")).toBeLessThan(
+        html.indexOf("Dedicated Seating"),
+      );
+    });
+
+    it("shows the real value, read-only, once ARTPARK has configured a constant", async () => {
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned({
+        agreements: [{
+          ...ONE_AGREEMENT[0],
+          constants: [
+            { key: "term_months", label: "Facility Agreement term length (months)", owner: "artpark", section: "Agreement terms", value: 6 },
+          ],
+        }],
+      }));
+      render(<FounderMou me={{}} />);
+      await waitFor(() => screen.getByLabelText("Full legal name"));
+
+      expect(screen.getByText("6")).toBeInTheDocument();
+      expect(screen.queryByText(/not yet set by artpark/i)).not.toBeInTheDocument();
+    });
+  });
+
+  // ── the fields UI itself: grouped, labelled, sensibly typed ─────────────
+  describe("collaborator fields UI (highest-value surface: what the founder types into)", () => {
+    it("shows only ONE collaborator card up front — a second/third is a deliberate add, not three blank blocks", async () => {
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      render(<FounderMou me={{}} />);
+      await waitFor(() => screen.getByLabelText("Full legal name"));
+      expect(screen.getAllByLabelText("Full legal name")).toHaveLength(1);
+      expect(screen.queryByText(/^collaborator 2/i)).not.toBeInTheDocument();
+    });
+
+    it("marks each founder-editable field as required", async () => {
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      render(<FounderMou me={{}} />);
+      await waitFor(() => screen.getByLabelText("Full legal name"));
+      expect(screen.getByLabelText("Full legal name")).toHaveAttribute("aria-required", "true");
+      expect(screen.getByLabelText("PAN")).toHaveAttribute("aria-required", "true");
+    });
+
+    it("renders the address field as a multi-line textarea, not a single-line input", async () => {
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      render(<FounderMou me={{}} />);
+      await waitFor(() => screen.getByLabelText("Full legal name"));
+      expect(screen.getByLabelText("Residential address").tagName).toBe("TEXTAREA");
+    });
+
+    it("auto-uppercases the PAN as it's typed", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      render(<FounderMou me={{}} />);
+      await waitFor(() => screen.getByLabelText("Full legal name"));
+      await user.type(screen.getByLabelText("PAN"), "abcde1234f");
+      expect(screen.getByLabelText("PAN")).toHaveValue("ABCDE1234F");
+    });
+
+    it("shows a progress indicator for how many collaborators are complete", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      render(<FounderMou me={{}} />);
+      await waitFor(() => screen.getByLabelText("Full legal name"));
+      expect(screen.getByText(/0.*of.*1.*collaborator/i)).toBeInTheDocument();
+      await fillFirstCollaborator(user);
+      expect(screen.getByText(/1.*of.*1.*collaborator/i)).toBeInTheDocument();
+    });
+
+    it("removing a collaborator does not touch what was typed into the others", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      render(<FounderMou me={{}} />);
+      await fillFirstCollaborator(user, { name: "Aditi Rao", pan: "ABCDE1234F", parent_name: "Suresh Rao", address: "12 MG Road" });
+      await user.click(screen.getByRole("button", { name: /add another collaborator/i }));
+      await waitFor(() => screen.getAllByLabelText("Full legal name"));
+      const [, secondName] = screen.getAllByLabelText("Full legal name");
+      await user.type(secondName, "Kiran Shah");
+
+      await user.click(screen.getAllByRole("button", { name: /remove collaborator/i })[0]);
+
+      await waitFor(() => expect(screen.getAllByLabelText("Full legal name")).toHaveLength(1));
+      expect(screen.getByLabelText("Full legal name")).toHaveValue("Kiran Shah");
+    });
+  });
+
+  // ── acknowledgements are ARTPARK's own terms, kept visibly separate ─────
+  describe("acknowledgements are framed as separate from the documents", () => {
+    it("names them as ARTPARK's own program terms, not clauses in the agreements above", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
+      render(<FounderMou me={{}} />);
+      await goToSignStep(user);
+      expect(screen.getByText(/artpark.s own program terms/i)).toBeInTheDocument();
+    });
+  });
+
+  // ── venture name — printed on the signature page only ────────────────────
+  describe("venture name (printed on the signature page, never inside the agreements)", () => {
+    it("prefills from the founder's known project name and stays editable", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
+      render(<FounderMou me={{ project_name: "Sarva Robotics" }} />);
+      await goToSignStep(user);
+      const field = screen.getByLabelText(/venture.*startup name/i);
+      expect(field).toHaveValue("Sarva Robotics");
+      await user.clear(field);
+      await user.type(field, "Renamed Venture");
+      expect(field).toHaveValue("Renamed Venture");
+    });
+
+    it("is not required to enable signing", async () => {
+      const user = userEvent.setup();
+      mockCanvas();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
+      render(<FounderMou me={{}} />);
+      await goToSignStep(user);
+      await tickAllAcks(user);
+      await user.type(screen.getByPlaceholderText(/full name/i), "Aditi Rao");
+      drawOnPad();
+      expect(screen.getByRole("button", { name: /sign & submit/i })).not.toBeDisabled();
+    });
+
+    it("flows into the live preview once on the Sign step", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(founderApi, "getMou").mockResolvedValue(unsigned());
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
+      render(<FounderMou me={{ project_name: "Sarva Robotics" }} />);
+      await goToSignStep(user);
+      await waitFor(() => expect(founderApi.previewMouPdf).toHaveBeenCalledWith(
+        "facility-v1", expect.objectContaining({ ventureName: "Sarva Robotics" }),
+      ));
+    });
+
+    it("flows into the final sign() call", async () => {
+      const user = userEvent.setup();
+      mockCanvas();
+      vi.spyOn(founderApi, "getMou")
+        .mockResolvedValueOnce(unsigned())
+        .mockResolvedValueOnce(unsigned({ signed: true, signer_name: "Aditi Rao", signed_at: "2026-08-18T00:00:00Z" }));
+      vi.spyOn(founderApi, "previewMouPdf").mockResolvedValue(fakePdfBlob());
+      vi.spyOn(founderApi, "signMou").mockResolvedValue({ signed: true, signed_at: "2026-08-18T00:00:00Z", status: "onboarded" });
+      vi.spyOn(founderApi, "mouSignedUrl").mockResolvedValue({ url: "https://x/signed.pdf" });
+
+      render(<FounderMou me={{ project_name: "Sarva Robotics" }} />);
+      await goToSignStep(user);
+      await tickAllAcks(user);
+      await user.type(screen.getByPlaceholderText(/full name/i), "Aditi Rao");
+      drawOnPad();
+      await user.click(screen.getByRole("button", { name: /sign & submit/i }));
+
+      await waitFor(() => expect(founderApi.signMou).toHaveBeenCalledWith(
+        "Aditi Rao",
+        "data:image/png;base64,AAAA",
+        expect.arrayContaining(ACK_IDS),
+        [{ name: "Aditi Rao", pan: "ABCDE1234F", parent_name: "Suresh Rao", address: "12 MG Road" }],
+        "Sarva Robotics",
+      ));
     });
   });
 });

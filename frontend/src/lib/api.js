@@ -222,6 +222,10 @@ export const api = {
   // Binary POST — returns a Blob (e.g. the MOU PDF preview). Same auth/
   // timeout/error handling as api.post; only the response body parsing differs.
   postBlob: (path, body, opts = {}) => apiCall(path, { ...opts, method: "POST", body, blob: true }),
+  // Binary GET — returns a Blob (e.g. the original .docx download). Same
+  // auth/timeout/error handling as api.get; only the response body parsing
+  // differs.
+  getBlob: (path, opts = {}) => apiCall(path, { ...opts, method: "GET", blob: true }),
 
   // Edit a SUBMITTED application by id (edit-after-submit window).
   editSubmitted(track, id, patch) {

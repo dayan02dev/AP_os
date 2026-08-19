@@ -101,6 +101,13 @@ export default function FounderMou({ me, onSigned }) {
   const [fieldErrors, setFieldErrors] = useState({});
 
   const [signerName, setSignerName] = useState("");
+  // The venture/startup name -- printed ONLY on the signature/annexure page
+  // we generate ourselves (see agreements.render_agreement_pdf), never
+  // inserted into either agreement's verified legal body: neither document
+  // has a "name of the startup" blank, both are individual-collaborator
+  // agreements. Prefilled from the founder's own known project name
+  // (GET /founder/me) but always editable, and never required to sign.
+  const [ventureName, setVentureName] = useState("");
   const [busy, setBusy] = useState(false);
   const [signError, setSignError] = useState(null);
   const [hasInk, setHasInk] = useState(false);
@@ -110,6 +117,12 @@ export default function FounderMou({ me, onSigned }) {
   const drawing = useRef(false);
 
   const [downloadErrors, setDownloadErrors] = useState({});
+  // Distinct from downloadErrors above: this is the ORIGINAL source .docx
+  // (mouSourceDocx), not the signed/rendered PDF. Not-yet-downloaded has no
+  // entry at all (no message shown); a failed attempt gets its own entry
+  // and its own copy -- the two empty states this project keeps
+  // conflating, kept apart here on purpose.
+  const [sourceDownloadErrors, setSourceDownloadErrors] = useState({});
 
   // ── Live embedded PDF preview (Review + Sign steps) ────────────────────
   // Which document tab is showing, the current object URL the <iframe>
@@ -133,6 +146,13 @@ export default function FounderMou({ me, onSigned }) {
       setSignerName(m.signer_name || "");
     }).catch(setLoadError);
   }, []);
+
+  // Venture name prefill -- runs once the founder's own project name is
+  // known. A convenience default only: the field stays fully editable
+  // afterwards and this effect never overwrites what the founder typed.
+  useEffect(() => {
+    if (me?.project_name) setVentureName((prev) => prev || me.project_name);
+  }, [me?.project_name]);
 
   // Seed one empty collaborator block once the field schema is known.
   // Local state only — nothing is persisted server-side until sign time
@@ -207,6 +227,7 @@ export default function FounderMou({ me, onSigned }) {
           collaborators: collaboratorsPayload(),
           signerName: step === 2 ? signerName.trim() : "",
           signaturePng,
+          ventureName: step === 2 ? ventureName.trim() : "",
           signal: controller.signal,
         });
         if (seq !== requestSeqRef.current) return; // superseded — never overwrite a newer preview
@@ -228,7 +249,7 @@ export default function FounderMou({ me, onSigned }) {
       controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSlug, step, JSON.stringify(collaborators), signerName, hasInk, strokeCount, mou]);
+  }, [activeSlug, step, JSON.stringify(collaborators), signerName, ventureName, hasInk, strokeCount, mou]);
 
   // signature pad — unchanged mechanics from the pre-rewrite component,
   // just gated on the Sign step instead of "unsigned".
@@ -318,7 +339,7 @@ export default function FounderMou({ me, onSigned }) {
     setBusy(true); setSignError(null); setFieldErrors({});
     try {
       const png = canvasRef.current.toDataURL("image/png");
-      await founderApi.signMou(signerName.trim(), png, acked, collaboratorsPayload());
+      await founderApi.signMou(signerName.trim(), png, acked, collaboratorsPayload(), ventureName.trim());
       const fresh = await founderApi.getMou();
       setMou(fresh);
       onSigned?.();
@@ -357,6 +378,31 @@ export default function FounderMou({ me, onSigned }) {
     }
   };
 
+  // The ORIGINAL source .docx for one agreement — the exact bytes that were
+  // legally verified, not the rendered PDF. Fetched as a Blob (this route
+  // needs the Authorization header, so a plain <a href> can't reach it) and
+  // handed to the browser as a real file save via a throwaway anchor.
+  const downloadSource = async (slug) => {
+    setSourceDownloadErrors((prev) => {
+      if (!(slug in prev)) return prev;
+      const next = { ...prev };
+      delete next[slug];
+      return next;
+    });
+    try {
+      const blob = await founderApi.mouSourceDocx(slug);
+      const name = mou?.agreements?.find((a) => a.slug === slug)?.name || slug;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${name}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setSourceDownloadErrors((prev) => ({ ...prev, [slug]: mouErrorCopy(e) }));
+    }
+  };
+
   if (loadError && !mou) return <ErrorState error={loadError} />;
   if (!mou) return <Loading label="Loading your agreements…" />;
 
@@ -380,6 +426,7 @@ export default function FounderMou({ me, onSigned }) {
       <div className="fj-wizard-body">
         {step === 0 && (
           <DetailsStep
+            agreements={mou.agreements || []}
             fields={fields}
             collaborators={collaborators}
             status={status}
@@ -390,6 +437,8 @@ export default function FounderMou({ me, onSigned }) {
             onReview={goToReview}
             reviewBusy={reviewBusy}
             reviewError={reviewError}
+            onDownloadSource={downloadSource}
+            sourceDownloadErrors={sourceDownloadErrors}
           />
         )}
 
@@ -401,6 +450,8 @@ export default function FounderMou({ me, onSigned }) {
             pdfUrl={pdfUrl}
             pdfLoading={pdfLoading}
             pdfError={pdfError}
+            onDownloadSource={downloadSource}
+            sourceDownloadErrors={sourceDownloadErrors}
             onBack={() => go(0)}
             onSign={() => go(2)}
           />
@@ -414,12 +465,16 @@ export default function FounderMou({ me, onSigned }) {
             pdfUrl={pdfUrl}
             pdfLoading={pdfLoading}
             pdfError={pdfError}
+            onDownloadSource={downloadSource}
+            sourceDownloadErrors={sourceDownloadErrors}
             ackList={ackList}
             acked={acked}
             toggleAck={toggleAck}
             allAcked={allAcked}
             signerName={signerName}
             setSignerName={setSignerName}
+            ventureName={ventureName}
+            setVentureName={setVentureName}
             canvasRef={canvasRef}
             clearPad={clearPad}
             sign={sign}
@@ -434,9 +489,203 @@ export default function FounderMou({ me, onSigned }) {
   );
 }
 
+// ============ Shared: "Download the original" (source .docx) ============
+// Fetches the exact committed .docx (never the rendered PDF) so a founder
+// can read precisely what was legally verified. Idle by default (no
+// message); a failed attempt gets its own error, distinct from "haven't
+// tried yet" — the two empty states this project keeps conflating.
+function DownloadOriginalButton({ slug, name, onDownload, error }) {
+  return (
+    <div>
+      <button type="button" className="btn-ghost" onClick={() => onDownload(slug)}>
+        Download the original ({name}, .docx)
+      </button>
+      {error && (
+        <div style={{ color: "var(--accent-coral)", fontSize: 12.5, marginTop: 4 }} role="alert">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Shown up front, before any details are filled in — a founder should be
+// able to read exactly what they're about to sign from the very first
+// screen, not only after advancing to Review.
+function OriginalDocsPanel({ agreements, onDownload, sourceDownloadErrors }) {
+  if (!agreements.length) return null;
+  return (
+    <div className="card" style={{ marginBottom: 16, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+      <span className="lbl">Read the original agreements first</span>
+      {agreements.map((a) => (
+        <DownloadOriginalButton
+          key={a.slug}
+          slug={a.slug}
+          name={a.name}
+          onDownload={onDownload}
+          error={sourceDownloadErrors[a.slug]}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ── ARTPARK-owned blanks: read-only context, never an input. Each has its
+// own copy for "ARTPARK hasn't set this yet" — distinct from a founder
+// field left blank, which is an incomplete state, not an intentional one.
+// Groups a flat constants list by its server-supplied `section` (the
+// document's own structure -- e.g. Facility Agreement's business terms vs.
+// its Schedule II facilities table), preserving the order both the section
+// list and each section's items already arrive in from the backend, which
+// is itself the document's own paragraph/table order. Never re-sorted or
+// re-grouped by guesswork on the frontend.
+function groupBySection(constants) {
+  const groups = [];
+  for (const c of constants || []) {
+    const section = c.section || "ARTPARK's terms";
+    let g = groups.find((x) => x.section === section);
+    if (!g) { g = { section, items: [] }; groups.push(g); }
+    g.items.push(c);
+  }
+  return groups;
+}
+
+// ARTPARK-owned blanks for one document, grouped and labelled the way the
+// document itself groups them -- shown on the Details step, in the same
+// place the founder is filling in their own fields, so completing the
+// form reads like walking the agreement: collaborators first, then
+// ARTPARK's own terms, then (Facility only) the facilities schedule.
+// Read-only, visually distinct from an input, each with its own copy for
+// "ARTPARK hasn't set this yet" -- never confusable with a founder field
+// left blank.
+function ArtparkTermsSection({ agreement }) {
+  const constants = agreement.constants || [];
+  if (!constants.length) return null;
+  return (
+    <div className="card mou-doc-section">
+      <span className="ttl">{agreement.name} — ARTPARK&rsquo;s terms</span>
+      <p className="fj-help" style={{ marginTop: 4 }}>
+        Set by ARTPARK, not you. Read-only, and intentionally blank until ARTPARK confirms
+        each value — they render as blank space in the document below, never an error.
+      </p>
+      {groupBySection(constants).map((g) => (
+        <div className="mou-constant-group" key={g.section}>
+          <div className="mou-constant-group-title">{g.section}</div>
+          {g.items.map((c) => {
+            const hasValue = c.value !== null && c.value !== undefined && String(c.value).trim();
+            return (
+              <div className="mou-constant-row" key={c.key}>
+                <span className="k">{c.label}</span>
+                <span className={hasValue ? "v" : "v blank"}>
+                  {hasValue ? c.value : "Not yet set by ARTPARK — renders blank in the document"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// One collaborator's own party-details card -- the actual fields a founder
+// types into, laid out in the document's own field order (name, PAN,
+// parent's name, address) with a real input type per field: PAN
+// auto-uppercases as a plain single-line field, address is a multi-line
+// textarea. Every field is required (marked with the same asterisk
+// convention as the rest of the founder portal) and its own validation
+// error renders directly under the field that failed, never only in a
+// page-level banner.
+// Every founder-editable field's own HTML input shape -- one place that
+// decides "what kind of control is this", so PAN always uppercases and
+// address is always a real textarea, wherever a collaborator field is
+// rendered.
+const _TEXTAREA_FIELDS = new Set(["address"]);
+const _AUTOCOMPLETE = { name: "name", pan: "off", parent_name: "off", address: "street-address" };
+const _PAN_MAX_LENGTH = 10;
+
+function CollaboratorCard({ index, collaborator, fields, fieldErrors, onFieldChange, onRemove, removable }) {
+  const completed = fields.filter((f) => String(collaborator[f.key] || "").trim()).length;
+  return (
+    <div className="card mou-collab-card" style={{ marginBottom: 16, padding: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+        <span className="ttl">
+          Collaborator {index + 1}
+          {index > 0 && <span style={{ color: "var(--ink-dim)", fontWeight: 400 }}> (optional)</span>}
+        </span>
+        {removable && (
+          <button type="button" className="btn-ghost" onClick={onRemove}>
+            Remove collaborator
+          </button>
+        )}
+      </div>
+      <div className="mou-collab-card-note" style={{ marginBottom: 6 }}>
+        {completed} of {fields.length} fields complete
+      </div>
+      {fields.map((f) => {
+        // id/htmlFor is unique per block so each label really points at
+        // its own input; the visible TEXT repeats across collaborators
+        // deliberately (it's the backend catalog's label, unchanged) —
+        // the "Collaborator N" heading above each block is what
+        // disambiguates them for a sighted reader.
+        const id = `${f.key}-${index}`;
+        const err = fieldErrors[`${index}.${f.key}`];
+        const value = collaborator[f.key] || "";
+        const handleChange = (e) => {
+          const raw = e.target.value;
+          onFieldChange(index, f.key, f.key === "pan" ? raw.toUpperCase() : raw);
+        };
+        return (
+          <div className="form-field" style={{ marginTop: 12 }} key={f.key}>
+            {/* The "required" asterisk is a CSS ::after (see .lbl.mou-required
+                in founder-portal.css) -- NOT DOM text -- so the label's
+                accessible name stays exactly f.label and getByLabelText(...)
+                keeps matching the plain field name everywhere this codebase
+                already queries it by. */}
+            <label className="lbl mou-required" htmlFor={id}>{f.label}</label>
+            {_TEXTAREA_FIELDS.has(f.key) ? (
+              <textarea
+                id={id}
+                className="apply-textarea"
+                style={{ minHeight: 70, fontSize: 14 }}
+                value={value}
+                onChange={handleChange}
+                autoComplete={_AUTOCOMPLETE[f.key]}
+                aria-required="true"
+                aria-invalid={err ? "true" : undefined}
+              />
+            ) : (
+              <input
+                id={id}
+                className={f.key === "pan" ? "field mou-pan-field" : "field"}
+                value={value}
+                onChange={handleChange}
+                autoComplete={_AUTOCOMPLETE[f.key]}
+                maxLength={f.key === "pan" ? _PAN_MAX_LENGTH : undefined}
+                placeholder={f.key === "pan" ? "ABCDE1234F" : undefined}
+                aria-required="true"
+                aria-invalid={err ? "true" : undefined}
+              />
+            )}
+            {err && (
+              <div className="fj-inline-error" role="alert" style={{ fontSize: 12.5, marginTop: 4 }}>
+                {err}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ============ STEP 0 · YOUR DETAILS ============
-function DetailsStep({ fields, collaborators, status, fieldErrors, onFieldChange, onAdd, onRemove, onReview, reviewBusy, reviewError }) {
+function DetailsStep({
+  agreements, fields, collaborators, status, fieldErrors, onFieldChange, onAdd, onRemove,
+  onReview, reviewBusy, reviewError, onDownloadSource, sourceDownloadErrors,
+}) {
   const statusLabel = status === "not_started" ? "Not started" : status === "incomplete" ? "Incomplete" : null;
+  const completedCollaborators = collaborators.filter((c) => isCollaboratorComplete(c, fields)).length;
   return (
     <div className="fj-wizard">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -453,43 +702,36 @@ function DetailsStep({ fields, collaborators, status, fieldErrors, onFieldChange
         address. The same details feed every agreement your track requires.
       </p>
 
+      <OriginalDocsPanel agreements={agreements} onDownload={onDownloadSource} sourceDownloadErrors={sourceDownloadErrors} />
+
+      <div className="mou-progress">
+        {`${completedCollaborators} of ${collaborators.length} collaborator${collaborators.length === 1 ? "" : "s"} complete`}
+      </div>
+
       {collaborators.map((c, i) => (
-        <div className="card" style={{ marginBottom: 16, padding: 18 }} key={i}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-            <span className="ttl">Collaborator {i + 1}</span>
-            {collaborators.length > 1 && (
-              <button type="button" className="btn-ghost" onClick={() => onRemove(i)}>
-                Remove collaborator
-              </button>
-            )}
-          </div>
-          {fields.map((f) => {
-            // id/htmlFor is unique per block so each label really points at
-            // its own input; the visible TEXT repeats across collaborators
-            // deliberately (it's the backend catalog's label, unchanged) —
-            // the "Collaborator N" heading above each block is what
-            // disambiguates them for a sighted reader.
-            const id = `${f.key}-${i}`;
-            const err = fieldErrors[`${i}.${f.key}`];
-            return (
-              <div style={{ marginTop: 10 }} key={f.key}>
-                <label className="lbl" htmlFor={id}>{f.label}</label>
-                <input
-                  id={id}
-                  className="inp"
-                  value={c[f.key] || ""}
-                  onChange={(e) => onFieldChange(i, f.key, e.target.value)}
-                />
-                {err && <div style={{ color: "var(--accent-coral)", fontSize: 12.5, marginTop: 4 }}>{err}</div>}
-              </div>
-            );
-          })}
-        </div>
+        <CollaboratorCard
+          key={i}
+          index={i}
+          collaborator={c}
+          fields={fields}
+          fieldErrors={fieldErrors}
+          onFieldChange={onFieldChange}
+          onRemove={() => onRemove(i)}
+          removable={collaborators.length > 1}
+        />
       ))}
 
       {collaborators.length < MAX_COLLABORATORS && (
-        <button type="button" className="btn" onClick={onAdd}>Add another collaborator</button>
+        <div className="mou-add-collab">
+          <button type="button" className="btn" onClick={onAdd}>+ Add another collaborator</button>
+          <div className="fj-help" style={{ marginTop: 4 }}>
+            Most agreements have one collaborator. Add a second or third only if they're also a
+            party to this agreement — this is optional.
+          </div>
+        </div>
       )}
+
+      {agreements.map((a) => <ArtparkTermsSection key={a.slug} agreement={a} />)}
 
       {reviewError && <div className="fj-inline-error" role="alert" style={{ marginTop: 14 }}>{reviewError}</div>}
 
@@ -527,12 +769,24 @@ function DocTabs({ agreements, active, onChange }) {
   );
 }
 
-function AgreementPreview({ agreements, activeSlug, onSelectSlug, pdfUrl, pdfLoading, pdfError }) {
-  const activeName = agreements.find((a) => a.slug === activeSlug)?.name || "your agreement";
+function AgreementPreview({
+  agreements, activeSlug, onSelectSlug, pdfUrl, pdfLoading, pdfError,
+  onDownloadSource, sourceDownloadErrors,
+}) {
+  const active = agreements.find((a) => a.slug === activeSlug);
+  const activeName = active?.name || "your agreement";
   return (
     <div className="card" style={{ marginBottom: 16, padding: 12 }}>
       <DocTabs agreements={agreements} active={activeSlug} onChange={onSelectSlug} />
-      <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 18, marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, minHeight: 18, marginBottom: 6 }}>
+        {activeSlug && onDownloadSource && (
+          <DownloadOriginalButton
+            slug={activeSlug}
+            name={activeName}
+            onDownload={onDownloadSource}
+            error={sourceDownloadErrors?.[activeSlug]}
+          />
+        )}
         {pdfLoading && (
           <span className="fj-doc-updating" aria-live="polite" style={{ fontSize: 12.5, color: "var(--ink-dim)" }}>
             Updating…
@@ -558,7 +812,10 @@ function AgreementPreview({ agreements, activeSlug, onSelectSlug, pdfUrl, pdfLoa
 }
 
 // ============ STEP 1 · REVIEW ============
-function ReviewStep({ agreements, activeSlug, onSelectSlug, pdfUrl, pdfLoading, pdfError, onBack, onSign }) {
+function ReviewStep({
+  agreements, activeSlug, onSelectSlug, pdfUrl, pdfLoading, pdfError,
+  onDownloadSource, sourceDownloadErrors, onBack, onSign,
+}) {
   return (
     <div className="fj-wizard">
       <span className="eyebrow eyebrow-rule">Review before signing</span>
@@ -575,6 +832,8 @@ function ReviewStep({ agreements, activeSlug, onSelectSlug, pdfUrl, pdfLoading, 
         pdfUrl={pdfUrl}
         pdfLoading={pdfLoading}
         pdfError={pdfError}
+        onDownloadSource={onDownloadSource}
+        sourceDownloadErrors={sourceDownloadErrors}
       />
 
       <div className="fj-actions">
@@ -588,7 +847,9 @@ function ReviewStep({ agreements, activeSlug, onSelectSlug, pdfUrl, pdfLoading, 
 // ============ STEP 2 · SIGN ============
 function SignStep({
   agreements, activeSlug, onSelectSlug, pdfUrl, pdfLoading, pdfError,
-  ackList, acked, toggleAck, allAcked, signerName, setSignerName, canvasRef, clearPad, sign, busy, hasInk, error, onBack,
+  onDownloadSource, sourceDownloadErrors,
+  ackList, acked, toggleAck, allAcked, signerName, setSignerName,
+  ventureName, setVentureName, canvasRef, clearPad, sign, busy, hasInk, error, onBack,
 }) {
   return (
     <div className="fj-wizard">
@@ -605,6 +866,8 @@ function SignStep({
         pdfUrl={pdfUrl}
         pdfLoading={pdfLoading}
         pdfError={pdfError}
+        onDownloadSource={onDownloadSource}
+        sourceDownloadErrors={sourceDownloadErrors}
       />
 
       <div className="panel">
@@ -612,6 +875,10 @@ function SignStep({
 
         <fieldset className="mou-acks">
           <legend className="lbl">Acknowledgements — please confirm each of the following</legend>
+          <p className="fj-help" style={{ marginTop: 0 }}>
+            These are ARTPARK&rsquo;s own program terms — not clauses within the Facility or
+            Collaboration Agreement text above.
+          </p>
           {ackList.map((a, i) => (
             <label className="mou-ack" key={a.id}>
               <input type="checkbox" checked={acked.includes(a.id)} onChange={() => toggleAck(a.id)} />
@@ -628,6 +895,22 @@ function SignStep({
 
         <label className="lbl">Your full legal name</label>
         <input className="inp" value={signerName} onChange={(e) => setSignerName(e.target.value)} placeholder="Your full name" />
+
+        <label className="lbl" htmlFor="venture-name" style={{ marginTop: 14, display: "block" }}>
+          Venture / startup name
+        </label>
+        <input
+          id="venture-name"
+          className="inp"
+          value={ventureName}
+          onChange={(e) => setVentureName(e.target.value)}
+          placeholder="Your venture's name"
+        />
+        <div className="fj-help" style={{ marginTop: 4 }}>
+          Printed on the signature page below only — neither agreement above names a specific
+          venture, so this never appears in the legal text itself.
+        </div>
+
         <div className="sigpad" style={{ marginTop: 14, border: "1px solid var(--line-strong)", borderRadius: 2 }}>
           <canvas id="sigpad" ref={canvasRef} width={520} height={180} />
         </div>

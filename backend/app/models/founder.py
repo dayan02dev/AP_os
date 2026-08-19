@@ -62,13 +62,19 @@ class MouPreviewPdfRequest(BaseModel):
     # this one is optional at preview time, so an empty/blank canvas must
     # be representable, not rejected.
     signature_png: str | None = Field(default=None, max_length=2_000_000)
+    # The venture/startup name -- printed ONLY on the signature/annexure
+    # page render_agreement_pdf generates itself (neither source agreement
+    # has a "name of the startup" blank; both are individual-collaborator
+    # agreements). Optional and blank by default.
+    venture_name: str | None = Field(default=None, max_length=300)
 
-    @field_validator("signature_png")
+    @field_validator("signature_png", "venture_name")
     @classmethod
     def _blank_to_none(cls, v: str | None) -> str | None:
-        # An empty string (e.g. a canvas that was cleared) means "no
-        # signature", same as omitting the field entirely -- never passed
-        # through to decode_signature_png as a truthy-but-empty value.
+        # An empty string (e.g. a canvas that was cleared, or a venture-name
+        # field left untouched) means "nothing supplied", same as omitting
+        # the field entirely -- never passed through as a truthy-but-empty
+        # value.
         return v if v else None
 
 
@@ -85,6 +91,14 @@ class MouSignRequest(BaseModel):
     # 1-3 collaborators; the same values feed every agreement the founder's
     # track requires (agreements.TRACK_AGREEMENTS) in one signing action.
     collaborators: list[CollaboratorIn] = Field(min_length=1, max_length=3)
+    # Optional -- see MouPreviewPdfRequest.venture_name for what this is and
+    # why it is never part of either agreement's legal body.
+    venture_name: str | None = Field(default=None, max_length=300)
+
+    @field_validator("venture_name")
+    @classmethod
+    def _blank_to_none(cls, v: str | None) -> str | None:
+        return v if v else None
 
 
 class TeamMemberIn(BaseModel):

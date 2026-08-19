@@ -243,7 +243,8 @@ def _upload(path: str, data: bytes, content_type: str) -> None:
 
 def sign_and_onboard(*, application_id: str, user_id: str, signer_name: str,
                      signature_png: str, collaborators: list[dict],
-                     acknowledgements: list[str] | None = None) -> dict:
+                     acknowledgements: list[str] | None = None,
+                     venture_name: str | None = None) -> dict:
     """Idempotent MOU sign. Generates and stores EVERY agreement
     FOUNDER_TRACK requires (agreements.TRACK_AGREEMENTS) from the same
     signer name, signature, date and 1-3 collaborator party details, in one
@@ -291,6 +292,7 @@ def sign_and_onboard(*, application_id: str, user_id: str, signer_name: str,
         pdf = agreements.render_agreement_pdf(
             collaborators=collaborators, signer_name=signer_name, date_str=date_str,
             signature_png=signature_png, accepted_acks=accepted, slug=slug,
+            venture_name=venture_name,
         )
         pdf_path = f"{application_id}/mou/{slug}.pdf"
         _upload(pdf_path, pdf, "application/pdf")

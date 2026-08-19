@@ -189,6 +189,127 @@ _FIELD_SCHEMA = [
     {"key": "address", "label": "Residential address"},
 ]
 
+# ── ARTPARK-constant field schema (MOU tab rebuild) ─────────────────────────
+# Every real blank in each template that ISN'T a collaborator party detail
+# (those are _FIELD_SCHEMA above) is an ARTPARK business constant --
+# TEMPLATE_CONSTANTS' own keys, one schema entry per key, labelled from the
+# surrounding sentence in the source .docx (see the block-index comments in
+# _AGREEMENT_RULES above, which this schema is derived from directly rather
+# than re-guessed). A dotted key ("availability_windows.dedicated_seating")
+# addresses a nested TEMPLATE_CONSTANTS entry -- see _constant_value() below.
+#
+# Facility Agreement: 22 total positional "[•]" blanks. 12 are collaborator
+# fields (3 slots x 4 fields, already in _FIELD_SCHEMA); the other 10 are
+# these 9 DISTINCT constants -- term_months alone fills 2 (paragraph 34's
+# numeral and its word form, via the virtual "term_months_words" key).
+_SECTION_TERMS = "Agreement terms"
+_SECTION_SCHEDULE = "Facilities schedule (Schedule II)"
+
+_FACILITY_CONSTANT_SCHEMA: list[dict] = [
+    {
+        "key": "collaboration_agreement_date",
+        "label": "Date the Collaboration Agreement was signed",
+        "section": _SECTION_TERMS,
+        # paragraph 13: "...entered into a Collaboration Agreement dated [•]..."
+    },
+    {
+        "key": "term_months",
+        "label": "Facility Agreement term length (months)",
+        "section": _SECTION_TERMS,
+        # paragraph 34: "...for a period of [•] ([•]) months..."
+    },
+    {
+        "key": "insurance_limit",
+        "label": "Public liability insurance minimum, per occurrence",
+        "section": _SECTION_TERMS,
+        # paragraph 88
+    },
+    {
+        "key": "availability_windows.dedicated_seating",
+        "label": "Availability window — Dedicated Seating",
+        "section": _SECTION_SCHEDULE,
+    },
+    {
+        "key": "availability_windows.lab_space",
+        "label": "Availability window — Laboratory Space",
+        "section": _SECTION_SCHEDULE,
+    },
+    {
+        "key": "availability_windows.computing",
+        "label": "Availability window — Computing Resources",
+        "section": _SECTION_SCHEDULE,
+    },
+    {
+        "key": "availability_windows.wifi",
+        "label": "Availability window — Wireless Internet",
+        "section": _SECTION_SCHEDULE,
+    },
+    {
+        "key": "availability_windows.conference_rooms",
+        "label": "Availability window — Conference Rooms",
+        "section": _SECTION_SCHEDULE,
+    },
+    {
+        "key": "availability_windows.access_badge",
+        "label": "Availability window — Administrative ID / Access Badge",
+        "section": _SECTION_SCHEDULE,
+    },
+]
+
+# Collaboration Agreement: its own two ARTPARK-owned named tokens.
+# [Name of first founder] / [PAN Number] / [Father's...] / [Address] are
+# collaborator fields (_FIELD_SCHEMA, same as Facility); [month]/[date] are
+# the render-time execution date, not configurable, so neither belongs here.
+_COLLABORATION_CONSTANT_SCHEMA: list[dict] = [
+    {
+        "key": "research_area",
+        "label": "Research Area — the Collaborators' field of complementary expertise",
+        "section": _SECTION_TERMS,
+        # paragraph 26: "...expertise in the field of [insert areas]..."
+    },
+    {
+        "key": "facility_agreement_date",
+        "label": "Date the Facility Agreement was signed",
+        "section": _SECTION_TERMS,
+        # paragraph 47: "...the Facility Agreement dated [Date of agreement]..."
+    },
+]
+
+_CONSTANT_SCHEMA: dict[str, list[dict]] = {
+    "facility-v1": _FACILITY_CONSTANT_SCHEMA,
+    "collaboration-v1": _COLLABORATION_CONSTANT_SCHEMA,
+}
+
+# The committed original .docx for each agreement -- the exact bytes that
+# were legally verified (backend/scripts/source_docs/), served verbatim by
+# source_docx_path() below. Never converted or regenerated.
+_SOURCE_DOCX: dict[str, str] = {
+    "facility-v1": "facility_agreement_2026-08-06.docx",
+    "collaboration-v1": "collaboration_agreement_2026-08-15.docx",
+}
+_SOURCE_DOCX_DIR = Path(__file__).resolve().parent.parent.parent / "scripts" / "source_docs"
+
+
+def _constant_value(slug: str, key: str):
+    """Read TEMPLATE_CONSTANTS[slug][key] for schema display -- `key` may be
+    a dotted path ("availability_windows.dedicated_seating") addressing a
+    nested constant. Mirrors how _resolve_blocks itself reaches into
+    availability_windows, just generalised for schema keys."""
+    constants = TEMPLATE_CONSTANTS.get(slug, {})
+    if "." in key:
+        top, sub = key.split(".", 1)
+        return (constants.get(top) or {}).get(sub)
+    return constants.get(key)
+
+
+def source_docx_path(slug: str) -> Path:
+    """Path to the committed original .docx for `slug` -- read exactly what
+    was legally verified, never a converted/regenerated copy. Raises
+    KeyError for an unrecognised slug; callers (the router) validate against
+    agreements_for_track() first and turn that into a 404, the same pattern
+    every other agreement-slug lookup in this module already follows."""
+    return _SOURCE_DOCX_DIR / _SOURCE_DOCX[slug]
+
 
 def _blank(value: object) -> str:
     """Render an unset (None) constant as empty space -- never the word
@@ -404,7 +525,17 @@ def agreements_for_track(track: str) -> list[dict]:
             "name": _AGREEMENT_META[slug]["name"],
             "min_collaborators": _AGREEMENT_META[slug]["min_collaborators"],
             "max_collaborators": _AGREEMENT_META[slug]["max_collaborators"],
-            "fields": _FIELD_SCHEMA,
+            # Founder-editable blanks -- one set of party details per
+            # collaborator (1-3), the same values feeding every agreement.
+            "fields": [{**f, "owner": "founder"} for f in _FIELD_SCHEMA],
+            # ARTPARK-owned blanks -- read-only context, not an input.
+            # value is TEMPLATE_CONSTANTS' real current value (None today,
+            # for every one of them -- see that dict's own docstring).
+            "constants": [
+                {**c, "owner": "artpark", "value": _constant_value(slug, c["key"])}
+                for c in _CONSTANT_SCHEMA.get(slug, [])
+            ],
+            "source_docx_available": slug in _SOURCE_DOCX,
         }
         for slug in slugs
     ]
@@ -458,7 +589,8 @@ def _build_body_pdf(blocks: list[dict]) -> bytes:
 
 
 def _build_signature_page_pdf(
-    signer_name: str, date_str: str, signature_png: str | None, accepted_acks: list[str] | None
+    signer_name: str, date_str: str, signature_png: str | None, accepted_acks: list[str] | None,
+    venture_name: str | None = None,
 ) -> bytes:
     # Reuses the exact image-embed approach founder_mou.render_signed_pdf
     # already proves works against the Lambda runtime's reportlab.
@@ -504,6 +636,17 @@ def _build_signature_page_pdf(
         # this spot -- never a fabricated mark, never placeholder text.
         c.setLineWidth(0.75)
         c.line(x, y - 18 * mm, x + 70 * mm, y - 18 * mm)
+    # Venture/startup name -- printed ONLY here, on the annexure page THIS
+    # module generates, never inside the verified legal body text (neither
+    # source agreement has a "name of the startup" blank; both are
+    # individual-collaborator agreements). Omitted entirely (no new
+    # setFont/drawString calls at all) when not supplied, so the default
+    # call shape -- and therefore the golden-hash signed-PDF byte output --
+    # is completely unchanged from before this field existed.
+    if venture_name:
+        y -= 26 * mm
+        c.setFont("Helvetica", 8)
+        c.drawString(x, y, f"Venture / startup name: {venture_name}")
     c.showPage()
     c.save()
     return buf.getvalue()
@@ -517,6 +660,7 @@ def render_agreement_pdf(
     signature_png: str | None = None,
     accepted_acks: list[str] | None = None,
     slug: str = "facility-v1",
+    venture_name: str | None = None,
 ) -> bytes:
     """Render the fully-resolved agreement to PDF bytes: a platypus-built
     body (real paragraphs, real tables) with a canvas-drawn signature page
@@ -528,12 +672,19 @@ def render_agreement_pdf(
     typing (or before drawing a signature) calls this with none at all, and
     gets back the same document with a blank ruled signature line instead
     of an image -- exactly what the paper form looks like unsigned. The
-    signed path (signature_png provided) is unchanged."""
+    signed path (signature_png provided) is unchanged.
+
+    venture_name is optional and, when supplied, is printed ONLY on the
+    signature/annexure page (see _build_signature_page_pdf) -- never into
+    the body. Omitting it (the default) reproduces the exact pre-existing
+    byte output; see the golden-hash test in test_agreements.py."""
     from pypdf import PdfReader, PdfWriter
 
     blocks = _resolve_blocks(collaborators, slug)
     body_pdf = _build_body_pdf(blocks)
-    sig_pdf = _build_signature_page_pdf(signer_name, date_str, signature_png, accepted_acks)
+    sig_pdf = _build_signature_page_pdf(
+        signer_name, date_str, signature_png, accepted_acks, venture_name=venture_name
+    )
 
     writer = PdfWriter()
     for page in PdfReader(io.BytesIO(body_pdf)).pages:

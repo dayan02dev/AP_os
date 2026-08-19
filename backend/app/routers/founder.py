@@ -261,6 +261,7 @@ async def preview_mou_pdf(
             signature_png=payload.signature_png,
             accepted_acks=None,
             slug=slug,
+            venture_name=payload.venture_name,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -283,6 +284,7 @@ async def sign_mou(
             signature_png=payload.signature_png,
             collaborators=[c.model_dump() for c in payload.collaborators],
             acknowledgements=payload.acknowledgements,
+            venture_name=payload.venture_name,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -336,6 +338,34 @@ async def mou_signed_url(
             detail={"code": "mou_not_signed"},
         )
     return {"url": url}
+
+
+_DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+@router.get("/mou/source")
+async def mou_source_docx(
+    ctx: Annotated[dict, Depends(require_founder_access)],
+    agreement: str,
+) -> Response:
+    """The ORIGINAL committed .docx for one of this track's agreements —
+    exactly what was legally verified, served verbatim (never converted or
+    regenerated) so a founder can read the source document itself, not just
+    the rendered PDF. Same auth as every other /founder/mou* route.
+    `agreement` is required — there is no meaningful "default" original
+    document the way signed-url has a primary signed one."""
+    valid_slugs = {a["slug"] for a in agreements.agreements_for_track(founder_mou.FOUNDER_TRACK)}
+    if agreement not in valid_slugs:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "unknown_agreement", "agreement": agreement},
+        )
+    path = agreements.source_docx_path(agreement)
+    return Response(
+        content=path.read_bytes(),
+        media_type=_DOCX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{path.name}"'},
+    )
 
 
 def _owned_or_404(sb, table: str, row_id: str, application_id: str) -> dict:

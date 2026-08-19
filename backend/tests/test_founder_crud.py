@@ -470,6 +470,86 @@ def test_me_reports_mou_signed_and_unlocked(client, monkeypatch, _clear):
     assert body["locked"] == {"cohort": False, "dashboard": False}
 
 
+# ── original source .docx download (MOU tab rebuild) ────────────────────
+
+
+def test_mou_source_docx_serves_the_real_committed_bytes(client, monkeypatch, _clear):
+    from app.services import agreements
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.get("/founder/mou/source?agreement=facility-v1")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert "attachment" in r.headers["content-disposition"]
+    assert r.headers["content-disposition"].rstrip('"').lower().endswith(".docx")
+    assert r.content == agreements.source_docx_path("facility-v1").read_bytes()
+
+
+def test_mou_source_docx_unknown_agreement_is_404(client, monkeypatch, _clear):
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.get("/founder/mou/source?agreement=not-a-real-agreement")
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "unknown_agreement"
+
+
+def test_mou_source_docx_requires_founder_access(client, monkeypatch, _clear):
+    _install(monkeypatch, {
+        "tir_applications": [{"id": "app1", "user_id": "u1", "status": "submitted",
+                              "grant_amount": 0, "submitted_at": "2026-07-01"}],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.get("/founder/mou/source?agreement=facility-v1")
+    assert r.status_code == 403
+
+
+# ── venture name on the signature page (MOU tab rebuild) ────────────────
+
+
+def test_sign_mou_forwards_venture_name_into_every_rendered_agreement(client, monkeypatch, _clear):
+    from app.services import agreements
+    calls = []
+    real_render = agreements.render_agreement_pdf
+
+    def _spy(**kwargs):
+        calls.append(kwargs)
+        return real_render(**kwargs)
+
+    monkeypatch.setattr(agreements, "render_agreement_pdf", _spy)
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post("/founder/mou/sign", json=_sign_body(venture_name="Sarva Robotics"))
+    assert r.status_code == 200, r.text
+    assert len(calls) == 2, "one render per TIR track agreement"
+    assert all(c.get("venture_name") == "Sarva Robotics" for c in calls)
+
+
+def test_sign_mou_without_venture_name_still_succeeds(client, monkeypatch, _clear):
+    """venture_name is optional -- omitting it entirely must not 422."""
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post("/founder/mou/sign", json=_sign_body())
+    assert r.status_code == 200, r.text
+
+
+def test_preview_mou_pdf_embeds_venture_name_on_the_signature_page(client, monkeypatch, _clear):
+    import io as _io
+
+    from pypdf import PdfReader
+
+    _install(monkeypatch, _offered_tables())
+    app.dependency_overrides[get_current_user] = _override_user("u1")
+    r = client.post(
+        "/founder/mou/preview/pdf?slug=facility-v1",
+        json={"collaborators": _ONE_COLLABORATOR, "venture_name": "Sarva Robotics"},
+    )
+    assert r.status_code == 200, r.text
+    text = PdfReader(_io.BytesIO(r.content)).pages[-1].extract_text() or ""
+    assert "Sarva Robotics" in text
+
+
 def test_team_crud_roundtrip(client, monkeypatch, _clear):
     fake = _install(monkeypatch, {
         "tir_applications": [{"id": "app1", "user_id": "u1", "status": "onboarded",

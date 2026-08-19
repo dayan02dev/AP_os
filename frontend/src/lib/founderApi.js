@@ -13,24 +13,33 @@ export const founderApi = {
   // built from the collaborator details typed so far and, once the founder
   // has reached the Sign step, whatever they've drawn on the pad. Works
   // before signing -- signerName/signaturePng are optional.
-  previewMouPdf: (slug, { collaborators, signerName, signaturePng, signal } = {}) =>
+  previewMouPdf: (slug, { collaborators, signerName, signaturePng, ventureName, signal } = {}) =>
     api.postBlob(
       `/founder/mou/preview/pdf?slug=${encodeURIComponent(slug)}`,
-      { collaborators, signer_name: signerName || "", signature_png: signaturePng || null },
+      {
+        collaborators, signer_name: signerName || "", signature_png: signaturePng || null,
+        venture_name: ventureName || null,
+      },
       { signal },
     ),
-  signMou: (signerName, signaturePng, acknowledgements = [], collaborators = []) =>
+  signMou: (signerName, signaturePng, acknowledgements = [], collaborators = [], ventureName = "") =>
     api.post("/founder/mou/sign", {
       signer_name: signerName,
       signature_png: signaturePng,
       acknowledgements,
       collaborators,
+      venture_name: ventureName || null,
     }),
   // agreement omitted -> the row's primary (first-signed) document, same
   // shape as before this task; pass a slug (e.g. "collaboration-v1") to
   // fetch that specific agreement's own signed PDF.
   mouSignedUrl: (agreement) =>
     api.get(agreement ? `/founder/mou/signed-url?agreement=${encodeURIComponent(agreement)}` : "/founder/mou/signed-url"),
+  // The ORIGINAL committed .docx for one agreement -- exactly what was
+  // legally verified, served verbatim. A Blob, same as previewMouPdf; the
+  // caller triggers the actual browser download (see FounderMou.jsx).
+  mouSourceDocx: (agreement) =>
+    api.getBlob(`/founder/mou/source?agreement=${encodeURIComponent(agreement)}`),
 
   // Approach
   getApproach: () => api.get("/founder/approach"),

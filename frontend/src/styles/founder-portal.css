@@ -687,6 +687,27 @@
 .founder-portal .mou-ack:hover .mou-ack-text {color:var(--ink);}
 .founder-portal .mou-ack-hint {margin-top:12px;font-size:12.5px;color:var(--ink-dim);font-style:italic;}
 
+/* MOU rebuild — founder-editable collaborator fields vs read-only ARTPARK
+   constants. Fields reuse .form-field/.lbl/.field/.apply-textarea (already
+   styled, shared with "Book ARTPARK assets" and "IT & Facilities support")
+   rather than the previously-unstyled .inp; the rules below are additive,
+   only for what's new here. */
+.founder-portal .lbl.mou-required::after {content:" *";color:var(--accent-coral);font-weight:700;}
+.founder-portal .mou-progress {font-size:12.5px;color:var(--ink-dim);margin:2px 0 14px;}
+.founder-portal .mou-progress strong {color:var(--ink);font-variant-numeric:tabular-nums;}
+.founder-portal .mou-collab-card-note {font-size:12px;color:var(--ink-dim);font-variant-numeric:tabular-nums;}
+.founder-portal .mou-add-collab {margin-bottom:20px;}
+.founder-portal .mou-doc-section {margin-bottom:16px;padding:18px;}
+.founder-portal .mou-doc-section .ttl {display:block;margin-bottom:4px;}
+.founder-portal .mou-constant-group {margin-top:14px;}
+.founder-portal .mou-constant-group-title {font-size:11px;letter-spacing:0.05em;text-transform:uppercase;font-weight:700;color:var(--ink-dim);margin-bottom:6px;}
+.founder-portal .mou-constant-row {display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px;}
+.founder-portal .mou-constant-row:last-child {border-bottom:none;}
+.founder-portal .mou-constant-row .k {color:var(--ink-soft);}
+.founder-portal .mou-constant-row .v {color:var(--ink);text-align:right;}
+.founder-portal .mou-constant-row .v.blank {color:var(--ink-dim);font-style:italic;font-size:12.5px;}
+.founder-portal .mou-pan-field {font-family:var(--font-mono);letter-spacing:0.06em;text-transform:uppercase;}
+
 .founder-portal .sig {margin-top:26px;border:1px solid var(--line);border-radius:2px;padding:26px 28px;}
 .founder-portal .sig-grid {display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:16px 0 18px;}
 .founder-portal .sig-grid label, .founder-portal .pad-label .l {display:block;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;color:var(--ink-dim);margin-bottom:7px;}
