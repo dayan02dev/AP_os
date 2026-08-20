@@ -47,12 +47,12 @@ from ..models.auth import (
     UserInfo,
     UserMe,
 )
+from ..services.email_guard import is_disposable_email
 from ..supabase_client import get_admin_client, get_anon_client
 from ..utils.rate_limit import (
     check_and_record,
     check_rate,
     limiter,
-    per_token_key,
     per_user_rate_limit,
     record_rate,
     reset_buckets_for_tests,
@@ -134,6 +134,27 @@ async def request_otp(payload: OTPRequest, request: Request):
     this endpoint can't be used to enumerate registered users.
     """
     email = payload.email.lower().strip()
+
+    # Throwaway inboxes are refused before anything else. This is the only door
+    # that creates an account, and a disposable address makes probing free and
+    # repeatable — see the 2026-08-19 session. Rejecting here also protects the
+    # project-wide Supabase OTP quota, which is small enough that throwaway
+    # signups can deny service to real applicants.
+    #
+    # A distinct error is deliberate. It leaks nothing (the caller already knows
+    # their own domain) and a real person using a temp inbox deserves to be told
+    # why rather than waiting for a mail that never arrives. The neutral-response
+    # rule below exists to stop USER enumeration, which this does not enable.
+    if is_disposable_email(email):
+        log.warning("signup refused: disposable email domain",
+                    extra={"domain": email.rsplit("@", 1)[-1]})
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "disposable_email",
+            "Please use a permanent email address. Temporary or disposable "
+            "inboxes aren't accepted for applications.",
+        )
+
     # Check-only: a Supabase / network blip shouldn't burn the caller's quota.
     check_rate("request-otp", email, _REQUEST_OTP_MAX, _REQUEST_OTP_WINDOW_S)
 

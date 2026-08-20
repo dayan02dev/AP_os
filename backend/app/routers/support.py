@@ -34,6 +34,7 @@ from ..models.support import (
     SupportTicketListResponse,
     SupportTicketRead,
 )
+from ..services.access_request_flag import looks_like_access_request
 from ..services.email_service import EmailDeliveryError, get_email_service
 from ..supabase_client import get_admin_client
 from ..utils.rate_limit import limiter, per_user_rate_limit
@@ -130,6 +131,20 @@ async def create_ticket(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to file ticket",
         ) from exc
+
+    # Social-engineering tripwire. Once every privileged route is denied,
+    # asking a human is the cheapest remaining attack — that is exactly what
+    # happened on 2026-08-19. The marker below is what the CloudWatch metric
+    # filter alarms on; the ticket itself is still filed and answered normally.
+    if looks_like_access_request(payload.subject, payload.body):
+        log.warning(
+            "SECURITY_ACCESS_REQUEST support ticket requests privileged access",
+            extra={
+                "security_event": "access_request_ticket",
+                "ticket_email": payload.email,
+                "authenticated": bool(user),
+            },
+        )
 
     if not insert.data:
         raise HTTPException(

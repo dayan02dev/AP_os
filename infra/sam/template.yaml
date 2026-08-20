@@ -269,6 +269,160 @@ Resources:
       AlarmActions:
         - !Ref AlarmsTopic
 
+  # ── Security detection (added 2026-08-20) ───────────────────────
+  # Added after an actor signed up from a throwaway inbox, fuzzed 246 routes,
+  # probed every privileged surface and attempted to grant himself an admin
+  # role. Every request was correctly denied — but NOTHING alerted. We only
+  # learned of it because he emailed us. These filters turn the denials the
+  # app already emits into signal.
+  #
+  # Thresholds are set against the observed baseline: over a 9-hour window that
+  # contained the entire attack there were 26 403s and 281 404s, essentially
+  # all his. Legitimate 403s do occur (a non-founder hitting /founder/me), so
+  # the 403 threshold sits above that noise rather than at zero.
+
+  AuthzDeniedMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.event = "request.end" && $.status_code = 403 }'
+      MetricTransformations:
+        - MetricNamespace: ARTPARK/Security
+          MetricName: !Sub "AuthzDenied-${EnvName}"
+          MetricValue: "1"
+          DefaultValue: 0
+
+  AuthzDeniedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "artpark-eir-api-${EnvName}-authz-denied-burst"
+      AlarmDescription: "Burst of 403s — someone is probing privileged endpoints"
+      Namespace: ARTPARK/Security
+      MetricName: !Sub "AuthzDenied-${EnvName}"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmsTopic
+
+  RouteFuzzingMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.event = "request.end" && $.status_code = 404 }'
+      MetricTransformations:
+        - MetricNamespace: ARTPARK/Security
+          MetricName: !Sub "RouteNotFound-${EnvName}"
+          MetricValue: "1"
+          DefaultValue: 0
+
+  RouteFuzzingAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "artpark-eir-api-${EnvName}-route-fuzzing"
+      AlarmDescription: "Burst of 404s — route enumeration against the API"
+      Namespace: ARTPARK/Security
+      MetricName: !Sub "RouteNotFound-${EnvName}"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 20
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmsTopic
+
+  RateLimitedMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.event = "request.end" && $.status_code = 429 }'
+      MetricTransformations:
+        - MetricNamespace: ARTPARK/Security
+          MetricName: !Sub "RateLimited-${EnvName}"
+          MetricValue: "1"
+          DefaultValue: 0
+
+  CredentialBruteForceAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "artpark-eir-api-${EnvName}-brute-force"
+      AlarmDescription: "Rate limiter firing repeatedly — OTP or password brute force"
+      Namespace: ARTPARK/Security
+      MetricName: !Sub "RateLimited-${EnvName}"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmsTopic
+
+  # Social-engineering tripwire: a support ticket asking for privileged roles.
+  # Threshold 0 (i.e. any occurrence) because this should be rare and is always
+  # worth a human look — it is how the 2026-08-19 actor tried after being
+  # denied everywhere else.
+  AccessRequestMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.security_event = "access_request_ticket" }'
+      MetricTransformations:
+        - MetricNamespace: ARTPARK/Security
+          MetricName: !Sub "AccessRequestTicket-${EnvName}"
+          MetricValue: "1"
+          DefaultValue: 0
+
+  AccessRequestAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "artpark-eir-api-${EnvName}-access-request-ticket"
+      AlarmDescription: "A support ticket is asking for privileged platform access"
+      Namespace: ARTPARK/Security
+      MetricName: !Sub "AccessRequestTicket-${EnvName}"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmsTopic
+
+  # Signup refused because the address was a known throwaway inbox. Not paged
+  # on its own (one is meaningless); a sustained run means someone is working
+  # through domains to find one that is not blocked.
+  DisposableSignupMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.msg = "signup refused: disposable email domain" }'
+      MetricTransformations:
+        - MetricNamespace: ARTPARK/Security
+          MetricName: !Sub "DisposableSignupRefused-${EnvName}"
+          MetricValue: "1"
+          DefaultValue: 0
+
+  DisposableSignupAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "artpark-eir-api-${EnvName}-disposable-signup-burst"
+      AlarmDescription: "Repeated throwaway-inbox signups — someone is hunting an unblocked domain"
+      Namespace: ARTPARK/Security
+      MetricName: !Sub "DisposableSignupRefused-${EnvName}"
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmsTopic
+
   # ── AI screening pipeline (Phase 1, Session 7) ──────────────────
   # The submit endpoint enqueues {application_id, application_track}
   # onto AiScreenerQueue. AiScreenerFunction consumes from it, scores
