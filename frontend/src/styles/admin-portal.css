@@ -2141,7 +2141,10 @@
 .adm-portal .lp-filter-area {
   padding: 40px 40px 32px;
   background: #fff;
-  border-bottom: 1px solid #e3e3e8;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
   flex-shrink: 0;
 }
 /* Search + track row — wrapped in its own bordered card */
@@ -2175,22 +2178,29 @@
 }
 /* STATUS / AI SCORE / INDUSTRY blocks — each is its own bordered box */
 .adm-portal .lp-filter-section {
+  display: flex;
+  align-items: flex-start;
   padding: 22px 26px 24px;
   border: 1px solid #e3e3e8;
   border-radius: 2px;
   margin-bottom: 20px;
 }
 .adm-portal .lp-filter-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
   margin-bottom: 0;
 }
 /* Label sits on its own line above the buttons */
 .adm-portal .lp-filter-label {
   display: block;
+  width: 120px;
+  flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: #8a8a92;
+  padding-top: 10px;
   margin-bottom: 16px;
   white-space: nowrap;
 }
@@ -2200,6 +2210,7 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  flex: 1;
 }
 /* ── Filter buttons ──────────────────────────────────────── */
 .adm-portal .lp-filter-btn {
@@ -2239,8 +2250,23 @@
   display: inline-block;
 }
 .adm-portal .lp-clear-btn {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
   color: #6f6f78;
+  background: transparent;
+  border: none;
   border-color: #c8c8d0;
+  cursor: pointer;
+  padding: 0 8px;
+  transition: all 0.15s ease;
+  height: auto;
+  line-height: 1;
+}
+.adm-portal .lp-clear-btn:hover {
+  color: #c2363b;
+  background: transparent;
+  text-decoration: underline;
 }
 .adm-portal .lp-count {
   font-family: var(--font-mono);
@@ -2248,6 +2274,111 @@
   color: #8a8a92;
   white-space: nowrap;
   flex-shrink: 0;
+}
+/* ── Filters toggle + panel + applied-filter chips ─────────
+   Moved from AdminPipeline's inline <style> block — these had no
+   admin-portal.css counterpart at all (not duplicates, just misplaced). */
+.adm-portal .lp-filter-btn-group {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #fff;
+  height: 29px;
+  transition: all 0.15s ease;
+  margin-right: 0;
+  margin-bottom: 0;
+}
+.adm-portal .lp-filter-btn-group:hover {
+  border-color: var(--line-strong);
+}
+.adm-portal .lp-filter-btn-group.active {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+.adm-portal .lp-filter-btn-group .lp-filter-btn {
+  border: none !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  height: 100%;
+  padding: 0 8px 0 14px;
+}
+.adm-portal .lp-filter-btn-group .lp-filter-btn-dots {
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--line) !important;
+  color: var(--ink-dim);
+  padding: 0 8px;
+  cursor: pointer;
+  height: 100%;
+  font-size: 14px;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.adm-portal .lp-filter-btn-group .lp-filter-btn-dots:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--ink);
+}
+.adm-portal .lp-filter-btn-group.active .lp-filter-btn-dots {
+  color: rgba(255, 255, 255, 0.7);
+  border-left: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+.adm-portal .lp-filter-btn-group.active .lp-filter-btn-dots:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+/* Filters toggle (e-commerce style) */
+.adm-portal .lp-filters-toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 38px; padding: 0 14px; flex-shrink: 0;
+  background: var(--bg-paper); border: 1px solid var(--line-strong);
+  border-radius: 999px; cursor: pointer;
+  font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--ink);
+  transition: all 0.15s ease;
+}
+.adm-portal .lp-filters-toggle:hover { background: var(--bg-soft); border-color: var(--ink-dim); }
+.adm-portal .lp-filters-toggle.is-open { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.adm-portal .lp-filters-count {
+  display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px;
+  background: var(--accent); color: #fff; border-radius: 999px;
+  font-size: 11px; font-weight: 700; line-height: 1;
+}
+.adm-portal .lp-filters-caret { font-size: 9px; color: var(--ink-dim); }
+.adm-portal .lp-filters-toggle.is-open .lp-filters-caret { color: var(--accent); }
+/* Applied filter pills */
+.adm-portal .lp-active-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 14px 0 2px; }
+.adm-portal .lp-active-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 28px; padding: 0 6px 0 12px;
+  background: var(--accent-soft); border: 1px solid transparent;
+  border-radius: 999px; cursor: pointer;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--artblue);
+  transition: background 0.15s ease;
+}
+.adm-portal .lp-active-chip:hover { background: #cabdf0; }
+.adm-portal .lp-active-chip-x {
+  display: inline-grid; place-items: center; width: 16px; height: 16px;
+  border-radius: 50%; background: rgba(50,19,183,0.13); font-size: 13px; line-height: 1;
+}
+.adm-portal .lp-active-clear {
+  background: none; border: none; cursor: pointer; padding: 0 6px;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 600;
+  color: var(--ink-dim); text-decoration: underline;
+}
+.adm-portal .lp-active-clear:hover { color: var(--ink); }
+/* Collapsible panel */
+.adm-portal .lp-filter-panel { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 2px; }
+/* Filter area with nothing open — no panel, no chips. Without this the search
+   card's 28px bottom margin plus the area's 32px bottom padding leave a ~60px
+   empty band below the search row on Applications and Rejected. */
+.adm-portal .lp-filter-area.is-collapsed {
+  padding-bottom: 0;
+}
+.adm-portal .lp-filter-area.is-collapsed .lp-filter-row--search {
+  margin-bottom: 24px;
 }
 /* ── Track segmented control ─────────────────────────────── */
 .adm-portal .lp-track-group {
@@ -2283,6 +2414,7 @@
 .adm-portal .lp-track-btn.active {
   background: var(--artblue);
   color: #fff;
+  box-shadow: 0 1px 3px rgba(36, 36, 36, 0.08);
 }
 /* ── Content + table ─────────────────────────────────────── */
 .adm-portal .lp-content {
