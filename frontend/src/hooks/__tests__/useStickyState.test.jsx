@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { useStickyState, STICKY_PREFIX, clearStickyState } from "../useStickyState.js";
+import { useStickyState, STICKY_PREFIX, clearStickyState, writeStickyState } from "../useStickyState.js";
 
 // jsdom's Storage is Proxy-backed, so vi.spyOn(sessionStorage, ...) silently
 // fails to intercept — the spy records zero calls while the real method runs.
@@ -18,6 +18,29 @@ function stubStorage(overrides) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+// The admin shell's detail view moves the Gate-1 stack's remembered position
+// while that screen is unmounted, so it needs to write a sticky value it does
+// not own. This is the seam that lets it do so without a second copy of the
+// key format.
+describe("writeStickyState", () => {
+  it("writes under the same key a hook of the same scope+field reads", () => {
+    writeStickyState("admin.gate1.stack", "appId", "a4");
+    const { result } = renderHook(() => useStickyState("admin.gate1.stack", "appId", null));
+    expect(result.current[0]).toBe("a4");
+    expect(sessionStorage.getItem(`${STICKY_PREFIX}admin.gate1.stack.appId`)).toBe('"a4"');
+  });
+
+  it("still carries the value through the in-page mirror when storage is blocked", () => {
+    stubStorage({
+      getItem: () => { throw new Error("denied"); },
+      setItem: () => { throw new Error("denied"); },
+    });
+    writeStickyState("admin.gate1.stack", "appId", "a5");
+    const { result } = renderHook(() => useStickyState("admin.gate1.stack", "appId", null));
+    expect(result.current[0]).toBe("a5");
+  });
 });
 
 describe("useStickyState", () => {
@@ -94,6 +117,14 @@ describe("useStickyState", () => {
 
     const second = renderHook(() => useStickyState("admin.pipeline", "status", "all"));
     expect(second.result.current[0]).toBe("evaluated");
+  });
+
+  it("clearStickyState removes what writeStickyState wrote", () => {
+    writeStickyState("admin.gate1.stack", "appId", "a2");
+    expect(sessionStorage.getItem(`${STICKY_PREFIX}admin.gate1.stack.appId`)).toBe('"a2"');
+    clearStickyState();
+    const { result } = renderHook(() => useStickyState("admin.gate1.stack", "appId", null));
+    expect(result.current[0]).toBeNull();
   });
 
   it("clearStickyState removes sticky keys but leaves other storage alone", () => {

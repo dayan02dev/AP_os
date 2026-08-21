@@ -47,6 +47,23 @@ function write(key, value) {
   }
 }
 
+/** Persist a sticky value from OUTSIDE the hook, using the same key format and
+ *  the same mirror-plus-sessionStorage path a `useStickyState` setter uses.
+ *
+ *  It exists so a component that does not own a piece of sticky state can still
+ *  move it: the admin shell's detail view walks a sequence with Prev/Next, and
+ *  when that sequence came from the Gate-1 stack, the stack's remembered
+ *  position has to follow. The alternative — writing `sessionStorage` with a
+ *  hand-built key string — would put the key format in two files and let them
+ *  drift.
+ *
+ *  A mounted `useStickyState(scope, field)` will NOT re-render from this: it
+ *  only re-reads its store on mount. Use it for state whose owner is unmounted
+ *  (or about to remount), which is exactly the sticky-filter case. */
+export function writeStickyState(scope, field, value) {
+  write(stickyKey(scope, field), value);
+}
+
 /** Drop every persisted filter — both the stored copy and the in-page mirror.
  *  Called on sign-out so the next person to use this tab does not inherit the
  *  previous user's view, and by the test setup for per-test isolation. */

@@ -16,6 +16,7 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../hooks/useAuth.jsx";
 import { useAdminData } from "../../../hooks/useAdminData";
+import { writeStickyState } from "../../../hooks/useStickyState.js";
 import { pipelineBadges } from "../../../lib/adminBadges";
 import "../../../styles/admin-portal.css";
 import { AdminDashboard } from "./screens/AdminDashboard";
@@ -347,6 +348,19 @@ function AdminApp() {
     if (seqIdx < 0 || next < 0 || next >= detailSeq.length) return;
     setSelectedStartupId(detailSeq[next].id);
     setSelectedTrack(detailSeq[next].track || null);
+
+    // Spec §4.2 — walking with Prev/Next advances the SHARED position, so Back
+    // lands on the application you stopped at rather than the one you entered
+    // from. Gate 1's stack remembers its place by application id and re-reads
+    // that key when it mounts, which is exactly what Back does to it, so
+    // writing the key is the whole hand-off. (writeStickyState rather than a
+    // literal sessionStorage key, so the key format lives in one file.)
+    //
+    // Only when the sequence came FROM gate 1: walking the Applications list
+    // has nothing to say about where you were in the gate-1 queue.
+    if (backPage === 'gate1') {
+      writeStickyState('admin.gate1.stack', 'appId', detailSeq[next].id);
+    }
   };
 
   const isDetail = page === 'detail';
