@@ -286,6 +286,7 @@ function AdminApp() {
   const [selectedStartupId, setSelectedStartupId] = React.useState(null);
   const [selectedTrack, setSelectedTrack] = React.useState(null);
   const [backPage, setBackPage] = React.useState('pipeline');
+  const [detailSeq, setDetailSeq] = React.useState([]);
 
   // Legacy page ids from when the jury stage had a tab per track, and from
   // when the Academic Jury Roster had a tab. Anything bookmarked at one of
@@ -309,9 +310,6 @@ function AdminApp() {
   const evaluatedEntry = (statsData?.statusCounts || []).find(s => s.id === 'evaluated');
   const reviewBadge = statsLoading ? null : (evaluatedEntry ? evaluatedEntry.n : null);
 
-  const startups = window.OS_DATA?.STARTUPS || [];
-  const currentIdx = startups.findIndex(s => s.id === selectedStartupId);
-
   // Auto-promote startups to 'JURY REVIEW' (Interview) if jury requested interview, unless already decided
   React.useEffect(() => {
     if (window.OS_DATA?.STARTUPS) {
@@ -332,23 +330,23 @@ function AdminApp() {
     }
   }, []);
 
-  const goDetail = (id, track, fromPage = 'pipeline') => {
+  // `sequence` is the caller's list in its CURRENT filtered + sorted order,
+  // shaped [{ id, track }]. Callers that pass nothing get no Prev/Next, which
+  // is why the parameter is optional rather than required.
+  const goDetail = (id, track, fromPage = 'pipeline', sequence = []) => {
     setSelectedStartupId(id);
     setSelectedTrack(track || null);
     setBackPage(fromPage);
+    setDetailSeq(Array.isArray(sequence) ? sequence : []);
     setPage('detail');
   };
 
-  const onPrev = () => {
-    if (currentIdx > 0) {
-      setSelectedStartupId(startups[currentIdx - 1].id);
-    }
-  };
-
-  const onNext = () => {
-    if (currentIdx < startups.length - 1) {
-      setSelectedStartupId(startups[currentIdx + 1].id);
-    }
+  const seqIdx = detailSeq.findIndex(r => r.id === selectedStartupId);
+  const goSeq = (delta) => {
+    const next = seqIdx + delta;
+    if (seqIdx < 0 || next < 0 || next >= detailSeq.length) return;
+    setSelectedStartupId(detailSeq[next].id);
+    setSelectedTrack(detailSeq[next].track || null);
   };
 
   const isDetail = page === 'detail';
@@ -386,8 +384,9 @@ function AdminApp() {
                 startupId={selectedStartupId}
                 track={selectedTrack}
                 onBack={() => setPage(backPage)}
-                onPrev={currentIdx > 0 ? onPrev : null}
-                onNext={currentIdx < startups.length - 1 ? onNext : null}
+                onPrev={seqIdx > 0 ? () => goSeq(-1) : null}
+                onNext={seqIdx >= 0 && seqIdx < detailSeq.length - 1 ? () => goSeq(1) : null}
+                seqPosition={seqIdx >= 0 ? { index: seqIdx + 1, total: detailSeq.length } : null}
               />
             )}
             {page === 'reviewers'   && <AdminReviewers />}

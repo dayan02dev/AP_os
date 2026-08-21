@@ -3457,3 +3457,22 @@
 .adm-portal .adm-stub { padding: 48px 32px; color: var(--ink-dim); }
 .adm-portal .adm-stub h2 { font-family: var(--font-serif); font-weight: 400; font-size: 26px; color: var(--ink); margin: 0 0 8px; }
 .adm-portal .adm-stub p { font-size: 13px; max-width: 60ch; }
+
+/* ── Application-detail nav bar ───────────────────────────── */
+/* Back hard left, sequence controls hard right. `.lp-section-actions` is a
+   right-aligned COLUMN used by every other section head, so the detail nav
+   gets its own row rather than a modifier that would fight it. */
+.adm-portal .adm-detail-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.adm-portal .adm-detail-seq {
+  font-size: 12px;
+  color: var(--ink-dim);
+  min-width: 64px;
+  text-align: center;
+  white-space: nowrap;
+}

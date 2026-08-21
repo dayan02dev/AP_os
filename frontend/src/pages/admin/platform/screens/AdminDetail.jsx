@@ -120,7 +120,7 @@ function getTIRSignalOverall(st) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decisionMode }) {
+export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosition, decisionMode }) {
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -301,6 +301,23 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
 
   return (
     <div>
+      {/* ── Nav bar ────────────────────────────────────────────────────────
+          Back sits hard left, sequence controls hard right. Prev/Next render
+          disabled rather than absent at the ends, so the control does not
+          jump position as you walk the list. */}
+      <div className="adm-detail-nav">
+        <button className="os-btn secondary" onClick={onBack}>← Back to applications</button>
+        {seqPosition && (
+          <div className="os-row gap-sm" style={{ alignItems: 'center' }}>
+            <button className="os-btn ghost sm" disabled={!onPrev}
+              onClick={() => onPrev && onPrev()}>← Prev</button>
+            <span className="adm-detail-seq os-mono">{seqPosition.index} / {seqPosition.total}</span>
+            <button className="os-btn ghost sm" disabled={!onNext}
+              onClick={() => onNext && onNext()}>Next →</button>
+          </div>
+        )}
+      </div>
+
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="lp-section-head">
         <div>
@@ -341,15 +358,6 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, decision
           </h2>
           <div className="lp-section-sub">
             {(s.founders || []).join(' · ')} · {s.domain} · {s.stage} · Submitted {s.sub}
-          </div>
-        </div>
-        <div className="lp-section-actions">
-          <div className="os-row gap-sm">
-            {onPrev && <button className="os-btn ghost sm" onClick={onPrev}>← Prev application</button>}
-            {onNext && <button className="os-btn ghost sm" onClick={onNext}>Next application →</button>}
-          </div>
-          <div className="os-row gap-sm">
-            <button className="os-btn secondary" onClick={onBack}>← Back to applications</button>
           </div>
         </div>
       </div>
