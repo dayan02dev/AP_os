@@ -20,7 +20,14 @@ export default function ListToolbar({
 
   return (
     <div className={`lp-filter-area${collapsed ? " is-collapsed" : ""}`}>
-      <div className="lp-filter-row--search">
+      {/* `lp-toolbar-row` is ListToolbar's OWN modifier and exists purely to
+          turn wrapping back on. `.lp-filter-row--search` is flex-wrap: nowrap
+          because AdminPipeline hand-rolls that same class and needs its row on
+          one line; but a screen carrying two segment groups (the Accepted tab
+          has track AND decision) overflows the white card below ~1200px with
+          nowrap. AdminPipeline never imports ListToolbar, so it never picks up
+          this modifier. */}
+      <div className="lp-filter-row--search lp-toolbar-row">
         <div className="os-search-wrap" style={{ flexShrink: 0 }}>
           <input
             className="os-input search"

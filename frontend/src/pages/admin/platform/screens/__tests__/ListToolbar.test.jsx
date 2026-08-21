@@ -33,6 +33,25 @@ describe("ListToolbar", () => {
     expect(screen.getByText("3 of 12")).toBeInTheDocument();
   });
 
+  // The shared toolbar must carry its own row modifier. `.lp-filter-row--search`
+  // alone is flex-wrap: nowrap (AdminPipeline hand-rolls that markup and needs
+  // its row on one line), which made the two-segment-group Accepted tab spill
+  // out of the white card below ~1200px. `.lp-toolbar-row` is what turns
+  // wrapping back on for ListToolbar only — drop the class and the overflow
+  // comes back.
+  it("tags its row with the wrapping modifier as well as the shared class", () => {
+    const { container } = render(
+      <ListToolbar search="" onSearch={vi.fn()} searchLabel="s" count={0} total={0}
+        segments={[
+          { ariaLabel: "Track", value: "all", onChange: vi.fn(),
+            options: [["all", "All tracks"], ["tir", "TIR"]] },
+          { ariaLabel: "Decision", value: "all", onChange: vi.fn(),
+            options: [["all", "All"], ["pending", "Pending"]] },
+        ]} />);
+    const row = container.querySelector(".lp-filter-row--search");
+    expect(row.classList.contains("lp-toolbar-row")).toBe(true);
+  });
+
   it("collapses when there is no panel, and expands when there is", () => {
     const { rerender, container } = render(
       <ListToolbar search="" onSearch={vi.fn()} searchLabel="s" count={0} total={0} />);

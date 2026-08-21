@@ -2192,6 +2192,19 @@
   gap: 16px;
   min-width: 0;
 }
+/* ListToolbar's own row modifier — see ListToolbar.jsx.
+   .lp-filter-row--search above is deliberately nowrap because AdminPipeline
+   hand-rolls that markup and depends on its one-line row. But a ListToolbar
+   screen can carry SEVERAL segment groups (the Accepted tab has track AND
+   decision) and those sit directly in the row, not inside .lp-toolbar-trailing
+   — so below ~1200px the row overflowed the white card and the `n of N` count
+   spilled past its right edge. This modifier re-enables wrapping for the
+   shared toolbar only; AdminPipeline never imports ListToolbar and so never
+   gets this class. The row's own `gap: 16px` already spaces the wrapped
+   lines, so wrapping is the only thing this rule changes. */
+.adm-portal .lp-toolbar-row {
+  flex-wrap: wrap;
+}
 /* STATUS / AI SCORE / INDUSTRY blocks — each is its own bordered box */
 .adm-portal .lp-filter-section {
   display: flex;
