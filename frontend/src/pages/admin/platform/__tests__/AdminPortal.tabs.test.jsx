@@ -35,11 +35,21 @@ describe("AdminPortal — single-mode tab strip", () => {
 
   // Missing-import trap: AdminGate2 only ever renders behind a tab click, so
   // `vite build` cannot catch an unimported component — this navigates there
-  // for real. AdminGate2 used to be reachable only in jury mode.
+  // for real. AdminGate2 used to be reachable only in jury mode, and Final
+  // Gate is the only screen that issues an offer, so it must stay reachable.
+  //
+  // The assertion deliberately does NOT look for "Final Gate": that string is
+  // the tab LABEL, which never unmounts, so it stays on screen even if the
+  // screen itself is never rendered. "A · Status" / "B · History" is
+  // AdminGate2's own variant strip — "B · History" exists nowhere else in the
+  // portal (AdminGate1's second variant is "B · Batch decision"), so it is
+  // present only when AdminGate2 actually mounted.
   it("renders AdminGate2 on the Final Gate tab without crashing", () => {
     render(<AdminPortalDefault />);
+    expect(screen.queryByText("B · History")).toBeNull();
     fireEvent.click(screen.getByText("Final Gate"));
-    expect(screen.getAllByText("Final Gate").length).toBeGreaterThan(0);
+    expect(screen.getByText("B · History")).toBeInTheDocument();
+    expect(screen.getByText("A · Status")).toBeInTheDocument();
   });
 
   it("renders the Selected Applications screen without crashing", () => {
