@@ -468,7 +468,7 @@ export function AdminSelectedApplications({ goDetail } = {}) {
         const da = ORDER[decisionStateOf(a, byKey[keyOf(nativeOf(a), a.id)])];
         const db = ORDER[decisionStateOf(b, byKey[keyOf(nativeOf(b), b.id)])];
         if (da !== db) return da - db;
-        return String(b.submitted_at || "").localeCompare(String(a.submitted_at || ""));
+        return String(b.sub || "").localeCompare(String(a.sub || ""));
       });
   }, [all, search, track, byKey]);
 
