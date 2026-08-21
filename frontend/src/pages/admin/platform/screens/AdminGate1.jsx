@@ -171,7 +171,11 @@ function Note({ note, onDismiss }) {
 // VARIANT A · Status Stack (prototype: GateReviewStack)
 // ══════════════════════════════════════════════════════════════════════════
 function GateReviewStack({ items, reload, goDetail }) {
-  const [idx, setIdx]           = useState(0);
+  // Sticky, not plain state: opening an application unmounts this screen
+  // entirely, and a decision remounts it via the `key` below — both used to
+  // snap the reviewer back to 1/N. sessionStorage means the position survives
+  // navigation and a reload, but a fresh tab starts clean.
+  const [idx, setIdx]           = useStickyState("admin.gate1.stack", "idx", 0);
   const [decisions, setDecisions] = useState(() => {
     const init = {};
     items.forEach(it => {
@@ -190,6 +194,12 @@ function GateReviewStack({ items, reload, goDetail }) {
   const total   = items.length;
   const safeIdx = Math.min(idx, Math.max(0, total - 1));
   const s       = items[safeIdx];
+
+  // `safeIdx` clamps at render time; this writes the clamped value back so a
+  // stale index from a longer list does not persist into the next session.
+  useEffect(() => {
+    if (idx !== safeIdx) setIdx(safeIdx);
+  }, [idx, safeIdx]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const [detailCache, setDetailCache] = useState({});
   useEffect(() => {
@@ -271,6 +281,7 @@ function GateReviewStack({ items, reload, goDetail }) {
   if (!s) return <EmptyState label="No evaluated applications awaiting a decision." />;
 
   const scoreVal = revScore(sH);
+  const seq = items.map(i => ({ id: i.id, track: i.track }));
 
   return (
     <div>
@@ -323,7 +334,7 @@ function GateReviewStack({ items, reload, goDetail }) {
           <div style={{ padding: "0 0 20px 0" }}>
             <ApplicationSummaryCard
               startup={sH}
-              onViewFullApplication={() => goDetail && goDetail(s.id, s.track, "gate1")}
+              onViewFullApplication={() => goDetail && goDetail(s.id, s.track, "gate1", seq)}
             />
             <div style={{ marginTop: 16 }}>
               <ComparativeReviewModel startup={sH} />
@@ -463,6 +474,8 @@ function GateReviewBatchDecision({ items, reload, goDetail }) {
     }
   };
 
+  const seq = filtered.map(i => ({ id: i.id, track: i.track }));
+
   return (
     <div>
       <Note note={note} onDismiss={() => setNote(null)} />
@@ -526,7 +539,7 @@ function GateReviewBatchDecision({ items, reload, goDetail }) {
                   key={s.id}
                   onClick={(e) => {
                     if (e.target.closest("button") || e.target.closest("a")) return;
-                    if (goDetail) goDetail(s.id, s.track, "gate1");
+                    if (goDetail) goDetail(s.id, s.track, "gate1", seq);
                   }}
                   style={{ cursor: "pointer" }}
                 >
@@ -633,6 +646,8 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
     }
   };
 
+  const seq = sortedStartups.map(i => ({ id: i.id, track: i.track }));
+
   return (
     <div>
       <Note note={note} onDismiss={() => setNote(null)} />
@@ -687,7 +702,7 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
               const score     = revScore(s);
               const handleRowClick = (e) => {
                 if (e.target.closest("button") || e.target.closest("a") || isEditing) return;
-                if (goDetail) goDetail(s.id, s.track, "gate1");
+                if (goDetail) goDetail(s.id, s.track, "gate1", seq);
               };
               return (
                 <tr key={s.id} onClick={handleRowClick} style={{ cursor: isEditing ? "default" : "pointer" }}>

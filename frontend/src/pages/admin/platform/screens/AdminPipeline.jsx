@@ -555,6 +555,8 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     );
   }
 
+  const detailSeq = sortedFiltered.map(s => ({ id: s.id, track: s.track }));
+
   return (
     <div>
       <style dangerouslySetInnerHTML={{__html: `
@@ -1075,7 +1077,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
               <tr
                 key={s.id}
                 style={{ cursor: 'pointer', opacity: isHidden ? 0.45 : 1 }}
-                onClick={() => goDetail && goDetail(s.id, s.track)}
+                onClick={() => goDetail && goDetail(s.id, s.track, scopeKey === 'rejected' ? 'rejected' : 'pipeline', detailSeq)}
               >
                 {!readOnly && (
                   <td onClick={e => e.stopPropagation()} style={{ width: 40 }}>

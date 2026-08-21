@@ -241,7 +241,8 @@ describe("AdminSelectedApplications — application list", () => {
     wire({ startups: [TIR_A] });
     render(<AdminSelectedApplications goDetail={goDetail} />);
     fireEvent.click(screen.getByText("Anvaya Motors"));
-    expect(goDetail).toHaveBeenCalledWith("app-5", "tir", "jury_selected");
+    expect(goDetail).toHaveBeenCalledWith("app-5", "tir", "jury_selected",
+      [{ id: "app-5", track: "tir" }]);
   });
 
   // ── Track-move overlay ────────────────────────────────────────────────────

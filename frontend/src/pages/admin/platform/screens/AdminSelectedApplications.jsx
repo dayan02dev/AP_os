@@ -538,7 +538,8 @@ export function AdminSelectedApplications({ goDetail } = {}) {
                           <a
                             className="nm"
                             style={{ cursor: "pointer" }}
-                            onClick={() => goDetail(s.id, s.track, "jury_selected")}
+                            onClick={() => goDetail(s.id, s.track, "jury_selected",
+                              rows.map(r => ({ id: r.id, track: r.track })))}
                           >
                             {s.name}
                           </a>
