@@ -49,7 +49,14 @@ export default function ListToolbar({
 
         <div style={{ flex: 1 }} />
 
-        {trailing}
+        {/* Own wrapping container: the row above stays nowrap (AdminPipeline
+            depends on that), but a screen with several trailing controls
+            (selects, a checkbox, a button — AdminIiscRoster and AdminJury
+            have no segmented toggles at all) must wrap among themselves
+            instead of overflowing or clipping. Only rendered when there is
+            trailing content, so screens with none (AdminSelectedApplications)
+            get no extra flex item / gap slot. */}
+        {trailing && <div className="lp-toolbar-trailing">{trailing}</div>}
 
         {count != null && (
           <span className="lp-count">

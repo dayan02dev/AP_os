@@ -2176,6 +2176,22 @@
 .adm-portal .lp-filter-row--search .os-input.search::placeholder {
   color: #8a8a92;
 }
+/* Wraps a ListToolbar screen's extra controls (selects, checkboxes, buttons —
+   e.g. AdminIiscRoster, AdminJury) as their own flex line inside the row.
+   The row above stays nowrap (AdminPipeline hand-rolls that same row and
+   depends on it never wrapping); this wrapper is what lets a screen with
+   several trailing controls wrap among themselves instead of overflowing or
+   clipping. min-width: 0 overrides the automatic flex-item floor so it can
+   shrink below its children's combined min width and actually wrap. Gap
+   matches .lp-filter-row--search's own gap, so spacing reads the same as
+   when these controls sat directly in the row. */
+.adm-portal .lp-toolbar-trailing {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  min-width: 0;
+}
 /* STATUS / AI SCORE / INDUSTRY blocks — each is its own bordered box */
 .adm-portal .lp-filter-section {
   display: flex;
