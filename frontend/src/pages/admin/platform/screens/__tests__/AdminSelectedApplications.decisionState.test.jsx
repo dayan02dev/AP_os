@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
 const SHORTLISTED = [
@@ -73,5 +73,55 @@ describe("AdminSelectedApplications — rejected rows return", () => {
     render(<AdminSelectedApplications />);
     // 2 shortlisted + 1 gate-2 reject = 3
     expect(await screen.findByText("3 of 3")).toBeInTheDocument();
+  });
+});
+
+describe("AdminSelectedApplications — decision presentation", () => {
+  it("marks each row with its decision chip", async () => {
+    render(<AdminSelectedApplications />);
+    await screen.findByText("Gate2 Reject");
+    expect(screen.getByTestId("decision-s1").textContent).toBe("ACCEPTED");
+    expect(screen.getByTestId("decision-s2").textContent).toBe("PENDING");
+    expect(screen.getByTestId("decision-g2").textContent).toBe("REJECTED");
+  });
+
+  it("tints the row by decision", async () => {
+    render(<AdminSelectedApplications />);
+    await screen.findByText("Gate2 Reject");
+    expect(screen.getByTestId("row-s1").className).toContain("adm-row-accepted");
+    expect(screen.getByTestId("row-g2").className).toContain("adm-row-rejected");
+    expect(screen.getByTestId("row-s2").className).not.toContain("adm-row-");
+  });
+
+  it("narrows to a single decision category", async () => {
+    render(<AdminSelectedApplications />);
+    await screen.findByText("Gate2 Reject");
+    fireEvent.click(screen.getByRole("button", { name: "Rejected" }));
+    expect(screen.getByText("Gate2 Reject")).toBeInTheDocument();
+    expect(screen.queryByText("Signed App")).toBeNull();
+    expect(screen.queryByText("Pending App")).toBeNull();
+  });
+
+  it("composes the decision filter with the track filter", async () => {
+    render(<AdminSelectedApplications />);
+    await screen.findByText("Gate2 Reject");
+    fireEvent.click(screen.getByRole("button", { name: "Accepted" }));
+    fireEvent.click(screen.getByRole("button", { name: "VIP" }));
+    // Every fixture row is TIR, so an accepted+VIP intersection is empty.
+    expect(screen.queryByText("Signed App")).toBeNull();
+  });
+
+  it("does not offer Reject on an already-rejected row", async () => {
+    render(<AdminSelectedApplications />);
+    await screen.findByText("Gate2 Reject");
+    const row = screen.getByTestId("row-g2");
+    // RULING 2: substring-matching row.textContent for "Reject" is fragile —
+    // it only passes today because the chip renders "REJECTED" in caps, which
+    // does not contain "Reject". Assert on the button itself instead.
+    expect(within(row).queryByRole("button", { name: "Reject" })).toBeNull();
+    const approveBtn = within(row).getByRole("button", { name: /approve/i });
+    const memoBtn = within(row).getByRole("button", { name: /memo/i });
+    expect(approveBtn).toBeDisabled();
+    expect(memoBtn).toBeDisabled();
   });
 });

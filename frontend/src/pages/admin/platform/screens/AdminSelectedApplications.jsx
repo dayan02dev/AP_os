@@ -440,6 +440,7 @@ export function AdminSelectedApplications({ goDetail } = {}) {
   // EFFECTIVE track (what the row claims to be) — the server's `track` filter
   // keys off the NATIVE track, so a moved app would land in the wrong bucket.
   const [track, setTrack] = useStickyState("admin.selected", "track", "all");
+  const [decision, setDecision] = useStickyState("admin.selected", "decision", "all");
   const [uploadFor, setUploadFor] = useState(null);
   const [signFor, setSignFor] = useState(null);
   const [rejectFor, setRejectFor] = useState(null);
@@ -461,6 +462,8 @@ export function AdminSelectedApplications({ goDetail } = {}) {
     const q = search.trim().toLowerCase();
     return all
       .filter((s) => track === "all" || s.track === track)
+      .filter((s) => decision === "all"
+        || decisionStateOf(s, byKey[keyOf(nativeOf(s), s.id)]) === decision)
       .filter((s) => !q || `${s.name || ""} ${s.domain || ""} ${(s.founders || []).join(" ")}`
         .toLowerCase().includes(q))
       .slice()
@@ -470,7 +473,7 @@ export function AdminSelectedApplications({ goDetail } = {}) {
         if (da !== db) return da - db;
         return String(b.sub || "").localeCompare(String(a.sub || ""));
       });
-  }, [all, search, track, byKey]);
+  }, [all, search, track, decision, byKey]);
 
   const reload = () => { docs.reload(); pipeline.reload(); rejectedPipeline.reload(); };
 
@@ -524,6 +527,19 @@ export function AdminSelectedApplications({ goDetail } = {}) {
             </button>
           ))}
         </div>
+        <div className="lp-track-group" role="group" aria-label="Filter by decision">
+          {[["all", "All"], ["pending", "Pending"], ["accepted", "Accepted"], ["rejected", "Rejected"]]
+            .map(([v, label]) => (
+              <button
+                key={v}
+                className={`lp-track-btn${decision === v ? " active" : ""}`}
+                aria-pressed={decision === v}
+                onClick={() => setDecision(v)}
+              >
+                {label}
+              </button>
+            ))}
+        </div>
         <span className="os-mono os-text-sm os-text-dim" style={{ marginLeft: "auto" }}>
           {rows.length}{pipeline.data ? ` of ${all.length}` : ""}
         </span>
@@ -554,14 +570,17 @@ export function AdminSelectedApplications({ goDetail } = {}) {
                 <th>Industry</th>
                 <th className="num">AI score</th>
                 <th>Memo</th>
+                <th>Status</th>
                 <th style={{ textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((s) => {
                 const doc = byKey[keyOf(nativeOf(s), s.id)];
+                const state = decisionStateOf(s, doc);
                 return (
-                  <tr key={s.id}>
+                  <tr key={s.id} data-testid={`row-${s.id}`}
+                    className={state === "pending" ? "" : `adm-row-${state}`}>
                     <td>
                       <div className="startup">
                         {goDetail ? (
@@ -637,30 +656,43 @@ export function AdminSelectedApplications({ goDetail } = {}) {
                       )}
                     </td>
                     <td>
+                      <span className={`os-chip adm-decision adm-decision-${state}`}
+                        data-testid={`decision-${s.id}`}>
+                        {state.toUpperCase()}
+                      </span>
+                    </td>
+                    <td>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button className="os-btn sm secondary" onClick={() => setUploadFor(s)}>
+                        <button className="os-btn sm secondary"
+                          disabled={state === "rejected"}
+                          title={state === "rejected" ? "This application was rejected" : ""}
+                          onClick={() => setUploadFor(s)}>
                           {doc ? "Replace Memo" : "Memo Upload"}
                         </button>
                         <button
                           className="os-btn sm"
-                          style={doc ? { background: "#3213b7", color: "#fff" } : undefined}
-                          disabled={!doc}
-                          title={doc ? "" : "Upload the memo first"}
+                          style={doc && state !== "rejected" ? { background: "#3213b7", color: "#fff" } : undefined}
+                          disabled={!doc || state === "rejected"}
+                          title={state === "rejected"
+                            ? "This application was rejected"
+                            : (doc ? "" : "Upload the memo first")}
                           onClick={() => setSignFor(s)}
                         >
                           {doc?.signed ? "Re-approve" : "Approve"}
                         </button>
                         {/* Deliberately NOT gated on a memo: rejecting an
                             application should not require first uploading a
-                            document about it. */}
-                        <button
-                          className="os-btn sm"
-                          style={{ background: "#fff0f0", color: "#d23b40", borderColor: "#f8c2c4" }}
-                          title="Reject this application (final decision)"
-                          onClick={() => setRejectFor(s)}
-                        >
-                          Reject
-                        </button>
+                            document about it. Hidden once the decision is made. */}
+                        {state !== "rejected" && (
+                          <button
+                            className="os-btn sm"
+                            style={{ background: "#fff0f0", color: "#d23b40", borderColor: "#f8c2c4" }}
+                            title="Reject this application (final decision)"
+                            onClick={() => setRejectFor(s)}
+                          >
+                            Reject
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

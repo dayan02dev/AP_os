@@ -3476,3 +3476,38 @@
   text-align: center;
   white-space: nowrap;
 }
+
+/* ── Accepted tab: decision state ─────────────────────────── */
+/* Tint plus a left rule, so the state survives a greyscale print and does not
+   rely on colour alone. */
+.adm-portal .os-table tr.adm-row-accepted > td:first-child {
+  box-shadow: inset 3px 0 0 #1d6b45;
+}
+.adm-portal .os-table tr.adm-row-accepted {
+  background: #f2faf6;
+}
+.adm-portal .os-table tr.adm-row-rejected > td:first-child {
+  box-shadow: inset 3px 0 0 var(--bad);
+}
+.adm-portal .os-table tr.adm-row-rejected {
+  background: #fdf5f5;
+}
+.adm-portal .os-table tr.adm-row-accepted:hover { background: #e9f6ef; }
+.adm-portal .os-table tr.adm-row-rejected:hover { background: #fbeaea; }
+
+.adm-portal .adm-decision {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+.adm-portal .adm-decision-accepted {
+  background: #e9f6ef; border: 1px solid #b7ddc8; color: #1d6b45;
+}
+.adm-portal .adm-decision-rejected {
+  background: #fdecec; border: 1px solid #f3c2c4; color: #b3262b;
+}
+.adm-portal .adm-decision-pending {
+  background: var(--bg-soft); border: 1px solid var(--line); color: var(--ink-soft);
+}
