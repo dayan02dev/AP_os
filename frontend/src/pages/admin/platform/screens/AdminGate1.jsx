@@ -28,7 +28,7 @@
 //   ('APPROVED', 'HOLD', 'REJECTED') internally for UI state; they are
 //   normalised to wire ids before the API call via UPPER_TO_WIRE below.
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 
 import { useAdminData, loadDetail } from "../../../../hooks/useAdminData";
 import { useStickyState } from "../../../../hooks/useStickyState.js";
@@ -175,7 +175,37 @@ function GateReviewStack({ items, reload, goDetail }) {
   // entirely, and a decision remounts it via the `key` below — both used to
   // snap the reviewer back to 1/N. sessionStorage means the position survives
   // navigation and a reload, but a fresh tab starts clean.
-  const [idx, setIdx]           = useStickyState("admin.gate1.stack", "idx", 0);
+  //
+  // The position is remembered as the current application's ID, because this
+  // list SHRINKS while you work it. `decide()` advances the index without
+  // reloading, so the list stays stale and the index stays right — but opening
+  // "View full application" unmounts the screen, and coming back refetches
+  // without the rows you decided. A remembered index then points further down
+  // the queue: on the 3rd of 5 with two rows gone from the front, index 2 lands
+  // on the 5th, skipping the one you were reading. The clamp below cannot see
+  // that, since it only fires when the index runs off the END of the list.
+  //
+  // The index is persisted too, but only as the fallback for when the stored ID
+  // is gone — which happens when you decided that very application. Landing
+  // near the gap beats being thrown back to the top of the queue.
+  const [stickyIdx, setStickyIdx]     = useStickyState("admin.gate1.stack", "idx", 0);
+  const [stickyAppId, setStickyAppId] = useStickyState("admin.gate1.stack", "appId", null);
+
+  const [idx, setIdxState] = useState(() => {
+    const byId = stickyAppId == null ? -1 : items.findIndex(i => i?.id === stickyAppId);
+    if (byId >= 0) return byId;
+    const n = Number.isFinite(stickyIdx) ? stickyIdx : 0;
+    return Math.max(0, Math.min(n, Math.max(0, items.length - 1)));
+  });
+  // Mirrors `idx` for the setter below, which must resolve functional updates
+  // without reading state inside an updater (it also writes the sticky pair).
+  const idxRef = useRef(idx);
+  const setIdx = useCallback((next) => {
+    const resolved = typeof next === "function" ? next(idxRef.current) : next;
+    idxRef.current = resolved;
+    setIdxState(resolved);
+  }, []);
+
   const [decisions, setDecisions] = useState(() => {
     const init = {};
     items.forEach(it => {
@@ -195,11 +225,15 @@ function GateReviewStack({ items, reload, goDetail }) {
   const safeIdx = Math.min(idx, Math.max(0, total - 1));
   const s       = items[safeIdx];
 
-  // `safeIdx` clamps at render time; this writes the clamped value back so a
-  // stale index from a longer list does not persist into the next session.
+  // Keep the persisted pair in step with what is actually on screen. `safeIdx`
+  // clamps at render time, and the seed above may have come from the fallback
+  // index — in both cases the stored id is stale, so write the real one back.
   useEffect(() => {
-    if (idx !== safeIdx) setIdx(safeIdx);
-  }, [idx, safeIdx]);   // eslint-disable-line react-hooks/exhaustive-deps
+    if (idx !== safeIdx) { setIdx(safeIdx); return; }
+    if (stickyIdx !== safeIdx) setStickyIdx(safeIdx);
+    const currentId = s?.id ?? null;
+    if (stickyAppId !== currentId) setStickyAppId(currentId);
+  }, [idx, safeIdx, s?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const [detailCache, setDetailCache] = useState({});
   useEffect(() => {
