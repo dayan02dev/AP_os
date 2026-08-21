@@ -26,35 +26,24 @@ vi.mock("react-router-dom", async (importOriginal) => {
 
 import AdminPortalDefault from "../AdminPortal";
 
-describe("AdminPortal — jury decision mode", () => {
-  // Regression: AdminPortal referenced <AdminJury/> without importing it, so
-  // the Jury tab crashed with "AdminJury is not defined" (the component was
-  // tree-shaken out of the bundle). This exercises that exact render path.
-  it("renders the real AdminJury screen on the Jury tab without crashing", () => {
+describe("AdminPortal — single-mode tab strip", () => {
+  it("has no decision-mode toggle", () => {
     render(<AdminPortalDefault />);
-    // Switch to jury decision mode.
-    fireEvent.click(screen.getByText("Jury Decision"));
-    // The 'reviewers' tab is labelled "Jury" in jury mode — click it.
-    fireEvent.click(screen.getByText("Jury"));
-    // AdminJury's shell must render (this threw ReferenceError before the fix).
-    expect(screen.getByText("Invite member")).toBeInTheDocument();
-    expect(screen.getByText(/track background enrichment/i)).toBeInTheDocument();
+    expect(screen.queryByText("Jury Decision")).toBeNull();
+    expect(screen.queryByText("Reviewer Decision")).toBeNull();
   });
 
-  it("renders AdminGate2 (Final Gate) in jury mode without crashing", () => {
+  // Missing-import trap: AdminGate2 only ever renders behind a tab click, so
+  // `vite build` cannot catch an unimported component — this navigates there
+  // for real. AdminGate2 used to be reachable only in jury mode.
+  it("renders AdminGate2 on the Final Gate tab without crashing", () => {
     render(<AdminPortalDefault />);
-    fireEvent.click(screen.getByText("Jury Decision"));
     fireEvent.click(screen.getByText("Final Gate"));
-    // No throw = pass; assert the tab switched (Final Gate tab is active).
     expect(screen.getAllByText("Final Gate").length).toBeGreaterThan(0);
   });
 
-  // Same missing-import trap as AdminJury above: AdminSelectedApplications only
-  // ever renders behind a tab click, so vite build cannot catch an unimported
-  // component — this navigates there for real.
   it("renders the Selected Applications screen without crashing", () => {
     render(<AdminPortalDefault />);
-    fireEvent.click(screen.getByText("Jury Decision"));
     fireEvent.click(screen.getByText("Accepted"));
     expect(screen.getByText("No selected applications yet.")).toBeInTheDocument();
     expect(screen.getByLabelText("Search selected applications")).toBeInTheDocument();
@@ -62,7 +51,6 @@ describe("AdminPortal — jury decision mode", () => {
 
   it("offers ONE selected tab covering both tracks, not a tab per track", () => {
     render(<AdminPortalDefault />);
-    fireEvent.click(screen.getByText("Jury Decision"));
     expect(screen.getByText("Accepted")).toBeInTheDocument();
     expect(screen.queryByText("TIR Selected")).toBeNull();
     expect(screen.queryByText("VIP Selected")).toBeNull();
@@ -70,7 +58,6 @@ describe("AdminPortal — jury decision mode", () => {
 
   it("offers the track switcher there so a single track can still be isolated", () => {
     render(<AdminPortalDefault />);
-    fireEvent.click(screen.getByText("Jury Decision"));
     fireEvent.click(screen.getByText("Accepted"));
     expect(screen.getByRole("button", { name: "TIR" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "VIP" })).toBeInTheDocument();

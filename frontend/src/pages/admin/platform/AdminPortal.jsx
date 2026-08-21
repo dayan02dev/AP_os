@@ -24,8 +24,6 @@ import { AdminDetail } from "./screens/AdminDetail";
 import AdminGate1 from "./screens/AdminGate1";
 import { AdminReviewers } from "./screens/AdminReviewers";
 import { AdminGate2 } from "./screens/AdminGate2";
-import { AdminJury } from "./screens/AdminJury";
-import { AdminIiscRoster } from "./screens/AdminIiscRoster";
 import { AdminSelectedApplications } from "./screens/AdminSelectedApplications";
 import { AdminPsychometry } from "./screens/AdminPsychometry";
 import { AdminAIStatus } from "./screens/AdminAIStatus";
@@ -38,7 +36,7 @@ function initialsFor(email) {
   return local.slice(0, 2).toUpperCase() || '??';
 }
 
-function AdminTopbar({ page, decisionMode, setPage }) {
+function AdminTopbar({ page, setPage }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const userEmail = user?.email || '';
@@ -46,13 +44,13 @@ function AdminTopbar({ page, decisionMode, setPage }) {
 
   const crumbMap = {
     dashboard:'DASHBOARD', pipeline:'APPLICATIONS', detail:'APPLICATION DETAIL',
-    reviewers: decisionMode === 'jury' ? 'JURY PANEL' : 'REVIEWERS',
+    reviewers:'REVIEWERS',
     roles:'USER ROLES',
-    gate1: decisionMode === 'jury' ? 'FINAL GATE' : 'ADMIN REVIEW',
+    gate1:'ADMIN REVIEW',
     psychometry:'PSYCHOMETRY',
     rejected:'REJECTED',
     jury_selected:'ACCEPTED',
-    gate2:'GATE 2 FINAL', audit:'AUDIT LOG', analytics:'ANALYTICS',
+    gate2:'FINAL GATE', audit:'AUDIT LOG', analytics:'ANALYTICS',
   };
   const crumb = crumbMap[page] || 'DASHBOARD';
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -225,7 +223,7 @@ function AdminTopbar({ page, decisionMode, setPage }) {
   );
 }
 
-function AdminCohortHeader({ page, setPage, decisionMode, setDecisionMode }) {
+function AdminCohortHeader({ page, setPage }) {
   return (
     <div className="lp-page-header">
       <div className="lp-breadcrumb" style={{marginBottom:8}}>ARTPARK / OS · Admin Portal</div>
@@ -234,20 +232,6 @@ function AdminCohortHeader({ page, setPage, decisionMode, setDecisionMode }) {
           <h1 className="lp-cohort-title">TIR + VIP cohort <span className="lp-year">2026</span></h1>
         </div>
         <div style={{marginTop:4,display:'flex',gap:12,alignItems:'center'}}>
-          <div className="lp-toggle-control">
-            <button
-              className={`lp-toggle-btn ${decisionMode === 'reviewer' ? 'active' : ''}`}
-              onClick={() => setDecisionMode('reviewer')}
-            >
-              Reviewer Decision
-            </button>
-            <button
-              className={`lp-toggle-btn ${decisionMode === 'jury' ? 'active' : ''}`}
-              onClick={() => setDecisionMode('jury')}
-            >
-              Jury Decision
-            </button>
-          </div>
           <button
             className={`os-btn ${page === 'roles' ? '' : 'ghost'}`}
             onClick={() => setPage(page === 'roles' ? 'dashboard' : 'roles')}
@@ -260,40 +244,27 @@ function AdminCohortHeader({ page, setPage, decisionMode, setDecisionMode }) {
   );
 }
 
-export function AdminTabBar({ page, setPage, decisionMode, appsBadge, rejectedBadge, reviewBadge,
+export function AdminTabBar({ page, setPage, appsBadge, rejectedBadge, reviewBadge,
   jurySelectedBadge }) {
   // Badges come from real /stats data (passed down from AdminApp). A null
-  // badge renders as no badge at all (see render below) — we never show a
-  // fabricated number.
-  let tabs = [
-    { id:'dashboard',    label:'Dashboard',    sub:'OVERVIEW · PIPELINE',       badge:null },
-    {
-      id:'reviewers',
-      label: decisionMode === 'jury' ? 'Jury' : 'Reviewers',
-      sub: decisionMode === 'jury' ? 'PANEL · ASSIGNMENTS' : 'ROSTER · PROGRESS',
-      badge:null
-    },
-    { id:'pipeline',     label:'Applications', sub:'ALL SUBMISSIONS',            badge: appsBadge == null ? null : String(appsBadge) },
-    { id:'rejected',     label:'Rejected', sub:'TIR + VIP', badge: rejectedBadge == null ? null : String(rejectedBadge) },
+  // badge renders as no badge at all — we never show a fabricated number.
+  const tabs = [
+    { id:'dashboard',     label:'Dashboard',    sub:'OVERVIEW · PIPELINE',      badge:null },
+    { id:'reviewers',     label:'Reviewers',    sub:'ROSTER · PROGRESS',        badge:null },
+    { id:'pipeline',      label:'Applications', sub:'ALL SUBMISSIONS',
+      badge: appsBadge == null ? null : String(appsBadge) },
+    { id:'rejected',      label:'Rejected',     sub:'TIR + VIP',
+      badge: rejectedBadge == null ? null : String(rejectedBadge) },
     // One tab for both tracks — the work at this stage (attach the IC memo,
     // approve it) is identical either way, and each row carries a TRACK chip.
-    { id:'jury_selected', label:'Accepted', sub:'TIR + VIP',
+    { id:'jury_selected', label:'Accepted',     sub:'TIR + VIP',
       badge: jurySelectedBadge == null ? null : String(jurySelectedBadge) },
-    {
-      id:'gate1',
-      label: decisionMode === 'jury' ? 'Final Gate' : 'Admin Review',
-      sub: decisionMode === 'jury' ? 'CONSOLIDATED DECISIONS' : 'PENDING DECISIONS',
-      badge: decisionMode === 'jury' ? null : (reviewBadge == null ? null : String(reviewBadge))
-    },
+    { id:'gate1',         label:'Admin Review', sub:'PENDING DECISIONS',
+      badge: reviewBadge == null ? null : String(reviewBadge) },
+    // gate2 has its own id (it used to share `gate1`, switched by decision
+    // mode). Without a distinct id the Final Gate is unreachable.
+    { id:'gate2',         label:'Final Gate',   sub:'CONSOLIDATED DECISIONS',   badge:null },
   ];
-  if (decisionMode === 'jury') {
-    // Jury mode: drop the reviewer-pipeline tabs, add the candidate-pool roster
-    // right after Dashboard.
-    tabs = tabs.filter(t => t.id !== 'pipeline' && t.id !== 'rejected');
-    const afterDash = tabs.findIndex(t => t.id === 'dashboard') + 1;
-    tabs.splice(afterDash, 0,
-      { id:'iisc_roster', label:'Academic Jury Roster', sub:'CANDIDATE POOL', badge:null });
-  }
 
   return (
     <div className="lp-tabs">
@@ -315,16 +286,14 @@ function AdminApp() {
   const [selectedStartupId, setSelectedStartupId] = React.useState(null);
   const [selectedTrack, setSelectedTrack] = React.useState(null);
   const [backPage, setBackPage] = React.useState('pipeline');
-  const [decisionMode, setDecisionMode] = React.useState('reviewer');
 
-  // Keep `page` valid for the current decision mode: the IISc roster only
-  // exists in jury mode; Applications/Rejected are hidden in jury mode.
+  // Legacy page ids from when the jury stage had a tab per track, and from
+  // when the Academic Jury Roster had a tab. Anything bookmarked at one of
+  // those lands somewhere real instead of a blank pane.
   React.useEffect(() => {
-    if (decisionMode === 'jury' && (page === 'pipeline' || page === 'rejected')) setPage('dashboard');
-    if (decisionMode === 'reviewer' && page === 'iisc_roster') setPage('dashboard');
-    // Legacy page ids from when the jury stage had a tab per track.
     if (page === 'jury_tir' || page === 'jury_vip') setPage('jury_selected');
-  }, [decisionMode]);   // eslint-disable-line react-hooks/exhaustive-deps
+    if (page === 'iisc_roster') setPage('dashboard');
+  }, [page]);
 
   // Global re-render hook: any component (e.g. the Settings panel) can call
   // window.__osDataBump() after mutating OS_DATA to refresh the whole admin tree live.
@@ -387,21 +356,18 @@ function AdminApp() {
   return (
     <div className="adm-portal">
       <div className="os-shell">
-        <AdminTopbar page={page} decisionMode={decisionMode} setPage={setPage} />
+        <AdminTopbar page={page} setPage={setPage} />
         <div className="lp-layout">
           {!isDetail && (
             <AdminCohortHeader
               page={page}
               setPage={setPage}
-              decisionMode={decisionMode}
-              setDecisionMode={setDecisionMode}
             />
           )}
           {!isDetail && page !== 'roles' && (
             <AdminTabBar
               page={page}
               setPage={setPage}
-              decisionMode={decisionMode}
               appsBadge={appsBadge}
               rejectedBadge={rejectedBadge}
               reviewBadge={reviewBadge}
@@ -409,9 +375,9 @@ function AdminApp() {
             />
           )}
           <div className="lp-tab-content">
-            {page === 'dashboard'   && <AdminDashboard go={setPage} decisionMode={decisionMode} />}
-            {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ exclude_status: 'rejected,jury_review' }} scopeKey="applications" />}
-            {page === 'rejected'    && <AdminPipeline goDetail={goDetail} decisionMode={decisionMode} baseFilter={{ status: 'rejected' }} readOnly heading="Rejected applications" scopeKey="rejected" />}
+            {page === 'dashboard'   && <AdminDashboard go={setPage} />}
+            {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} baseFilter={{ exclude_status: 'rejected,jury_review' }} scopeKey="applications" />}
+            {page === 'rejected'    && <AdminPipeline goDetail={goDetail} baseFilter={{ status: 'rejected' }} readOnly heading="Rejected applications" scopeKey="rejected" />}
             {/* Both tracks, one list. Each row carries a TRACK chip and the
                 memo upload / approve actions. */}
             {page === 'jury_selected' && <AdminSelectedApplications goDetail={goDetail} />}
@@ -422,13 +388,12 @@ function AdminApp() {
                 onBack={() => setPage(backPage)}
                 onPrev={currentIdx > 0 ? onPrev : null}
                 onNext={currentIdx < startups.length - 1 ? onNext : null}
-                decisionMode={decisionMode}
               />
             )}
-            {page === 'reviewers'   && (decisionMode === 'jury' ? <AdminJury /> : <AdminReviewers decisionMode={decisionMode} />)}
-            {page === 'iisc_roster' && decisionMode === 'jury' && <AdminIiscRoster />}
+            {page === 'reviewers'   && <AdminReviewers />}
             {page === 'roles'       && <AdminRoles />}
-            {page === 'gate1'       && (decisionMode === 'jury' ? <AdminGate2 /> : <AdminGate1 goDetail={goDetail} />)}
+            {page === 'gate1'       && <AdminGate1 goDetail={goDetail} />}
+            {page === 'gate2'       && <AdminGate2 />}
             {page === 'psychometry' && <AdminPsychometry />}
             {page === 'aistatus'   && <AdminAIStatus />}
           </div>
