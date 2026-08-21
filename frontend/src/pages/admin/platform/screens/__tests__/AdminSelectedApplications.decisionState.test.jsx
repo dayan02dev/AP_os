@@ -146,3 +146,22 @@ describe("AdminSelectedApplications — decision presentation", () => {
     expect(memoBtn).toBeDisabled();
   });
 });
+
+describe("AdminSelectedApplications — shared toolbar", () => {
+  it("uses the shared filter-area shell rather than a hand-rolled row", async () => {
+    const { container } = render(<AdminSelectedApplications />);
+    await screen.findByText("Gate2 Reject");
+    expect(container.querySelector(".lp-filter-area")).toBeTruthy();
+    expect(container.querySelector(".lp-filter-row--search")).toBeTruthy();
+  });
+
+  it("styles its track switcher from the shared class, with no inline overrides", async () => {
+    render(<AdminSelectedApplications />);
+    await screen.findByText("Gate2 Reject");
+    const tir = screen.getByRole("button", { name: "TIR" });
+    // An inline background/border is what made this render as a grey square
+    // while AdminPipeline's identical control rendered as a blue pill.
+    expect(tir.getAttribute("style")).toBeNull();
+    expect(tir.className).toContain("lp-track-btn");
+  });
+});

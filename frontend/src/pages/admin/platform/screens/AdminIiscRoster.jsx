@@ -19,6 +19,7 @@ import { LABEL_TO_TOKEN, TOKEN_TO_LABEL, DOMAIN_TOKENS } from "../../../../lib/a
 import { PageHead } from "../shell/osAtoms";
 import { LoadingState, ErrorState } from "../ui.jsx";
 import { AdminProfessorDetail, tokensOf } from "./AdminProfessorDetail";
+import ListToolbar from "./ListToolbar";
 
 const MODAL_STYLES = `
   @keyframes osModalFadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -175,34 +176,43 @@ export function AdminIiscRoster() {
         sub="Every professor we scraped, scored against ARTPARK's domains. Open one for the full profile, the jury-selected applications matching their expertise, and an invite."
       />
 
-      {/* Filter bar — search + selects + clear, mirroring the pipeline list. */}
-      <div className="os-row gap-sm" style={{ flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
-        <input className="os-input" aria-label="Search" placeholder="Search name, research, work…"
-          style={{ minWidth: 220, fontSize: 13 }} value={search} onChange={e => setSearch(e.target.value)} />
-        <select className="os-select" aria-label="Division" style={{ fontSize: 13 }} value={division} onChange={e => setDivision(e.target.value)}>
-          <option value="">All divisions</option>
-          {divisions.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <select className="os-select" aria-label="Department" style={{ fontSize: 13 }} value={department} onChange={e => setDepartment(e.target.value)}>
-          <option value="">All departments</option>
-          {departments.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <select className="os-select" aria-label="Match" style={{ fontSize: 13 }} value={match} onChange={e => setMatch(e.target.value)}>
-          <option value="">All matches</option><option>Yes</option><option>Partial</option><option>No</option>
-        </select>
-        <select className="os-select" aria-label="Domain" style={{ fontSize: 13 }} value={domain} onChange={e => setDomain(e.target.value)}>
-          <option value="">All ARTPARK domains</option>
-          {DOMAIN_TOKENS.map(t => <option key={t} value={t}>{TOKEN_TO_LABEL[t]}</option>)}
-        </select>
-        <label className="os-text-sm" style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-          <input type="checkbox" checked={uniqueOnly} onChange={e => setUniqueOnly(e.target.checked)} aria-label="Unique only" />
-          Unique only
-        </label>
-        {hasFilters && (
-          <button className="os-btn ghost sm" onClick={clearAll}>Clear filters</button>
+      {/* Filter bar — search + selects + clear, mirroring the pipeline list.
+          The selects/checkbox/clear button aren't segmented toggles, so they
+          route through `trailing` rather than `segments`. */}
+      <ListToolbar
+        search={search}
+        onSearch={setSearch}
+        searchLabel="Search"
+        searchPlaceholder="Search name, research, work…"
+        count={rows.length}
+        total={profs.length}
+        trailing={(
+          <>
+            <select className="os-select" aria-label="Division" style={{ fontSize: 13 }} value={division} onChange={e => setDivision(e.target.value)}>
+              <option value="">All divisions</option>
+              {divisions.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <select className="os-select" aria-label="Department" style={{ fontSize: 13 }} value={department} onChange={e => setDepartment(e.target.value)}>
+              <option value="">All departments</option>
+              {departments.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <select className="os-select" aria-label="Match" style={{ fontSize: 13 }} value={match} onChange={e => setMatch(e.target.value)}>
+              <option value="">All matches</option><option>Yes</option><option>Partial</option><option>No</option>
+            </select>
+            <select className="os-select" aria-label="Domain" style={{ fontSize: 13 }} value={domain} onChange={e => setDomain(e.target.value)}>
+              <option value="">All ARTPARK domains</option>
+              {DOMAIN_TOKENS.map(t => <option key={t} value={t}>{TOKEN_TO_LABEL[t]}</option>)}
+            </select>
+            <label className="os-text-sm" style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={uniqueOnly} onChange={e => setUniqueOnly(e.target.checked)} aria-label="Unique only" />
+              Unique only
+            </label>
+            {hasFilters && (
+              <button className="os-btn ghost sm" onClick={clearAll}>Clear filters</button>
+            )}
+          </>
         )}
-        <span className="os-mono os-text-sm os-text-dim" style={{ marginLeft: "auto" }}>{rows.length} of {profs.length}</span>
-      </div>
+      />
 
       {rows.length === 0 ? (
         <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--ink-soft)", border: "1px dashed var(--line)", borderRadius: 4 }}>

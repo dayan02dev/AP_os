@@ -32,6 +32,7 @@ import { stampSignature, formatSignedAt } from "../../../../lib/pdfSign";
 import { relabelDisplayId, trackLabel } from "../../../../lib/trackLabel.js";
 import { PageHead } from "../shell/osAtoms";
 import { LoadingState, ErrorState } from "../ui.jsx";
+import ListToolbar from "./ListToolbar";
 
 const MODAL_STYLES = `
   @keyframes osModalFadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -497,53 +498,20 @@ export function AdminSelectedApplications({ goDetail } = {}) {
         sub="Shortlisted TIR and VIP applications. Upload the Investment Committee memo and approve it."
       />
 
-      <div className="os-row gap-sm" style={{ flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
-        <input
-          className="os-input"
-          aria-label="Search selected applications"
-          placeholder="Search project, founder or industry…"
-          style={{ minWidth: 240, fontSize: 13 }}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <div className="lp-track-group" style={{ display: "flex", background: "var(--bg-soft)", padding: 3, borderRadius: 2, border: "1px solid var(--line)" }}>
-          {[["all", "All tracks"], ["tir", "TIR"], ["sip", "VIP"]].map(([v, label]) => (
-            <button
-              key={v}
-              className={`lp-track-btn${track === v ? " active" : ""}`}
-              aria-pressed={track === v}
-              onClick={() => setTrack(v)}
-              style={{
-                background: track === v ? "#fff" : "transparent",
-                border: "none", height: 30, padding: "0 14px", cursor: "pointer",
-                fontFamily: "var(--font-sans)", fontSize: 13,
-                fontWeight: track === v ? 600 : 500,
-                color: track === v ? "var(--ink)" : "var(--ink-soft)",
-                borderRadius: 4,
-                boxShadow: track === v ? "0 1px 3px rgba(36,36,36,0.08)" : "none",
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="lp-track-group" role="group" aria-label="Filter by decision">
-          {[["all", "All"], ["pending", "Pending"], ["accepted", "Accepted"], ["rejected", "Rejected"]]
-            .map(([v, label]) => (
-              <button
-                key={v}
-                className={`lp-track-btn${decision === v ? " active" : ""}`}
-                aria-pressed={decision === v}
-                onClick={() => setDecision(v)}
-              >
-                {label}
-              </button>
-            ))}
-        </div>
-        <span className="os-mono os-text-sm os-text-dim" style={{ marginLeft: "auto" }}>
-          {rows.length}{pipeline.data ? ` of ${all.length}` : ""}
-        </span>
-      </div>
+      <ListToolbar
+        search={search}
+        onSearch={setSearch}
+        searchLabel="Search selected applications"
+        searchPlaceholder="Search project, founder or industry…"
+        segments={[
+          { ariaLabel: "Filter by track", value: track, onChange: setTrack,
+            options: [["all", "All tracks"], ["tir", "TIR"], ["sip", "VIP"]] },
+          { ariaLabel: "Filter by decision", value: decision, onChange: setDecision,
+            options: [["all", "All"], ["pending", "Pending"], ["accepted", "Accepted"], ["rejected", "Rejected"]] },
+        ]}
+        count={rows.length}
+        total={pipeline.data ? all.length : null}
+      />
 
       {notice && <div className="os-text-sm os-text-soft os-mb-lg">{notice}</div>}
       {linkErr && (

@@ -22,6 +22,7 @@ import { PageHead } from "../shell/osAtoms";
 import { ManageJurorsDrawer } from "./ManageJurorsDrawer";
 import { RemoveMemberDialog, removalSummary } from "./RemoveMemberDialog";
 import { LoadingState, ErrorState } from "../ui.jsx";
+import ListToolbar from "./ListToolbar";
 
 const DRAWER_STYLES = `
   @keyframes osDrawerFadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -361,33 +362,35 @@ function ApplicationsTable({
 
   return (
     <>
-      {/* Filter bar */}
-      <div className="os-row gap-sm" style={{ flexWrap: "wrap", alignItems: "flex-end", marginBottom: 16 }}>
-        <input
-          className="os-input"
-          aria-label="Search applications"
-          placeholder="Search project or industry…"
-          style={{ minWidth: 200, fontSize: 13 }}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-        <select className="os-select" aria-label="Track" style={{ fontSize: 13 }} value={track} onChange={e => setTrack(e.target.value)}>
-          <option value="">All tracks</option>
-          <option value="tir">TIR</option>
-          <option value="sip">VIP</option>
-        </select>
-        <select className="os-select" aria-label="Recommended for" style={{ fontSize: 13 }} value={recommendedFor} onChange={e => setRecommendedFor(e.target.value)}>
-          <option value="">Recommended for…</option>
-          {jurors.map(j => (
-            <option key={j.id} value={j.id}>{j.name || j.email || j.id}</option>
-          ))}
-        </select>
-        <button className="os-btn ghost sm" onClick={onRecompute} disabled={!recommendedFor}>Recompute</button>
-        <select className="os-select" aria-label="Picked by" style={{ fontSize: 13 }} value={pickedBy} onChange={e => setPickedBy(e.target.value)}>
-          <option value="">Picked by…</option>
-          {pickerNames.map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
-      </div>
+      {/* Filter bar — track/recommended-for/picked-by are selects, not
+          segmented toggles, so they (and Recompute) route through
+          `trailing` rather than `segments`. */}
+      <ListToolbar
+        search={search}
+        onSearch={setSearch}
+        searchLabel="Search applications"
+        searchPlaceholder="Search project or industry…"
+        trailing={(
+          <>
+            <select className="os-select" aria-label="Track" style={{ fontSize: 13 }} value={track} onChange={e => setTrack(e.target.value)}>
+              <option value="">All tracks</option>
+              <option value="tir">TIR</option>
+              <option value="sip">VIP</option>
+            </select>
+            <select className="os-select" aria-label="Recommended for" style={{ fontSize: 13 }} value={recommendedFor} onChange={e => setRecommendedFor(e.target.value)}>
+              <option value="">Recommended for…</option>
+              {jurors.map(j => (
+                <option key={j.id} value={j.id}>{j.name || j.email || j.id}</option>
+              ))}
+            </select>
+            <button className="os-btn ghost sm" onClick={onRecompute} disabled={!recommendedFor}>Recompute</button>
+            <select className="os-select" aria-label="Picked by" style={{ fontSize: 13 }} value={pickedBy} onChange={e => setPickedBy(e.target.value)}>
+              <option value="">Picked by…</option>
+              {pickerNames.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </>
+        )}
+      />
 
       {recomputeMsg && (
         <div style={{ color: "var(--ink-soft)", fontSize: 13, padding: "8px 12px", background: "var(--bg-soft)", borderRadius: 4, marginBottom: 12 }}>{recomputeMsg}</div>
