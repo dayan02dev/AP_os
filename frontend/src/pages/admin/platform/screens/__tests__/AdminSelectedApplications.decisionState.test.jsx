@@ -6,6 +6,14 @@ const SHORTLISTED = [
     founders: ["F1"], applicationId: "TIR-1", gate2_decision: null },
   { id: "s2", track: "tir", name: "Pending App", domain: "AI", ai: { overall: 7.0 },
     founders: ["F2"], applicationId: "TIR-2", gate2_decision: null },
+  // VIP rows, needed to make the decision+track composition test
+  // discriminating (fix round 1): a fixture that is all-TIR cannot tell
+  // "filters compose with AND" apart from "the track filter alone emptied
+  // the result", because either way the intersection comes up empty.
+  { id: "v1", track: "sip", name: "VIP Signed App", domain: "Robotics", ai: { overall: 8.5 },
+    founders: ["V1"], applicationId: "SIP-1", gate2_decision: null },
+  { id: "v2", track: "sip", name: "VIP Pending App", domain: "Robotics", ai: { overall: 7.5 },
+    founders: ["V2"], applicationId: "SIP-2", gate2_decision: null },
 ];
 
 // Two rejected rows with DIFFERENT causes. g1 was rejected at gate 1 and never
@@ -22,8 +30,12 @@ vi.mock("../../../../../hooks/useAdminData", () => ({
   useAdminData: (kind, params) => {
     if (kind === "icDocuments") {
       return {
-        data: { documents: [], byKey: { "tir:s1": { file_name: "m.pdf", signed: true,
-          signer_name: "A", signed_at: "2026-08-01T00:00:00Z" } } },
+        data: { documents: [], byKey: {
+          "tir:s1": { file_name: "m.pdf", signed: true,
+            signer_name: "A", signed_at: "2026-08-01T00:00:00Z" },
+          "sip:v1": { file_name: "vip.pdf", signed: true,
+            signer_name: "B", signed_at: "2026-08-02T00:00:00Z" },
+        } },
         loading: false, error: null, reload: vi.fn(),
       };
     }
@@ -71,8 +83,8 @@ describe("AdminSelectedApplications — rejected rows return", () => {
 
   it("counts the merged list", async () => {
     render(<AdminSelectedApplications />);
-    // 2 shortlisted + 1 gate-2 reject = 3
-    expect(await screen.findByText("3 of 3")).toBeInTheDocument();
+    // 4 shortlisted (s1, s2, v1, v2) + 1 gate-2 reject (g2) = 5
+    expect(await screen.findByText("5 of 5")).toBeInTheDocument();
   });
 });
 
@@ -107,7 +119,16 @@ describe("AdminSelectedApplications — decision presentation", () => {
     await screen.findByText("Gate2 Reject");
     fireEvent.click(screen.getByRole("button", { name: "Accepted" }));
     fireEvent.click(screen.getByRole("button", { name: "VIP" }));
-    // Every fixture row is TIR, so an accepted+VIP intersection is empty.
+    // VIP Signed App is both VIP and accepted — it survives the
+    // intersection of the two filters.
+    expect(screen.getByText("VIP Signed App")).toBeInTheDocument();
+    // VIP Pending App passes the track filter alone (it IS VIP) but must
+    // still be excluded once the decision filter is applied too. This is
+    // the half that actually proves AND-composition: a fixture where every
+    // row is TIR can't tell "the filters compose" apart from "the track
+    // filter alone emptied the result" — both look like an empty screen.
+    expect(screen.queryByText("VIP Pending App")).toBeNull();
+    // A TIR row is excluded by the track filter regardless of decision.
     expect(screen.queryByText("Signed App")).toBeNull();
   });
 
