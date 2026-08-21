@@ -43,6 +43,17 @@ const keyOf = (track, id) => `${track}:${id}`;
 // differ, so every IC read/write goes through nativeOf().
 const nativeOf = (s) => (s?.nativeTrack || s?.track);
 
+// Row decision state, derived — never stored.
+//
+// `accepted` means the IC memo on this screen has been signed via Approve, NOT
+// that Final Gate issued an offer. `rejected` means Reject was pressed HERE,
+// which writes a gate-2 decision — a gate-1 rejection never reached this tab.
+export const decisionStateOf = (app, doc) => {
+  if ((app?.gate2_decision || "") === "rejected") return "rejected";
+  if (doc?.signed) return "accepted";
+  return "pending";
+};
+
 const backdropStyle = {
   position: "fixed", inset: 0, background: "rgba(36,36,36,0.5)",
   backdropFilter: "blur(4px)", zIndex: 1000, display: "flex",
@@ -418,6 +429,10 @@ function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
 export function AdminSelectedApplications({ goDetail } = {}) {
   const { user } = useAuth();
   const pipeline = useAdminData("pipeline", { status: "jury_review" });
+  // Reject moves an application to `rejected`, so it drops out of the list
+  // above. Fetch it back — filtered to gate-2 rejections, because the
+  // Rejected tab's ~120 rows are overwhelmingly gate-1 and never belonged here.
+  const rejectedPipeline = useAdminData("pipeline", { status: "rejected" });
   const docs = useAdminData("icDocuments");
 
   const [search, setSearch] = useStickyState("admin.selected", "search", "");
@@ -433,16 +448,31 @@ export function AdminSelectedApplications({ goDetail } = {}) {
 
   const byKey = docs.data?.byKey || {};
 
-  const all = pipeline.data?.startups ?? [];
+  const all = useMemo(() => {
+    const shortlisted = pipeline.data?.startups ?? [];
+    const gate2Rejects = (rejectedPipeline.data?.startups ?? [])
+      .filter((s) => (s.gate2_decision || "") === "rejected");
+    const seen = new Set(shortlisted.map((s) => keyOf(s.track, s.id)));
+    return [...shortlisted, ...gate2Rejects.filter((s) => !seen.has(keyOf(s.track, s.id)))];
+  }, [pipeline.data, rejectedPipeline.data]);
+
+  const ORDER = { pending: 0, accepted: 1, rejected: 2 };
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return all
       .filter((s) => track === "all" || s.track === track)
       .filter((s) => !q || `${s.name || ""} ${s.domain || ""} ${(s.founders || []).join(" ")}`
-        .toLowerCase().includes(q));
-  }, [all, search, track]);
+        .toLowerCase().includes(q))
+      .slice()
+      .sort((a, b) => {
+        const da = ORDER[decisionStateOf(a, byKey[keyOf(nativeOf(a), a.id)])];
+        const db = ORDER[decisionStateOf(b, byKey[keyOf(nativeOf(b), b.id)])];
+        if (da !== db) return da - db;
+        return String(b.submitted_at || "").localeCompare(String(a.submitted_at || ""));
+      });
+  }, [all, search, track, byKey]);
 
-  const reload = () => { docs.reload(); pipeline.reload(); };
+  const reload = () => { docs.reload(); pipeline.reload(); rejectedPipeline.reload(); };
 
   const view = async (app, variant) => {
     setLinkErr(null);
@@ -504,10 +534,10 @@ export function AdminSelectedApplications({ goDetail } = {}) {
         <div style={{ color: "var(--bad)", fontSize: 13, fontWeight: 600, padding: "8px 12px", background: "var(--bad-soft)", borderRadius: 4, marginBottom: 12 }}>{linkErr}</div>
       )}
 
-      {pipeline.loading ? (
+      {(pipeline.loading || rejectedPipeline.loading) ? (
         <LoadingState label="Loading selected applications…" />
-      ) : pipeline.error ? (
-        <ErrorState error={pipeline.error} onRetry={pipeline.reload} />
+      ) : (pipeline.error || rejectedPipeline.error) ? (
+        <ErrorState error={pipeline.error || rejectedPipeline.error} onRetry={reload} />
       ) : rows.length === 0 ? (
         <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--ink-soft)", border: "1px dashed var(--line)", borderRadius: 4 }}>
           {track === "all"
