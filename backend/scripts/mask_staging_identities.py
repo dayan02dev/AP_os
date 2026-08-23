@@ -18,11 +18,45 @@ DETERMINISM
     That keeps an applicant's name consistent between their application row and
     their profile row, and makes the script idempotent.
 
+COLLISION SAFETY (C1, round-3 review — this used to abort the run)
+    `public.profiles.email` is `text not null unique`
+    (001_initial_schema.sql:39). fake_identity() draws from a 24 x 26 x 14 =
+    8,736-handle space, and masking 226 non-exempt `profiles` rows into it
+    produces ~2.9 expected birthday collisions — measured against live
+    staging: exactly 3, all between DIFFERENT real people. With one
+    `update()` per row and no error handling, the first `--apply` used to
+    23505 partway through `profiles` (the LAST table in TARGETS), leaving the
+    application tables masked and 153 `profiles` rows still holding real
+    names and real email addresses, on the very screens (/admin/users, the
+    reviewer roster) the demo handout points at. A re-run could not heal it:
+    the already-masked winner became exempt, and the loser re-derived the
+    same taken address.
+
+    The fix is offline and deterministic. Every patch for every target table
+    is planned BEFORE any write (`build_plan`), one synthetic identity is
+    assigned per distinct seed (`resolve_identities`), and a seed whose
+    synthetic email is already taken is re-salted with `|dup1`, `|dup2`, ...
+    until it is free. Resolution walks the seeds in sorted order — never
+    dict/fetch order — so the same input set always produces the same output
+    set. Assignment is keyed on the SEED rather than the row, so:
+      * two rows for the same real person still share one synthetic identity
+        (277 `tir_applications` rows carry only 264 distinct seeds), and
+      * the 191 seeds that appear in both `profiles` and `tir_applications`
+        get the same identity in both, which is the whole point of keying on
+        the original value.
+    `taken` is pre-loaded with the current email of every row this run will
+    NOT patch, so a synthetic address written by an earlier partial run
+    counts as occupied and the loser lands on the same `|dup1` it would have
+    landed on in a clean run.
+
 SAFETY
     * Refuses to run unless SUPABASE_URL points at the staging project.
     * --dry-run is the default; nothing is written without --apply.
     * Staff accounts (@artpark.in/.info/.test) are skipped — masking those
       would break the logins staging depends on.
+    * Every update is wrapped: one bad row is logged and counted, and the run
+      continues to completion. A partial mask that reports honestly beats one
+      that dies at row 64 and says nothing.
 
 LIMIT, STATED PLAINLY
     auth.users.email still holds real addresses. No portal screen renders it
@@ -100,9 +134,20 @@ def _idx(seed: str, modulo: int) -> int:
     return int(hashlib.sha256(seed.encode("utf-8")).hexdigest(), 16) % modulo
 
 
+def seed_key(original: str | None) -> str:
+    """The exact string fake_identity() hashes.
+
+    Dedupe and grouping key on THIS, not on the raw column value, so two
+    spellings of the same seed ("A@B.com" / "a@b.com ") can never be handed
+    two different synthetic identities — which would defeat the whole
+    same-person-maps-to-the-same-stand-in promise.
+    """
+    return (original or "anonymous").strip().lower()
+
+
 def fake_identity(original: str) -> dict:
     """Deterministic synthetic identity derived from `original`."""
-    seed = (original or "anonymous").strip().lower()
+    seed = seed_key(original)
     first = FIRST[_idx(seed + "|f", len(FIRST))]
     last = LAST[_idx(seed + "|l", len(LAST))]
     middle = MIDDLE_INITIALS[_idx(seed + "|m", len(MIDDLE_INITIALS))]
@@ -137,18 +182,35 @@ FIELD_MAP = {
 }
 
 
-def mask_row(row: dict, columns: set[str]) -> dict:
-    """Build the patch for one row. Keys are restricted to `columns`.
+def identity_seed(row: dict) -> str | None:
+    """The identity key for one row, or None when the row is exempt.
 
     Seeded from the row's email when it has one, else its name — many staging
     rows have a null email but a real name, and those must still be masked.
     """
     email = row.get("basic_email") or row.get("email")
     if is_exempt(email):
+        return None
+    raw = email or row.get("basic_full_name") or row.get("full_name") or row.get("id") or ""
+    return seed_key(str(raw))
+
+
+def mask_row(row: dict, columns: set[str], ident: dict | None = None) -> dict:
+    """Build the patch for one row. Keys are restricted to `columns`.
+
+    `ident` lets the caller supply a pre-resolved, collision-free identity
+    (see `resolve_identities`). Left out — as the unit tests do — it falls
+    back to the plain per-row `fake_identity`, which is fine for a single row
+    but is exactly what `build_plan` must NOT do across a whole table: two
+    different seeds can hash to the same synthetic email, and
+    `profiles.email` is `unique`.
+    """
+    seed = identity_seed(row)
+    if seed is None:
         return {}
 
-    seed = email or row.get("basic_full_name") or row.get("full_name") or row.get("id") or ""
-    ident = fake_identity(str(seed))
+    if ident is None:
+        ident = fake_identity(seed)
 
     patch: dict = {}
     for col, field in FIELD_MAP.items():
@@ -186,6 +248,106 @@ def mask_row(row: dict, columns: set[str]) -> dict:
 
 TARGETS = ("tir_applications", "sip_applications", "profiles")
 
+# Cap on re-salt attempts per seed. 8,736 handles against ~300 seeds means one
+# attempt is almost always enough and two is the practical worst case; a
+# runaway loop here would mean the pool has been shrunk to nothing, which is a
+# bug worth crashing on rather than spinning forever.
+_MAX_RESALTS = 1000
+
+
+def resolve_identities(
+    seeds: set[str] | list[str], taken: set[str] | None = None,
+) -> tuple[dict[str, dict], set[str]]:
+    """Assign exactly one synthetic identity per distinct seed, with no two
+    distinct seeds sharing a synthetic email.
+
+    Returns ``(identity_by_seed, seeds_that_were_re_salted)``.
+
+    `taken` is a set of email addresses that are already occupied — in
+    practice the current email of every row this run will NOT patch, so an
+    address written by an earlier partial run counts as taken. A seed whose
+    synthetic email is taken is re-salted with `|dup1`, `|dup2`, ... until it
+    is free.
+
+    Determinism: seeds are walked in sorted order, so the same input set
+    always yields the same output set no matter what order PostgREST returned
+    the rows in. Keying on the seed (not the row id) is deliberate — a seed
+    can legitimately span several rows and several tables, and it must resolve
+    to one identity in all of them.
+    """
+    assigned: dict[str, dict] = {}
+    used = {str(t).strip().lower() for t in (taken or ()) if t}
+    re_salted: set[str] = set()
+
+    for seed in sorted(seeds):
+        ident = fake_identity(seed)
+        attempt = 0
+        while ident["email"].lower() in used:
+            attempt += 1
+            if attempt > _MAX_RESALTS:
+                raise RuntimeError(
+                    f"no free synthetic email after {_MAX_RESALTS} re-salts — "
+                    "the name pool is exhausted"
+                )
+            ident = fake_identity(f"{seed}|dup{attempt}")
+        if attempt:
+            re_salted.add(seed)
+        used.add(ident["email"].lower())
+        assigned[seed] = ident
+
+    return assigned, re_salted
+
+
+def build_plan(
+    tables: dict[str, tuple[list[dict], set[str]]],
+) -> tuple[dict[str, list[tuple[str, dict]]], dict[str, int], set[str]]:
+    """Plan every write for every table BEFORE anything is written.
+
+    `tables` maps table name -> (rows, live column set).
+    Returns ``({table: [(row_id, patch), ...]},
+    {table: re_salted_row_count}, {re_salted_seed, ...})`` — the row count and
+    the seed count differ whenever one re-salted person owns rows in more than
+    one table, which is the normal case here.
+
+    Identity resolution spans all the tables at once so a person who appears
+    in both `profiles` and `tir_applications` gets the same stand-in in both.
+    Patches are emitted in row-id order, which also fixes the old behaviour
+    where the write order (and therefore the abort point) depended on however
+    PostgREST happened to page the table.
+    """
+    seeds: set[str] = set()
+    taken: set[str] = set()
+    for rows, _columns in tables.values():
+        for row in rows:
+            seed = identity_seed(row)
+            if seed is None:
+                current = row.get("basic_email") or row.get("email")
+                if current:
+                    taken.add(str(current).strip().lower())
+            else:
+                seeds.add(seed)
+
+    identities, re_salted = resolve_identities(seeds, taken)
+
+    plans: dict[str, list[tuple[str, dict]]] = {}
+    counts: dict[str, int] = {}
+    for table, (rows, columns) in tables.items():
+        out: list[tuple[str, dict]] = []
+        n_re_salted = 0
+        for row in sorted(rows, key=lambda r: str(r.get("id"))):
+            seed = identity_seed(row)
+            if seed is None:
+                continue
+            patch = mask_row(row, columns, ident=identities[seed])
+            if not patch:
+                continue
+            out.append((row["id"], patch))
+            if seed in re_salted:
+                n_re_salted += 1
+        plans[table] = out
+        counts[table] = n_re_salted
+    return plans, counts, re_salted
+
 
 def _guard(url: str) -> None:
     if PROD_PROJECT_ID in url:
@@ -205,14 +367,22 @@ def _columns_of(sb, table: str) -> set[str]:
 
 
 def _fetch_all(sb, table: str, columns: set[str]) -> list[dict]:
-    """Paginate. PostgREST silently caps a plain select at 1000 rows."""
+    """Paginate. PostgREST silently caps a plain select at 1000 rows.
+
+    `.order("id")` is not optional (M8, fixed in the seed script first and
+    missed here): without a stable sort, PostgREST's `range` windows are cut
+    from an unspecified order, so a row can come back in two pages — or in
+    none — and the row a failing run stops at changes between runs.
+    """
     wanted = sorted({"id"} | (columns & set(FIELD_MAP) | {"basic_teammates",
                     "github_url", "evidence_video_url", "sip_demo_video_url"}) & (columns | {"id"}))
     out: list[dict] = []
     page = 0
     while True:
         lo, hi = page * 500, page * 500 + 499
-        chunk = sb.table(table).select(",".join(wanted)).range(lo, hi).execute().data or []
+        chunk = (
+            sb.table(table).select(",".join(wanted)).order("id").range(lo, hi).execute().data
+        ) or []
         out.extend(chunk)
         if len(chunk) < 500:
             return out
@@ -232,27 +402,87 @@ def main() -> int:
     from app.supabase_client import get_admin_client
     sb = get_admin_client()
 
-    grand = 0
+    # Read + plan everything first. Nothing is written until every patch for
+    # every table exists and every synthetic email is known to be unique.
+    tables: dict[str, tuple[list[dict], set[str]]] = {}
     for table in TARGETS:
         cols = _columns_of(sb, table)
         if not cols:
             log.warning("%-20s no rows — skipping", table)
             continue
-        rows = _fetch_all(sb, table, cols)
-        patches = [(r["id"], mask_row(r, cols)) for r in rows]
-        patches = [(rid, p) for rid, p in patches if p]
-        log.info("%-20s %d rows, %d to mask", table, len(rows), len(patches))
+        tables[table] = (_fetch_all(sb, table, cols), cols)
+
+    plans, re_salt_counts, re_salted_seeds = build_plan(tables)
+    email_col = {"profiles": "email"}
+
+    planned = written = failed = 0
+    for table in TARGETS:
+        if table not in tables:
+            continue
+        rows, _cols = tables[table]
+        patches = plans[table]
+        planned += len(patches)
+        log.info("%-20s %d rows, %d to mask, %d re-salted to keep synthetic "
+                 "emails unique", table, len(rows), len(patches), re_salt_counts[table])
         for rid, p in patches[:3]:
-            log.info("    e.g. %s -> %s", rid[:8], {k: p[k] for k in list(p)[:3]})
+            log.info("    e.g. %s -> %s", str(rid)[:8], {k: p[k] for k in list(p)[:3]})
+        # Show the re-salted rows explicitly: an operator should be able to see
+        # the collision handling working rather than take it on trust. Only the
+        # SYNTHETIC address is printed — never the real one it replaces.
+        if re_salt_counts[table]:
+            col = email_col.get(table, "basic_email")
+            for rid, synthetic in _re_salted_examples(patches, rows, col):
+                log.info("    re-salted: row %s -> %s", str(rid)[:8], synthetic)
+
         if args.apply:
             for rid, p in patches:
-                sb.table(table).update(p).eq("id", rid).execute()
-        grand += len(patches)
+                try:
+                    sb.table(table).update(p).eq("id", rid).execute()
+                except Exception as exc:  # noqa: BLE001
+                    failed += 1
+                    log.error("    FAILED to mask %s row %s: %s", table, rid, exc)
+                else:
+                    written += 1
 
-    log.info("%s %d rows", "masked" if args.apply else "would mask", grand)
-    if not args.apply:
+    re_salted_rows = sum(re_salt_counts.values())
+    collisions = (f"{re_salted_rows} row(s) across {len(re_salted_seeds)} distinct "
+                  f"identit{'y' if len(re_salted_seeds) == 1 else 'ies'} re-salted "
+                  "to avoid an email collision")
+    if args.apply:
+        log.info("masked %d of %d rows (%d failed; %s)",
+                 written, planned, failed, collisions)
+        if failed:
+            log.error("%d row(s) could not be masked — see the FAILED lines above. "
+                      "Re-running is safe: already-masked rows are skipped and only "
+                      "the failures are retried.", failed)
+    else:
+        log.info("would mask %d rows (%s)", planned, collisions)
         log.info("re-run with --apply to write")
     return 0
+
+
+def _re_salted_examples(
+    patches: list[tuple[str, dict]], rows: list[dict], email_col: str, limit: int = 3,
+) -> list[tuple[str, str]]:
+    """Up to `limit` (row_id, synthetic_email) pairs whose identity had to be
+    re-salted, for the dry-run report. Recomputed rather than threaded through
+    so the reporting path cannot influence the planning path."""
+    by_id = {str(r.get("id")): r for r in rows}
+    out: list[tuple[str, str]] = []
+    for rid, patch in patches:
+        if email_col not in patch:
+            continue
+        row = by_id.get(str(rid))
+        if row is None:
+            continue
+        seed = identity_seed(row)
+        if seed is None:
+            continue
+        if fake_identity(seed)["email"] != patch[email_col]:
+            out.append((rid, patch[email_col]))
+            if len(out) >= limit:
+                break
+    return out
 
 
 if __name__ == "__main__":
