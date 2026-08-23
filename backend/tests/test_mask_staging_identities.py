@@ -14,9 +14,11 @@ class TestDeterminism:
         assert a == b
 
     def test_different_inputs_usually_differ(self):
-        names = {fake_identity(f"Person {i}")["name"] for i in range(40)}
-        # A hash-indexed pool will collide sometimes; it must not collapse to one.
-        assert len(names) > 10
+        # At demo scale (~550 rows to mask) two different applicants landing on
+        # the same synthetic name reads as a data bug, not a masking artefact.
+        # 500 distinct inputs must yield a realistically low collision rate.
+        names = {fake_identity(f"Person {i}")["name"] for i in range(500)}
+        assert len(names) >= 450
 
     def test_identity_has_every_field(self):
         got = fake_identity("Someone Real")
@@ -57,6 +59,15 @@ class TestMaskRow:
         patch = mask_row(row, {"basic_full_name"})
         assert "basic_org" not in patch
 
+    def test_never_writes_a_column_the_columns_set_excludes(self):
+        # `columns` is the LIVE table's real column set (from _columns_of),
+        # not just "whatever keys this dict happens to carry". A row can carry
+        # a key that the actual table doesn't have room for — that must never
+        # end up in the patch, or an update() call 400s / writes garbage.
+        row = {"basic_full_name": "Real Name", "basic_org": "Real Startup Inc"}
+        patch = mask_row(row, {"basic_full_name"})  # basic_org deliberately excluded
+        assert "basic_org" not in patch
+
     def test_exempt_row_returns_an_empty_patch(self):
         row = {"basic_full_name": "Staff", "basic_email": "dev@artpark.in"}
         assert mask_row(row, {"basic_full_name", "basic_email"}) == {}
@@ -83,3 +94,37 @@ class TestMaskRow:
         row = {"basic_full_name": "N", "basic_teammates": []}
         patch = mask_row(row, {"basic_full_name", "basic_teammates"})
         assert patch["basic_teammates"] == []
+
+
+class TestProfilesNaming:
+    """`profiles` uses a different naming convention than the application
+    tables (`full_name`/`email`/`phone`/`linkedin_url`, no `basic_*` prefix).
+    This branch of FIELD_MAP is exercised by 256 real rows on staging that
+    `/admin/users` renders — it needs its own coverage, not just the
+    `basic_*` branch."""
+
+    def test_masks_a_profiles_shaped_row(self):
+        row = {
+            "id": "abc-123",
+            "full_name": "Real Person",
+            "email": "real@gmail.com",
+            "phone": "9999999999",
+            "linkedin_url": "https://linkedin.com/in/realperson",
+        }
+        columns = {"id", "full_name", "email", "phone", "linkedin_url"}
+        patch = mask_row(row, columns)
+        assert patch["full_name"] != "Real Person"
+        assert patch["email"].endswith("@artpark.test")
+        assert patch["phone"] != "9999999999"
+        assert patch["linkedin_url"] != "https://linkedin.com/in/realperson"
+
+    def test_profiles_exemption_still_works(self):
+        row = {
+            "id": "abc-123",
+            "full_name": "Staff Person",
+            "email": "dev@artpark.in",
+            "phone": "9999999999",
+            "linkedin_url": "https://linkedin.com/in/staffperson",
+        }
+        columns = {"id", "full_name", "email", "phone", "linkedin_url"}
+        assert mask_row(row, columns) == {}

@@ -88,6 +88,13 @@ ORGS = [
     "Indus Photonics", "Jyoti Energy", "Kalpa Materials", "Lumen Diagnostics",
 ]
 
+# 24 first names x 14 surnames = 336 combinations, not enough headroom for the
+# ~550 rows this script masks (duplicate synthetic founders would read as a
+# product bug, not a masking artefact). A middle initial, deterministically
+# derived from the same seed, multiplies the space by 26 to 8,736 combinations
+# without inventing a whole new name list or touching determinism/idempotency.
+MIDDLE_INITIALS = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
+
 
 def _idx(seed: str, modulo: int) -> int:
     return int(hashlib.sha256(seed.encode("utf-8")).hexdigest(), 16) % modulo
@@ -98,10 +105,11 @@ def fake_identity(original: str) -> dict:
     seed = (original or "anonymous").strip().lower()
     first = FIRST[_idx(seed + "|f", len(FIRST))]
     last = LAST[_idx(seed + "|l", len(LAST))]
+    middle = MIDDLE_INITIALS[_idx(seed + "|m", len(MIDDLE_INITIALS))]
     org = ORGS[_idx(seed + "|o", len(ORGS))]
-    handle = f"{first}.{last}".lower()
+    handle = f"{first}.{middle}.{last}".lower()
     return {
-        "name": f"{first} {last}",
+        "name": f"{first} {middle}. {last}",
         "email": f"{handle}@artpark.test",
         "phone": f"+9198{_idx(seed + '|p', 90000000) + 10000000}",
         "org": org,
