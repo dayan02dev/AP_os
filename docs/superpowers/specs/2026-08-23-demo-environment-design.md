@@ -221,11 +221,20 @@ around them stay empty:
 - **`jury_assignments` + `jury_selections`** for #7–#12, so the leadership
   jury-derived columns are not blank.
 
-**6.3 What is not fabricated.** No files are uploaded to storage. `ic_documents`
-for #8 references a generated placeholder PDF produced by the script; the
-existing evidence-file references on the source rows are left as they are. If a
-storage object is missing the UI shows its existing "file unavailable" state,
-which is honest rather than misleading.
+**6.3 What is not fabricated.** AMENDED 2026-08-24: this section originally
+said no files are uploaded to storage, on the reasoning that a missing object
+shows an honest "file unavailable" state. That was wrong for this audience — a
+product manager who clicks the one document in the tour and gets a 404 learns
+the product is broken. The seed now uploads a minimal, genuinely valid PDF
+whose visible text reads "ARTPARK demo environment / Placeholder IC memo — NOT
+a real document", built in pure stdlib with no new dependency, uploaded only
+under `--apply` and idempotent on re-run.
+
+The distinction this section was actually protecting still holds: nothing
+fabricates content that could be mistaken for a real Investment Committee
+memo. A clearly-labelled placeholder is not fabrication. The existing
+evidence-file references on the source rows are still left exactly as they
+are.
 
 ## 7. The demo account
 
