@@ -56,7 +56,15 @@ build/
 htmlcov/
 .pytest_cache/
 __pycache__/
-*.pyc.superpowers/
+*.pyc
+
+# Working notes — plans, specs, review diffs, session reports. Some of this
+# (e.g. the demo-cohort seed's before/after evidence) quotes real staging
+# applicant data, and this repo is PUBLIC. A per-clone entry in
+# .git/info/exclude does NOT travel with the repo and does not protect
+# anyone who clones fresh, so this MUST live in the committed .gitignore.
+.superpowers/
+
 backend/scripts/import-prod-to-staging/.env.import
 backend/scripts/import-prod-to-staging/runs/
 backend/scripts/ai-scoring/runs/*.json

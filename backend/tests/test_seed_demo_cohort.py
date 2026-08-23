@@ -70,6 +70,73 @@ class TestSelection:
             select_demo_rows(self._cands(3), DEMO_PLAN)
 
 
+class TestPinnedSelection:
+    """NEW-1 (round 2, 2026-08-24 review): a second --apply must target the
+    SAME twelve applications as the first, not silently drift. Slot 10
+    writes status `offered`, which the live candidate pool excludes (C1) —
+    so on a naive sorted-order-only re-run, slot 10's own application drops
+    out of ITS OWN pool and every slot that sorts after it shifts onto a
+    previously-untouched application. Pinning by id, resolved independently
+    per slot, is what stops that. All fixtures here are in-memory dicts —
+    no network, hermetic.
+    """
+
+    def _plan(self):
+        return [
+            {"slot": 1, "track": "tir", "status": "s1"},
+            {"slot": 2, "track": "tir", "status": "s2"},
+            {"slot": 3, "track": "tir", "status": "s3"},
+            {"slot": 4, "track": "tir", "status": "s4"},
+        ]
+
+    def _pinned(self):
+        return {1: "id-a", 2: "id-b", 3: "id-c", 4: "id-d"}
+
+    def test_second_run_is_stable_even_when_a_pinned_id_leaves_the_pool(self, caplog):
+        plan = self._plan()
+        pinned = self._pinned()
+
+        # Run 1: the pool has exactly the four pinned ids.
+        pool_run1 = [{"id": i, "status": "under_review"}
+                     for i in ("id-a", "id-b", "id-c", "id-d")]
+        run1 = select_demo_rows(pool_run1, plan, pinned=pinned)
+        assert [c["id"] for c, _ in run1] == ["id-a", "id-b", "id-c", "id-d"]
+
+        # Run 2: id-c (slot 3) has since moved to a status the pool now
+        # excludes — simulated exactly the way a live re-fetch would produce
+        # it: the caller's status filter simply no longer returns that row —
+        # and a brand-new, previously-untouched application (id-z) has
+        # entered the pool in its place.
+        pool_run2 = [{"id": i, "status": "under_review"}
+                     for i in ("id-a", "id-b", "id-d", "id-z")]
+        with caplog.at_level("WARNING"):
+            run2 = select_demo_rows(pool_run2, plan, pinned=pinned)
+
+        # Slots 1, 2 AND 4 must resolve to their OWN pinned ids, unshifted.
+        # This is the exact property the old sorted-order-only rule
+        # violated: losing ONE id used to drag every later slot onto the
+        # wrong application (slot 4 would have inherited slot 3's old
+        # neighbor, or worse, id-z, under pure positional sorting).
+        assert run2[0][0]["id"] == "id-a"
+        assert run2[1][0]["id"] == "id-b"
+        assert run2[3][0]["id"] == "id-d"
+        # Only slot 3 — the one whose pin actually vanished — falls back,
+        # to the sole remaining, previously-untouched candidate.
+        assert run2[2][0]["id"] == "id-z"
+        # The fallback is logged, because that's the case a human needs to
+        # look at (the pinned-id list is no longer fully accurate).
+        assert any("slot 3" in r.message for r in caplog.records)
+
+    def test_without_pinning_behaves_exactly_as_before(self):
+        # Original callers never pass `pinned`; confirm the default (None)
+        # still falls through to pure sorted-order selection.
+        plan = self._plan()
+        pool = [{"id": i, "status": "under_review"}
+                for i in ("id-d", "id-c", "id-b", "id-a")]
+        got = select_demo_rows(pool, plan)
+        assert [c["id"] for c, _ in got] == ["id-a", "id-b", "id-c", "id-d"]
+
+
 class TestReviewSets:
     def test_yes_verdict_needs_two_yes_and_under_two_no(self):
         recs = [r["recommendation"] for r in reviews_for("verdict_yes")]

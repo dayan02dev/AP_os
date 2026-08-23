@@ -19,10 +19,28 @@ WHAT IS WRITTEN
     application's own `status`.
 
 DETERMINISM
-    `application_admin_meta` has no free column to tag a row with, so the
-    twelve are chosen deterministically by SORTED APPLICATION ID rather than
-    by a marker (see `select_demo_rows`). Same candidate pool -> same twelve,
-    on every run, with no schema change.
+    `application_admin_meta` has no free column to tag a row with, so
+    selection is deterministic by APPLICATION ID rather than by a marker
+    (see `select_demo_rows`). Twelve ids are PINNED in
+    `PINNED_APPLICATION_IDS` (recorded from the round where this script was
+    reviewed) so a second `--apply` targets the exact same twelve
+    applications as the first, instead of drifting: slot 10 writes status
+    `offered`, which the candidate pool excludes, so on a naive re-run
+    slot 10's own application would drop out of its own pool and every
+    later slot would shift onto a previously-untouched application — silent
+    cohort growth, one application at a time, on every re-run. Each slot
+    resolves to its pinned id independently; a slot whose pinned id has
+    left the pool (status changed, application withdrawn, etc.) falls back
+    to the sorted-order rule and logs a warning, since that is the case a
+    human needs to look at. Candidates with no pinning info at all (e.g. a
+    caller that never passes `pinned`) fall back to sorted-order for every
+    slot, same as before pinning existed.
+
+    THIS LIST GOES STALE if staging is ever re-imported from production —
+    the ids it pins may no longer exist, or may point at different
+    applications after a fresh import. Regenerate it: run a dry run against
+    the fresh pool and copy its twelve resolved ids into
+    `PINNED_APPLICATION_IDS`.
 
 SCHEMA WARNING
     The migration files do NOT describe staging's live schema — migration
@@ -124,6 +142,33 @@ DEMO_PLAN = [
     {"slot": 12, "track": "tir", "status": "jury_review",  "reviews": "split",      "gate": "jury_review", "memo": None,     "moved": True},
 ]
 
+# NEW-1 (round 2, 2026-08-24 review): pinned from the round-1 report so a
+# second --apply targets the SAME twelve applications as the first, rather
+# than drifting. Slot 10 writes status `offered`, which the candidate pool
+# excludes (C1) — so a naive re-run would find slot 10's OWN application no
+# longer in its own pool, and the pure-sorted-order rule in
+# `select_demo_rows` would then shift every later slot onto a
+# previously-untouched application. `select_demo_rows` resolves each slot
+# to its own pinned id independently, so losing one pin can only ever
+# affect that one slot.
+#
+# STALE WARNING: this list must be regenerated if staging is ever
+# re-imported from production — see the module docstring.
+PINNED_APPLICATION_IDS: dict[int, str] = {
+    1:  "06fec58f-ee52-4108-8233-aedbe7be4b9c",
+    2:  "0976e40d-ce45-4630-8c5d-72a27632b7ad",
+    3:  "0a79fd93-d418-4848-a236-52a827d69452",
+    4:  "14ff7156-a8d1-4ddc-b1a6-b9de7fbcd619",
+    5:  "1790618c-6f2f-44c1-bb81-ef09584d7fa2",
+    6:  "1b3bc14b-9bdc-440e-9b24-a42c0c66f82e",
+    7:  "1bc5c5ca-5c4e-49e0-9755-cb580ad619b6",
+    8:  "1fc86d90-a7c1-4121-9755-270c5dfb63c1",
+    9:  "2607afb2-6d3a-4048-8ed0-9807d3850f25",
+    10: "2626f42a-b770-474c-8271-81a26c1725fe",
+    11: "4af584c4-6b6d-4331-a7db-878b4ae8c3d1",
+    12: "283c71f5-af2c-493b-a3f5-67b4e04c065f",
+}
+
 _SCORES = {
     "score_problem": 7.5, "score_solution": 7.0, "score_tech": 8.0,
     "score_founders": 7.5, "score_commitment": 8.0, "score_integrity": 8.5,
@@ -147,10 +192,15 @@ def _jittered_scores(slot: int) -> dict:
     and the Reviewers-screen consistency metric to exactly 1.0 for every
     reviewer, which reads as fabricated data, not a demo. Derived from the
     slot number (not random) so re-runs stay idempotent: same slot, same
-    jitter, every time. Range is +/-0.4 in steps of 0.1, small enough that
-    every score stays a plausible 6.6-8.9.
+    jitter, every time.
+
+    Modulo 12 (not 9, round-2 nit): with exactly twelve slots numbered 1-12,
+    `% 9` only produced nine distinct remainders, so slots 1/10, 2/11 and
+    3/12 collided on identical jitter. `% 12` gives one distinct offset per
+    slot, all twelve different. Range is -0.6..+0.5 in steps of 0.1, small
+    enough that every score stays a plausible 6.4-9.0.
     """
-    jitter = ((slot * 37) % 9 - 4) / 10.0
+    jitter = ((slot * 37) % 12 - 6) / 10.0
     return {k: round(v + jitter, 1) for k, v in _SCORES.items()}
 
 
@@ -176,20 +226,81 @@ def reviews_for(spec: str, slot: int = 0) -> list[dict]:
     return out
 
 
-def select_demo_rows(candidates: list[dict], plan: list[dict]) -> list[tuple[dict, dict]]:
+def select_demo_rows(
+    candidates: list[dict], plan: list[dict], pinned: dict[int, str] | None = None,
+) -> list[tuple[dict, dict]]:
     """Pair each plan slot with a candidate application, deterministically.
 
-    Sorted by id so the same pool always yields the same twelve, regardless of
-    the order PostgREST returned them. `application_admin_meta` has no spare
-    column to tag rows with, so stability comes from the ordering rather than
-    from a marker.
+    Without `pinned`: sorted by id, so the same pool always yields the same
+    twelve, regardless of the order PostgREST returned them.
+    `application_admin_meta` has no spare column to tag rows with, so
+    stability comes from the ordering rather than from a marker. (All the
+    original callers/tests use this path and are unaffected by the
+    `pinned` parameter below — none of their synthetic ids ever match a
+    real pinned id, so every slot always falls through to this rule.)
+
+    With `pinned` (a ``{slot: application_id}`` map — see
+    `PINNED_APPLICATION_IDS`): each slot FIRST tries to resolve to its own
+    pinned id, independently of every other slot. This is what NEW-1 (round
+    2, 2026-08-24 review) fixes: with sorted-order-only selection, losing
+    ONE previously-chosen application from the pool (e.g. slot 10 writes
+    status `offered`, which the pool then excludes on the next run) shifted
+    every slot that sorted after it onto a different, previously-untouched
+    application — silent, undetected drift on every re-run. Resolving each
+    slot independently means a lost pin can only ever affect that one slot.
+
+    A slot whose pinned id is missing from `candidates` (or already claimed
+    by an earlier plan entry, which should never legitimately happen) falls
+    back to the sorted-order rule, filled from whichever candidates remain
+    once every other pinned slot has claimed its row, and logs a warning —
+    that fallback is exactly the situation a human needs to look at, because
+    the recorded pinned-id list is no longer fully accurate.
     """
     if len(candidates) < len(plan):
         raise ValueError(
             f"not enough candidate applications: need {len(plan)}, have {len(candidates)}"
         )
-    ordered = sorted(candidates, key=lambda r: str(r["id"]))
-    return [(ordered[i], plan[i]) for i in range(len(plan))]
+
+    if not pinned:
+        ordered = sorted(candidates, key=lambda r: str(r["id"]))
+        return [(ordered[i], plan[i]) for i in range(len(plan))]
+
+    by_id = {str(c["id"]): c for c in candidates}
+    result: list[tuple[dict, dict] | None] = [None] * len(plan)
+    used_ids: set[str] = set()
+    unresolved: list[int] = []
+
+    for i, p in enumerate(plan):
+        pin = pinned.get(p["slot"])
+        cand = by_id.get(pin) if pin else None
+        if cand is not None and str(cand["id"]) not in used_ids:
+            result[i] = (cand, p)
+            used_ids.add(str(cand["id"]))
+        else:
+            unresolved.append(i)
+
+    remaining = sorted(
+        (c for c in candidates if str(c["id"]) not in used_ids),
+        key=lambda r: str(r["id"]),
+    )
+    if len(remaining) < len(unresolved):
+        raise ValueError(
+            f"not enough candidate applications: need {len(plan)}, have {len(candidates)}"
+        )
+    # strict=False: `remaining` may legitimately be longer than `unresolved`
+    # (more spare candidates than fallback slots needed) — zip is meant to
+    # truncate here, not to assert equal length.
+    for slot_index, cand in zip(unresolved, remaining, strict=False):
+        p = plan[slot_index]
+        log.warning(
+            "select_demo_rows: slot %s pinned id %s not resolvable in the "
+            "current pool — falling back to sorted-order pick %s. A human "
+            "should check whether PINNED_APPLICATION_IDS needs updating.",
+            p["slot"], pinned.get(p["slot"]), cand["id"],
+        )
+        result[slot_index] = (cand, p)
+
+    return result  # type: ignore[return-value]
 
 
 # ─── apply half ────────────────────────────────────────────────────────────
@@ -1040,7 +1151,12 @@ def main() -> int:
     tir_candidates = _prefer_ai_screened(sb, "tir", tir_candidates, len(tir_plan))
     sip_candidates = _prefer_ai_screened(sb, "sip", sip_candidates, len(sip_plan))
 
-    pairs = select_demo_rows(tir_candidates, tir_plan) + select_demo_rows(sip_candidates, sip_plan)
+    # NEW-1: resolve by pinned id first (see PINNED_APPLICATION_IDS) so a
+    # second --apply targets the same twelve applications as the first.
+    pairs = (
+        select_demo_rows(tir_candidates, tir_plan, pinned=PINNED_APPLICATION_IDS)
+        + select_demo_rows(sip_candidates, sip_plan, pinned=PINNED_APPLICATION_IDS)
+    )
     pairs_by_slot = {plan["slot"]: (cand, plan) for cand, plan in pairs}
 
     seen_ids: set[str] = set()
