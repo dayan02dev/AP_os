@@ -28,6 +28,22 @@ class TestPlanShape:
     def test_exactly_one_slot_has_a_signed_memo(self):
         assert sum(1 for p in DEMO_PLAN if p.get("memo") == "signed") == 1
 
+    def test_signed_memo_slot_is_visible_on_the_accepted_tab(self):
+        # Ruling A (I5, 2026-08-24 review): it is not enough that exactly one
+        # slot is signed — it has to be the RIGHT one. The Admin "Selected
+        # Applications" tab only ever fetches status=jury_review plus
+        # gate-2-rejected rows, and its green ACCEPTED row requires a signed
+        # memo. A signed memo on any status other than jury_review (e.g.
+        # "offered") could never render as that row anywhere in the demo.
+        # This pins the property that actually matters, not just the count.
+        signed = [p for p in DEMO_PLAN if p.get("memo") == "signed"]
+        assert len(signed) == 1
+        assert signed[0]["status"] == "jury_review", (
+            "the signed-memo slot must be status=jury_review — that is the "
+            "only status the Accepted tab's green ACCEPTED row can render "
+            f"for, but this slot is {signed[0]['status']!r}"
+        )
+
 
 class TestSelection:
     def _cands(self, n):

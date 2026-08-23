@@ -44,6 +44,10 @@ USAGE
     cd backend
     python scripts/seed_demo_cohort.py              # dry run
     python scripts/seed_demo_cohort.py --apply
+    python scripts/seed_demo_cohort.py --apply --reset-password  # mint a new
+                                                                  # demo login
+                                                                  # even if it
+                                                                  # already exists
 """
 
 from __future__ import annotations
@@ -53,6 +57,7 @@ import logging
 import os
 import secrets
 import sys
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -134,14 +139,35 @@ _REVIEW_SETS = {
 }
 
 
-def reviews_for(spec: str) -> list[dict]:
+def _jittered_scores(slot: int) -> dict:
+    """`_SCORES` offset by a small, deterministic, per-slot amount (C2,
+    2026-08-24 review). Without this, every review on every slot carries the
+    exact same score_overall (7.7) as the canned ai_screening row this script
+    used to write everywhere — reviewer avgVariance came out to exactly 0.0
+    and the Reviewers-screen consistency metric to exactly 1.0 for every
+    reviewer, which reads as fabricated data, not a demo. Derived from the
+    slot number (not random) so re-runs stay idempotent: same slot, same
+    jitter, every time. Range is +/-0.4 in steps of 0.1, small enough that
+    every score stays a plausible 6.6-8.9.
+    """
+    jitter = ((slot * 37) % 9 - 4) / 10.0
+    return {k: round(v + jitter, 1) for k, v in _SCORES.items()}
+
+
+def reviews_for(spec: str, slot: int = 0) -> list[dict]:
     """Review rows for a slot. NOTE: the live `reviews` table has no `status`
     column — `submitted_at` is what marks a review submitted, which is what
-    `reco_verdict` and the auto-transition both key on."""
+    `reco_verdict` and the auto-transition both key on.
+
+    `slot` defaults to 0 so the signature stays call-compatible with the
+    original single-argument tests; the seed driver always passes the real
+    slot number so scores are jittered per application (see
+    `_jittered_scores`)."""
+    scores = _jittered_scores(slot)
     out = []
     for rec in _REVIEW_SETS[spec]:
         out.append({
-            **_SCORES,
+            **scores,
             "recommendation": rec,
             "strengths": "Strong technical grounding; credible route to a pilot.",
             "concerns": "Go-to-market is thin and the team is small for the scope.",
@@ -359,9 +385,24 @@ def _columns_of(sb, table: str) -> set[str]:
         return set()
 
 
+# Statuses a candidate must NOT already be in. `draft` is obviously not a
+# real application yet. `offered`/`onboarded` are excluded for a sharper
+# reason (C1, 2026-08-24 review): Founder/VIP portal access is gated on
+# owning an application in offered/onboarded, and the VIP onboarding branch
+# is mid-build against this same staging stack. Demoting one of staging's
+# few offered/onboarded rows to a lesser status (which is what every slot in
+# DEMO_PLAN does — none of them target `offered` as a NO-OP, slot 10 assigns
+# it fresh) would break someone else's in-progress work, irreversibly. Never
+# select an application that is already further along than the state a slot
+# intends to put it in.
+_EXCLUDED_STATUSES = {"draft", "offered", "onboarded"}
+
+
 def _fetch_all_apps(sb, track: str) -> list[dict]:
-    """Non-draft applications for one track, paginated (PostgREST caps a plain
-    select at 1000 rows)."""
+    """Non-draft, non-offered, non-onboarded applications for one track,
+    paginated (PostgREST caps a plain select at 1000 rows) and ordered by id
+    (M8: unordered paging can return a row twice across pages, and
+    `select_demo_rows` does not dedupe)."""
     table = _table_for(track)
     out: list[dict] = []
     page = 0
@@ -371,6 +412,7 @@ def _fetch_all_apps(sb, track: str) -> list[dict]:
             sb.table(table)
             .select("id,status,basic_email")
             .neq("status", "draft")
+            .order("id")
             .range(lo, hi)
             .execute()
             .data
@@ -382,7 +424,8 @@ def _fetch_all_apps(sb, track: str) -> list[dict]:
     return [
         {"id": r["id"], "status": r.get("status"), "track": track}
         for r in out
-        if (r.get("basic_email") or "").strip().lower() not in _EXCLUDED_EMAILS
+        if r.get("status") not in _EXCLUDED_STATUSES
+        and (r.get("basic_email") or "").strip().lower() not in _EXCLUDED_EMAILS
     ]
 
 
@@ -461,14 +504,82 @@ _EXPECTED_COLUMNS: dict[str, set[str]] = {
     },
     "tir_applications": {"id", "status", "basic_email", "moved_to_track", "moved_at", "moved_by"},
     "sip_applications": {"id", "status", "basic_email"},
+    "application_status_log": {
+        "application_id", "application_track", "from_status", "to_status",
+        "changed_by", "reason", "changed_at",
+    },
 }
+
+
+def _verify_application_batches_conflict_target(sb) -> bool:
+    """Prove — WITHOUT writing anything, ever — that `application_batches`
+    has a unique/exclusion constraint on exactly (application_id,
+    application_track, batch_id), which is the on_conflict target
+    `_ensure_batch_slot` upserts against.
+
+    Why this needs its own probe instead of a column check: migration 024
+    created a 2-column unique constraint on this table and migration 034
+    step 2 replaces it with the 3-column one. Both migrations leave the same
+    columns in place either way, so `_verify_schema`'s column-existence check
+    is blind to which constraint is actually live. If only 024 landed, the
+    real upsert in `_ensure_batch_slot` raises 42P10 ("no unique or exclusion
+    constraint matching the ON CONFLICT specification") on slot 1 and aborts
+    mid-write. Evidence (git history) says 034 was atomic and did land, but
+    this script should not run its first real write on "probably".
+
+    Technique (genuinely read-only, not just "cleans up after itself"):
+    attempt the exact same upsert `_ensure_batch_slot` would issue, with
+    `application_id`/`batch_id` set to a freshly-generated random UUID that
+    is certain not to exist. Postgres resolves an ON CONFLICT arbiter against
+    pg_constraint/pg_index BEFORE it ever attempts to insert a row — so if
+    the 3-column constraint is missing, this raises 42P10 immediately and
+    nothing is ever inserted. If the constraint DOES exist, Postgres proceeds
+    to the insert, which then hits the always-guaranteed-to-fail foreign key
+    on `batch_id` (a random UUID can't reference a real `batches` row) and
+    raises 23503 instead — again, nothing is ever inserted, because the
+    whole statement is one all-or-nothing transaction. Either branch leaves
+    zero rows behind; verified empirically during this fix (probe run,
+    followed by a SELECT confirming no row was left over).
+    """
+    probe_id = str(uuid.uuid4())
+    try:
+        sb.table("application_batches").upsert(
+            {"application_id": probe_id, "application_track": "tir",
+             "batch_id": probe_id, "added_at": _now()},
+            on_conflict="application_id,application_track,batch_id",
+            ignore_duplicates=True,
+        ).execute()
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        if "42P10" in msg or "no unique or exclusion constraint" in msg.lower():
+            log.error("schema check: application_batches has NO unique constraint "
+                      "on (application_id, application_track, batch_id) — migration "
+                      "034 step 2 has not landed on this project; refusing to write")
+            return False
+        if "23503" in msg or "violates foreign key" in msg.lower():
+            return True  # constraint resolved fine; it failed at the FK check instead
+        log.error("schema check: application_batches conflict-target probe raised an "
+                  "unrecognized error — cannot confirm the constraint exists, "
+                  "refusing to proceed: %s", msg)
+        return False
+    else:
+        # Should be impossible (the FK is guaranteed to fail) — if it somehow
+        # inserted a row, clean up immediately and hard-fail rather than
+        # silently trusting an unverified assumption.
+        sb.table("application_batches").delete().eq("application_id", probe_id).execute()
+        log.error("schema check: application_batches conflict-target probe "
+                  "unexpectedly inserted a row (cleaned up) — investigate before "
+                  "trusting this check")
+        return False
 
 
 def _verify_schema(sb) -> bool:
     """Confirm every column this script writes actually exists on the LIVE
-    table. Returns False (and logs every mismatch) if anything is missing,
-    so the caller can refuse to run rather than fail midway through with a
-    400 after some slots have already been written."""
+    table, and that `application_batches`'s on_conflict target is real (see
+    `_verify_application_batches_conflict_target`). Returns False (and logs
+    every mismatch) if anything is wrong, so the caller can refuse to run
+    rather than fail midway through with a 400 after some slots have already
+    been written."""
     ok = True
     for table, expected in _EXPECTED_COLUMNS.items():
         live = _columns_of(sb, table)
@@ -481,6 +592,8 @@ def _verify_schema(sb) -> bool:
             log.error("schema check: %-24s LIVE table is missing columns this script "
                       "writes: %s", table, sorted(missing))
             ok = False
+    if not _verify_application_batches_conflict_target(sb):
+        ok = False
     return ok
 
 
@@ -493,14 +606,24 @@ def _ensure_role(sb, user_id: str, role: str, *, apply: bool) -> None:
     ).execute()
 
 
-def _ensure_demo_account(sb, *, apply: bool) -> tuple[str | None, str | None]:
+def _ensure_demo_account(sb, *, apply: bool, reset_password: bool = False) -> tuple[str | None, str | None]:
     """Find or create demo@artpark.test. Grants admin+leadership+reviewer,
     never applicant (the wizard is hidden for these roles already; adding
-    applicant would just muddle the role switcher)."""
+    applicant would just muddle the role switcher).
+
+    I4 (2026-08-24 review): spec §6.2 calls for "three reviewer accounts
+    PLUS the demo account, with reviewer_profiles rows" — the demo account
+    holds the reviewer role but had no reviewer_profiles row of its own.
+    Added below, same shape as the roster's.
+    """
     user_id, password = _find_or_create_user(sb, DEMO_EMAIL, apply=apply)
     if user_id is None:
         log.info("[dry-run] would create/find %s", DEMO_EMAIL)
         return None, None
+
+    if reset_password and apply and password is None:
+        password = _gen_password()
+        sb.auth.admin.update_user_by_id(user_id, {"password": password})
 
     if apply:
         sb.table("profiles").upsert({
@@ -508,6 +631,14 @@ def _ensure_demo_account(sb, *, apply: bool) -> tuple[str | None, str | None]:
         }).execute()
         for role in ("admin", "leadership", "reviewer"):
             _ensure_role(sb, user_id, role, apply=apply)
+        sb.table("reviewer_profiles").upsert(
+            {
+                "reviewer_user_id": user_id,
+                "expertise_domains": ["cross-domain", "product"],
+                "weight": 1.0,
+            },
+            on_conflict="reviewer_user_id",
+        ).execute()
     log.info("demo account: %s (%s)", DEMO_EMAIL, user_id)
     return user_id, password
 
@@ -625,9 +756,40 @@ def _ensure_review(
     sb.table("reviews").insert(row).execute()
 
 
+def _existing_ai_screening(sb, app_id: str, track: str) -> dict | None:
+    rows = (
+        sb.table("ai_screening").select("*")
+        .eq("application_id", app_id).eq("application_track", track)
+        .limit(1).execute().data
+    ) or []
+    return rows[0] if rows else None
+
+
 def _ensure_ai_screening(sb, app_id: str, track: str, *, apply: bool) -> None:
+    """C2 (2026-08-24 review): the old version unconditionally upserted the
+    canned row, which OVERWROTE real AI analysis — 67 of 69 non-draft TIR
+    rows on staging already carry a real ai_screening row, and all 11 chosen
+    TIR slots do. That silently destroyed genuine score_*/summary/model/
+    ran_at data (irreversible on staging, and a direct violation of spec
+    §5.3, which preserves AI scores and section text) and flattened every
+    slot to an identical overall (7.7) with an identical summary.
+
+    Fix: insert the full canned row ONLY when no ai_screening row exists yet.
+    When one already exists, the ONLY thing ever missing on a real row is
+    `sections` (all 67 existing rows checked have it null — the four-block
+    AI-summary panel was added after those rows were scored) — patch exactly
+    that column and touch nothing else.
+    """
     if not apply:
         return
+    existing = _existing_ai_screening(sb, app_id, track)
+    if existing:
+        if existing.get("sections"):
+            return  # already has sections; nothing to add, nothing to touch
+        sb.table("ai_screening").update({"sections": _SECTION_BULLETS}) \
+            .eq("application_id", app_id).eq("application_track", track).execute()
+        return
+
     row = {
         "application_id": app_id, "application_track": track,
         "score_problem": 7.6, "score_completeness": 7.4, "score_tech": 8.1,
@@ -640,9 +802,7 @@ def _ensure_ai_screening(sb, app_id: str, track: str, *, apply: bool) -> None:
         "flags": [], "model": "google/gemini-2.5-flash", "ran_at": _now(),
         "error": None, "sections": _SECTION_BULLETS,
     }
-    sb.table("ai_screening").upsert(
-        row, on_conflict="application_id,application_track",
-    ).execute()
+    sb.table("ai_screening").insert(row).execute()
 
 
 def _ensure_batch_slot(sb, app_id: str, track: str, batch_id: str | None, *, apply: bool) -> None:
@@ -732,39 +892,48 @@ def _existing_current_ic_doc(sb, app_id: str, track: str) -> dict | None:
 
 
 def _ensure_ic_document(sb, app_id: str, track: str, memo: str | None, uploaded_by: str, *, apply: bool) -> None:
-    if not memo:
+    """I3 (2026-08-24 review): the old version returned early when a current
+    ic_documents ROW already existed, before ever attempting the storage
+    upload. That meant a first `--apply` that wrote the DB row but then hit
+    a storage failure could never heal — the early-return skipped the retry
+    on every subsequent run, leaving a permanent 404 download with no path
+    to fix it. Chosen fix (of the two the review offered): attempt the
+    upload unconditionally, every run, regardless of whether the DB row
+    exists — `upsert: true` makes this safe and idempotent (a successful
+    prior upload is just overwritten with the same bytes). The DB row
+    insert is still skipped once it exists, since that part IS already
+    idempotent and correct.
+    """
+    if not memo or not apply:
         return
+
+    storage_path = f"demo/{app_id}.pdf"
+    signed_storage_path = f"demo/{app_id}-signed.pdf"
+
+    _upload_placeholder_pdf(sb, storage_path, [f"Application: {app_id}"])
+    if memo == "signed":
+        _upload_placeholder_pdf(sb, signed_storage_path, [
+            f"Application: {app_id}",
+            "SIGNED (demo) by Demo Product Manager",
+        ])
+
     if _existing_current_ic_doc(sb, app_id, track):
         return
-    if not apply:
-        return
+
     now = _now()
     row = {
         "application_id": app_id, "application_track": track,
-        "bucket": _IC_BUCKET, "storage_path": f"demo/{app_id}.pdf",
+        "bucket": _IC_BUCKET, "storage_path": storage_path,
         "file_name": "IC-memo-demo.pdf", "uploaded_by": uploaded_by,
         "uploaded_at": now, "created_at": now, "updated_at": now,
     }
     if memo == "signed":
         row.update({
-            "signed_storage_path": f"demo/{app_id}-signed.pdf",
+            "signed_storage_path": signed_storage_path,
             "signed_file_name": "IC-memo-demo-signed.pdf",
             "signed_by": uploaded_by, "signer_name": "Demo Product Manager",
             "signed_at": now,
         })
-
-    # Real bytes in the bucket, not just a DB pointer — a demo whose download
-    # button 404s teaches a new product manager the product is broken. Upload
-    # happens before the DB insert (same order the live upload endpoint
-    # uses): if storage fails, we still want the failure visible rather than
-    # a DB row pointing at nothing new.
-    _upload_placeholder_pdf(sb, row["storage_path"], [f"Application: {app_id}"])
-    if memo == "signed":
-        _upload_placeholder_pdf(sb, row["signed_storage_path"], [
-            f"Application: {app_id}",
-            "SIGNED (demo) by Demo Product Manager",
-        ])
-
     sb.table("ic_documents").insert(row).execute()
 
 
@@ -784,9 +953,52 @@ def _write_status(sb, app_id: str, track: str, status: str, *, apply: bool) -> N
     sb.table(_table_for(track)).update({"status": status}).eq("id", app_id).execute()
 
 
+# I7 (2026-08-24 review): a plausible predecessor status per target status,
+# for the application_status_log row below. Without any row here, the
+# leadership status-history panel and the admin Audit tab render empty for
+# every one of the twelve applications. `rejected`/`offered` specifically
+# come from `jury_review` because that IS the only legal predecessor for a
+# gate-2 decision (`record_gate2_decision` 409s unless the app is currently
+# `jury_review`) — the others follow the ordinary pipeline order.
+_PLAUSIBLE_FROM_STATUS: dict[str, str | None] = {
+    "submitted": None,
+    "under_review": "submitted",
+    "evaluated": "under_review",
+    "on_hold": "evaluated",
+    "jury_review": "evaluated",
+    "rejected": "jury_review",
+    "offered": "jury_review",
+}
+
+
+def _existing_status_log(sb, app_id: str, track: str, to_status: str) -> dict | None:
+    rows = (
+        sb.table("application_status_log").select("id")
+        .eq("application_id", app_id).eq("application_track", track)
+        .eq("to_status", to_status)
+        .limit(1).execute().data
+    ) or []
+    return rows[0] if rows else None
+
+
+def _log_status_transition(sb, app_id: str, track: str, to_status: str, changed_by: str, *, apply: bool) -> None:
+    if not apply:
+        return
+    if _existing_status_log(sb, app_id, track, to_status):
+        return
+    sb.table("application_status_log").insert({
+        "application_id": app_id, "application_track": track,
+        "from_status": _PLAUSIBLE_FROM_STATUS.get(to_status),
+        "to_status": to_status, "changed_by": changed_by,
+        "reason": "Demo cohort seed.", "changed_at": _now(),
+    }).execute()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write changes (default is a dry run)")
+    ap.add_argument("--reset-password", action="store_true",
+                     help="mint a new demo@artpark.test password even if the account already exists")
     args = ap.parse_args()
 
     url = os.environ.get("SUPABASE_URL", "")
@@ -803,7 +1015,9 @@ def main() -> int:
         return 1
 
     # 2. Demo account.
-    demo_id, demo_password = _ensure_demo_account(sb, apply=args.apply)
+    demo_id, demo_password = _ensure_demo_account(
+        sb, apply=args.apply, reset_password=args.reset_password,
+    )
 
     # 3. Reviewer roster.
     roster_ids = _ensure_reviewer_roster(sb, apply=args.apply)
@@ -841,7 +1055,7 @@ def main() -> int:
         cand, plan = pairs_by_slot[slot]
         app_id, track = cand["id"], plan["track"]
         seen_ids.add(app_id)
-        review_rows = reviews_for(plan["reviews"])
+        review_rows = reviews_for(plan["reviews"], slot)
 
         log.info(
             "slot %2d  track=%-3s  %-12s -> %-12s  reviews=%-11s gate=%-13s memo=%-6s moved=%s  app=%s",
@@ -871,7 +1085,7 @@ def main() -> int:
             if demo_has_review:
                 _ensure_review(
                     sb, app_id, track, demo_id, demo_aid,
-                    {**_SCORES, "recommendation": "yes",
+                    {**_jittered_scores(slot), "recommendation": "yes",
                      "strengths": "Strong technical grounding; credible route to a pilot.",
                      "concerns": "Go-to-market is thin and the team is small for the scope.",
                      "submitted_at": _SUBMITTED},
@@ -907,6 +1121,11 @@ def main() -> int:
         # 6i. status LAST, written directly (not via the state machine).
         _write_status(sb, app_id, track, plan["status"], apply=args.apply)
 
+        # 6j. application_status_log (I7) — without this, the leadership
+        # status-history panel and the admin Audit tab render empty for
+        # every one of the twelve applications.
+        _log_status_transition(sb, app_id, track, plan["status"], actor, apply=args.apply)
+
     if len(seen_ids) != len(DEMO_PLAN):
         log.error("resolved %d distinct application ids for %d slots — "
                    "selection did not produce twelve distinct rows",
@@ -915,14 +1134,28 @@ def main() -> int:
     log.info("resolved %d distinct application ids for %d slots", len(seen_ids), len(DEMO_PLAN))
 
     if args.apply:
-        log.info("── demo login ─────────────────────────────────────────")
-        log.info("email:    %s", DEMO_EMAIL)
+        # M11 (2026-08-24 review), three fixes:
+        #  1. `log.info` goes to stderr (logging's default StreamHandler);
+        #     the global constraint is "printed to stdout ONLY" so the
+        #     credentials block uses print() instead, not the logger.
+        #  2. `.env.staging` has FRONTEND_ORIGIN (comma-separated, several
+        #     preview URLs), never FRONTEND_URL/STAGING_FRONTEND_URL — those
+        #     never existed, so the printed URL used to always be the
+        #     placeholder. Read the real var and take the first entry.
+        #  3. A re-run against an existing account used to print "password
+        #     unchanged" with no way to get a working password if the first
+        #     run's terminal output was lost. --reset-password (handled in
+        #     _ensure_demo_account) mints a new one on request.
+        origin = (os.environ.get("FRONTEND_ORIGIN") or "").split(",")[0].strip()
+        staging_url = origin or "(FRONTEND_ORIGIN not set in .env.staging)"
+        print("── demo login ─────────────────────────────────────────")
+        print(f"email:    {DEMO_EMAIL}")
         if demo_password:
-            log.info("password: %s", demo_password)
+            print(f"password: {demo_password}")
         else:
-            log.info("password: (account already existed — password unchanged)")
-        staging_url = os.environ.get("FRONTEND_URL") or os.environ.get("STAGING_FRONTEND_URL") or "(see .env.staging FRONTEND_ORIGIN)"
-        log.info("staging:  %s", staging_url)
+            print("password: (account already existed — unchanged; "
+                  "re-run with --reset-password to mint a new one)")
+        print(f"staging:  {staging_url}")
     else:
         log.info("dry run only — re-run with --apply to write")
     return 0
