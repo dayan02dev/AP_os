@@ -82,7 +82,17 @@ production's closed intake so the demo does not misrepresent the current state.
 before running.** They are also the two steps that can break the environment for
 the in-progress VIP work, which uses the same staging stack.
 
-**4.4 The staging migration gap — a blocker, discovered during design.**
+**4.4 The staging migration gap — RESOLVED 2026-08-23.**
+
+> **Status: closed.** All nine missing migrations were applied to staging via
+> `backend/migrations/DEMO_STAGING_APPLY_V2.sql` and verified: `ic_documents`,
+> `academic_profiles`, `jury_responses`, `mentor_invites`, `mentor_responses`,
+> `profile_completion_tokens` and `batch_reviewers` all exist; the six missing
+> columns and the `comms` category row are present. The record below is kept
+> because the *method* was wrong the first time and that is worth not
+> repeating.
+
+The gap as originally found:
 
 Staging's migration history is patchy. Six tables the current code references do
 not exist there, verified by querying every table in the schema:
@@ -273,3 +283,23 @@ reader where to get the password, without containing it.
 | Redeploying staging breaks in-progress VIP QA | Deploy steps confirmed with the user first; VIP founder verified afterwards (§9.5) |
 | Intake flags default to `false` on deploy | Checked explicitly before deploying (§4.3) |
 | A future prod→staging import re-contaminates | The masking script is idempotent and re-runnable; noted in the handout |
+
+
+## 11. Post-hoc note — how the gap analysis was wrong (2026-08-23)
+
+The first apply file failed in Studio with `42703: column "moved_to_track" does
+not exist`. Two errors, both mine:
+
+1. **The probe only looked for missing TABLES.** Four of the missing migrations
+   add COLUMNS to existing tables — 025, 028, 031 and 036 — so a
+   table-existence check could not see them. `moved_to_track` (036) is the one
+   that surfaced, because migration 037's verification block reads it.
+2. **The file used the `_PROD_APPLY` variants of 037 and 038.** Those carry
+   diagnostic `SELECT`s intended for verifying a production run. They are
+   scaffolding, not schema, and they reference columns from *other* migrations.
+   The plain migrations carry the identical DDL — table, indexes, RLS policy,
+   storage bucket — with none of that coupling.
+
+The corrected file used the plain migrations in dependency order. The general
+lesson: when checking whether a migration is applied, check what it *adds* —
+tables, columns, constraints and seed rows — not just whether a table exists.
