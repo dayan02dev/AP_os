@@ -96,10 +96,10 @@ scanning the tab bar for something, that's the order it's in.
 - **Final Gate** — the last decision point (Offer / Waitlist / Hold /
   Reject). One seeded application already has an offer recorded here.
 - **Reviewers** — the review panel roster: three reviewers, each with a
-  subject-matter focus, plus this demo account itself (which has none — it's
-  on the roster to carry its own review workload, not a specialty), split
-  across two review batches. This is where staff manage who is reviewing
-  what.
+  narrow subject-matter focus, plus this demo account itself, listed as a
+  generalist ("cross-domain, product") so it can carry a review workload on
+  any application. Together they're split across two review batches. This is
+  where staff manage who is reviewing what.
 
 Click "Switch role" → **Reviewer** to finish the tour.
 
@@ -109,9 +109,9 @@ This is the reviewer's own desk — what it looks like to actually evaluate an
 application. The demo account has its own small workload seeded in, so this
 portal is not empty:
 
-- **My Queue** — a few applications waiting on your review, including one
-  nobody has looked at yet and one others have already weighed in on. Open
-  one to see the scoring form a reviewer fills out.
+- **My Queue** — a few applications waiting on your review, including one no
+  reviewer has submitted a verdict on yet and one others have already weighed
+  in on. Open one to see the scoring form a reviewer fills out.
 - **My History** — one application you've already reviewed and submitted a
   recommendation on, so you can see what a completed review looks like from
   the reviewer's side.
@@ -152,4 +152,16 @@ Two scripts maintain this environment, both in `backend/scripts/`:
 Both default to a **dry run** — they print what they would change without
 touching anything — and only write when run with `--apply`. Both refuse to
 run against anything other than this staging project, so there's no way to
-point either one at production by mistake. Re-running them is safe.
+point either one at production by mistake.
+
+Re-running them is safe, and it's worth knowing what "safe" means for each:
+
+- The **seed** targets a fixed, recorded list of twelve applications, so a
+  second run re-writes those same twelve and never quietly pulls a
+  thirteenth into the cohort. If one of them is no longer where it was
+  expected — someone moved it by hand, or staging was rebuilt from a fresh
+  copy of production — the script refuses to run and names the one it
+  couldn't find, rather than substituting a different application.
+- The **masker** skips anything already masked and retries anything that
+  failed last time. A row it can't write is logged and counted and the run
+  carries on to the end, so a re-run picks up exactly the leftovers.

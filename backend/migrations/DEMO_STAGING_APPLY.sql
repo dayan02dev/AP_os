@@ -1,4 +1,26 @@
--- DEMO_STAGING_APPLY.sql
+-- ##########################################################################
+-- ##                                                                      ##
+-- ##   SUPERSEDED — DO NOT RUN THIS FILE.                                  ##
+-- ##   RUN  DEMO_STAGING_APPLY_V2.sql  INSTEAD.                            ##
+-- ##                                                                      ##
+-- ##   This is V1. It was executed once and FAILED with:                   ##
+-- ##       ERROR 42703: column "moved_to_track" does not exist             ##
+-- ##   It used the *_PROD_APPLY variants of migrations 037/038, whose      ##
+-- ##   diagnostic SELECTs read a column staging did not have, and its gap  ##
+-- ##   analysis only looked for missing TABLES, so it missed the six       ##
+-- ##   column-adding migrations (025, 028, 031, 032, 035, 036).            ##
+-- ##                                                                      ##
+-- ##   V2 fixes both and is the only file to paste into Supabase Studio.   ##
+-- ##   V1 is kept only because migrations 029, 030 and 034 DID apply from  ##
+-- ##   it and V2 deliberately does not repeat them — so this file is the   ##
+-- ##   record of what installed those three. It sorts first in this        ##
+-- ##   directory, which is the only reason this banner has to shout.       ##
+-- ##                                                                      ##
+-- ##   The "HOW TO RUN" section below is HISTORICAL. Ignore it.            ##
+-- ##                                                                      ##
+-- ##########################################################################
+
+-- DEMO_STAGING_APPLY.sql   (V1 — SUPERSEDED, see the banner above)
 --
 -- Brings the STAGING Supabase project up to the release line's schema.
 --
@@ -10,7 +32,9 @@
 --   calls /admin/platform/ic-documents on mount, so that whole tab fails to
 --   load without it.
 --
--- HOW TO RUN
+-- HOW TO RUN  ***HISTORICAL — SUPERSEDED, RUN DEMO_STAGING_APPLY_V2.sql***
+--   (This is what V1 told you to do, and doing it errored with 42703. Kept
+--   verbatim as the record of what was attempted; do not follow it.)
 --   Supabase Studio -> the STAGING project -> SQL Editor -> paste this whole
 --   file -> Run. Staging has no DB password, no exec_sql RPC and no CLI
 --   access, so Studio is the only route.
