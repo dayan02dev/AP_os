@@ -46,11 +46,15 @@ they're scoring, and where they came from.
   a distribution of AI screening scores, and a breakdown by industry. This is
   the "state of the pipeline" view a leadership team checks in on.
 - **Applications tab** — every application in a searchable list, each with an
-  AI score and a reviewer-recommendation chip (YES / MAYBE / NO). That chip
-  is not one reviewer's opinion — it's the panel's combined verdict: two or
-  more reviewers have to agree before it shows YES or NO, otherwise it reads
-  MAYBE. Open any row to see the full write-up, the AI-generated summary, and
-  the individual reviews behind it.
+  AI score and a reviewer-recommendation chip. That chip is the review
+  panel's combined verdict, not one person's opinion, and it has three
+  states: a dash means fewer than two reviewers have submitted a review yet
+  (true of most rows in this list — see below); MAYBE means two or more have
+  submitted but neither side has a majority; YES or NO means at least two
+  reviewers agree. Opening a row shows its AI-generated summary and the
+  reviews submitted against it so far — not the applicant's own answers. To
+  read what the founder actually wrote, use the "Review application →" link
+  inside that panel, which opens the full submission on its own page.
 
 Most of what you see in this list is real historical data wearing a fake
 name — background volume, not part of the guided tour. Click "Switch role" →
@@ -60,18 +64,26 @@ name — background volume, not part of the guided tour. Click "Switch role" →
 
 This is where staff move an application through the pipeline: assign
 reviewers, decide who advances, and sign off on the ones who get an offer.
+The tabs run left to right in pipeline order — Dashboard, Reviewers,
+Applications, Rejected, Accepted, Admin Review, Final Gate — so if you're
+scanning the tab bar for something, that's the order it's in.
 
 - **Applications** — the full submissions list, same idea as Leadership's but
   with the tools to act on a row.
 - **Admin Review** — applications whose reviews are all in and are waiting on
-  a shortlist / hold / reject decision. Look here for one application whose
-  panel agreed YES (ready to advance) sitting next to one where the panel
-  agreed NO — the same review process, two different outcomes.
+  a decision. The two buttons offered here are **Approve** (advances the
+  application to the jury stage) and **Reject**. Look here for one
+  application whose panel agreed YES — a natural Approve — sitting next to
+  one where the panel agreed NO — a natural Reject. A third outcome, Hold,
+  exists in the pipeline (one seeded application sits in that state) but
+  isn't a button on this screen — it only appears as an edit to an
+  already-decided application under this tab's "My history" view.
 - **Accepted** — shortlisted applications waiting on their Investment
   Committee memo. This tab is the newest piece of the product, and it's
   worth slowing down on:
-  - Rows still needing attention (no memo uploaded yet) sit at the **top** —
-    the tab is ordered as a to-do list, not an archive.
+  - Rows still needing attention (memo not yet approved — whether or not one
+    has even been uploaded) sit at the **top** — the tab is ordered as a
+    to-do list, not an archive.
   - One row carries a green **ACCEPTED** chip — its memo has been uploaded
     *and signed off*.
   - One row carries a red **REJECTED** chip — that application was turned
@@ -83,9 +95,11 @@ reviewers, decide who advances, and sign off on the ones who get an offer.
     where it ended up, not where it began.
 - **Final Gate** — the last decision point (Offer / Waitlist / Hold /
   Reject). One seeded application already has an offer recorded here.
-- **Reviewers** — the review panel roster (three reviewers plus this demo
-  account), each with a subject-matter focus, split across two review
-  batches. This is where staff manage who is reviewing what.
+- **Reviewers** — the review panel roster: three reviewers, each with a
+  subject-matter focus, plus this demo account itself (which has none — it's
+  on the roster to carry its own review workload, not a specialty), split
+  across two review batches. This is where staff manage who is reviewing
+  what.
 
 Click "Switch role" → **Reviewer** to finish the tour.
 
@@ -95,10 +109,10 @@ This is the reviewer's own desk — what it looks like to actually evaluate an
 application. The demo account has its own small workload seeded in, so this
 portal is not empty:
 
-- **Queue** — a few applications waiting on your review, including one
+- **My Queue** — a few applications waiting on your review, including one
   nobody has looked at yet and one others have already weighed in on. Open
   one to see the scoring form a reviewer fills out.
-- **History** — one application you've already reviewed and submitted a
+- **My History** — one application you've already reviewed and submitted a
   recommendation on, so you can see what a completed review looks like from
   the reviewer's side.
 
@@ -112,8 +126,11 @@ Three things are deliberately out of view, so don't read their absence as a
 missing feature:
 
 - **The application wizard** — the public multi-step form a founder fills
-  out to apply. It exists and is reachable, but this tour is about the
-  staff-facing side of the product, not the applicant's.
+  out to apply. This login can't reach it: staff accounts are deliberately
+  kept out of the applicant flow, so signing in as admin or leadership (this
+  account holds both) redirects you straight back to your own dashboard if
+  you try. That's a real product rule, not a demo limitation — staff and
+  applicants are kept on separate sides of the product on purpose.
 - **The jury portal** — a separate screen where jury members review and pick
   applications to mentor. It's switched off for this cohort; the jury-related
   information you see on the Accepted tab was set up directly rather than
