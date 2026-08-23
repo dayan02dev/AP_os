@@ -24,17 +24,35 @@ DETERMINISM
     (see `select_demo_rows`). Twelve ids are PINNED in
     `PINNED_APPLICATION_IDS` (recorded from the round where this script was
     reviewed) so a second `--apply` targets the exact same twelve
-    applications as the first, instead of drifting: slot 10 writes status
-    `offered`, which the candidate pool excludes, so on a naive re-run
-    slot 10's own application would drop out of its own pool and every
-    later slot would shift onto a previously-untouched application — silent
-    cohort growth, one application at a time, on every re-run. Each slot
-    resolves to its pinned id independently; a slot whose pinned id has
-    left the pool (status changed, application withdrawn, etc.) falls back
-    to the sorted-order rule and logs a warning, since that is the case a
-    human needs to look at. Candidates with no pinning info at all (e.g. a
-    caller that never passes `pinned`) fall back to sorted-order for every
-    slot, same as before pinning existed.
+    applications as the first, instead of drifting.
+
+    Pinning alone did NOT make the seed re-runnable (I3, round-3 review).
+    Slot 10 writes status `offered`, and `_EXCLUDED_STATUSES` excludes
+    `offered` — so on the second `--apply`, slot 10's own pinned id was
+    absent from its own pool, the resolver fell back to sorted order, and a
+    previously-untouched thirteenth application got promoted to `offered`
+    with a gate-2 decision. Every further run promoted one more. Two changes
+    close that:
+
+      * A pinned id is exempt from `_EXCLUDED_STATUSES` when its current
+        status is exactly the status its own slot writes (see
+        `_pinned_target_status`). The exclusion exists to stop SELECTION from
+        grabbing a live founder, not to stop us re-resolving a cohort we
+        already chose and reviewed. Keying the exemption on "current status
+        == this slot's own target" means re-resolving is always a no-op write
+        and never a demotion: a pinned application somebody else has since
+        moved to `onboarded`, or to any status its slot does not write, stays
+        excluded and the run refuses.
+      * A pinned id that cannot be resolved is a HARD REFUSAL
+        (`UnresolvablePinnedId` -> `main()` returns 1), naming the slot and
+        the missing id. It is not a warning. A `log.warning` buried in a
+        sixty-line run is not an adequate guard on an irreversible write, and
+        regenerating the pinned cohort is a decision a human should make
+        consciously.
+
+    Candidates with no pinning info at all (e.g. a caller that never passes
+    `pinned`, or a slot absent from the map) fall back to sorted-order
+    selection, same as before pinning existed.
 
     THIS LIST GOES STALE if staging is ever re-imported from production —
     the ids it pins may no longer exist, or may point at different
@@ -55,6 +73,10 @@ SAFETY
     * Never deletes an application row.
     * Never selects claude-test-applicant-sip@artpark.in as a demo row — the
       in-progress VIP branch tests against that founder.
+    * No pinned application may sit on an email domain the masker EXEMPTS
+      (see `_verify_pinned_ids_are_maskable`). Such a row keeps its real name,
+      email, phone and org, so pinning one would put a real ARTPARK identity
+      in the tour and wire a live mailbox to the Final Gate's Reject button.
     * The demo password is generated at runtime and printed to stdout only —
       this repo is public.
 
@@ -144,19 +166,41 @@ DEMO_PLAN = [
 
 # NEW-1 (round 2, 2026-08-24 review): pinned from the round-1 report so a
 # second --apply targets the SAME twelve applications as the first, rather
-# than drifting. Slot 10 writes status `offered`, which the candidate pool
-# excludes (C1) — so a naive re-run would find slot 10's OWN application no
-# longer in its own pool, and the pure-sorted-order rule in
-# `select_demo_rows` would then shift every later slot onto a
-# previously-untouched application. `select_demo_rows` resolves each slot
-# to its own pinned id independently, so losing one pin can only ever
-# affect that one slot.
+# than drifting. See the DETERMINISM section of the module docstring for what
+# pinning does and does not buy on its own.
 #
 # STALE WARNING: this list must be regenerated if staging is ever
 # re-imported from production — see the module docstring.
+#
+# Two slots were re-pinned in the round-3 review:
+#
+#   slot 11 was 4af584c4-6b6d-4331-a7db-878b4ae8c3d1 (C2). That row's
+#     basic_email is on @artpark.in, which mask_staging_identities.py EXEMPTS
+#     — so the masker skipped it entirely and the seed then drove a REAL,
+#     named ARTPARK staff identity to `jury_review`, which is precisely the
+#     row the handout points at ("You'll also spot a VIP-track application").
+#     It falsified the handout's opening promise that every name is fake, and
+#     `decision_email.notify_applicant_gate2` resolves its recipient from
+#     `basic_email`, so it wired a live ARTPARK mailbox to a Final Gate Reject
+#     button one click away. Re-pinned to the only other non-draft,
+#     non-onboarded SIP application; verified read-only that its basic_email
+#     is a maskable public-mail address, not an exempt domain.
+#     `_verify_pinned_ids_are_maskable` now refuses to run if this class of
+#     mistake ever recurs, on any slot. Note that widening _EXCLUDED_EMAILS to
+#     the whole @artpark.in domain is NOT the fix: the SIP pool is exactly two
+#     rows deep, so that empties it and `select_demo_rows` raises.
+#
+#   slot 2 was 0976e40d-ce45-4630-8c5d-72a27632b7ad (I4). Slot 2 is the
+#     handout's "one nobody has looked at yet" in the reviewer Queue, but that
+#     application carries staging's single existing submitted `reviews` row, so
+#     somebody had looked at it. Re-pinned to the next candidate in the same
+#     sorted-order rule that produced the original twelve (i.e. what would
+#     have been slot 13), verified read-only to carry no `reviews` row, to
+#     already have an `ai_screening` row so it survives `_prefer_ai_screened`,
+#     and to be `under_review` already so slot 2's write is not a demotion.
 PINNED_APPLICATION_IDS: dict[int, str] = {
     1:  "06fec58f-ee52-4108-8233-aedbe7be4b9c",
-    2:  "0976e40d-ce45-4630-8c5d-72a27632b7ad",
+    2:  "29f92e59-ee72-434d-bd89-d84f78205e94",
     3:  "0a79fd93-d418-4848-a236-52a827d69452",
     4:  "14ff7156-a8d1-4ddc-b1a6-b9de7fbcd619",
     5:  "1790618c-6f2f-44c1-bb81-ef09584d7fa2",
@@ -165,9 +209,36 @@ PINNED_APPLICATION_IDS: dict[int, str] = {
     8:  "1fc86d90-a7c1-4121-9755-270c5dfb63c1",
     9:  "2607afb2-6d3a-4048-8ed0-9807d3850f25",
     10: "2626f42a-b770-474c-8271-81a26c1725fe",
-    11: "4af584c4-6b6d-4331-a7db-878b4ae8c3d1",
+    11: "b660113c-b50b-4734-a5af-4939b35e5c4c",
     12: "283c71f5-af2c-493b-a3f5-67b4e04c065f",
 }
+
+# Mirrors mask_staging_identities.EXEMPT_DOMAINS. Duplicated rather than
+# imported so this script never depends on `scripts/` being importable as a
+# package; `tests/test_seed_demo_cohort.py::TestExemptDomainMirror` asserts the
+# two stay in sync, the same "change one, change the other" convention the repo
+# uses for rbac.py <-> rbac.js.
+_MASKER_EXEMPT_DOMAINS = ("@artpark.in", "@artpark.info", "@artpark.test")
+
+
+class UnresolvablePinnedId(RuntimeError):
+    """A slot's pinned application id is not available in its candidate pool.
+
+    Raised instead of silently falling back to sorted-order selection: the
+    fallback promoted a previously-untouched application on every re-run.
+    """
+
+    def __init__(self, slot: int, application_id: str) -> None:
+        self.slot = slot
+        self.application_id = application_id
+        super().__init__(
+            f"slot {slot}: pinned application id {application_id} is not in the "
+            "candidate pool for its track. It may have been deleted, moved to a "
+            "status no slot writes (`draft`/`onboarded`, or an `offered`/"
+            "`onboarded` row this slot does not itself target), or staging may "
+            "have been re-imported from production. Refusing to fall back to a "
+            "different application."
+        )
 
 _SCORES = {
     "score_problem": 7.5, "score_solution": 7.0, "score_tech": 8.0,
@@ -240,21 +311,25 @@ def select_demo_rows(
     real pinned id, so every slot always falls through to this rule.)
 
     With `pinned` (a ``{slot: application_id}`` map — see
-    `PINNED_APPLICATION_IDS`): each slot FIRST tries to resolve to its own
-    pinned id, independently of every other slot. This is what NEW-1 (round
-    2, 2026-08-24 review) fixes: with sorted-order-only selection, losing
-    ONE previously-chosen application from the pool (e.g. slot 10 writes
-    status `offered`, which the pool then excludes on the next run) shifted
-    every slot that sorted after it onto a different, previously-untouched
-    application — silent, undetected drift on every re-run. Resolving each
-    slot independently means a lost pin can only ever affect that one slot.
+    `PINNED_APPLICATION_IDS`): each slot resolves to its own pinned id,
+    independently of every other slot. This is what NEW-1 (round 2,
+    2026-08-24 review) fixes: with sorted-order-only selection, losing ONE
+    previously-chosen application from the pool (e.g. slot 10 writes status
+    `offered`, which the pool then excludes on the next run) shifted every
+    slot that sorted after it onto a different, previously-untouched
+    application — silent, undetected drift on every re-run.
 
-    A slot whose pinned id is missing from `candidates` (or already claimed
-    by an earlier plan entry, which should never legitimately happen) falls
-    back to the sorted-order rule, filled from whichever candidates remain
-    once every other pinned slot has claimed its row, and logs a warning —
-    that fallback is exactly the situation a human needs to look at, because
-    the recorded pinned-id list is no longer fully accurate.
+    A slot whose pinned id is missing from `candidates` (or already claimed by
+    an earlier plan entry, which should never legitimately happen) raises
+    `UnresolvablePinnedId`. It does NOT fall back (I3, round-3 review): the
+    fallback was still an irreversible write onto an application nobody had
+    chosen, guarded only by a `log.warning` in the middle of a long run.
+    Regenerating the pinned cohort is a decision a human makes deliberately.
+
+    A slot with NO entry in `pinned` at all still falls back to the
+    sorted-order rule, filled from whichever candidates remain once every
+    pinned slot has claimed its row. That keeps partial maps — and the
+    original, pin-free callers — working exactly as before.
     """
     if len(candidates) < len(plan):
         raise ValueError(
@@ -272,12 +347,14 @@ def select_demo_rows(
 
     for i, p in enumerate(plan):
         pin = pinned.get(p["slot"])
-        cand = by_id.get(pin) if pin else None
-        if cand is not None and str(cand["id"]) not in used_ids:
-            result[i] = (cand, p)
-            used_ids.add(str(cand["id"]))
-        else:
+        if not pin:
             unresolved.append(i)
+            continue
+        cand = by_id.get(pin)
+        if cand is None or str(cand["id"]) in used_ids:
+            raise UnresolvablePinnedId(p["slot"], pin)
+        result[i] = (cand, p)
+        used_ids.add(str(cand["id"]))
 
     remaining = sorted(
         (c for c in candidates if str(c["id"]) not in used_ids),
@@ -293,10 +370,10 @@ def select_demo_rows(
     for slot_index, cand in zip(unresolved, remaining, strict=False):
         p = plan[slot_index]
         log.warning(
-            "select_demo_rows: slot %s pinned id %s not resolvable in the "
-            "current pool — falling back to sorted-order pick %s. A human "
-            "should check whether PINNED_APPLICATION_IDS needs updating.",
-            p["slot"], pinned.get(p["slot"]), cand["id"],
+            "select_demo_rows: slot %s has no entry in PINNED_APPLICATION_IDS "
+            "— falling back to sorted-order pick %s. A human should record a "
+            "pinned id for this slot.",
+            p["slot"], cand["id"],
         )
         result[slot_index] = (cand, p)
 
@@ -509,11 +586,41 @@ def _columns_of(sb, table: str) -> set[str]:
 _EXCLUDED_STATUSES = {"draft", "offered", "onboarded"}
 
 
-def _fetch_all_apps(sb, track: str) -> list[dict]:
-    """Non-draft, non-offered, non-onboarded applications for one track,
-    paginated (PostgREST caps a plain select at 1000 rows) and ordered by id
-    (M8: unordered paging can return a row twice across pages, and
-    `select_demo_rows` does not dedupe)."""
+def _pinned_target_status(track: str) -> dict[str, str]:
+    """``{application_id: the status its own slot writes}`` for one track.
+
+    Used to exempt an already-pinned application from `_EXCLUDED_STATUSES`
+    (I3, round-3 review). Keyed on "its own slot's target status" rather than
+    on "is pinned" so the exemption can only ever re-admit a row whose
+    re-resolution is a no-op write. Slot 10 sits at `offered` after the first
+    `--apply` and `offered` is exactly what slot 10 writes, so it comes back
+    into its own pool; a pinned row somebody has since moved to `onboarded`
+    (or to any other status its slot does not write) stays excluded, and the
+    run refuses rather than demoting it.
+    """
+    out: dict[str, str] = {}
+    for p in DEMO_PLAN:
+        if p["track"] != track:
+            continue
+        pin = PINNED_APPLICATION_IDS.get(p["slot"])
+        if pin:
+            out[pin] = p["status"]
+    return out
+
+
+def _fetch_all_apps(
+    sb, track: str, pinned_targets: dict[str, str] | None = None,
+) -> list[dict]:
+    """Candidate applications for one track, paginated (PostgREST caps a plain
+    select at 1000 rows) and ordered by id (M8: unordered paging can return a
+    row twice across pages, and `select_demo_rows` does not dedupe).
+
+    Excludes `_EXCLUDED_STATUSES` and `_EXCLUDED_EMAILS`, except that a pinned
+    application whose current status equals the status its own slot writes is
+    kept — see `_pinned_target_status`.
+    """
+    if pinned_targets is None:
+        pinned_targets = _pinned_target_status(track)
     table = _table_for(track)
     out: list[dict] = []
     page = 0
@@ -532,12 +639,16 @@ def _fetch_all_apps(sb, track: str) -> list[dict]:
         if len(chunk) < 500:
             break
         page += 1
-    return [
-        {"id": r["id"], "status": r.get("status"), "track": track}
-        for r in out
-        if r.get("status") not in _EXCLUDED_STATUSES
-        and (r.get("basic_email") or "").strip().lower() not in _EXCLUDED_EMAILS
-    ]
+
+    keep: list[dict] = []
+    for r in out:
+        if (r.get("basic_email") or "").strip().lower() in _EXCLUDED_EMAILS:
+            continue
+        status = r.get("status")
+        if status in _EXCLUDED_STATUSES and pinned_targets.get(r["id"]) != status:
+            continue
+        keep.append({"id": r["id"], "status": status, "track": track})
+    return keep
 
 
 def _prefer_ai_screened(sb, track: str, candidates: list[dict], needed: int) -> list[dict]:
@@ -684,13 +795,151 @@ def _verify_application_batches_conflict_target(sb) -> bool:
         return False
 
 
+def _verify_admin_decision_values(sb) -> bool:
+    """Prove — WITHOUT writing anything, ever — that `admin_decisions`'s CHECK
+    constraint on `decision` accepts every value this script writes.
+
+    Why this needs its own probe: `_verify_schema` checks column EXISTENCE, and
+    the `decision` column exists in every version of this table. What changed
+    is the allowed value list. Migration 024 created
+    ``check (decision in ('shortlisted','on_hold','rejected','waitlisted'))``;
+    027 added `jury_review`; 033 step 2 added `offered`. If neither 027 nor 033
+    landed on this project, slot 6 (`on_hold`/gate1 -> the first slot with a
+    `gate`) still writes fine but slot 7's `jury_review` raises 23514 AFTER
+    slots 1-6 are fully written and slot 7 is half-written. Evidence (git
+    history, and DEMO_STAGING_APPLY_V2's gap analysis) says 033 landed, but
+    this script should not run its first real write on "probably" — the same
+    reasoning as `_verify_application_batches_conflict_target`.
+
+    Technique (genuinely read-only, not just "cleans up after itself"): issue
+    ONE insert statement carrying the SAME row twice, with an explicit `id`.
+    PostgREST turns a JSON array into a single multi-row `INSERT`, and Postgres
+    evaluates CHECK constraints per tuple (`ExecConstraints`) BEFORE the index
+    insertion that enforces the primary key. So:
+      * if the CHECK rejects the value, the first tuple raises 23514 and
+        nothing is ever inserted;
+      * if the CHECK accepts it, the first tuple is inserted and the second
+        collides with it on the primary key, raising 23505 — and because the
+        whole statement is one all-or-nothing transaction, that rolls the first
+        tuple back too.
+    Either branch leaves zero rows behind. `admin_decisions` has no foreign
+    keys (024), which is why the duplicate-primary-key form is used here
+    instead of the FK-violation form the `application_batches` probe relies on.
+    """
+    values = sorted(set(_GATE1_GATES.values()) | set(_GATE2_GATES.values()))
+    ok = True
+    for value in values:
+        probe_id = str(uuid.uuid4())
+        row = {
+            "id": probe_id, "application_id": probe_id, "application_track": "tir",
+            "gate_stage": "gate1", "decision": value, "decided_at": _now(),
+        }
+        try:
+            sb.table("admin_decisions").insert([row, dict(row)]).execute()
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc)
+            low = msg.lower()
+            if "23505" in msg or "duplicate key" in low:
+                continue  # the CHECK accepted it; the primary key stopped the write
+            if ("23514" in msg or "check constraint" in low) and "decision" in low:
+                log.error(
+                    "schema check: admin_decisions' CHECK constraint REJECTS "
+                    "decision=%r — migration %s has not landed on this project; "
+                    "refusing to write (slot %s would raise 23514 mid-run)",
+                    value,
+                    "033 step 2" if value == "offered" else "027",
+                    next((p["slot"] for p in DEMO_PLAN
+                          if p["gate"] and (_GATE1_GATES.get(p["gate"])
+                                            or _GATE2_GATES.get(p["gate"])) == value), "?"),
+                )
+                ok = False
+                continue
+            log.error("schema check: admin_decisions decision=%r probe raised an "
+                      "unrecognized error — cannot confirm the CHECK allows it, "
+                      "refusing to proceed: %s", value, msg)
+            ok = False
+        else:
+            # Should be impossible (the duplicate primary key is guaranteed to
+            # fail) — clean up and hard-fail rather than trust an unverified
+            # assumption.
+            sb.table("admin_decisions").delete().eq("id", probe_id).execute()
+            log.error("schema check: admin_decisions decision=%r probe "
+                      "unexpectedly inserted a row (cleaned up) — investigate "
+                      "before trusting this check", value)
+            ok = False
+    if ok:
+        log.info("schema check: admin_decisions CHECK accepts %s", ", ".join(values))
+    return ok
+
+
+def _verify_pinned_ids_are_maskable(sb) -> bool:
+    """Refuse to run if any pinned application sits on an email domain that
+    `mask_staging_identities.py` EXEMPTS (C2, round-3 review).
+
+    An exempt row is skipped by the masker entirely — it keeps its real name,
+    real email, real phone and real org. Pinning one puts a real, named
+    identity into the guided tour (falsifying the handout's opening promise
+    that every name is fake) and, worse, wires a live mailbox to the Final
+    Gate's Reject button, because `decision_email.notify_applicant_gate2`
+    resolves its recipient from `basic_email`.
+
+    Re-pinning the one offending slot fixed the instance; this check is what
+    stops the class from recurring.
+    """
+    ok = True
+    wanted: dict[str, dict[str, int]] = {}
+    for p in DEMO_PLAN:
+        pin = PINNED_APPLICATION_IDS.get(p["slot"])
+        if pin:
+            wanted.setdefault(p["track"], {})[pin] = p["slot"]
+
+    for track, ids in sorted(wanted.items()):
+        table = _table_for(track)
+        rows = (
+            sb.table(table).select("id,basic_email").in_("id", sorted(ids)).execute().data
+        ) or []
+        found = {r["id"]: (r.get("basic_email") or "") for r in rows}
+        for app_id, slot in sorted(ids.items(), key=lambda kv: kv[1]):
+            if app_id not in found:
+                log.error("pinned-id check: slot %s pins %s, which does not exist "
+                          "in %s at all — PINNED_APPLICATION_IDS needs regenerating",
+                          slot, app_id, table)
+                ok = False
+                continue
+            email = found[app_id].strip().lower()
+            if email.endswith(_MASKER_EXEMPT_DOMAINS):
+                # Log the domain only, never the address — this repo is public
+                # and these logs get pasted into reports.
+                log.error(
+                    "pinned-id check: slot %s pins %s, whose basic_email is on "
+                    "'@%s' — a domain mask_staging_identities.py EXEMPTS. That "
+                    "row keeps its REAL name, email, phone and org, so the demo "
+                    "would showcase a real identity and wire a live mailbox to "
+                    "the Final Gate buttons. Re-pin slot %s to a maskable "
+                    "application; do NOT widen the masker's exempt list.",
+                    slot, app_id, email.split("@")[-1], slot,
+                )
+                ok = False
+            elif not email:
+                log.warning("pinned-id check: slot %s (%s) has no basic_email — "
+                            "the masker will seed from its name instead", slot, app_id)
+    if ok:
+        log.info("pinned-id check: all %d pinned applications exist and are on "
+                 "maskable email domains", len(PINNED_APPLICATION_IDS))
+    return ok
+
+
 def _verify_schema(sb) -> bool:
     """Confirm every column this script writes actually exists on the LIVE
-    table, and that `application_batches`'s on_conflict target is real (see
-    `_verify_application_batches_conflict_target`). Returns False (and logs
-    every mismatch) if anything is wrong, so the caller can refuse to run
-    rather than fail midway through with a 400 after some slots have already
-    been written."""
+    table, that `application_batches`'s on_conflict target is real (see
+    `_verify_application_batches_conflict_target`), that `admin_decisions`
+    accepts every `decision` value written here (see
+    `_verify_admin_decision_values`), and that no pinned application is on a
+    masker-exempt email domain (see `_verify_pinned_ids_are_maskable`).
+
+    Returns False (and logs every problem) if anything is wrong, so the caller
+    can refuse to run rather than fail midway through after some slots have
+    already been written."""
     ok = True
     for table, expected in _EXPECTED_COLUMNS.items():
         live = _columns_of(sb, table)
@@ -704,6 +953,10 @@ def _verify_schema(sb) -> bool:
                       "writes: %s", table, sorted(missing))
             ok = False
     if not _verify_application_batches_conflict_target(sb):
+        ok = False
+    if not _verify_admin_decision_values(sb):
+        ok = False
+    if not _verify_pinned_ids_are_maskable(sb):
         ok = False
     return ok
 
@@ -1151,13 +1404,29 @@ def main() -> int:
     tir_candidates = _prefer_ai_screened(sb, "tir", tir_candidates, len(tir_plan))
     sip_candidates = _prefer_ai_screened(sb, "sip", sip_candidates, len(sip_plan))
 
-    # NEW-1: resolve by pinned id first (see PINNED_APPLICATION_IDS) so a
-    # second --apply targets the same twelve applications as the first.
-    pairs = (
-        select_demo_rows(tir_candidates, tir_plan, pinned=PINNED_APPLICATION_IDS)
-        + select_demo_rows(sip_candidates, sip_plan, pinned=PINNED_APPLICATION_IDS)
-    )
+    # NEW-1: resolve by pinned id (see PINNED_APPLICATION_IDS) so a second
+    # --apply targets the same twelve applications as the first. I3: an
+    # unresolvable pin is a hard refusal, never a silent fallback.
+    try:
+        pairs = (
+            select_demo_rows(tir_candidates, tir_plan, pinned=PINNED_APPLICATION_IDS)
+            + select_demo_rows(sip_candidates, sip_plan, pinned=PINNED_APPLICATION_IDS)
+        )
+    except UnresolvablePinnedId as exc:
+        log.error("refusing to proceed — %s", exc)
+        log.error("Nothing has been written. If the pinned cohort genuinely "
+                  "needs regenerating, do it deliberately: dry-run, review the "
+                  "ids it resolves, and edit PINNED_APPLICATION_IDS by hand.")
+        return 1
     pairs_by_slot = {plan["slot"]: (cand, plan) for cand, plan in pairs}
+
+    by_pin = sum(
+        1 for slot, (cand, _p) in pairs_by_slot.items()
+        if PINNED_APPLICATION_IDS.get(slot) == str(cand["id"])
+    )
+    log.info("selection: %d of %d slots resolved by pinned id, %d by "
+             "sorted-order fallback", by_pin, len(pairs_by_slot),
+             len(pairs_by_slot) - by_pin)
 
     seen_ids: set[str] = set()
     jurors = _fetch_jurors(sb)
@@ -1174,9 +1443,12 @@ def main() -> int:
         review_rows = reviews_for(plan["reviews"], slot)
 
         log.info(
-            "slot %2d  track=%-3s  %-12s -> %-12s  reviews=%-11s gate=%-13s memo=%-6s moved=%s  app=%s",
+            "slot %2d  track=%-3s  %-12s -> %-12s  reviews=%-11s gate=%-13s "
+            "memo=%-6s moved=%-5s src=%-8s app=%s",
             slot, track, cand.get("status"), plan["status"], plan["reviews"],
-            plan["gate"] or "-", plan["memo"] or "-", plan["moved"], app_id,
+            plan["gate"] or "-", plan["memo"] or "-", plan["moved"],
+            "pinned" if PINNED_APPLICATION_IDS.get(slot) == str(app_id) else "FALLBACK",
+            app_id,
         )
 
         # 6a. reviewer_assignments + reviews for the roster (round-robin).
