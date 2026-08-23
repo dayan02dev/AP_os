@@ -73,10 +73,13 @@ SAFETY
     * Never deletes an application row.
     * Never selects claude-test-applicant-sip@artpark.in as a demo row — the
       in-progress VIP branch tests against that founder.
-    * No pinned application may sit on an email domain the masker EXEMPTS
-      (see `_verify_pinned_ids_are_maskable`). Such a row keeps its real name,
-      email, phone and org, so pinning one would put a real ARTPARK identity
-      in the tour and wire a live mailbox to the Final Gate's Reject button.
+    * No pinned application may sit on an ARTPARK STAFF email domain
+      (@artpark.in/.info — see `_verify_pinned_ids_are_maskable`). Such a row
+      is never masked, so it keeps its real name, email, phone and org, and
+      pinning one would put a real ARTPARK identity in the tour and wire a live
+      mailbox to the Final Gate's Reject button. Note the masker's OUTPUT
+      domain (@artpark.test) is deliberately NOT checked: a pin sitting on it
+      has already been masked, which is the goal.
     * The demo password is generated at runtime and printed to stdout only —
       this repo is public.
 
@@ -175,8 +178,9 @@ DEMO_PLAN = [
 # Two slots were re-pinned in the round-3 review:
 #
 #   slot 11 was 4af584c4-6b6d-4331-a7db-878b4ae8c3d1 (C2). That row's
-#     basic_email is on @artpark.in, which mask_staging_identities.py EXEMPTS
-#     — so the masker skipped it entirely and the seed then drove a REAL,
+#     basic_email is on @artpark.in, an ARTPARK staff domain that
+#     mask_staging_identities.py never masks — so the masker skipped it
+#     entirely and the seed then drove a REAL,
 #     named ARTPARK staff identity to `jury_review`, which is precisely the
 #     row the handout points at ("You'll also spot a VIP-track application").
 #     It falsified the handout's opening promise that every name is fake, and
@@ -213,12 +217,31 @@ PINNED_APPLICATION_IDS: dict[int, str] = {
     12: "283c71f5-af2c-493b-a3f5-67b4e04c065f",
 }
 
-# Mirrors mask_staging_identities.EXEMPT_DOMAINS. Duplicated rather than
-# imported so this script never depends on `scripts/` being importable as a
-# package; `tests/test_seed_demo_cohort.py::TestExemptDomainMirror` asserts the
-# two stay in sync, the same "change one, change the other" convention the repo
-# uses for rbac.py <-> rbac.js.
-_MASKER_EXEMPT_DOMAINS = ("@artpark.in", "@artpark.info", "@artpark.test")
+# The domains that mean "this is an ARTPARK staff account, the masker will
+# never touch it" — a deliberate SUBSET of
+# mask_staging_identities.EXEMPT_DOMAINS, not a mirror of it.
+#
+# The masker's list carries two different meanings that happen to share one
+# tuple, and the pinned-id guard below wants only the first:
+#
+#   @artpark.in / @artpark.info  "staff account — never mask this row"
+#   @artpark.test                "ALREADY masked — this IS the masker's output"
+#
+# @artpark.test is therefore excluded on purpose. It is the domain the masker
+# WRITES: `fake_identity` emits `first.m.last@artpark.test`. A pinned
+# application sitting on it has been successfully masked, which is the desired
+# end state, not a fault. Including it (as the round-3 version of this constant
+# did) made the guard refuse all twelve slots the moment the masker had run —
+# with a diagnostic that was exactly backwards ("that row keeps its REAL name")
+# and advice to re-pin, which could not have helped. The demo could then be
+# built exactly once, in one order, and never repaired.
+#
+# Duplicated rather than imported so this script never depends on `scripts/`
+# being importable as a package. `TestStaffDomainsAreASubsetOfTheMaskersList`
+# pins the relationship: subset, both staff domains present, @artpark.test
+# absent. It deliberately does NOT assert equality — that is what propagated
+# the mistake.
+_STAFF_EMAIL_DOMAINS = ("@artpark.in", "@artpark.info")
 
 
 class UnresolvablePinnedId(RuntimeError):
@@ -873,18 +896,25 @@ def _verify_admin_decision_values(sb) -> bool:
 
 
 def _verify_pinned_ids_are_maskable(sb) -> bool:
-    """Refuse to run if any pinned application sits on an email domain that
-    `mask_staging_identities.py` EXEMPTS (C2, round-3 review).
+    """Refuse to run if any pinned application sits on an ARTPARK STAFF email
+    domain (C2, round-3 review).
 
-    An exempt row is skipped by the masker entirely — it keeps its real name,
-    real email, real phone and real org. Pinning one puts a real, named
-    identity into the guided tour (falsifying the handout's opening promise
-    that every name is fake) and, worse, wires a live mailbox to the Final
-    Gate's Reject button, because `decision_email.notify_applicant_gate2`
-    resolves its recipient from `basic_email`.
+    A staff row is skipped by `mask_staging_identities.py` entirely — it keeps
+    its real name, real email, real phone and real org. Pinning one puts a
+    real, named identity into the guided tour and, worse, wires a live mailbox
+    to the Final Gate's Reject button, because
+    `decision_email.notify_applicant_gate2` resolves its recipient from
+    `basic_email`.
 
     Re-pinning the one offending slot fixed the instance; this check is what
     stops the class from recurring.
+
+    What this deliberately does NOT reject (round-4 fix): the masker's own
+    output domain, @artpark.test. `_STAFF_EMAIL_DOMAINS` is a strict subset of
+    the masker's exempt list for exactly that reason — see the comment on the
+    constant. Checking the full list made this guard refuse all twelve slots
+    once the masker had run, so the demo could be built once and never
+    repaired.
     """
     ok = True
     wanted: dict[str, dict[str, int]] = {}
@@ -907,16 +937,17 @@ def _verify_pinned_ids_are_maskable(sb) -> bool:
                 ok = False
                 continue
             email = found[app_id].strip().lower()
-            if email.endswith(_MASKER_EXEMPT_DOMAINS):
+            if email.endswith(_STAFF_EMAIL_DOMAINS):
                 # Log the domain only, never the address — this repo is public
                 # and these logs get pasted into reports.
                 log.error(
                     "pinned-id check: slot %s pins %s, whose basic_email is on "
-                    "'@%s' — a domain mask_staging_identities.py EXEMPTS. That "
-                    "row keeps its REAL name, email, phone and org, so the demo "
-                    "would showcase a real identity and wire a live mailbox to "
-                    "the Final Gate buttons. Re-pin slot %s to a maskable "
-                    "application; do NOT widen the masker's exempt list.",
+                    "'@%s' — an ARTPARK STAFF domain, which "
+                    "mask_staging_identities.py never masks. That row keeps its "
+                    "REAL name, email, phone and org, so the demo would showcase "
+                    "a real identity and wire a live mailbox to the Final Gate "
+                    "buttons. Re-pin slot %s to an applicant application; do NOT "
+                    "widen the masker's exempt list.",
                     slot, app_id, email.split("@")[-1], slot,
                 )
                 ok = False
@@ -924,8 +955,10 @@ def _verify_pinned_ids_are_maskable(sb) -> bool:
                 log.warning("pinned-id check: slot %s (%s) has no basic_email — "
                             "the masker will seed from its name instead", slot, app_id)
     if ok:
-        log.info("pinned-id check: all %d pinned applications exist and are on "
-                 "maskable email domains", len(PINNED_APPLICATION_IDS))
+        log.info("pinned-id check: all %d pinned applications exist and none is "
+                 "on an ARTPARK staff domain (already-masked '@artpark.test' "
+                 "addresses are fine — that is the masker's own output)",
+                 len(PINNED_APPLICATION_IDS))
     return ok
 
 
@@ -934,8 +967,8 @@ def _verify_schema(sb) -> bool:
     table, that `application_batches`'s on_conflict target is real (see
     `_verify_application_batches_conflict_target`), that `admin_decisions`
     accepts every `decision` value written here (see
-    `_verify_admin_decision_values`), and that no pinned application is on a
-    masker-exempt email domain (see `_verify_pinned_ids_are_maskable`).
+    `_verify_admin_decision_values`), and that no pinned application is on an
+    ARTPARK staff email domain (see `_verify_pinned_ids_are_maskable`).
 
     Returns False (and logs every problem) if anything is wrong, so the caller
     can refuse to run rather than fail midway through after some slots have

@@ -1,10 +1,20 @@
 # Demo Environment — Product Manager Handout
 
 Every founder name, email address and company you see in this environment is
-fake. None of it belongs to a real person. This is a copy of a real system
-with the identities swapped out, built so a new product manager can learn the
-product without touching production. Treat it as disposable — it can be wiped
-and rebuilt at any time, and nothing you do here reaches a real applicant.
+fake. Every real applicant's identity, without exception, has been replaced by
+a synthetic stand-in.
+
+What is deliberately left alone is ARTPARK's own staff accounts — about thirty
+of them in the user list and the reviewer roster, plus eight test applications
+that staff submitted themselves. Those keep their real names and addresses on
+purpose: masking them would break the logins staging depends on. So you may
+well spot a colleague's name here. You will never spot a real founder's. None
+of the twelve applications in the tour below is one of them.
+
+This is a copy of a real system with the applicant identities swapped out,
+built so a new product manager can learn the product without touching
+production. Treat it as disposable — it can be wiped and rebuilt at any time,
+and nothing you do here reaches a real applicant.
 
 ## What this is
 
@@ -165,3 +175,13 @@ Re-running them is safe, and it's worth knowing what "safe" means for each:
 - The **masker** skips anything already masked and retries anything that
   failed last time. A row it can't write is logged and counted and the run
   carries on to the end, so a re-run picks up exactly the leftovers.
+
+**Let the masker finish in one go.** This is the one operational rule worth
+remembering. It works table by table, so if you interrupt it — Ctrl-C, a
+dropped connection, a closed laptop — one person can end up with one synthetic
+name on their application and a different one in the user list. Nothing real
+is exposed and no two people ever share an address; the only symptom is that
+two screens disagree about the same person's fake name, which reads as a
+product bug when it isn't. The fix is to **let it run to completion**, not to
+re-run parts of it. When it finishes, check the last line of its summary says
+`0 failed`.

@@ -329,26 +329,49 @@ class TestPinnedCohortShape:
         assert len(set(PINNED_APPLICATION_IDS.values())) == len(PINNED_APPLICATION_IDS)
 
 
-class TestExemptDomainMirror:
-    """C2 (round-3 review): the guard that stops a pinned application sitting
-    on a masker-exempt domain only works while the two lists agree. The masker
-    is the source of truth; the seed carries a copy so it never depends on
-    `scripts/` being importable as a package."""
+class TestStaffDomainsAreASubsetOfTheMaskersList:
+    """Round-4 fix. This used to assert the two lists were IDENTICAL, and that
+    equality is what propagated the bug: the masker's EXEMPT_DOMAINS carries two
+    different meanings in one tuple, and the pinned-id guard wants only one of
+    them.
 
-    def test_the_copied_exempt_domain_list_matches_the_masker(self):
+        @artpark.in / @artpark.info   "staff account — never mask this row"
+        @artpark.test                 "already masked — this IS the output"
+
+    So the relationship is SUBSET, never equality. Do not "fix" this back to an
+    equality assertion: including @artpark.test made the guard refuse all twelve
+    slots the moment the masker had run.
+    """
+
+    def test_every_staff_domain_is_one_the_masker_also_exempts(self):
         from mask_staging_identities import EXEMPT_DOMAINS
 
-        assert seed._MASKER_EXEMPT_DOMAINS == EXEMPT_DOMAINS, (
-            "mask_staging_identities.EXEMPT_DOMAINS changed — update "
-            "seed_demo_cohort._MASKER_EXEMPT_DOMAINS to match, or the "
-            "pinned-id pre-flight silently stops covering the new domain."
+        assert set(seed._STAFF_EMAIL_DOMAINS) <= set(EXEMPT_DOMAINS), (
+            "seed_demo_cohort._STAFF_EMAIL_DOMAINS must stay a subset of "
+            "mask_staging_identities.EXEMPT_DOMAINS — a domain the guard "
+            "rejects but the masker would happily mask is a false alarm."
         )
 
-    def test_no_pinned_email_placeholder_in_the_repo_is_exempt(self):
-        # Cheap belt-and-braces on the guard's own logic.
-        from mask_staging_identities import is_exempt
+    def test_both_staff_domains_are_covered(self):
+        assert "@artpark.in" in seed._STAFF_EMAIL_DOMAINS
+        assert "@artpark.info" in seed._STAFF_EMAIL_DOMAINS
 
+    def test_the_maskers_own_output_domain_is_excluded(self):
+        # The whole round-4 blocker in one assertion.
+        assert "@artpark.test" not in seed._STAFF_EMAIL_DOMAINS, (
+            "@artpark.test is what fake_identity WRITES. A pinned application "
+            "on it has been masked successfully — the desired state, not a "
+            "fault. Rejecting it makes the demo un-rebuildable."
+        )
+
+    def test_the_masker_does_exempt_all_three(self):
+        # Confirms the subset is proper, i.e. the two lists really do differ,
+        # so the test above is testing something.
+        from mask_staging_identities import EXEMPT_DOMAINS, is_exempt
+
+        assert "@artpark.test" in EXEMPT_DOMAINS
         assert is_exempt("someone@artpark.in")
+        assert is_exempt("aarav.b.sharma@artpark.test")
         assert not is_exempt("someone@gmail.com")
 
 
@@ -380,8 +403,8 @@ class TestPinnedIdsAreMaskable:
     def test_accepts_a_cohort_that_is_entirely_maskable(self):
         assert seed._verify_pinned_ids_are_maskable(_client_with_pinned_emails({})) is True
 
-    @pytest.mark.parametrize("domain", ["artpark.in", "artpark.info", "artpark.test"])
-    def test_refuses_any_masker_exempt_domain(self, domain, caplog):
+    @pytest.mark.parametrize("domain", ["artpark.in", "artpark.info"])
+    def test_refuses_any_artpark_staff_domain(self, domain, caplog):
         client = _client_with_pinned_emails({11: f"someone@{domain}"})
         with caplog.at_level("ERROR"):
             assert seed._verify_pinned_ids_are_maskable(client) is False
@@ -396,7 +419,8 @@ class TestPinnedIdsAreMaskable:
         with caplog.at_level("ERROR"):
             assert seed._verify_pinned_ids_are_maskable(client) is False
         messages = " ".join(r.getMessage() for r in caplog.records)
-        assert "EXEMPTS" in messages
+        assert "STAFF domain" in messages
+        assert "never masks" in messages
         assert "Re-pin slot 11" in messages
         # The message must name the domain, never echo the local part.
         assert "some.staff.member" not in messages
@@ -406,6 +430,26 @@ class TestPinnedIdsAreMaskable:
         with caplog.at_level("ERROR"):
             assert seed._verify_pinned_ids_are_maskable(client) is False
         assert any("does not exist" in r.getMessage() for r in caplog.records)
+
+    def test_it_passes_after_the_masker_has_run(self):
+        # THE ROUND-4 BLOCKER. After a full mask, every pinned application's
+        # basic_email is `first.m.last@artpark.test` — the masker's own output.
+        # The round-3 guard inherited @artpark.test from the masker's exempt
+        # list and refused all twelve slots at that point, so the demo could be
+        # built exactly once, in one order, and never repaired.
+        masked = {slot: f"aarav.b.sharma{slot}@artpark.test"
+                  for slot in PINNED_APPLICATION_IDS}
+        client = _client_with_pinned_emails(masked)
+        assert seed._verify_pinned_ids_are_maskable(client) is True
+
+    def test_a_staff_domain_is_still_refused_after_the_relaxation(self):
+        # The relaxation must not blunt the guard: one slot on a staff domain,
+        # every other slot already masked, must still refuse.
+        emails = {slot: f"aarav.b.sharma{slot}@artpark.test"
+                  for slot in PINNED_APPLICATION_IDS}
+        emails[11] = "some.staff.member@artpark.in"
+        assert seed._verify_pinned_ids_are_maskable(
+            _client_with_pinned_emails(emails)) is False
 
     def test_a_missing_email_is_a_warning_not_a_refusal(self, caplog):
         # No basic_email at all: the masker seeds from the name instead, so the

@@ -58,6 +58,31 @@ SAFETY
       continues to completion. A partial mask that reports honestly beats one
       that dies at row 64 and says nothing.
 
+RUN IT TO COMPLETION, IN ONE GO
+    The one operational rule. Identities are resolved across all three target
+    tables in a single planning pass, but WRITES go table by table, so an
+    interrupted run leaves a person masked in the tables it reached and
+    unmasked in the tables it did not. The next run re-plans from a changed
+    input set — the rows already masked are now exempt and drop out of the seed
+    set — so that person can be assigned a DIFFERENT synthetic identity in the
+    remaining tables. Simulated against the live staging snapshot: interrupting
+    after 40 of the 226 `profiles` writes gave 157 of the 186 remaining rows a
+    different stand-in than a clean run would have (the round-4 review measured
+    151/186 from a slightly different interruption point — the exact count
+    depends on where it stops; the shape is the same either way).
+
+    What this is NOT: no real data is re-exposed, no synthetic address is ever
+    duplicated (the `taken` set covers rows written by earlier runs), and no
+    row already masked is touched again. The only symptom is cosmetic —
+    /admin/users and the application detail page can disagree about one
+    person's FAKE name, which reads as a product bug when it is not.
+
+    So: let it finish, and check the summary line reports `0 failed`. If it was
+    interrupted, the fix is to run it again and let it complete, not to poke at
+    individual rows. Persisting the seed->identity map across runs would remove
+    this entirely; that machinery was deliberately not built for a disposable
+    demo environment.
+
 LIMIT, STATED PLAINLY
     auth.users.email still holds real addresses. No portal screen renders it
     (they all read `profiles`), and rewriting it would break those accounts'
