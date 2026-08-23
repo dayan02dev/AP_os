@@ -91,15 +91,19 @@ _EXCLUDED_EMAILS = {"claude-test-applicant-sip@artpark.in"}
 # an admin_decisions row; `memo` controls ic_documents; `moved` sets
 # moved_to_track so the effective-track overlay badge appears.
 #
-# NOTE on slot 8's memo: the design draft this was transcribed from listed
-# "signed" here too, which collides with TestPlanShape.test_exactly_one_slot_
-# has_a_signed_memo (that test requires EXACTLY one signed memo across the
-# plan, and slot 10 is unambiguously the signed one — an "offered" app with an
-# executed grant memo). Read literally, Step 5 only special-cases the string
-# "signed"; any other truthy `memo` value just gets the base (unsigned)
-# ic_documents row. So slot 8 is set to "uploaded" — an IC memo attached but
-# not yet signed, giving the demo a three-stage memo tour across slots
-# 7 (none) -> 8 (uploaded, unsigned) -> 10 (signed).
+# NOTE on the memo placement (corrected after initial review): the draft this
+# was transcribed from put "signed" on BOTH slot 8 and slot 10, which collides
+# with TestPlanShape.test_exactly_one_slot_has_a_signed_memo (exactly one
+# signed memo across the plan). The signed memo belongs on slot 8, NOT slot
+# 10 — the Admin "Selected Applications" tab (AdminSelectedApplications.jsx)
+# only ever fetches status=jury_review plus gate-2-rejected rows (its `pipeline`
+# and `rejectedPipeline` queries), and its green ACCEPTED row
+# (`decisionStateOf`) requires `doc.signed`. Slot 10 is `offered`, so it never
+# appears on that tab at all — a signed memo sitting there would never render
+# as the green row anywhere in the demo. Slot 8 is `jury_review`, so it DOES
+# render there, with a signed memo, as the green ACCEPTED example (spec §6.1).
+# Slot 10 deliberately has NO memo — do not "helpfully" add one back, it will
+# break test_exactly_one_slot_has_a_signed_memo again.
 DEMO_PLAN = [
     {"slot": 1,  "track": "tir", "status": "submitted",    "reviews": "none",       "gate": None,          "memo": None,     "moved": False},
     {"slot": 2,  "track": "tir", "status": "under_review", "reviews": "none",       "gate": None,          "memo": None,     "moved": False},
@@ -108,9 +112,9 @@ DEMO_PLAN = [
     {"slot": 5,  "track": "tir", "status": "evaluated",    "reviews": "verdict_no", "gate": None,          "memo": None,     "moved": False},
     {"slot": 6,  "track": "tir", "status": "on_hold",      "reviews": "verdict_yes","gate": "on_hold",     "memo": None,     "moved": False},
     {"slot": 7,  "track": "tir", "status": "jury_review",  "reviews": "verdict_yes","gate": "jury_review", "memo": None,     "moved": False},
-    {"slot": 8,  "track": "tir", "status": "jury_review",  "reviews": "verdict_yes","gate": "jury_review", "memo": "uploaded","moved": False},
+    {"slot": 8,  "track": "tir", "status": "jury_review",  "reviews": "verdict_yes","gate": "jury_review", "memo": "signed", "moved": False},
     {"slot": 9,  "track": "tir", "status": "rejected",     "reviews": "verdict_no", "gate": "gate2_reject","memo": None,     "moved": False},
-    {"slot": 10, "track": "tir", "status": "offered",      "reviews": "verdict_yes","gate": "gate2_offer", "memo": "signed", "moved": False},
+    {"slot": 10, "track": "tir", "status": "offered",      "reviews": "verdict_yes","gate": "gate2_offer", "memo": None,     "moved": False},
     {"slot": 11, "track": "sip", "status": "jury_review",  "reviews": "verdict_yes","gate": "jury_review", "memo": None,     "moved": False},
     {"slot": 12, "track": "tir", "status": "jury_review",  "reviews": "split",      "gate": "jury_review", "memo": None,     "moved": True},
 ]
@@ -195,6 +199,86 @@ _SECTION_BULLETS = {
         "Regulatory or procurement cycles could slow the path to revenue.",
     ],
 }
+
+_IC_BUCKET = "ic-documents"
+_PDF_MIME = "application/pdf"
+
+
+def _pdf_escape(text: str) -> str:
+    """Escape a literal string for a PDF content stream: backslash and the
+    two parens are the only characters `(...)` strings must escape."""
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _minimal_pdf(lines: list[str]) -> bytes:
+    """A hand-rolled, single-page, valid PDF — no external library, so no new
+    entry in requirements.txt. Renders `lines` top-to-bottom in Helvetica on
+    a Letter page. Good enough for a browser to open and a human to read;
+    not a general-purpose PDF writer.
+
+    Structure: catalog -> pages -> one page -> a Helvetica font -> a content
+    stream of absolute text-positioning (Tm) + show-text (Tj) operators, then
+    a byte-accurate xref table + trailer so real PDF readers (not just
+    permissive ones) accept it.
+    """
+    content_lines = [b"BT", b"/F1 14 Tf"]
+    y = 720
+    for line in lines:
+        escaped = _pdf_escape(line).encode("latin-1", "replace")
+        content_lines.append(b"1 0 0 1 72 %d Tm (%s) Tj" % (y, escaped))
+        y -= 22
+    content_lines.append(b"ET")
+    content = b"\n".join(content_lines)
+
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length %d >>\nstream\n%s\nendstream" % (len(content), content),
+    ]
+
+    buf = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, obj in enumerate(objects, start=1):
+        offsets.append(len(buf))
+        buf += b"%d 0 obj\n" % i + obj + b"\nendobj\n"
+
+    xref_offset = len(buf)
+    buf += b"xref\n0 %d\n" % (len(objects) + 1)
+    buf += b"0000000000 65535 f \n"
+    for off in offsets:
+        buf += b"%010d 00000 n \n" % off
+    buf += b"trailer\n<< /Size %d /Root 1 0 R >>\n" % (len(objects) + 1)
+    buf += b"startxref\n%d\n%%%%EOF" % xref_offset
+    return bytes(buf)
+
+
+_PLACEHOLDER_NOTICE = [
+    "ARTPARK demo environment",
+    "Placeholder IC memo -- NOT a real document.",
+    "Generated by scripts/seed_demo_cohort.py for staging only.",
+]
+
+
+def _upload_placeholder_pdf(sb, storage_path: str, extra_lines: list[str]) -> None:
+    """Best-effort upload of a hand-rolled placeholder PDF to the ic-documents
+    bucket. Upsert semantics: re-running never fails on a conflict and never
+    needs an existence check first (`upsert: true` overwrites in place with
+    the same content, which is a no-op in every way that matters).
+
+    Failures are logged and swallowed rather than raised — a storage hiccup
+    on one slot's memo must not abort the other eleven slots' writes."""
+    try:
+        sb.storage.from_(_IC_BUCKET).upload(
+            path=storage_path,
+            file=_minimal_pdf(_PLACEHOLDER_NOTICE + extra_lines),
+            file_options={"content-type": _PDF_MIME, "upsert": "true"},
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("ic_documents: placeholder PDF upload failed for %s: %s",
+                    storage_path, exc)
 
 
 def _guard(url: str) -> None:
@@ -657,7 +741,7 @@ def _ensure_ic_document(sb, app_id: str, track: str, memo: str | None, uploaded_
     now = _now()
     row = {
         "application_id": app_id, "application_track": track,
-        "bucket": "ic-documents", "storage_path": f"demo/{app_id}.pdf",
+        "bucket": _IC_BUCKET, "storage_path": f"demo/{app_id}.pdf",
         "file_name": "IC-memo-demo.pdf", "uploaded_by": uploaded_by,
         "uploaded_at": now, "created_at": now, "updated_at": now,
     }
@@ -668,6 +752,19 @@ def _ensure_ic_document(sb, app_id: str, track: str, memo: str | None, uploaded_
             "signed_by": uploaded_by, "signer_name": "Demo Product Manager",
             "signed_at": now,
         })
+
+    # Real bytes in the bucket, not just a DB pointer — a demo whose download
+    # button 404s teaches a new product manager the product is broken. Upload
+    # happens before the DB insert (same order the live upload endpoint
+    # uses): if storage fails, we still want the failure visible rather than
+    # a DB row pointing at nothing new.
+    _upload_placeholder_pdf(sb, row["storage_path"], [f"Application: {app_id}"])
+    if memo == "signed":
+        _upload_placeholder_pdf(sb, row["signed_storage_path"], [
+            f"Application: {app_id}",
+            "SIGNED (demo) by Demo Product Manager",
+        ])
+
     sb.table("ic_documents").insert(row).execute()
 
 
