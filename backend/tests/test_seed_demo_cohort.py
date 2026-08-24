@@ -562,3 +562,52 @@ class TestAdminDecisionCheckPreflight:
         written |= {seed._GATE2_GATES[g] for g in seed._GATE2_GATES}
         assert set(seen) == written
         assert "offered" in seen and "jury_review" in seen
+
+
+# IANA reserved / special-use TLDs (RFC 2606 + RFC 6761). Pydantic's
+# `EmailStr` — which `/auth/sign-in-password` validates its body with —
+# rejects every one of them outright:
+#
+#   "value is not a valid email address: The part after the @-sign is a
+#    special-use or reserved name that cannot be used with email."
+#
+# So an address on one of these domains can be created in Supabase Auth (the
+# admin API does not apply this rule) and still be unable to sign in through
+# the app. That is exactly the failure this class exists to prevent: the demo
+# account was minted on `demo@artpark.test`, every seed check passed, and the
+# login page rejected it.
+_RESERVED_TLDS = (".test", ".invalid", ".example", ".localhost")
+
+
+class TestDemoEmailIsSignInCapable:
+    """The demo login must be an address the app's own sign-in path accepts."""
+
+    def test_demo_email_is_not_on_a_reserved_tld(self):
+        domain = seed.DEMO_EMAIL.rsplit("@", 1)[-1].strip().lower()
+        offending = [tld for tld in _RESERVED_TLDS if domain.endswith(tld)]
+        assert not offending, (
+            f"DEMO_EMAIL={seed.DEMO_EMAIL!r} sits on the reserved TLD "
+            f"{offending[0]!r}. Supabase Auth will accept the account, but "
+            "Pydantic's EmailStr rejects it, so POST /auth/sign-in-password "
+            "422s and the demo account cannot log in at all. Use a real "
+            "ARTPARK-owned domain (@artpark.in) — the masker exempts it, so "
+            "the address is never rewritten."
+        )
+
+    def test_demo_email_is_on_a_domain_the_masker_never_rewrites(self):
+        """A demo address the masker would rewrite breaks on the next mask run."""
+        from mask_staging_identities import EXEMPT_DOMAINS, is_exempt
+
+        assert is_exempt(seed.DEMO_EMAIL), (
+            f"DEMO_EMAIL={seed.DEMO_EMAIL!r} is not in {EXEMPT_DOMAINS} — a "
+            "future mask_staging_identities.py run would rewrite it and the "
+            "demo login would stop matching its password."
+        )
+
+    def test_the_roster_reviewers_stay_on_the_reserved_tld(self):
+        """They never sign in; a reserved TLD is an honest synthetic marker.
+
+        Moving them would mint three NEW accounts and leave the originals on
+        the Reviewers screen as phantoms.
+        """
+        assert all(e.endswith("@artpark.test") for e in seed._ROSTER_REVIEWERS)

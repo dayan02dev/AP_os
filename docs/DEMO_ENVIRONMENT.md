@@ -32,7 +32,7 @@ and reads like a genuine submission — only who submitted it has changed.
 ## How to get in
 
 - **URL:** https://ap-os-git-staging-artpark.vercel.app
-- **Account:** `demo@artpark.test`
+- **Account:** `demo@artpark.in`
 - **Password:** ask Udayan for it. It is not written down anywhere in this
   repository, because this repository is public.
 

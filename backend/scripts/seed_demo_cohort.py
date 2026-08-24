@@ -10,7 +10,7 @@ WHY
     than invented, so the content reads like the real product.
 
 WHAT IS WRITTEN
-    A `demo@artpark.test` login with admin + leadership + reviewer roles (no
+    A `demo@artpark.in` login with admin + leadership + reviewer roles (no
     applicant — the wizard is not part of this tour). Three roster reviewer
     accounts (`reviewer-demo-1..3@artpark.test`) and two batches. Twelve
     application rows get reviewer_assignments, reviews, an ai_screening row,
@@ -129,7 +129,21 @@ log = logging.getLogger("seed_demo_cohort")
 STAGING_PROJECT_ID = "exqmxvdtcsvpgtftwjml"
 PROD_PROJECT_ID = "xtmszlpwgbyoumalgbhs"
 
-DEMO_EMAIL = "demo@artpark.test"
+# The demo login must be an address the APP's own sign-in path accepts, not
+# merely one Supabase Auth's admin API will create. `.test` is an IANA
+# reserved TLD (RFC 6761): Pydantic's `EmailStr`, which validates the body of
+# POST /auth/sign-in-password, refuses it outright ("the part after the @-sign
+# is a special-use or reserved name that cannot be used with email"). The
+# first cut of this script used demo@artpark.test — the account was created,
+# every seed check passed, and the login page 422'd. @artpark.in is a real
+# ARTPARK-owned domain, it passes EmailStr, and mask_staging_identities.py
+# exempts it, so a future masking run will never rewrite the address out from
+# under its password. Guarded by TestDemoEmailIsSignInCapable.
+#
+# The three ROSTER reviewers deliberately stay on @artpark.test (see
+# `_ROSTER_REVIEWERS`): they never sign in, so a reserved TLD is an honest
+# signal that they are synthetic.
+DEMO_EMAIL = "demo@artpark.in"
 
 # The in-progress VIP onboarding branch tests against this founder — never
 # pick it as a demo row, on either track.
@@ -1003,8 +1017,17 @@ def _ensure_role(sb, user_id: str, role: str, *, apply: bool) -> None:
     ).execute()
 
 
+def _revoke_role(sb, user_id: str, role: str, *, apply: bool) -> int:
+    """Remove a role the DB granted on its own. Returns rows deleted."""
+    if not apply:
+        return 0
+    rows = (sb.table("user_roles").delete()
+            .eq("user_id", user_id).eq("role", role).execute().data) or []
+    return len(rows)
+
+
 def _ensure_demo_account(sb, *, apply: bool, reset_password: bool = False) -> tuple[str | None, str | None]:
-    """Find or create demo@artpark.test. Grants admin+leadership+reviewer,
+    """Find or create demo@artpark.in. Grants admin+leadership+reviewer,
     never applicant (the wizard is hidden for these roles already; adding
     applicant would just muddle the role switcher).
 
@@ -1028,6 +1051,14 @@ def _ensure_demo_account(sb, *, apply: bool, reset_password: bool = False) -> tu
         }).execute()
         for role in ("admin", "leadership", "reviewer"):
             _ensure_role(sb, user_id, role, apply=apply)
+        # Creating an auth user auto-grants `applicant` (a DB-side trigger on
+        # profiles does it — same behaviour as production). Verified against
+        # staging: /auth/me came back with four roles, not three, and the role
+        # switcher then offers an Applicant view whose wizard is not part of
+        # this tour. Revoke it explicitly rather than assuming the grant list
+        # above is the whole story.
+        if _revoke_role(sb, user_id, "applicant", apply=apply):
+            log.info("demo account: revoked the auto-granted 'applicant' role")
         sb.table("reviewer_profiles").upsert(
             {
                 "reviewer_user_id": user_id,
@@ -1395,7 +1426,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write changes (default is a dry run)")
     ap.add_argument("--reset-password", action="store_true",
-                     help="mint a new demo@artpark.test password even if the account already exists")
+                     help="mint a new demo@artpark.in password even if the account already exists")
     args = ap.parse_args()
 
     url = os.environ.get("SUPABASE_URL", "")
