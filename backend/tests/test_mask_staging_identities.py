@@ -31,7 +31,7 @@ class TestDeterminism:
 
     def test_identity_has_every_field(self):
         got = fake_identity("Someone Real")
-        assert set(got) == {"name", "email", "phone", "org", "linkedin"}
+        assert set(got) == {"name", "email", "phone", "org", "linkedin", "github"}
         assert all(isinstance(v, str) and v for v in got.values())
 
     def test_email_is_not_a_real_domain(self):
@@ -137,6 +137,27 @@ class TestProfilesNaming:
         }
         columns = {"id", "full_name", "email", "phone", "linkedin_url"}
         assert mask_row(row, columns) == {}
+
+
+class TestUrlFormatConstraints:
+    """`tir_applications` has two live CHECK constraints from migration 019
+    (`019_mandatory_profile_links_staging.sql:37-42`):
+        CHECK (linkedin_url IS NULL OR linkedin_url ~* 'linkedin\\.com/')
+        CHECK (github_url   IS NULL OR github_url   ~* 'github\\.com/')
+    A blanket 'https://example.test/redacted' placeholder satisfies neither
+    pattern. That is exactly what cost two staging rows their whole identity
+    mask: the UPDATE naming a bad github_url was rejected in full (23514), so
+    basic_full_name/basic_email/basic_phone/basic_org stayed real too."""
+
+    def test_github_url_satisfies_the_db_format_constraint(self):
+        row = {"basic_full_name": "Real Name", "github_url": "https://github.com/realperson"}
+        patch = mask_row(row, {"basic_full_name", "github_url"})
+        assert "github.com/" in patch["github_url"]
+
+    def test_linkedin_url_satisfies_the_db_format_constraint(self):
+        row = {"basic_full_name": "Real Name", "linkedin_url": "https://linkedin.com/in/realperson"}
+        patch = mask_row(row, {"basic_full_name", "linkedin_url"})
+        assert "linkedin.com/" in patch["linkedin_url"]
 
 
 # ─── C1: synthetic-email collisions ────────────────────────────────────────

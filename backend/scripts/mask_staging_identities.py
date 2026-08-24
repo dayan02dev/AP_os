@@ -184,6 +184,10 @@ def fake_identity(original: str) -> dict:
         "phone": f"+9198{_idx(seed + '|p', 90000000) + 10000000}",
         "org": org,
         "linkedin": f"https://www.linkedin.com/in/{handle}",
+        # tir_applications has a live CHECK constraint requiring this exact
+        # substring (019_mandatory_profile_links_staging.sql:41-42); a plain
+        # placeholder URL violates it and rejects the WHOLE row update.
+        "github": f"https://github.com/{handle}",
     }
 
 
@@ -204,6 +208,7 @@ FIELD_MAP = {
     "phone": "phone",
     "basic_org": "org",
     "linkedin_url": "linkedin",
+    "github_url": "github",
 }
 
 
@@ -264,7 +269,12 @@ def mask_row(row: dict, columns: set[str], ident: dict | None = None) -> dict:
             patch["basic_teammates"] = mates
 
     # Media URLs point at real people's demos; blank them to a placeholder.
-    for col in ("github_url", "evidence_video_url", "sip_demo_video_url"):
+    # github_url is handled above via FIELD_MAP instead — it has a live DB
+    # CHECK constraint (must contain "github.com/") that a bare placeholder
+    # fails, unlike these two, which carry no such constraint (confirmed
+    # against every migration file and against the live --apply run: only
+    # github_url/linkedin_url ever produced a 23514).
+    for col in ("evidence_video_url", "sip_demo_video_url"):
         if col in columns and row.get(col):
             patch[col] = "https://example.test/redacted"
 
