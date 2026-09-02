@@ -29,6 +29,7 @@ import { AdminSelectedApplications } from "./screens/AdminSelectedApplications";
 import { AdminPsychometry } from "./screens/AdminPsychometry";
 import { AdminAIStatus } from "./screens/AdminAIStatus";
 import { AdminRoles } from "./screens/AdminRoles";
+import ArtInfraShell from "./screens/artinfra/ArtInfraShell.jsx";
 import PortalSwitcher from "../../../components/PortalSwitcher.jsx";
 import ChangePasswordForm from "../../../components/ChangePasswordForm.jsx";
 
@@ -52,6 +53,7 @@ function AdminTopbar({ page, setPage }) {
     rejected:'REJECTED',
     jury_selected:'ACCEPTED',
     gate2:'FINAL GATE', audit:'AUDIT LOG', analytics:'ANALYTICS',
+    artinfra:'ART INFRA',
   };
   const crumb = crumbMap[page] || 'DASHBOARD';
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -265,6 +267,7 @@ export function AdminTabBar({ page, setPage, appsBadge, rejectedBadge, reviewBad
     // gate2 has its own id (it used to share `gate1`, switched by decision
     // mode). Without a distinct id the Final Gate is unreachable.
     { id:'gate2',         label:'Final Gate',   sub:'CONSOLIDATED DECISIONS',   badge:null },
+    { id:'artinfra',      label:'Art Infra',    sub:'CATALOG · VENDORS',        badge:null },
   ];
 
   return (
@@ -409,6 +412,7 @@ function AdminApp() {
             {page === 'gate2'       && <AdminGate2 />}
             {page === 'psychometry' && <AdminPsychometry />}
             {page === 'aistatus'   && <AdminAIStatus />}
+            {page === 'artinfra'   && <ArtInfraShell />}
           </div>
         </div>
       </div>
