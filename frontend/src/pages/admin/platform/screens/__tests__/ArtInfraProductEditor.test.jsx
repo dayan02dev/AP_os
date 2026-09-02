@@ -35,12 +35,38 @@ describe("ArtInfraProductEditor", () => {
     await waitFor(async () => expect((await store.getProduct("c1")).price).toBeNull());
   });
 
-  it("adds and removes spec rows", async () => {
+  it("adds a spec row", async () => {
     render(<ArtInfraProductEditor store={store} productId="c1" onDone={vi.fn()} />);
     await waitFor(() => screen.getByLabelText("Name"));
     const before = screen.getAllByLabelText(/Spec key/).length;
     fireEvent.click(screen.getByRole("button", { name: "+ Add spec" }));
     expect(screen.getAllByLabelText(/Spec key/).length).toBe(before + 1);
+  });
+
+  it("removes the right spec row, keeping neighbours intact", async () => {
+    render(<ArtInfraProductEditor store={store} productId="c1" onDone={vi.fn()} />);
+    await waitFor(() => screen.getByLabelText("Name"));
+
+    // c1 ships 3 specs (Channels, SNR, Interface). Overwrite the two rows
+    // that should survive with test-authored values so the post-removal
+    // assertions cannot pass by coincidentally matching fixture defaults.
+    fireEvent.change(screen.getByLabelText("Spec key 1"), { target: { value: "KeepFirst" } });
+    fireEvent.change(screen.getByLabelText("Spec value 1"), { target: { value: "KeepFirstValue" } });
+    fireEvent.change(screen.getByLabelText("Spec key 3"), { target: { value: "KeepThird" } });
+    fireEvent.change(screen.getByLabelText("Spec value 3"), { target: { value: "KeepThirdValue" } });
+    expect(screen.getAllByLabelText(/Spec key/)).toHaveLength(3);
+
+    // Remove the middle row specifically — scoped to the row containing the
+    // "Spec key 2" input, not just "the first Remove button found".
+    const middleRow = screen.getByLabelText("Spec key 2").closest(".ai-spec-row");
+    fireEvent.click(within(middleRow).getByRole("button", { name: "Remove" }));
+
+    const keys = screen.getAllByLabelText(/Spec key/);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toHaveValue("KeepFirst");
+    expect(screen.getByLabelText("Spec value 1")).toHaveValue("KeepFirstValue");
+    expect(keys[1]).toHaveValue("KeepThird");
+    expect(screen.getByLabelText("Spec value 2")).toHaveValue("KeepThirdValue");
   });
 
   it("saves and calls onDone", async () => {
