@@ -29,4 +29,19 @@ describe("ArtInfraVendors", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Delete Knowles" }));
     expect(await screen.findByText(/still used by a product/i)).toBeInTheDocument();
   });
+
+  it("clears a stale refusal banner after a later successful save", async () => {
+    render(<ArtInfraVendors store={store} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Knowles" }));
+    expect(await screen.findByText(/still used by a product/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Molex" }));
+    fireEvent.change(screen.getByLabelText("Contact email"),
+      { target: { value: "hello@molex.example" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save vendor" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/still used by a product/i)).not.toBeInTheDocument();
+    });
+  });
 });

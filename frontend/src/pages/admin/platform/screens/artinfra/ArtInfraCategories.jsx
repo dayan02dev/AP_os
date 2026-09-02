@@ -11,12 +11,14 @@ export default function ArtInfraCategories({ store }) {
 
   const add = async () => {
     if (!label.trim()) return;
+    setError("");
     await store.saveCategory({ label: label.trim() });
     setLabel("");
     load();
   };
 
   const move = async (row, delta) => {
+    setError("");
     await store.saveCategory({ ...row, sort: row.sort + delta });
     load();
   };

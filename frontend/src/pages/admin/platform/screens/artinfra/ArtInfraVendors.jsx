@@ -13,6 +13,7 @@ export default function ArtInfraVendors({ store }) {
   useEffect(() => { load(); }, [load]);
 
   const save = async () => {
+    setError("");
     await store.saveVendor(editing);
     setEditing(null);
     load();
