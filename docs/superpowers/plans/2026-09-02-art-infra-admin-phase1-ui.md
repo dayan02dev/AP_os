@@ -223,12 +223,20 @@ describe("artInfraMock", () => {
 
   it("computes the average rating from APPROVED reviews only", async () => {
     const s = createArtInfraStore();
+    // c1 ships two APPROVED sample reviews, rated 5 and 4 → avg 4.5, count 2.
+    const before = (await s.founderStore()).catalog.find((x) => x.id === "c1");
+    expect(before.rating).toEqual({ avg: 4.5, count: 2 });
+
     await s.addToShortlist("c1", 1);
-    await s.submitReview("c1", { rating: 1, body: "pending, should not count" });
-    const p = (await s.founderStore()).catalog.find((x) => x.id === "c1");
-    // seeded approved reviews only; the new one is pending
-    expect(p.rating.count).toBe(p.rating.count);
-    expect(p.my_review.status).toBe("pending");
+    await s.submitReview("c1", { rating: 1, body: "pending, must not count" });
+
+    const after = (await s.founderStore()).catalog.find((x) => x.id === "c1");
+    // The new 1-star review is pending, so it moves neither the average nor
+    // the count — that is the whole point of moderation.
+    expect(after.rating).toEqual({ avg: 4.5, count: 2 });
+    expect(after.my_review.status).toBe("pending");
+    // ...but the author still sees their own pending review.
+    expect(after.my_review.body).toBe("pending, must not count");
   });
 
   it("only allows a review once the product is shortlisted", async () => {
@@ -636,8 +644,11 @@ Preview-as-founder must mount the *real* founder UI, not a lookalike. That requi
 **Files:**
 - Create: `frontend/src/pages/founder/components/ProductCard.jsx`
 - Create: `frontend/src/pages/founder/components/ProductModal.jsx`
-- Modify: `frontend/src/pages/founder/FounderStore.jsx`
 - Test: `frontend/src/pages/founder/__tests__/ProductCard.test.jsx`
+- Test: `frontend/src/pages/founder/__tests__/ProductModal.test.jsx`
+
+`FounderStore.jsx` is NOT modified in this task — Task 4 rewrites it. This task
+only adds the two components and their tests.
 
 **Interfaces:**
 - Consumes: founder product shape from Task 2's `founderView`.
@@ -928,17 +939,94 @@ export default function ProductModal({ product, onClose, onPrimary, onSubmitRevi
 }
 ```
 
-- [ ] **Step 5: Run the card tests to verify they pass**
+- [ ] **Step 5: Write the ProductModal test**
 
-Run: `cd frontend && npx vitest run src/pages/founder/__tests__/ProductCard.test.jsx`
-Expected: PASS, 5 tests.
+This test carries coverage forward from `FounderStore.test.jsx`, which Task 4 deletes. Without it, nothing tests the modal's contents.
 
-- [ ] **Step 6: Commit**
+```jsx
+// frontend/src/pages/founder/__tests__/ProductModal.test.jsx
+import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import ProductModal from "../components/ProductModal.jsx";
+
+const base = {
+  id: "c1", name: "MEMS array", description: "A pre-calibrated array.",
+  type: "Hardware", pricing: "fixed", price: 8200,
+  vendor: { name: "Knowles", contact_name: "Asha Rao",
+    contact_email: "asha@knowles.example", contact_phone: "+91 80 1234 5678",
+    artpark_ref: "AP-KN-01" },
+  category: { label: "Sensors" },
+  specs: [{ k: "Channels", v: "8, matched ±1 dB" }],
+  lead_time_weeks_min: 3, lead_time_weeks_max: 4,
+  datasheets: [{ id: "d1", kind: "PDF", name: "Array datasheet (rev C)",
+    external_url: "https://example.org/a.pdf" }],
+  reviews: [{ id: "r1", author_name: "Rhea Nair", author_venture: "AuralDx",
+    rating: 5, body: "Great array." }],
+  rating: { avg: 5, count: 1 }, can_review: false, my_review: null,
+};
+
+const noop = () => {};
+
+describe("ProductModal", () => {
+  it("renders specs, the derived lead time, reviews and datasheets", () => {
+    render(<ProductModal product={base} onClose={noop} onPrimary={noop} onSubmitReview={noop} />);
+    expect(screen.getByText("Channels")).toBeInTheDocument();
+    expect(screen.getByText("Lead time")).toBeInTheDocument();
+    expect(screen.getByText("3–4 weeks")).toBeInTheDocument();
+    expect(screen.getByText("Great array.")).toBeInTheDocument();
+    expect(screen.getByText("Array datasheet (rev C)")).toBeInTheDocument();
+  });
+
+  it("hides the datasheets section entirely when there are none", () => {
+    render(<ProductModal product={{ ...base, datasheets: [] }}
+      onClose={noop} onPrimary={noop} onSubmitReview={noop} />);
+    expect(screen.queryByText("Datasheets & docs")).not.toBeInTheDocument();
+  });
+
+  it("says there are no reviews yet rather than rendering an empty list", () => {
+    render(<ProductModal product={{ ...base, reviews: [], rating: { avg: 0, count: 0 } }}
+      onClose={noop} onPrimary={noop} onSubmitReview={noop} />);
+    expect(screen.getByText("No reviews yet.")).toBeInTheDocument();
+  });
+
+  it("reveals the vendor contact for a quote-priced product", () => {
+    render(<ProductModal product={{ ...base, pricing: "quote", price: null }}
+      onClose={noop} onPrimary={noop} onSubmitReview={noop} />);
+    expect(screen.queryByText("asha@knowles.example")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show contact" }));
+    expect(screen.getByText("asha@knowles.example")).toBeInTheDocument();
+    expect(screen.getByText("AP-KN-01")).toBeInTheDocument();
+  });
+
+  it("tells a founder to shortlist before reviewing", () => {
+    render(<ProductModal product={base} onClose={noop} onPrimary={noop} onSubmitReview={noop} />);
+    expect(screen.getByText("Add this to your shortlist to leave a review.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Your review")).not.toBeInTheDocument();
+  });
+
+  it("submits a review once the product is shortlisted", async () => {
+    const onSubmitReview = vi.fn().mockResolvedValue({});
+    render(<ProductModal product={{ ...base, can_review: true }}
+      onClose={noop} onPrimary={noop} onSubmitReview={onSubmitReview} />);
+    fireEvent.change(screen.getByLabelText("Your review"), { target: { value: "Solid." } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
+    expect(onSubmitReview).toHaveBeenCalledWith("c1", { rating: 5, body: "Solid." });
+  });
+});
+```
+
+- [ ] **Step 6: Run both component test files to verify they pass**
+
+Run: `cd frontend && npx vitest run src/pages/founder/__tests__/ProductCard.test.jsx src/pages/founder/__tests__/ProductModal.test.jsx`
+Expected: PASS, 5 + 6 = 11 tests.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add frontend/src/pages/founder/components/ProductCard.jsx \
         frontend/src/pages/founder/components/ProductModal.jsx \
-        frontend/src/pages/founder/__tests__/ProductCard.test.jsx
+        frontend/src/pages/founder/__tests__/ProductCard.test.jsx \
+        frontend/src/pages/founder/__tests__/ProductModal.test.jsx
 git commit -m "feat(art-infra): extract founder ProductCard and ProductModal"
 ```
 
@@ -948,6 +1036,8 @@ git commit -m "feat(art-infra): extract founder ProductCard and ProductModal"
 
 **Files:**
 - Modify: `frontend/src/pages/founder/FounderStore.jsx` (full rewrite of the component body)
+- Modify: `frontend/src/lib/founderApi.js` (remove `requestQuote`, line 66)
+- Delete: `frontend/src/pages/founder/__tests__/FounderStore.test.jsx` (superseded — see Step 6)
 - Test: `frontend/src/pages/founder/__tests__/FounderStore.artinfra.test.jsx`
 
 **Interfaces:**
@@ -1104,15 +1194,21 @@ export default function FounderStore({ store = artInfraMock }) {
                       Your shortlist is empty. Add parts and services from the catalog.
                     </div>
                   ) : data.shortlist.map((l) => (
+                    /* Markup preserved verbatim from the shipped page — only the
+                       word Cart changes. This is a UI-approval build, so the
+                       popover must not regress visually. */
                     <div className="cart-pop-item" key={l.product_id}>
-                      <span>{l.product?.name}</span>
-                      <span className="qty">
+                      <div className="ci-info">
+                        <div className="ci-name">{l.product?.name}</div>
+                        <div className="ci-price">{fmtINR(l.product?.price)} each</div>
+                      </div>
+                      <div className="qty-step">
                         <button type="button" onClick={() => setQty(l.product_id, l.qty - 1)}
                           aria-label={`Decrease ${l.product?.name} quantity`}>−</button>
                         <span>{l.qty}</span>
                         <button type="button" onClick={() => setQty(l.product_id, l.qty + 1)}
                           aria-label={`Increase ${l.product?.name} quantity`}>+</button>
-                      </span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1163,19 +1259,30 @@ Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Delete the now-dead quote-request API method**
 
-Remove the `requestQuote` line from `frontend/src/lib/founderApi.js`. Leave every other method untouched — `getStore`, `addToCart`, `setCartQty`, `pushCartToProcurement` stay for now, because Phase 2 rewires them.
+Remove the `requestQuote` line (line 66) from `frontend/src/lib/founderApi.js`. Leave every other method untouched — `getStore`, `addToCart`, `setCartQty`, `pushCartToProcurement` stay for now, because Phase 2 rewires them.
 
-- [ ] **Step 6: Run the whole frontend suite**
+- [ ] **Step 6: Delete the superseded test file**
+
+```bash
+git rm frontend/src/pages/founder/__tests__/FounderStore.test.jsx
+```
+
+This is a deliberate deletion, not a casualty. All four of its tests assert behaviour this task removes on purpose: it mocks `founderApi.getStore`, clicks `"Add to cart"`, and asserts `"Cart · 1 items"`, `"Request quote"` and `"Quote requested ✓"`. It also builds products in the old shape (`vendor` as a string, `cat`, reviews keyed `name`/`company`/`text`), which no longer exists. Amending it would mean rewriting every line.
+
+Its modal coverage — specs, reviews, datasheets — is replaced by `ProductModal.test.jsx` from Task 3, and its filter and shortlist coverage by `FounderStore.artinfra.test.jsx` in this task. Do not delete it without confirming both of those exist and pass.
+
+- [ ] **Step 7: Run the whole frontend suite**
 
 Run: `cd frontend && npm test`
-Expected: PASS. If `FounderStore` had an older test file asserting "Cart" or "Request quote", delete those assertions — they encode the behaviour we deliberately changed.
+Expected: PASS. The pre-existing baseline is 2 known failures unrelated to this work — verify any failure against untouched `release/sip-launch-v1` before treating it as yours.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add frontend/src/pages/founder/FounderStore.jsx \
         frontend/src/pages/founder/__tests__/FounderStore.artinfra.test.jsx \
         frontend/src/lib/founderApi.js
+git rm --cached --ignore-unmatch frontend/src/pages/founder/__tests__/FounderStore.test.jsx
 git commit -m "feat(art-infra): founder page on the mock — shortlist, show contact, real reviews"
 ```
 
@@ -1601,6 +1708,14 @@ describe("ArtInfraProductEditor", () => {
     expect(screen.queryByLabelText("Price (₹)")).not.toBeInTheDocument();
   });
 
+  it("clears the price when pricing switches to quote", async () => {
+    render(<ArtInfraProductEditor store={store} productId="c1" onDone={vi.fn()} />);
+    await waitFor(() => screen.getByLabelText("Price (\u20b9)"));
+    fireEvent.change(screen.getByLabelText("Pricing"), { target: { value: "quote" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(async () => expect((await store.getProduct("c1")).price).toBeNull());
+  });
+
   it("adds and removes spec rows", async () => {
     render(<ArtInfraProductEditor store={store} productId="c1" onDone={vi.fn()} />);
     await waitFor(() => screen.getByLabelText("Name"));
@@ -1744,7 +1859,15 @@ export default function ArtInfraProductEditor({ store, productId, onDone }) {
 
           <label>Pricing
             <select className="os-input" value={form.pricing}
-              onChange={(e) => set("pricing", e.target.value)}>
+              onChange={(e) => setForm((f) => ({
+                ...f,
+                pricing: e.target.value,
+                // A quote-priced product has no price. Clearing it here is what
+                // keeps the form honest with the schema's "null when
+                // pricing='quote'" rule — hiding the field alone would leave a
+                // stale number in the payload.
+                price: e.target.value === "quote" ? null : f.price,
+              }))}>
               <option value="fixed">Fixed price</option>
               <option value="quote">On request</option>
             </select>
@@ -1829,7 +1952,7 @@ export default function ArtInfraProductEditor({ store, productId, onDone }) {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd frontend && npx vitest run src/pages/admin/platform/screens/__tests__/ArtInfraProductEditor.test.jsx`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
 
