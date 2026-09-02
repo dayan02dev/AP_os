@@ -2,6 +2,8 @@
 // sub-nav: it is reached by opening a row from the catalog, the same way
 // AdminDetail is reached from AdminPipeline.
 
+import "../../../../../styles/art-infra-admin.css";
+
 import { useEffect, useState } from "react";
 import { artInfraMock } from "../../../../../lib/artInfraMock.js";
 import ArtInfraCatalog from "./ArtInfraCatalog.jsx";
