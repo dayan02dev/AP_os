@@ -63,7 +63,6 @@ export const founderApi = {
   addToCart: (productId, qty = 1) => api.post("/founder/store/cart", { product_id: productId, qty }),
   setCartQty: (productId, qty) => api.patch(`/founder/store/cart/${productId}`, { qty }),
   removeCartItem: (productId) => api.del(`/founder/store/cart/${productId}`),
-  requestQuote: (productId) => api.post("/founder/store/quote-request", { product_id: productId }),
   pushCartToProcurement: () => api.post("/founder/store/push-to-procurement"),
 
   // Founders resources · Fundraising & connects
