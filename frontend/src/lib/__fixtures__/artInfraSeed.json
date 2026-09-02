@@ -1,0 +1,567 @@
+{
+  "vendors": [
+    {
+      "id": "artpark-fab",
+      "name": "ARTPARK Fab",
+      "contact_name": "",
+      "contact_email": "",
+      "contact_phone": "",
+      "artpark_ref": "",
+      "notes": ""
+    },
+    {
+      "id": "aws-activate",
+      "name": "AWS Activate",
+      "contact_name": "",
+      "contact_email": "",
+      "contact_phone": "",
+      "artpark_ref": "",
+      "notes": ""
+    },
+    {
+      "id": "analog-devices",
+      "name": "Analog Devices",
+      "contact_name": "",
+      "contact_email": "",
+      "contact_phone": "",
+      "artpark_ref": "",
+      "notes": ""
+    },
+    {
+      "id": "centaur-labs",
+      "name": "Centaur Labs",
+      "contact_name": "",
+      "contact_email": "",
+      "contact_phone": "",
+      "artpark_ref": "",
+      "notes": ""
+    },
+    {
+      "id": "deci-ai",
+      "name": "Deci AI",
+      "contact_name": "",
+      "contact_email": "",
+      "contact_phone": "",
+      "artpark_ref": "",
+      "notes": ""
+    },
+    {
+      "id": "inventus-power",
+      "name": "Inventus Power",
+      "contact_name": "",
+      "contact_email": "",
+      "contact_phone": "",
+      "artpark_ref": "",
+      "notes": ""
+    },
+    {
+      "id": "knowles",
+      "name": "Knowles",
+      "contact_name": "",
+      "contact_email": "",
+      "contact_phone": "",
+      "artpark_ref": "",
+      "notes": ""
+    },
+    {
+      "id": "molex",
+      "name": "Molex",
+      "contact_name": "",
+      "contact_email": "",
+      "contact_phone": "",
+      "artpark_ref": "",
+      "notes": ""
+    },
+    {
+      "id": "nvidia-jetson",
+      "name": "NVIDIA Jetson",
+      "contact_name": "",
+      "contact_email": "",
+      "contact_phone": "",
+      "artpark_ref": "",
+      "notes": ""
+    },
+    {
+      "id": "precision-enclosures",
+      "name": "Precision Enclosures",
+      "contact_name": "",
+      "contact_email": "",
+      "contact_phone": "",
+      "artpark_ref": "",
+      "notes": ""
+    },
+    {
+      "id": "qualio",
+      "name": "Qualio",
+      "contact_name": "",
+      "contact_email": "",
+      "contact_phone": "",
+      "artpark_ref": "",
+      "notes": ""
+    }
+  ],
+  "categories": [
+    {
+      "id": "sensors",
+      "label": "Sensors",
+      "sort": 0
+    },
+    {
+      "id": "boards",
+      "label": "Boards",
+      "sort": 1
+    },
+    {
+      "id": "compute",
+      "label": "Compute",
+      "sort": 2
+    },
+    {
+      "id": "prototyping",
+      "label": "Prototyping",
+      "sort": 3
+    },
+    {
+      "id": "fabrication",
+      "label": "Fabrication",
+      "sort": 4
+    },
+    {
+      "id": "components",
+      "label": "Components",
+      "sort": 5
+    },
+    {
+      "id": "power",
+      "label": "Power",
+      "sort": 6
+    },
+    {
+      "id": "software",
+      "label": "Software",
+      "sort": 7
+    }
+  ],
+  "products": [
+    {
+      "id": "c1",
+      "slug": "mems-microphone-array-8-ch",
+      "name": "MEMS microphone array (8-ch)",
+      "blurb": "Low-noise 8-channel MEMS array for acoustic sensing.",
+      "description": "A pre-calibrated 8-microphone MEMS array tuned for the 20 Hz–20 kHz band, with beamforming-ready channel matching. Ships with a reference carrier board and Python capture tooling used across ARTPARK acoustic projects.",
+      "vendor_id": "knowles",
+      "category_id": "sensors",
+      "type": "Hardware",
+      "pricing": "fixed",
+      "price": 8200,
+      "lead_time_weeks_min": 3,
+      "lead_time_weeks_max": 4,
+      "specs": [
+        {
+          "k": "Channels",
+          "v": "8, matched ±1 dB"
+        },
+        {
+          "k": "SNR",
+          "v": "68 dB(A)"
+        },
+        {
+          "k": "Interface",
+          "v": "TDM / PDM"
+        }
+      ],
+      "status": "published",
+      "sort": 0,
+      "visible_tracks": [
+        "tir"
+      ]
+    },
+    {
+      "id": "c2",
+      "slug": "ecg-hrv-analog-front-end-board",
+      "name": "ECG / HRV analog front-end board",
+      "blurb": "Medical-grade AFE for ECG and heart-rate variability.",
+      "description": "Three-lead ECG analog front-end with integrated right-leg drive and 24-bit sigma-delta ADC. Designed for wearable and bedside form factors with a documented path to IEC 60601 compliance.",
+      "vendor_id": "analog-devices",
+      "category_id": "boards",
+      "type": "Hardware",
+      "pricing": "fixed",
+      "price": 12500,
+      "lead_time_weeks_min": 5,
+      "lead_time_weeks_max": 6,
+      "specs": [
+        {
+          "k": "Resolution",
+          "v": "24-bit"
+        },
+        {
+          "k": "Leads",
+          "v": "3 (expandable)"
+        },
+        {
+          "k": "Isolation",
+          "v": "Reinforced, 5 kV"
+        }
+      ],
+      "status": "published",
+      "sort": 1,
+      "visible_tracks": [
+        "tir"
+      ]
+    },
+    {
+      "id": "c3",
+      "slug": "edge-soc-dev-module",
+      "name": "Edge SoC dev module",
+      "blurb": "Compact edge AI compute for on-device inference.",
+      "description": "Jetson-class edge module with 8 GB LPDDR5 and a 40 TOPS NPU, on a carrier with M.2, CSI, and industrial I/O. The standard ARTPARK target for on-device model deployment.",
+      "vendor_id": "nvidia-jetson",
+      "category_id": "compute",
+      "type": "Hardware",
+      "pricing": "fixed",
+      "price": 15500,
+      "lead_time_weeks_min": 2,
+      "lead_time_weeks_max": 3,
+      "specs": [
+        {
+          "k": "Compute",
+          "v": "40 TOPS"
+        },
+        {
+          "k": "Memory",
+          "v": "8 GB LPDDR5"
+        },
+        {
+          "k": "Power",
+          "v": "7–15 W"
+        }
+      ],
+      "status": "published",
+      "sort": 2,
+      "visible_tracks": [
+        "tir"
+      ]
+    },
+    {
+      "id": "c4",
+      "slug": "rapid-pcb-fabrication-2-layer-10-pcs",
+      "name": "Rapid PCB fabrication (2-layer, 10 pcs)",
+      "blurb": "Quick-turn 2-layer PCB prototyping run.",
+      "description": "In-house quick-turn PCB fabrication for 2-layer boards up to 100×100 mm, 10 pieces, with HASL finish. Typical turnaround is 48–72 hours from Gerber submission.",
+      "vendor_id": "artpark-fab",
+      "category_id": "prototyping",
+      "type": "Hardware",
+      "pricing": "fixed",
+      "price": 6500,
+      "lead_time_weeks_min": null,
+      "lead_time_weeks_max": null,
+      "specs": [
+        {
+          "k": "Layers",
+          "v": "2"
+        },
+        {
+          "k": "Max size",
+          "v": "100 × 100 mm"
+        },
+        {
+          "k": "Qty",
+          "v": "10 boards"
+        },
+        {
+          "k": "Turnaround",
+          "v": "48–72 hrs"
+        }
+      ],
+      "status": "published",
+      "sort": 3,
+      "visible_tracks": [
+        "tir"
+      ]
+    },
+    {
+      "id": "c5",
+      "slug": "resin-3d-printing-per-part",
+      "name": "Resin 3D printing (per part)",
+      "blurb": "High-resolution SLA parts for enclosures & fixtures.",
+      "description": "Per-part SLA resin printing at 50 µm layer height for enclosures, jigs, and test fixtures. Standard, tough, and biocompatible resins available.",
+      "vendor_id": "artpark-fab",
+      "category_id": "prototyping",
+      "type": "Hardware",
+      "pricing": "fixed",
+      "price": 1800,
+      "lead_time_weeks_min": null,
+      "lead_time_weeks_max": null,
+      "specs": [
+        {
+          "k": "Process",
+          "v": "SLA"
+        },
+        {
+          "k": "Layer height",
+          "v": "50 µm"
+        },
+        {
+          "k": "Build volume",
+          "v": "192 × 120 × 245 mm"
+        },
+        {
+          "k": "Turnaround",
+          "v": "24–48 hrs"
+        }
+      ],
+      "status": "published",
+      "sort": 4,
+      "visible_tracks": [
+        "tir"
+      ]
+    },
+    {
+      "id": "c6",
+      "slug": "custom-enclosure-cnc-machining",
+      "name": "Custom enclosure CNC machining",
+      "blurb": "Machined metal/plastic enclosures to spec.",
+      "description": "Custom CNC machining for aluminium and engineering-plastic enclosures, including anodising and silk-screen. Priced per project from your CAD and finish requirements.",
+      "vendor_id": "precision-enclosures",
+      "category_id": "fabrication",
+      "type": "Hardware",
+      "pricing": "quote",
+      "price": null,
+      "lead_time_weeks_min": 3,
+      "lead_time_weeks_max": 5,
+      "specs": [
+        {
+          "k": "Materials",
+          "v": "Al 6061, ABS, PC"
+        },
+        {
+          "k": "Finish",
+          "v": "Anodise, bead-blast"
+        },
+        {
+          "k": "MOQ",
+          "v": "1"
+        }
+      ],
+      "status": "published",
+      "sort": 5,
+      "visible_tracks": [
+        "tir"
+      ]
+    },
+    {
+      "id": "c7",
+      "slug": "medical-grade-cable-assembly",
+      "name": "Medical-grade cable assembly",
+      "blurb": "Sterilisable, shielded cable assemblies.",
+      "description": "Custom shielded cable assemblies rated for repeated autoclave and EtO sterilisation, with medical connectors and documented biocompatibility.",
+      "vendor_id": "molex",
+      "category_id": "components",
+      "type": "Hardware",
+      "pricing": "fixed",
+      "price": 3400,
+      "lead_time_weeks_min": 4,
+      "lead_time_weeks_max": 6,
+      "specs": [
+        {
+          "k": "Shielding",
+          "v": "Braid + foil"
+        },
+        {
+          "k": "Sterilisation",
+          "v": "Autoclave / EtO"
+        },
+        {
+          "k": "MOQ",
+          "v": "25"
+        }
+      ],
+      "status": "published",
+      "sort": 6,
+      "visible_tracks": [
+        "tir"
+      ]
+    },
+    {
+      "id": "c8",
+      "slug": "custom-battery-pack-bms",
+      "name": "Custom battery pack + BMS",
+      "blurb": "Bespoke Li-ion packs with certified BMS.",
+      "description": "Design and build of custom lithium-ion packs with an integrated, certified battery-management system. Priced per project against your capacity, form-factor, and certification needs.",
+      "vendor_id": "inventus-power",
+      "category_id": "power",
+      "type": "Hardware",
+      "pricing": "quote",
+      "price": null,
+      "lead_time_weeks_min": 6,
+      "lead_time_weeks_max": 8,
+      "specs": [
+        {
+          "k": "Chemistry",
+          "v": "Li-ion / LiFePO₄"
+        },
+        {
+          "k": "BMS",
+          "v": "Certified, configurable"
+        },
+        {
+          "k": "Certs",
+          "v": "IS 16046 path"
+        }
+      ],
+      "status": "published",
+      "sort": 7,
+      "visible_tracks": [
+        "tir"
+      ]
+    },
+    {
+      "id": "c9",
+      "slug": "edge-inference-sdk-annual-licence",
+      "name": "Edge inference SDK (annual licence)",
+      "blurb": "Model optimisation & runtime for edge deployment.",
+      "description": "Annual licence for an edge inference SDK that quantises, prunes, and compiles models for the target NPU, with a profiling suite. Includes one seat and priority support.",
+      "vendor_id": "deci-ai",
+      "category_id": "software",
+      "type": "Software",
+      "pricing": "fixed",
+      "price": 45000,
+      "lead_time_weeks_min": null,
+      "lead_time_weeks_max": null,
+      "specs": [
+        {
+          "k": "Seats",
+          "v": "1 (add-on available)"
+        },
+        {
+          "k": "Targets",
+          "v": "Jetson, ARM, x86"
+        },
+        {
+          "k": "Term",
+          "v": "12 months"
+        },
+        {
+          "k": "Support",
+          "v": "Priority email"
+        }
+      ],
+      "status": "published",
+      "sort": 8,
+      "visible_tracks": [
+        "tir"
+      ]
+    },
+    {
+      "id": "c10",
+      "slug": "clinical-data-annotation-platform",
+      "name": "Clinical data annotation platform",
+      "blurb": "Expert-labelled medical data at scale.",
+      "description": "Managed annotation platform with clinician-in-the-loop labelling for medical imaging, signals, and video. Priced per project by volume, modality, and required expertise.",
+      "vendor_id": "centaur-labs",
+      "category_id": "software",
+      "type": "Software",
+      "pricing": "quote",
+      "price": null,
+      "lead_time_weeks_min": null,
+      "lead_time_weeks_max": null,
+      "specs": [
+        {
+          "k": "Modalities",
+          "v": "Imaging, signal, video"
+        },
+        {
+          "k": "Labellers",
+          "v": "Verified clinicians"
+        },
+        {
+          "k": "QA",
+          "v": "Consensus scoring"
+        },
+        {
+          "k": "Onboarding",
+          "v": "1–2 weeks"
+        }
+      ],
+      "status": "published",
+      "sort": 9,
+      "visible_tracks": [
+        "tir"
+      ]
+    },
+    {
+      "id": "c11",
+      "slug": "hipaa-ready-cloud-compute-credits",
+      "name": "HIPAA-ready cloud (compute credits)",
+      "blurb": "Compliant cloud compute & storage credits.",
+      "description": "A credit pack for HIPAA-eligible cloud services — GPU training instances, object storage, and managed databases — with a signed BAA and reference architecture for health workloads.",
+      "vendor_id": "aws-activate",
+      "category_id": "software",
+      "type": "Software",
+      "pricing": "fixed",
+      "price": 60000,
+      "lead_time_weeks_min": null,
+      "lead_time_weeks_max": null,
+      "specs": [
+        {
+          "k": "Credit value",
+          "v": "₹60,000"
+        },
+        {
+          "k": "BAA",
+          "v": "Included"
+        },
+        {
+          "k": "GPU",
+          "v": "A10G / A100 on demand"
+        },
+        {
+          "k": "Validity",
+          "v": "12 months"
+        }
+      ],
+      "status": "published",
+      "sort": 10,
+      "visible_tracks": [
+        "tir"
+      ]
+    },
+    {
+      "id": "c12",
+      "slug": "regulatory-qms-software",
+      "name": "Regulatory QMS software",
+      "blurb": "Quality management system for medical devices.",
+      "description": "Cloud QMS for ISO 13485 and design-control workflows — document control, CAPA, and audit trails. Priced per project by team size and module selection.",
+      "vendor_id": "qualio",
+      "category_id": "software",
+      "type": "Software",
+      "pricing": "quote",
+      "price": null,
+      "lead_time_weeks_min": null,
+      "lead_time_weeks_max": null,
+      "specs": [
+        {
+          "k": "Standards",
+          "v": "ISO 13485, 21 CFR 820"
+        },
+        {
+          "k": "Modules",
+          "v": "DControl, CAPA, Training"
+        },
+        {
+          "k": "Users",
+          "v": "From 5"
+        },
+        {
+          "k": "Onboarding",
+          "v": "2–3 weeks"
+        }
+      ],
+      "status": "published",
+      "sort": 11,
+      "visible_tracks": [
+        "tir"
+      ]
+    }
+  ]
+}
