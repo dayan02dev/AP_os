@@ -14,7 +14,7 @@ describe("artInfraLatency", () => {
     expect(original.nested.n).toBe(1);
   });
 
-  it("is genuinely async — never resolves in the same microtask", async () => {
+  it("never resolves in the same microtask", async () => {
     configure({ minMs: 0, maxMs: 0 });
     let settled = false;
     const p = settle(1).then(() => { settled = true; });

@@ -34,11 +34,15 @@ export function resetLatency() {
 }
 
 function shouldFail() {
+  // A one-shot failNext returns before callCount advances, so it does not
+  // consume a slot toward the next failEvery trip. The two knobs are
+  // independent by design: failNext targets one specific call in one test,
+  // failEvery simulates a flaky endpoint across many.
   if (failNext) {
     const code = failNext;
     failNext = null;          // one-shot
     return code;
-    }
+  }
   callCount += 1;
   if (failEvery > 0 && callCount % failEvery === 0) return "injected_failure";
   return null;
