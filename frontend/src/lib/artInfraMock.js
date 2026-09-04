@@ -34,6 +34,7 @@ const WRITABLE = {
     "price", "lead_time_weeks_min", "lead_time_weeks_max", "specs", "sort",
     "visible_tracks"],
   request: ["product_id", "note", "qty"],
+  invite: ["display_name", "contact_email"],
   review: ["rating", "body"],
   category: ["id", "label", "sort"],
   specField: ["id", "category_id", "key", "label", "data_type", "unit", "enum_options",
@@ -59,6 +60,12 @@ export function createArtInfraStore(initial = seed, { seedSamples = true } = {})
       gstin: "", udyam_number: "", cin: "", certifications: [],
       status: "approved",        // seeded vendors are live and unclaimed
       user_ids: [],              // one-to-many; empty = unclaimed
+      // MOCK ONLY -- the generator deliberately invents no contact data, but an
+      // empty contact block makes the approved state look broken in review.
+      // These live here, beside SAMPLE_REVIEWS, so they cannot reach a real seed.
+      contact_name: v.contact_name || "Sales desk",
+      contact_email: v.contact_email || `sales@${v.id}.example`,
+      contact_phone: v.contact_phone || "+91 80 4000 0000",
     })),
     categories: clone(initial.categories),
     spec_fields: clone(initial.spec_fields),
@@ -80,8 +87,17 @@ export function createArtInfraStore(initial = seed, { seedSamples = true } = {})
     return { avg: ok.reduce((a, r) => a + r.rating, 0) / ok.length, count: ok.length };
   };
 
-  const requestFor = (productId) =>
-    db.requests.find((r) => r.product_id === productId && r.application_id === ME) || null;
+  // Prefer approved, then pending, else the most recent — a stale declined or
+  // withdrawn row must not pin the product's state once a new one exists.
+  const requestFor = (productId) => {
+    const mine = db.requests.filter(
+      (r) => r.product_id === productId && r.application_id === ME);
+    if (!mine.length) return null;
+    const rank = { approved: 0, pending: 1, declined: 2, withdrawn: 3 };
+    return [...mine].sort((a, b) =>
+      (rank[a.status] ?? 9) - (rank[b.status] ?? 9)
+      || b.created_at.localeCompare(a.created_at))[0];
+  };
 
   const vendorApprovedFor = (vendorId) =>
     db.requests.some((r) => r.vendor_id === vendorId
@@ -115,7 +131,15 @@ export function createArtInfraStore(initial = seed, { seedSamples = true } = {})
       datasheets: db.datasheets.filter((d) => d.product_id === p.id),
       rating: v ? ratingOfVendor(v.id) : { avg: 0, count: 0 },
       in_shortlist_qty: line ? line.qty : 0,
-      contact_state: req ? req.status : "none",
+      // Disclosure is per-VENDOR: approving any one request unlocks every
+      // product that vendor lists. vendorApprovedFor wins over this product's
+      // own request row, so an older decline on one product cannot mask a
+      // vendor unlocked through another. A lone withdrawn row (no approved
+      // or pending sibling) is not a real outstanding state, so it reports
+      // as "none" rather than the out-of-enum "withdrawn".
+      contact_state: vendorApprovedFor(p.vendor_id)
+        ? "approved"
+        : (req && req.status !== "withdrawn" ? req.status : "none"),
       request_id: req ? req.id : null,
       request_note: req ? req.decision_note || "" : "",
       can_review: v ? vendorApprovedFor(v.id) : false,
@@ -236,9 +260,12 @@ export function createArtInfraStore(initial = seed, { seedSamples = true } = {})
   };
 
   const inviteVendor = (patch) => {
+    try { assertWritable(patch, WRITABLE.invite); } catch (e) { return Promise.reject(e); }
     if (!patch?.contact_email) return reject("email_required");
+    const base = slugify(patch.display_name || patch.contact_email);
+    if (db.vendors.some((v) => v.id === base)) return reject("vendor_exists");
     const created = {
-      id: slugify(patch.display_name || patch.contact_email), name: patch.display_name || "",
+      id: base, name: patch.display_name || "",
       legal_name: "", display_name: patch.display_name || "", website: "",
       contact_name: "", contact_email: patch.contact_email, contact_phone: "",
       artpark_ref: "", capabilities: "", categories_served: [],
@@ -277,6 +304,7 @@ export function createArtInfraStore(initial = seed, { seedSamples = true } = {})
   const publishProduct = (id) => {
     const p = db.products.find((x) => x.id === id);
     if (!p) return reject("not_found");
+    if (p.status !== "pending_review") return reject("not_in_review");
     const v = vendorOf(p);
     if (!v || v.status !== "approved") return reject("vendor_not_approved");
     p.status = "published";
@@ -372,6 +400,7 @@ export function createArtInfraStore(initial = seed, { seedSamples = true } = {})
   const moderateVendorReview = (id, status) => {
     const r = db.reviews.find((x) => x.id === id);
     if (!r) return reject("not_found");
+    if (!["pending", "approved", "hidden"].includes(status)) return reject("bad_status");
     r.status = status;
     r.moderated_at = new Date().toISOString();
     return settle(r);

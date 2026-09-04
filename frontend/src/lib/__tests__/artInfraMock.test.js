@@ -41,17 +41,19 @@ describe("disclosure rule — the security-relevant contract", () => {
 
   it("unlocks EVERY product from that vendor, not just the one requested", async () => {
     const before = await store.founderStore();
-    const target = before.catalog[0];
+    // artpark-fab is the fixture's only vendor with more than one published
+    // product, so it is the only one that can prove per-vendor disclosure.
+    // catalog[0] is knowles, which has exactly one — the old `if (sibling)`
+    // guard silently skipped the assertion.
+    const target = before.catalog.find((p) => p.vendor.id === "artpark-fab");
     const sibling = before.catalog.find(
-      (p) => p.vendor.id === target.vendor.id && p.id !== target.id);
+      (p) => p.vendor.id === "artpark-fab" && p.id !== target.id);
     const req = await store.createRequest({ product_id: target.id, note: "x" });
     await store.approveRequest(req.id);
     const after = await store.founderStore();
-    if (sibling) {
-      const s = after.catalog.find((p) => p.id === sibling.id);
-      expect(s.contact_state).toBe("approved");
-      expect(s.vendor).toHaveProperty("contact_email");
-    }
+    const s = after.catalog.find((p) => p.id === sibling.id);
+    expect(s.contact_state).toBe("approved");
+    expect(s.vendor).toHaveProperty("contact_email");
     // A DIFFERENT vendor must stay locked.
     const other = after.catalog.find((p) => p.vendor.id !== target.vendor.id);
     expect(other.contact_state).toBe("none");
@@ -66,6 +68,29 @@ describe("disclosure rule — the security-relevant contract", () => {
     expect(after.catalog[0].contact_state).toBe("declined");
     expect(after.catalog[0].vendor.contact_email).toBeUndefined();
     expect(after.catalog[0].request_note).toBe("Out of budget");
+  });
+
+  it("reports contact_state approved on a sibling product, not just the requested one", async () => {
+    const before = await store.founderStore();
+    const target = before.catalog.find((p) => p.vendor.id === "artpark-fab");
+    const req = await store.createRequest({ product_id: target.id, note: "x" });
+    await store.approveRequest(req.id);
+    const after = await store.founderStore();
+    const sibling = after.catalog.find(
+      (p) => p.vendor.id === "artpark-fab" && p.id !== target.id);
+    // The founder UI keys entirely off contact_state, so shipping the contact
+    // without flipping this leaves the sibling showing "Request contact".
+    expect(sibling.contact_state).toBe("approved");
+  });
+
+  it("re-requesting after a decline reports pending, not the stale decline", async () => {
+    const { catalog } = await store.founderStore();
+    const p = catalog[0];
+    const first = await store.createRequest({ product_id: p.id, note: "a" });
+    await store.declineRequest(first.id, "Out of budget");
+    await store.createRequest({ product_id: p.id, note: "b" });
+    const after = await store.founderStore();
+    expect(after.catalog.find((x) => x.id === p.id).contact_state).toBe("pending");
   });
 });
 
@@ -172,8 +197,13 @@ describe("reviews are vendor-level and gated on an approved request", () => {
     // This test is about the aggregation rule, not about the fixture's fiction.
     const store = createArtInfraStore(undefined, { seedSamples: false });
     const { catalog } = await store.founderStore();
-    const vendorId = catalog[0].vendor.id;
-    const req = await store.createRequest({ product_id: catalog[0].id, note: "x" });
+    // artpark-fab is the fixture's only vendor with more than one published
+    // product, so it is the only one that can prove per-vendor disclosure.
+    // catalog[0] is knowles, which has exactly one — the old `if (sibling)`
+    // guard silently skipped the assertion.
+    const target = catalog.find((p) => p.vendor.id === "artpark-fab");
+    const vendorId = target.vendor.id;
+    const req = await store.createRequest({ product_id: target.id, note: "x" });
     await store.approveRequest(req.id);
     const r = await store.submitVendorReview(vendorId, { rating: 4, body: "Good" });
     await store.moderateVendorReview(r.id, "approved");
