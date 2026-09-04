@@ -1106,7 +1106,27 @@
   .review-page .review-print-title .rpt-company { font-size: 12pt; margin: 0 0 1mm; }
   .review-page .review-print-title .rpt-meta { font-size: 10pt; color: #555; margin: 0; }
 
-  /* Keep a question's box intact across page breaks; preserve borders/chips. */
-  .review-page .q-block { break-inside: avoid; page-break-inside: avoid; }
+  /* Answers render in full (no "Read more" clamp), so one question can easily
+     run longer than a page. `break-inside: avoid` on a block taller than the
+     page makes Chrome overflow and CLIP the tail — losing exactly the text we
+     are exporting. So let a q-block break, and instead keep the question
+     heading glued to the start of its answer. */
+  .review-page .q-block { break-inside: auto; page-break-inside: auto; }
+  .review-page .q-block-head,
+  .review-page .q-block-label,
+  .review-page .q-block-help {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  .review-page .ans-inset { orphans: 3; widows: 3; }
+
+  /* Short, self-contained answers still read better unbroken — they are far
+     smaller than a page, so avoiding a break here can't clip anything. */
+  .review-page .ans-choice,
+  .review-page .ans-file,
+  .review-page .ans-team-row {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   .review-page * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
