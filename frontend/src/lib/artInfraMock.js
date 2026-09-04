@@ -1,326 +1,519 @@
-// Phase-1 stand-in for the Art Infra API. Every method name here is the name
-// the real client will expose in Phase 2, so swapping this module for a
-// network client is a one-line import change per screen.
+// Phase-2 API stand-in for three portals. Every method name here is the name
+// the real client will expose, so swapping this module for a network client is
+// a one-line import change per screen.
 //
-// State is in-memory and per-instance: a reload resets it. That is deliberate
-// for a UI sample — nothing here writes to any database.
+// Deliberately hostile, unlike Phase 1's mock:
+//   * every call goes through settle() -- genuinely async, jittered, failable
+//   * write methods REJECT unknown fields, so a read-model-as-write-payload
+//     bug fails here instead of 422-ing in staging
+//   * NO METHOD USES `this` -- every call site may destructure freely
 
 import seed from "./__fixtures__/artInfraSeed.json";
-
-// Sample reviews and datasheets exist so the moderation queue and the
-// datasheet section are not empty in the preview. They are MOCK ONLY and must
-// never be carried into the Phase-2 migration seed, which deliberately ships
-// neither.
-const SAMPLE_REVIEWS = [
-  { id: "r1", product_id: "c1", application_id: "app-1", author_name: "Rhea Nair",
-    author_venture: "AuralDx", rating: 5, status: "approved",
-    body: "Channel matching saved us weeks of calibration.",
-    created_at: "2026-08-02T10:00:00Z" },
-  { id: "r2", product_id: "c1", application_id: "app-2", author_name: "Ishan Gupta",
-    author_venture: "BreatheAI", rating: 4, status: "approved",
-    body: "Great SNR. Docs assume some DSP background.",
-    created_at: "2026-08-11T10:00:00Z" },
-  { id: "r3", product_id: "c3", application_id: "app-3", author_name: "Meera Rao",
-    author_venture: "GridSense", rating: 2, status: "pending",
-    body: "Ran hot under sustained load; needed extra cooling.",
-    created_at: "2026-08-28T10:00:00Z" },
-  { id: "r4", product_id: "c2", application_id: "app-4", author_name: "Arjun Shetty",
-    author_venture: "CardiaLoop", rating: 5, status: "pending",
-    body: "Isolation spec held up in our IEC pre-scan.",
-    created_at: "2026-08-30T10:00:00Z" },
-];
-
-const SAMPLE_DATASHEETS = [
-  { id: "d1", product_id: "c1", kind: "PDF", name: "Array datasheet (rev C)",
-    storage_path: null, external_url: "https://example.org/array-rev-c.pdf", sort: 0 },
-  { id: "d2", product_id: "c1", kind: "PDF", name: "Beamforming app note",
-    storage_path: null, external_url: "https://example.org/beamforming.pdf", sort: 1 },
-  { id: "d3", product_id: "c2", kind: "Link", name: "Vendor product page",
-    storage_path: null, external_url: "https://example.org/ecg-afe", sort: 0 },
-];
-
-const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-const nextId = (rows, prefix) => `${prefix}${rows.length + 1}-${Date.now().toString(36)}`;
-const slugify = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+import { settle, reject } from "./artInfraLatency.js";
 
 // The single founder the preview simulates.
 const ME = "app-me";
 
-// Sample shortlist so the Insights screen has something to show the moment an
-// admin opens it, without depending on a founder having shortlisted anything
-// first in the same session. MOCK ONLY — see SAMPLE_REVIEWS above; the
-// Phase-2 migration seed ships an empty shortlist, same as every other
-// `createArtInfraStore()` call in this module (tests rely on that).
-const SAMPLE_SHORTLIST = [
-  { product_id: "c1", qty: 1 },
-  { product_id: "c3", qty: 2 },
-  { product_id: "c9", qty: 1 },
+// MOCK ONLY -- never seed any of this into the Phase-2 migration.
+const SAMPLE_REVIEWS = [
+  { id: "r1", vendor_id: "knowles", application_id: "app-1", author_name: "Rhea Nair",
+    author_venture: "AuralDx", rating: 5, status: "approved",
+    body: "Channel matching saved us weeks of calibration.",
+    created_at: "2026-08-02T10:00:00Z" },
+  { id: "r2", vendor_id: "knowles", application_id: "app-2", author_name: "Ishan Gupta",
+    author_venture: "BreatheAI", rating: 4, status: "pending",
+    body: "Great SNR. Docs assume some DSP background.",
+    created_at: "2026-08-11T10:00:00Z" },
 ];
 
-export function createArtInfraStore(initial = seed, { seedShortlist = false } = {}) {
+const WRITABLE = {
+  vendor: ["legal_name", "display_name", "website", "contact_name", "contact_email",
+    "contact_phone", "city", "state", "country", "capabilities", "categories_served",
+    "gstin", "udyam_number", "cin", "certifications"],
+  product: ["name", "slug", "blurb", "description", "category_id", "type", "pricing",
+    "price", "lead_time_weeks_min", "lead_time_weeks_max", "specs", "sort",
+    "visible_tracks"],
+  request: ["product_id", "note", "qty"],
+  review: ["rating", "body"],
+  category: ["id", "label", "sort"],
+  specField: ["id", "category_id", "key", "label", "data_type", "unit", "enum_options",
+    "required", "filterable", "help_text", "sort"],
+};
+
+const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+const uid = (p) => `${p}-${Math.random().toString(36).slice(2, 9)}`;
+const slugify = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+/** Throws if `patch` carries any key outside the entity's writable set. */
+function assertWritable(patch, allowed) {
+  const bad = Object.keys(patch || {}).filter((k) => !allowed.includes(k));
+  if (bad.length) throw new Error(`unwritable_fields: ${bad.join(", ")}`);
+}
+
+export function createArtInfraStore(initial = seed, { seedSamples = true } = {}) {
   const db = {
-    vendors: clone(initial.vendors),
+    vendors: clone(initial.vendors).map((v) => ({
+      ...v, legal_name: v.name, display_name: v.name,
+      website: "", capabilities: "", categories_served: [],
+      city: "", state: "", country: "India",
+      gstin: "", udyam_number: "", cin: "", certifications: [],
+      status: "approved",        // seeded vendors are live and unclaimed
+      user_ids: [],              // one-to-many; empty = unclaimed
+    })),
     categories: clone(initial.categories),
-    products: clone(initial.products),
-    datasheets: clone(SAMPLE_DATASHEETS),
-    reviews: clone(SAMPLE_REVIEWS),
-    shortlist: seedShortlist ? clone(SAMPLE_SHORTLIST) : [],      // {product_id, qty}
-    procurement: [],    // rows pushed out of the shortlist
+    spec_fields: clone(initial.spec_fields),
+    products: clone(initial.products).map((p) => ({ ...p, review_note: "" })),
+    datasheets: [],
+    reviews: seedSamples ? clone(SAMPLE_REVIEWS) : [],
+    requests: [],
+    shortlist: [],
+    procurement: [],
   };
 
-  const ok = (v) => Promise.resolve(clone(v));
-  const fail = (code) => Promise.reject(new Error(code));
-
+  // ---- derivations -------------------------------------------------------
   const vendorOf = (p) => db.vendors.find((v) => v.id === p.vendor_id) || null;
   const categoryOf = (p) => db.categories.find((c) => c.id === p.category_id) || null;
-  const sheetsOf = (p) => db.datasheets.filter((d) => d.product_id === p.id)
-    .sort((a, b) => a.sort - b.sort);
 
-  const ratingOf = (p) => {
-    const approved = db.reviews.filter((r) => r.product_id === p.id && r.status === "approved");
-    if (!approved.length) return { avg: 0, count: 0 };
+  const ratingOfVendor = (vendorId) => {
+    const ok = db.reviews.filter((r) => r.vendor_id === vendorId && r.status === "approved");
+    if (!ok.length) return { avg: 0, count: 0 };
+    return { avg: ok.reduce((a, r) => a + r.rating, 0) / ok.length, count: ok.length };
+  };
+
+  const requestFor = (productId) =>
+    db.requests.find((r) => r.product_id === productId && r.application_id === ME) || null;
+
+  const vendorApprovedFor = (vendorId) =>
+    db.requests.some((r) => r.vendor_id === vendorId
+      && r.application_id === ME && r.status === "approved");
+
+  /** THE DISCLOSURE RULE. Contact fields are added only when approved --
+   *  they are absent from the object, not blanked, so they never travel. */
+  const vendorForFounder = (v) => {
+    const base = { id: v.id, name: v.display_name || v.name, website: v.website };
+    if (!vendorApprovedFor(v.id)) return base;
     return {
-      avg: approved.reduce((a, r) => a + r.rating, 0) / approved.length,
-      count: approved.length,
+      ...base,
+      contact_name: v.contact_name, contact_email: v.contact_email,
+      contact_phone: v.contact_phone, artpark_ref: v.artpark_ref,
+      city: v.city, state: v.state, country: v.country,
     };
   };
 
-  // Admin view: flat row plus resolved vendor/category and a pending count.
-  const adminView = (p) => ({
-    ...p,
-    vendor: vendorOf(p),
-    category: categoryOf(p),
-    datasheet_count: sheetsOf(p).length,
-    pending_reviews: db.reviews.filter(
-      (r) => r.product_id === p.id && r.status === "pending").length,
-    rating: ratingOf(p),
-  });
-
-  // Founder view: everything the card and modal render.
   const founderView = (p) => {
+    const v = vendorOf(p);
     const line = db.shortlist.find((s) => s.product_id === p.id);
-    const mine = db.reviews.find((r) => r.product_id === p.id && r.application_id === ME);
+    const req = requestFor(p.id);
+    const mine = db.reviews.find(
+      (r) => r.vendor_id === p.vendor_id && r.application_id === ME);
     return {
       ...p,
-      vendor: vendorOf(p),
+      vendor: v ? vendorForFounder(v) : null,
       category: categoryOf(p),
-      datasheets: sheetsOf(p),
-      reviews: db.reviews.filter((r) => r.product_id === p.id && r.status === "approved"),
-      rating: ratingOf(p),
+      spec_fields: db.spec_fields.filter(
+        (f) => f.category_id === p.category_id && !f.archived_at),
+      datasheets: db.datasheets.filter((d) => d.product_id === p.id),
+      rating: v ? ratingOfVendor(v.id) : { avg: 0, count: 0 },
       in_shortlist_qty: line ? line.qty : 0,
-      can_review: Boolean(line),
+      contact_state: req ? req.status : "none",
+      request_id: req ? req.id : null,
+      request_note: req ? req.decision_note || "" : "",
+      can_review: v ? vendorApprovedFor(v.id) : false,
       my_review: mine || null,
     };
   };
 
+  const adminView = (p) => ({
+    ...p,
+    vendor: vendorOf(p),
+    category: categoryOf(p),
+    pending_reviews: db.reviews.filter(
+      (r) => r.vendor_id === p.vendor_id && r.status === "pending").length,
+    rating: ratingOfVendor(p.vendor_id),
+  });
+
+  const ownedProduct = (vendorId, productId) =>
+    db.products.find((p) => p.id === productId && p.vendor_id === vendorId) || null;
+
+  // ---- shared reads ------------------------------------------------------
+  const listCategories = () =>
+    settle([...db.categories].sort((a, b) => a.sort - b.sort));
+
+  const listSpecFields = (categoryId) =>
+    settle(db.spec_fields
+      .filter((f) => (!categoryId || f.category_id === categoryId))
+      .sort((a, b) => a.sort - b.sort));
+
+  // ---- vendor-scoped -----------------------------------------------------
+  const getVendorMe = (vendorId) => {
+    const v = db.vendors.find((x) => x.id === vendorId);
+    return v ? settle(v) : reject("not_found");
+  };
+
+  const saveVendorProfile = (vendorId, patch) => {
+    try { assertWritable(patch, WRITABLE.vendor); } catch (e) { return Promise.reject(e); }
+    const v = db.vendors.find((x) => x.id === vendorId);
+    if (!v) return reject("not_found");
+    Object.assign(v, patch);
+    return settle(v);
+  };
+
+  const submitVendorProfile = (vendorId) => {
+    const v = db.vendors.find((x) => x.id === vendorId);
+    if (!v) return reject("not_found");
+    if (!v.legal_name || !v.contact_email) return reject("profile_incomplete");
+    if (v.status === "invited") v.status = "registered";
+    return settle(v);
+  };
+
+  const listVendorProducts = (vendorId, { status = "", search = "" } = {}) => {
+    const q = search.trim().toLowerCase();
+    const items = db.products
+      .filter((p) => p.vendor_id === vendorId)
+      .filter((p) => (!status || p.status === status))
+      .filter((p) => !q || p.name.toLowerCase().includes(q))
+      .sort((a, b) => a.sort - b.sort);
+    return settle({ items, total: db.products.filter((p) => p.vendor_id === vendorId).length });
+  };
+
+  const getVendorProduct = (vendorId, productId) =>
+    settle(ownedProduct(vendorId, productId));
+
+  const createVendorProduct = (vendorId, patch) => {
+    try { assertWritable(patch, WRITABLE.product); } catch (e) { return Promise.reject(e); }
+    if (!patch.name) return reject("name_required");
+    const created = {
+      id: uid("p"), vendor_id: vendorId, slug: patch.slug || slugify(patch.name),
+      blurb: "", description: "", category_id: "", type: "Hardware", pricing: "fixed",
+      price: null, lead_time_weeks_min: null, lead_time_weeks_max: null,
+      specs: {}, extra_specs: [], status: "draft", review_note: "",
+      sort: db.products.length, visible_tracks: ["tir"],
+      ...patch,
+    };
+    db.products.push(created);
+    return settle(created);
+  };
+
+  const updateVendorProduct = (vendorId, productId, patch) => {
+    try { assertWritable(patch, WRITABLE.product); } catch (e) { return Promise.reject(e); }
+    const p = ownedProduct(vendorId, productId);
+    if (!p) return reject("not_found");
+    Object.assign(p, patch);
+    return settle(p);
+  };
+
+  const submitProduct = (vendorId, productId) => {
+    const p = ownedProduct(vendorId, productId);
+    if (!p) return reject("not_found");
+    if (p.status !== "draft") return reject("not_draft");
+    p.status = "pending_review";
+    p.review_note = "";
+    return settle(p);
+  };
+
+  const retireProduct = (vendorId, productId) => {
+    const p = ownedProduct(vendorId, productId);
+    if (!p) return reject("not_found");
+    p.status = "retired";
+    return settle(p);
+  };
+
+  const deleteVendorProduct = (vendorId, productId) => {
+    const p = ownedProduct(vendorId, productId);
+    if (!p) return reject("not_found");
+    if (p.status !== "draft") return reject("only_drafts_deletable");
+    db.products = db.products.filter((x) => x.id !== productId);
+    return settle(undefined);
+  };
+
+  // ---- admin -------------------------------------------------------------
+  const adminListVendors = ({ status = "", search = "" } = {}) => {
+    const q = search.trim().toLowerCase();
+    return settle(db.vendors
+      .filter((v) => (!status || v.status === status))
+      .filter((v) => !q || (v.display_name || "").toLowerCase().includes(q))
+      .sort((a, b) => (a.display_name || "").localeCompare(b.display_name || "")));
+  };
+
+  const inviteVendor = (patch) => {
+    if (!patch?.contact_email) return reject("email_required");
+    const created = {
+      id: slugify(patch.display_name || patch.contact_email), name: patch.display_name || "",
+      legal_name: "", display_name: patch.display_name || "", website: "",
+      contact_name: "", contact_email: patch.contact_email, contact_phone: "",
+      artpark_ref: "", capabilities: "", categories_served: [],
+      city: "", state: "", country: "India",
+      gstin: "", udyam_number: "", cin: "", certifications: [],
+      status: "invited", user_ids: [],
+    };
+    db.vendors.push(created);
+    return settle(created);
+  };
+
+  const setVendorStatus = (id, status) => {
+    const v = db.vendors.find((x) => x.id === id);
+    if (!v) return reject("not_found");
+    v.status = status;
+    return settle(v);
+  };
+  const approveVendor = (id) => setVendorStatus(id, "approved");
+  const suspendVendor = (id) => setVendorStatus(id, "suspended");
+
+  const adminListProducts = ({ search = "", status = "", category = "", type = "",
+    vendor = "" } = {}) => {
+    const q = search.trim().toLowerCase();
+    const items = db.products
+      .filter((p) => (!status || p.status === status))
+      .filter((p) => (!category || p.category_id === category))
+      .filter((p) => (!type || p.type === type))
+      .filter((p) => (!vendor || p.vendor_id === vendor))
+      .filter((p) => !q || p.name.toLowerCase().includes(q)
+        || (vendorOf(p)?.display_name || "").toLowerCase().includes(q))
+      .sort((a, b) => a.sort - b.sort)
+      .map(adminView);
+    return settle({ items, total: db.products.length });
+  };
+
+  const publishProduct = (id) => {
+    const p = db.products.find((x) => x.id === id);
+    if (!p) return reject("not_found");
+    const v = vendorOf(p);
+    if (!v || v.status !== "approved") return reject("vendor_not_approved");
+    p.status = "published";
+    p.review_note = "";
+    return settle(p);
+  };
+
+  const sendBackProduct = (id, note) => {
+    const p = db.products.find((x) => x.id === id);
+    if (!p) return reject("not_found");
+    if (!note?.trim()) return reject("note_required");
+    p.status = "draft";
+    p.review_note = note;
+    return settle(p);
+  };
+
+  const saveCategory = (patch) => {
+    try { assertWritable(patch, WRITABLE.category); } catch (e) { return Promise.reject(e); }
+    if (!patch.label) return reject("label_required");
+    const existing = patch.id && db.categories.find((c) => c.id === patch.id);
+    if (existing) { Object.assign(existing, patch); return settle(existing); }
+    const created = { id: slugify(patch.label), sort: db.categories.length, ...patch };
+    db.categories.push(created);
+    return settle(created);
+  };
+
+  const deleteCategory = (id) => {
+    if (db.products.some((p) => p.category_id === id)) return reject("category_in_use");
+    db.categories = db.categories.filter((c) => c.id !== id);
+    db.spec_fields = db.spec_fields.filter((f) => f.category_id !== id);
+    return settle(undefined);
+  };
+
+  const saveSpecField = (patch) => {
+    try { assertWritable(patch, WRITABLE.specField); } catch (e) { return Promise.reject(e); }
+    if (!patch.label || !patch.key) return reject("key_and_label_required");
+    const existing = patch.id && db.spec_fields.find((f) => f.id === patch.id);
+    // A live field's key must stay unique within its category; an ARCHIVED one
+    // must not block re-adding that key.
+    const clash = db.spec_fields.find((f) => f.category_id === patch.category_id
+      && f.key === patch.key && !f.archived_at && f.id !== patch.id);
+    if (clash) return reject("duplicate_key");
+    if (existing) { Object.assign(existing, patch); return settle(existing); }
+    const created = {
+      id: uid("sf"), unit: null, enum_options: null, required: false,
+      filterable: false, help_text: "", archived_at: null,
+      sort: db.spec_fields.filter((f) => f.category_id === patch.category_id).length,
+      ...patch,
+    };
+    db.spec_fields.push(created);
+    return settle(created);
+  };
+
+  /** Soft delete. Values survive in specs but stop rendering. */
+  const archiveSpecField = (id) => {
+    const f = db.spec_fields.find((x) => x.id === id);
+    if (!f) return reject("not_found");
+    f.archived_at = new Date().toISOString();
+    return settle(f);
+  };
+
+  const listRequests = ({ status = "" } = {}) =>
+    settle(db.requests
+      .filter((r) => (!status || r.status === status))
+      .map((r) => ({
+        ...r,
+        product_name: db.products.find((p) => p.id === r.product_id)?.name || "(deleted)",
+        vendor_name: db.vendors.find((v) => v.id === r.vendor_id)?.display_name || "",
+      }))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at)));
+
+  const decideRequest = (id, status, note) => {
+    const r = db.requests.find((x) => x.id === id);
+    if (!r) return reject("not_found");
+    if (status === "declined" && !note?.trim()) return reject("note_required");
+    r.status = status;
+    r.decision_note = note || "";
+    r.decided_at = new Date().toISOString();
+    return settle(r);
+  };
+  const approveRequest = (id) => decideRequest(id, "approved", "");
+  const declineRequest = (id, note) => decideRequest(id, "declined", note);
+
+  const listVendorReviews = ({ status = "" } = {}) =>
+    settle(db.reviews
+      .filter((r) => (!status || r.status === status))
+      .map((r) => ({
+        ...r,
+        vendor_name: db.vendors.find((v) => v.id === r.vendor_id)?.display_name || "",
+      }))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at)));
+
+  const moderateVendorReview = (id, status) => {
+    const r = db.reviews.find((x) => x.id === id);
+    if (!r) return reject("not_found");
+    r.status = status;
+    r.moderated_at = new Date().toISOString();
+    return settle(r);
+  };
+
+  const deleteVendorReview = (id) => {
+    db.reviews = db.reviews.filter((r) => r.id !== id);
+    return settle(undefined);
+  };
+
+  const insights = () => {
+    const perProduct = db.products.map((p) => ({
+      id: p.id, name: p.name, status: p.status,
+      vendor: vendorOf(p)?.display_name || "",
+      requested_by: db.requests.filter((r) => r.product_id === p.id).length,
+      rating: ratingOfVendor(p.vendor_id),
+    }));
+    const approved = db.reviews.filter((r) => r.status === "approved");
+    return settle({
+      perProduct,
+      topRequested: [...perProduct].filter((p) => p.requested_by > 0)
+        .sort((a, b) => b.requested_by - a.requested_by),
+      neverRequested: perProduct.filter((p) => p.requested_by === 0),
+      meanApprovedRating: {
+        avg: approved.length
+          ? approved.reduce((a, r) => a + r.rating, 0) / approved.length : 0,
+        count: approved.length,
+      },
+    });
+  };
+
+  // ---- founder -----------------------------------------------------------
+  const founderStore = () => {
+    const catalog = db.products
+      .filter((p) => p.status === "published")
+      .sort((a, b) => a.sort - b.sort)
+      .map(founderView);
+    const shortlist = db.shortlist.map((line) => ({
+      product_id: line.product_id, qty: line.qty,
+      product: founderView(db.products.find((p) => p.id === line.product_id)),
+    }));
+    return settle({
+      catalog,
+      shortlist,
+      shortlist_subtotal: shortlist.reduce(
+        (a, l) => a + (l.product.price || 0) * l.qty, 0),
+      requests: db.requests.filter((r) => r.application_id === ME),
+    });
+  };
+
+  const addToShortlist = (productId, qty = 1) => {
+    if (!db.products.some((p) => p.id === productId)) return reject("unknown_product");
+    const line = db.shortlist.find((s) => s.product_id === productId);
+    if (line) line.qty += qty;
+    else db.shortlist.push({ product_id: productId, qty });
+    return settle(undefined);
+  };
+
+  const removeFromShortlist = (productId) => {
+    db.shortlist = db.shortlist.filter((s) => s.product_id !== productId);
+    return settle(undefined);
+  };
+
+  // Plain call, NOT this.removeFromShortlist -- survives destructuring.
+  const setShortlistQty = (productId, qty) => {
+    if (qty <= 0) return removeFromShortlist(productId);
+    const line = db.shortlist.find((s) => s.product_id === productId);
+    if (line) line.qty = qty;
+    else db.shortlist.push({ product_id: productId, qty });
+    return settle(undefined);
+  };
+
+  const pushToProcurement = () => {
+    const pushed = db.shortlist.length;
+    db.shortlist.forEach((line) => {
+      const p = db.products.find((x) => x.id === line.product_id);
+      db.procurement.push({
+        item: p.name, qty: line.qty, estimate: p.price || 0,
+        vendor: vendorOf(p)?.display_name || "", status: "estimate",
+      });
+    });
+    db.shortlist = [];
+    return settle({ pushed });
+  };
+
+  const createRequest = (patch) => {
+    try { assertWritable(patch, WRITABLE.request); } catch (e) { return Promise.reject(e); }
+    const p = db.products.find((x) => x.id === patch.product_id);
+    if (!p) return reject("unknown_product");
+    const open = db.requests.find((r) => r.product_id === p.id
+      && r.application_id === ME && ["pending", "approved"].includes(r.status));
+    if (open) return reject("already_requested");
+    const created = {
+      id: uid("req"), application_id: ME, product_id: p.id, vendor_id: p.vendor_id,
+      note: patch.note || "", qty: patch.qty ?? null, status: "pending",
+      decision_note: "", decided_at: null, created_at: new Date().toISOString(),
+    };
+    db.requests.push(created);
+    return settle(created);
+  };
+
+  const withdrawRequest = (id) => {
+    const r = db.requests.find((x) => x.id === id && x.application_id === ME);
+    if (!r) return reject("not_found");
+    r.status = "withdrawn";
+    return settle(r);
+  };
+
+  const submitVendorReview = (vendorId, patch) => {
+    try { assertWritable(patch, WRITABLE.review); } catch (e) { return Promise.reject(e); }
+    if (!vendorApprovedFor(vendorId)) return reject("not_eligible");
+    const existing = db.reviews.find(
+      (r) => r.vendor_id === vendorId && r.application_id === ME);
+    if (existing) {
+      Object.assign(existing, { ...patch, status: "pending" });
+      return settle(existing);
+    }
+    const created = {
+      id: uid("r"), vendor_id: vendorId, application_id: ME,
+      author_name: "You", author_venture: "Your venture",
+      rating: patch.rating, body: patch.body, status: "pending",
+      created_at: new Date().toISOString(),
+    };
+    db.reviews.push(created);
+    return settle(created);
+  };
+
   return {
-    // ── admin: products ──────────────────────────────────────────────
-    listProducts({ search = "", status = "", category = "", type = "", vendor = "" } = {}) {
-      const q = search.trim().toLowerCase();
-      const items = db.products
-        .filter((p) => (!status || p.status === status))
-        .filter((p) => (!category || p.category_id === category))
-        .filter((p) => (!type || p.type === type))
-        .filter((p) => (!vendor || p.vendor_id === vendor))
-        .filter((p) => !q
-          || p.name.toLowerCase().includes(q)
-          || (vendorOf(p)?.name || "").toLowerCase().includes(q))
-        .sort((a, b) => a.sort - b.sort)
-        .map(adminView);
-      return ok({ items, total: items.length });
-    },
-
-    getProduct(id) {
-      const p = db.products.find((x) => x.id === id);
-      return ok(p ? adminView(p) : null);
-    },
-
-    saveProduct(patch) {
-      if (!patch.name) return fail("name_required");
-      const existing = patch.id && db.products.find((p) => p.id === patch.id);
-      if (existing) {
-        Object.assign(existing, patch);
-        return ok(adminView(existing));
-      }
-      const created = {
-        id: nextId(db.products, "p"),
-        slug: patch.slug || slugify(patch.name),
-        specs: [], status: "draft", sort: db.products.length,
-        visible_tracks: ["tir"], price: null,
-        lead_time_weeks_min: null, lead_time_weeks_max: null,
-        blurb: "", description: "",
-        ...patch,
-      };
-      db.products.push(created);
-      return ok(adminView(created));
-    },
-
-    setProductStatus(id, status) {
-      const p = db.products.find((x) => x.id === id);
-      if (!p) return fail("not_found");
-      p.status = status;
-      return ok(adminView(p));
-    },
-
-    // ── admin: vendors + categories ──────────────────────────────────
-    listVendors() { return ok([...db.vendors].sort((a, b) => a.name.localeCompare(b.name))); },
-
-    saveVendor(patch) {
-      if (!patch.name) return fail("name_required");
-      const existing = patch.id && db.vendors.find((v) => v.id === patch.id);
-      if (existing) { Object.assign(existing, patch); return ok(existing); }
-      const created = { id: slugify(patch.name), contact_name: "", contact_email: "",
-        contact_phone: "", artpark_ref: "", notes: "", ...patch };
-      db.vendors.push(created);
-      return ok(created);
-    },
-
-    deleteVendor(id) {
-      if (db.products.some((p) => p.vendor_id === id)) return fail("vendor_in_use");
-      db.vendors = db.vendors.filter((v) => v.id !== id);
-      return ok(undefined);
-    },
-
-    listCategories() { return ok([...db.categories].sort((a, b) => a.sort - b.sort)); },
-
-    saveCategory(patch) {
-      if (!patch.label) return fail("label_required");
-      const existing = patch.id && db.categories.find((c) => c.id === patch.id);
-      if (existing) { Object.assign(existing, patch); return ok(existing); }
-      const created = { id: slugify(patch.label), sort: db.categories.length, ...patch };
-      db.categories.push(created);
-      return ok(created);
-    },
-
-    deleteCategory(id) {
-      if (db.products.some((p) => p.category_id === id)) return fail("category_in_use");
-      db.categories = db.categories.filter((c) => c.id !== id);
-      return ok(undefined);
-    },
-
-    // ── admin: review moderation ─────────────────────────────────────
-    listReviews({ status = "" } = {}) {
-      const rows = db.reviews
-        .filter((r) => (!status || r.status === status))
-        .map((r) => ({
-          ...r,
-          product_name: db.products.find((p) => p.id === r.product_id)?.name || "(deleted)",
-        }))
-        .sort((a, b) => b.created_at.localeCompare(a.created_at));
-      return ok(rows);
-    },
-
-    moderateReview(id, status) {
-      const r = db.reviews.find((x) => x.id === id);
-      if (!r) return fail("not_found");
-      r.status = status;
-      r.moderated_at = new Date().toISOString();
-      return ok(r);
-    },
-
-    deleteReview(id) {
-      db.reviews = db.reviews.filter((r) => r.id !== id);
-      return ok(undefined);
-    },
-
-    // ── admin: insights ──────────────────────────────────────────────
-    insights() {
-      const perProduct = db.products.map((p) => {
-        const line = db.shortlist.find((s) => s.product_id === p.id);
-        return {
-          id: p.id, name: p.name, status: p.status,
-          vendor: vendorOf(p)?.name || "",
-          shortlisted_by: line ? 1 : 0,
-          rating: ratingOf(p),
-        };
-      });
-      const approvedReviews = db.reviews.filter((r) => r.status === "approved");
-      const meanApprovedRating = {
-        avg: approvedReviews.length
-          ? approvedReviews.reduce((a, r) => a + r.rating, 0) / approvedReviews.length
-          : 0,
-        count: approvedReviews.length,
-      };
-      return ok({
-        perProduct,
-        topShortlisted: [...perProduct]
-          .filter((p) => p.shortlisted_by > 0)
-          .sort((a, b) => b.shortlisted_by - a.shortlisted_by),
-        neverShortlisted: perProduct.filter((p) => p.shortlisted_by === 0),
-        meanApprovedRating,
-      });
-    },
-
-    // ── founder ──────────────────────────────────────────────────────
-    founderStore() {
-      const catalog = db.products
-        .filter((p) => p.status === "published")
-        .sort((a, b) => a.sort - b.sort)
-        .map(founderView);
-      const shortlist = db.shortlist.map((line) => ({
-        product_id: line.product_id,
-        qty: line.qty,
-        product: founderView(db.products.find((p) => p.id === line.product_id)),
-      }));
-      const shortlist_subtotal = shortlist.reduce(
-        (a, l) => a + (l.product.price || 0) * l.qty, 0);
-      return ok({ catalog, shortlist, shortlist_subtotal });
-    },
-
-    addToShortlist(productId, qty = 1) {
-      if (!db.products.some((p) => p.id === productId)) return fail("unknown_product");
-      const line = db.shortlist.find((s) => s.product_id === productId);
-      if (line) line.qty += qty;
-      else db.shortlist.push({ product_id: productId, qty });
-      return ok(undefined);
-    },
-
-    setShortlistQty(productId, qty) {
-      if (qty <= 0) return this.removeFromShortlist(productId);
-      const line = db.shortlist.find((s) => s.product_id === productId);
-      if (line) line.qty = qty;
-      else db.shortlist.push({ product_id: productId, qty });
-      return ok(undefined);
-    },
-
-    removeFromShortlist(productId) {
-      db.shortlist = db.shortlist.filter((s) => s.product_id !== productId);
-      return ok(undefined);
-    },
-
-    pushToProcurement() {
-      const pushed = db.shortlist.length;
-      db.shortlist.forEach((line) => {
-        const p = db.products.find((x) => x.id === line.product_id);
-        db.procurement.push({
-          item: p.name, qty: line.qty, estimate: p.price || 0,
-          vendor: vendorOf(p)?.name || "", status: "estimate",
-        });
-      });
-      db.shortlist = [];
-      return ok({ pushed });
-    },
-
-    submitReview(productId, { rating, body }) {
-      if (!db.shortlist.some((s) => s.product_id === productId)) return fail("not_shortlisted");
-      const existing = db.reviews.find(
-        (r) => r.product_id === productId && r.application_id === ME);
-      if (existing) {
-        Object.assign(existing, { rating, body, status: "pending" });
-        return ok(existing);
-      }
-      const created = {
-        id: nextId(db.reviews, "r"), product_id: productId, application_id: ME,
-        author_name: "You", author_venture: "Your venture",
-        rating, body, status: "pending", created_at: new Date().toISOString(),
-      };
-      db.reviews.push(created);
-      return ok(created);
-    },
+    listCategories, listSpecFields,
+    getVendorMe, saveVendorProfile, submitVendorProfile,
+    listVendorProducts, getVendorProduct, createVendorProduct, updateVendorProduct,
+    submitProduct, retireProduct, deleteVendorProduct,
+    adminListVendors, inviteVendor, approveVendor, suspendVendor,
+    adminListProducts, publishProduct, sendBackProduct,
+    saveCategory, deleteCategory, saveSpecField, archiveSpecField,
+    listRequests, approveRequest, declineRequest,
+    listVendorReviews, moderateVendorReview, deleteVendorReview,
+    insights,
+    founderStore, addToShortlist, setShortlistQty, removeFromShortlist,
+    pushToProcurement, createRequest, withdrawRequest, submitVendorReview,
   };
 }
 
 // Shared singleton so every screen in the preview sees the same edits.
-// Seeded with a small shortlist so Insights and the founder popover are never
-// empty on first open — see F2 in the fix-wave report.
-export const artInfraMock = createArtInfraStore(seed, { seedShortlist: true });
+export const artInfraMock = createArtInfraStore();
