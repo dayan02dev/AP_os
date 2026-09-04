@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { PageHead } from "../../shell/osAtoms";
+import ArtInfraSpecFields from "./ArtInfraSpecFields.jsx";
 
 export default function ArtInfraCategories({ store }) {
   const [rows, setRows] = useState([]);
   const [label, setLabel] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [drill, setDrill] = useState(null);   // {id, label} or null
 
   const load = useCallback(() => store.listCategories()
     .then((r) => { setRows(r); setError(""); })
@@ -48,6 +50,11 @@ export default function ArtInfraCategories({ store }) {
     }
   };
 
+  if (drill) {
+    return <ArtInfraSpecFields store={store} categoryId={drill.id}
+      categoryLabel={drill.label} onBack={() => setDrill(null)} />;
+  }
+
   return (
     <div>
       <PageHead eyebrow="Art Infra" title="Categories"
@@ -76,6 +83,11 @@ export default function ArtInfraCategories({ store }) {
                     disabled={i === 0} onClick={() => move(c, -1)}>↑</button>
                   <button type="button" className="os-btn ghost" aria-label={`Move ${c.label} down`}
                     disabled={i === rows.length - 1} onClick={() => move(c, 1)}>↓</button>
+                  <button type="button" className="os-btn ghost"
+                    aria-label={`Edit ${c.label} details`}
+                    onClick={() => setDrill({ id: c.id, label: c.label })}>
+                    Details
+                  </button>
                   <button type="button" className="os-btn ghost" aria-label={`Delete ${c.label}`}
                     onClick={() => remove(c)}>Delete</button>
                 </td>
