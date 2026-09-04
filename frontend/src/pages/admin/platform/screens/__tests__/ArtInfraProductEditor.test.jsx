@@ -2,9 +2,17 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import ArtInfraProductEditor from "../artinfra/ArtInfraProductEditor.jsx";
 import { createArtInfraStore } from "../../../../../lib/artInfraMock.js";
+import { configure } from "../../../../../lib/artInfraLatency.js";
 
 let store;
-beforeEach(() => { store = createArtInfraStore(); });
+beforeEach(() => {
+  configure({ minMs: 0, maxMs: 0 });
+  store = createArtInfraStore();
+});
+
+// The store no longer exposes getProduct — admin reads/writes go through the
+// same admin-list + vendor-scoped write calls the real screen uses.
+const findProduct = async (id) => (await store.adminListProducts({})).items.find((p) => p.id === id);
 
 describe("ArtInfraProductEditor", () => {
   it("loads an existing product into the form", async () => {
@@ -32,41 +40,41 @@ describe("ArtInfraProductEditor", () => {
     await waitFor(() => screen.getByLabelText("Price (₹)"));
     fireEvent.change(screen.getByLabelText("Pricing"), { target: { value: "quote" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(async () => expect((await store.getProduct("c1")).price).toBeNull());
+    await waitFor(async () => expect((await findProduct("c1")).price).toBeNull());
   });
 
-  it("adds a spec row", async () => {
-    render(<ArtInfraProductEditor store={store} productId="c1" onDone={vi.fn()} />);
-    await waitFor(() => screen.getByLabelText("Name"));
-    const before = screen.getAllByLabelText(/Spec key/).length;
-    fireEvent.click(screen.getByRole("button", { name: "+ Add spec" }));
-    expect(screen.getAllByLabelText(/Spec key/).length).toBe(before + 1);
+  it("swaps the whole spec field set when the category changes", async () => {
+    render(<ArtInfraProductEditor store={store} productId={null} onDone={vi.fn()} />);
+    const cat = await screen.findByLabelText("Category");
+    fireEvent.change(cat, { target: { value: "sensors" } });
+    await screen.findByLabelText("Sensing modality");
+    expect(screen.getByLabelText("Channels")).toBeInTheDocument();
+
+    fireEvent.change(cat, { target: { value: "fabrication" } });
+    await screen.findByLabelText("Process");
+    // The sensor-only field must be GONE, not merely hidden, and the specs
+    // bag reset — orphaned keys from "sensors" are not valid for "fabrication".
+    expect(screen.queryByLabelText("Sensing modality")).toBeNull();
+    expect(screen.getByLabelText("Tolerance")).toBeInTheDocument();
   });
 
-  it("removes the right spec row, keeping neighbours intact", async () => {
-    render(<ArtInfraProductEditor store={store} productId="c1" onDone={vi.fn()} />);
-    await waitFor(() => screen.getByLabelText("Name"));
-
-    // c1 ships 3 specs (Channels, SNR, Interface). Overwrite the two rows
-    // that should survive with test-authored values so the post-removal
-    // assertions cannot pass by coincidentally matching fixture defaults.
-    fireEvent.change(screen.getByLabelText("Spec key 1"), { target: { value: "KeepFirst" } });
-    fireEvent.change(screen.getByLabelText("Spec value 1"), { target: { value: "KeepFirstValue" } });
-    fireEvent.change(screen.getByLabelText("Spec key 3"), { target: { value: "KeepThird" } });
-    fireEvent.change(screen.getByLabelText("Spec value 3"), { target: { value: "KeepThirdValue" } });
-    expect(screen.getAllByLabelText(/Spec key/)).toHaveLength(3);
-
-    // Remove the middle row specifically — scoped to the row containing the
-    // "Spec key 2" input, not just "the first Remove button found".
-    const middleRow = screen.getByLabelText("Spec key 2").closest(".ai-spec-row");
-    fireEvent.click(within(middleRow).getByRole("button", { name: "Remove" }));
-
-    const keys = screen.getAllByLabelText(/Spec key/);
-    expect(keys).toHaveLength(2);
-    expect(keys[0]).toHaveValue("KeepFirst");
-    expect(screen.getByLabelText("Spec value 1")).toHaveValue("KeepFirstValue");
-    expect(keys[1]).toHaveValue("KeepThird");
-    expect(screen.getByLabelText("Spec value 2")).toHaveValue("KeepThirdValue");
+  it("blocks save when a required spec field is empty, and says which", async () => {
+    // The seeded registry marks nothing required (by design), so this test
+    // proves the validation path directly by marking one field required at
+    // the store boundary — the component and seed are untouched.
+    const requiredStore = {
+      ...store,
+      listSpecFields: async (categoryId) => {
+        const fields = await store.listSpecFields(categoryId);
+        return fields.map((f) => (f.key === "modality" ? { ...f, required: true } : f));
+      },
+    };
+    render(<ArtInfraProductEditor store={requiredStore} productId={null} onDone={vi.fn()} />);
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Mic" } });
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "sensors" } });
+    await screen.findByLabelText("Sensing modality");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByText(/Sensing modality is required/i);
   });
 
   it("saves and calls onDone", async () => {
@@ -76,15 +84,15 @@ describe("ArtInfraProductEditor", () => {
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Saved name" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
-    expect((await store.getProduct("c1")).name).toBe("Saved name");
+    expect((await findProduct("c1")).name).toBe("Saved name");
   });
 
   it("never shows a rating in the preview, since its reviews are always forced empty", async () => {
     render(<ArtInfraProductEditor store={store} productId="c1" onDone={vi.fn()} />);
     await waitFor(() => screen.getByLabelText("Name"));
     // c1 ships two approved reviews (avg 4.5) in the real catalog view, but the
-    // preview pane always renders reviews: [] — showing a rating here would
-    // contradict the "No reviews yet." text right below it.
+    // preview pane always renders rating: {avg:0, count:0} — showing a rating
+    // here would contradict the "No reviews yet." text right below it.
     expect(within(screen.getByTestId("founder-preview")).queryByText(/★/)).not.toBeInTheDocument();
   });
 
