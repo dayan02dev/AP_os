@@ -27,6 +27,11 @@ export default function FounderStore({ store = artInfraMock }) {
   const [filter, setFilter] = useState("all");
   const [listOpen, setListOpen] = useState(false);
   const [openId, setOpenId] = useState(null);
+  // Set only when the modal is opened via the card's primary button on a
+  // quote-priced product -- lets the modal mount straight into the request
+  // form instead of making the founder click "Request contact" a second
+  // time once the modal is already open.
+  const [autoRequest, setAutoRequest] = useState(false);
   const [busy, setBusy] = useState(false);
   // Confirmation for a successful "Push to procurement" — cleared the moment
   // the shortlist changes again, so it never lingers past the state it
@@ -66,8 +71,21 @@ export default function FounderStore({ store = artInfraMock }) {
       await load();
     } finally { setBusy(false); }
   };
-  const submitReview = async (productId, payload) => {
-    await store.submitReview(productId, payload); await load();
+  // Fixed-price -> shortlist. Quote-priced -> open the modal, where the
+  // request form lives. The card never shortlists a quote-priced item.
+  const onCardPrimary = (product) => {
+    if (product.pricing === "quote") { setOpenId(product.id); setAutoRequest(true); }
+    else addToShortlist(product);
+  };
+
+  const requestContact = async (productId, note) => {
+    await store.createRequest({ product_id: productId, note });
+    await load();
+  };
+
+  const submitReview = async (vendorId, payload) => {
+    await store.submitVendorReview(vendorId, payload);
+    await load();
   };
 
   return (
@@ -149,14 +167,17 @@ export default function FounderStore({ store = artInfraMock }) {
       <div className="pgrid mt16">
         {catalog.map((c) => (
           <ProductCard key={c.id} product={c} busy={busy}
-            onOpen={(p) => setOpenId(p.id)} onPrimary={addToShortlist} />
+            onOpen={(p) => { setOpenId(p.id); setAutoRequest(false); }}
+            onPrimary={onCardPrimary} />
         ))}
       </div>
 
       {openProduct && (
         <ProductModal product={openProduct} busy={busy}
-          onClose={() => setOpenId(null)}
+          autoOpenRequest={autoRequest}
+          onClose={() => { setOpenId(null); setAutoRequest(false); }}
           onPrimary={addToShortlist}
+          onRequestContact={requestContact}
           onSubmitReview={submitReview} />
       )}
     </div>

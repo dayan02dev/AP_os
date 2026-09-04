@@ -4,11 +4,21 @@ function priceLabel(product) {
   return product.pricing === "quote" ? "On request" : fmtINR(product.price);
 }
 
-// Fixed-price items go on the shortlist; quote-priced items reveal the
-// vendor contact instead, because ARTPARK does not transact on the founder's
-// behalf — the catalog is a curated directory.
+// Fixed-price items go on the shortlist. Quote-priced items need an ARTPARK-
+// approved request before their vendor's contact is disclosed -- the payload
+// does not even carry it until then.
 export function primaryLabel(product) {
-  return product.pricing === "quote" ? "Show contact" : "Add to shortlist";
+  if (product.pricing !== "quote") return "Add to shortlist";
+  switch (product.contact_state) {
+    case "pending": return "Requested — awaiting approval";
+    case "approved": return "Contact available";
+    case "declined": return "Request declined";
+    default: return "Request contact";
+  }
+}
+
+export function primaryDisabled(product) {
+  return product.pricing === "quote" && product.contact_state === "pending";
 }
 
 export default function ProductCard({ product, onOpen, onPrimary, busy = false }) {
@@ -35,7 +45,7 @@ export default function ProductCard({ product, onOpen, onPrimary, busy = false }
         <button
           type="button"
           className={product.pricing === "quote" ? "mini ghost" : "mini"}
-          disabled={busy}
+          disabled={busy || primaryDisabled(product)}
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPrimary(product); }}
         >
           {primaryLabel(product)}

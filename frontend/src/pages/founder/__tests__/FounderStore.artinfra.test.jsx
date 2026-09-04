@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { describe, it, expect, beforeEach } from "vitest";
 import FounderStore from "../FounderStore.jsx";
 import { createArtInfraStore } from "../../../lib/artInfraMock.js";
+import { configure } from "../../../lib/artInfraLatency.js";
 
 let store;
 beforeEach(() => { store = createArtInfraStore(); });
@@ -33,7 +34,8 @@ describe("FounderStore (Art Infra)", () => {
     await waitFor(() => screen.getAllByRole("button", { name: "Add to shortlist" }));
     expect(screen.queryByText("Request quote")).not.toBeInTheDocument();
     expect(screen.queryByText("Quote requested ✓")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Show contact" }).length).toBe(4);
+    expect(screen.queryByText(/show contact/i)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Request contact" }).length).toBe(4);
   });
 
   // The fixture's 12 products split 8 Hardware / 4 Software and 8 fixed-price /
@@ -50,7 +52,7 @@ describe("FounderStore (Art Infra)", () => {
     await waitFor(() =>
       expect(screen.queryByText("MEMS microphone array (8-ch)")).not.toBeInTheDocument());
     expect(screen.getAllByRole("button", { name: "Add to shortlist" })).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: "Show contact" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Request contact" })).toHaveLength(2);
     expect(screen.getByText("Edge inference SDK (annual licence)")).toBeInTheDocument();
   });
 
@@ -63,7 +65,7 @@ describe("FounderStore (Art Infra)", () => {
 
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Add to shortlist" })).not.toBeInTheDocument());
-    expect(screen.getAllByRole("button", { name: "Show contact" })).toHaveLength(4);
+    expect(screen.getAllByRole("button", { name: "Request contact" })).toHaveLength(4);
   });
 
   // Coverage restored for what FounderStore.test.jsx used to cover before it
@@ -105,13 +107,26 @@ describe("FounderStore (Art Infra)", () => {
     render(<FounderStore store={store} />);
     await waitFor(() => screen.getAllByRole("button", { name: "Add to shortlist" }));
     fireEvent.click(screen.getAllByRole("button", { name: "Add to shortlist" })[0]);
-    fireEvent.click(await screen.findByRole("button", { name: /Shortlist/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /Push to procurement/ }));
+    // Wait for the add to actually land. The mock is async with jitter, so
+    // clicking Push in the same tick hits a disabled button and push()
+    // early-returns on an empty shortlist. Waiting on the count badge waits
+    // for observable state instead of assuming a synchronous resolve.
+    await screen.findByTestId("shortlist-count");
+    fireEvent.click(screen.getByRole("button", { name: /Shortlist/ }));
+    const pushBtn = await screen.findByRole("button", { name: /Push to procurement/ });
+    await waitFor(() => expect(pushBtn).not.toBeDisabled());
+    fireEvent.click(pushBtn);
 
     expect(await screen.findByTestId("procurement-confirmation"))
       .toHaveTextContent("1 item moved to your procurement plan.");
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Add to shortlist" })[0]);
+    // Same shape again: push() sets the confirmation before its own load()
+    // resolves, so `busy` (and the Add button's disabled state) can still be
+    // true right when the confirmation first appears. Wait for the button to
+    // actually be clickable before clicking it.
+    const addAgainBtn = screen.getAllByRole("button", { name: "Add to shortlist" })[0];
+    await waitFor(() => expect(addAgainBtn).not.toBeDisabled());
+    fireEvent.click(addAgainBtn);
     await waitFor(() =>
       expect(screen.queryByTestId("procurement-confirmation")).not.toBeInTheDocument());
   });
@@ -121,5 +136,48 @@ describe("FounderStore (Art Infra)", () => {
     await waitFor(() => screen.getAllByRole("button", { name: "Add to shortlist" }));
     fireEvent.click(screen.getByText("MEMS microphone array (8-ch)"));
     expect(await screen.findByText("Overview")).toBeInTheDocument();
+  });
+});
+
+describe("request flow", () => {
+  it("raises a request and shows the pending state", async () => {
+    const store = createArtInfraStore();
+    render(<FounderStore store={store} />);
+    const btn = (await screen.findAllByRole("button", { name: "Request contact" }))[0];
+    fireEvent.click(btn);
+    const note = await screen.findByLabelText("What do you need?");
+    fireEvent.change(note, { target: { value: "Need 4 units by October" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send request" }));
+    await screen.findByText("Requested — awaiting approval");
+  });
+
+  it("shows the contact block once an admin approves, without a reload", async () => {
+    const store = createArtInfraStore();
+    const { catalog } = await store.founderStore();
+    const quote = catalog.find((p) => p.pricing === "quote");
+    const req = await store.createRequest({ product_id: quote.id, note: "x" });
+    await store.approveRequest(req.id);
+    render(<FounderStore store={store} />);
+    await screen.findAllByRole("button", { name: "Contact available" });
+  });
+
+  it("surfaces a failed request instead of appearing to succeed", async () => {
+    const store = createArtInfraStore();
+    render(<FounderStore store={store} />);
+    const btn = (await screen.findAllByRole("button", { name: "Request contact" }))[0];
+    fireEvent.click(btn);
+    fireEvent.change(await screen.findByLabelText("What do you need?"),
+      { target: { value: "x" } });
+    configure({ failNext: "server_error" });
+    fireEvent.click(screen.getByRole("button", { name: "Send request" }));
+    await screen.findByText(/could not send/i);
+  });
+
+  it("leaves the shortlist mechanics alone", async () => {
+    const store = createArtInfraStore();
+    render(<FounderStore store={store} />);
+    const add = (await screen.findAllByRole("button", { name: "Add to shortlist" }))[0];
+    fireEvent.click(add);
+    await screen.findByTestId("shortlist-count");
   });
 });

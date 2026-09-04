@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { fmtINR } from "../ui.jsx";
-import { primaryLabel } from "./ProductCard.jsx";
+import { primaryLabel, primaryDisabled } from "./ProductCard.jsx";
 
 function Stars({ n }) {
   return <span className="stars">{"★".repeat(n)}{"☆".repeat(5 - n)}</span>;
@@ -14,14 +14,14 @@ function ReviewForm({ product, onSubmitReview }) {
   if (!product.can_review) {
     return (
       <p className="muted">
-        Add this to your shortlist to leave a review.
+        You can review this vendor once ARTPARK approves a request to them.
       </p>
     );
   }
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try { await onSubmitReview(product.id, { rating: Number(rating), body }); }
+    try { await onSubmitReview(product.vendor.id, { rating: Number(rating), body }); }
     finally { setSaving(false); }
   };
   return (
@@ -48,17 +48,40 @@ function ReviewForm({ product, onSubmitReview }) {
   );
 }
 
-export default function ProductModal({ product, onClose, onPrimary, onSubmitReview,
-  busy = false }) {
-  const [showContact, setShowContact] = useState(false);
+export default function ProductModal({ product, onClose, onPrimary, onRequestContact,
+  onSubmitReview, busy = false, autoOpenRequest = false }) {
+  const [note, setNote] = useState("");
+  // Opened via the card's own "Request contact" button -> mount straight
+  // into the form rather than making the founder click twice.
+  const [formOpen, setFormOpen] = useState(autoOpenRequest);
+  const [err, setErr] = useState("");
+  const [sending, setSending] = useState(false);
   const { rating = { avg: 0, count: 0 }, datasheets = [], reviews = [] } = product;
   const leadTime = product.lead_time_weeks_min
     ? `${product.lead_time_weeks_min}–${product.lead_time_weeks_max} weeks`
     : null;
 
   const primary = () => {
-    if (product.pricing === "quote") setShowContact(true);
-    else onPrimary(product);
+    if (product.pricing !== "quote") { onPrimary(product); return; }
+    if (product.contact_state === "none" || product.contact_state === "declined") {
+      setFormOpen(true);
+    }
+  };
+
+  const send = async (e) => {
+    e.preventDefault();
+    setSending(true);
+    try {
+      await onRequestContact(product.id, note);
+      // Back to the catalog, where the card now carries the pending state --
+      // staying open would leave the modal's own "Requested..." button
+      // showing the same label as the card behind it, for no benefit. The
+      // component unmounts here, so no state is set after this point.
+      onClose();
+    } catch {
+      setErr("Could not send your request. Please try again.");
+      setSending(false);
+    }
   };
 
   return (
@@ -87,8 +110,21 @@ export default function ProductModal({ product, onClose, onPrimary, onSubmitRevi
             </div>
             <div>
               <div className="section-lbl">Specifications</div>
-              {(product.specs || []).map((s, i) => (
-                <div className="spec-row" key={i}>
+              {(product.spec_fields || []).map((f) => {
+                const v = product.specs?.[f.key];
+                if (v === null || v === undefined || v === "" ||
+                    (Array.isArray(v) && v.length === 0)) return null;
+                const shown = Array.isArray(v) ? v.join(", ")
+                  : typeof v === "boolean" ? (v ? "Yes" : "No") : v;
+                return (
+                  <div className="spec-row" key={f.key}>
+                    <span className="k">{f.label}</span>
+                    <span className="v">{shown}{f.unit ? ` ${f.unit}` : ""}</span>
+                  </div>
+                );
+              })}
+              {(product.extra_specs || []).map((s, i) => (
+                <div className="spec-row" key={`x${i}`}>
                   <span className="k">{s.k}</span><span className="v">{s.v}</span>
                 </div>
               ))}
@@ -124,13 +160,36 @@ export default function ProductModal({ product, onClose, onPrimary, onSubmitRevi
               </div>
             </div>
             <button type="button" className={`${product.pricing === "quote" ? "mini ghost" : "mini"} block`}
-              disabled={busy} onClick={primary}>
+              disabled={busy || primaryDisabled(product)} onClick={primary}>
               {primaryLabel(product)}
             </button>
 
+            {formOpen && (
+              <form className="rev-form" onSubmit={send}>
+                <label>What do you need?
+                  <textarea aria-label="What do you need?" value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Quantity, timeline, anything ARTPARK should know" />
+                </label>
+                {err && <div className="inline-error">{err}</div>}
+                <button type="submit" className="mini" disabled={sending || !note.trim()}>
+                  Send request
+                </button>
+              </form>
+            )}
+
+            {product.contact_state === "pending" && (
+              <p className="muted">ARTPARK is reviewing your request.</p>
+            )}
+            {product.contact_state === "declined" && product.request_note && (
+              <p className="muted">Declined: {product.request_note}</p>
+            )}
+
             {/* The directory model's payoff: the founder deals with the vendor
-                directly, so the contact IS the deliverable. */}
-            {showContact && (
+                directly, so the contact IS the deliverable. Contact fields are
+                absent from `vendor` unless contact_state === "approved" -- so
+                this block only ever reads them behind that gate. */}
+            {product.contact_state === "approved" && (
               <div className="vendor-contact">
                 <div className="section-lbl">Vendor contact</div>
                 <div className="vc-row"><span className="k">Vendor</span><span className="v">{product.vendor?.name}</span></div>
