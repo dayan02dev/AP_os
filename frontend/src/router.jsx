@@ -43,6 +43,7 @@ import AdminAddUser from "./pages/admin/AdminAddUser.jsx";
 import ReviewerPortal from "./pages/reviewer/v2/ReviewerPortal.jsx";
 import JuryPortal from "./pages/jury/JuryPortal.jsx";
 import FounderPortal from "./pages/founder/FounderPortal.jsx";
+import VendorPortal from "./pages/vendor/VendorPortal.jsx";
 import AdminPortal from "./pages/admin/platform/AdminPortal.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
 import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
@@ -382,6 +383,11 @@ export default function AppRoutes() {
       <Route path="/founder/partners" element={<FounderRoute tab="partners" />} />
       <Route path="/founder/assets" element={<FounderRoute tab="assets" />} />
       <Route path="/founder/support" element={<FounderRoute tab="support" />} />
+
+      {/* Vendor portal. No ProtectedRoute yet: the `vendor` role does not
+          exist in this phase and the shell's view-as picker stands in for a
+          session. Gate this the moment the role ships. */}
+      <Route path="/vendor" element={<VendorPortal />} />
 
       {/* Legacy admin user-management shell (Session 3). Gated to `manage_users`.
           Kept intact under /admin/users* so user CRUD is unaffected.
