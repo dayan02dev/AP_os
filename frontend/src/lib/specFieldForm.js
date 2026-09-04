@@ -3,7 +3,13 @@
 // The registry is DATA — admins edit it at runtime — so none of this can be a
 // database CHECK constraint. In Phase 2 the identical rules run server-side on
 // submit and on publish; the client copy is a convenience, never the authority.
+//
+// `validateSpecs` requires pre-filtered fields: pass it describeFields()
+// output, never the raw registry.
 
+// Note: 0 and false are NOT blank — they are real values a required field can
+// legitimately hold. That falls out of the checks below (neither matches
+// null/undefined/""/[]), so callers need no special-casing.
 const isBlank = (v) =>
   v === null || v === undefined ||
   (typeof v === "string" && v.trim() === "") ||
@@ -54,6 +60,17 @@ export function coerceValue(field, raw) {
  * invalidating every existing product.
  */
 export function validateSpecs(fields, values) {
+  // Enforce the contract rather than trusting it: `fields` must already be
+  // describeFields() output. A caller passing the raw registry would silently
+  // enforce archived-but-required fields against products that never had them,
+  // and would accept keys from other categories.
+  const archived = (fields || []).filter((f) => f.archived_at);
+  if (archived.length) {
+    throw new Error(
+      `validateSpecs received archived fields (${archived.map((f) => f.key).join(", ")}) — pass describeFields() output, not the raw registry.`,
+    );
+  }
+
   const errors = {};
   const byKey = new Map(fields.map((f) => [f.key, f]));
 
@@ -64,11 +81,11 @@ export function validateSpecs(fields, values) {
   for (const f of fields) {
     const v = values?.[f.key];
 
-    if (f.required && isBlank(v) && v !== 0 && v !== false) {
+    if (f.required && isBlank(v)) {
       errors[f.key] = `${f.label} is required.`;
       continue;
     }
-    if (isBlank(v) && v !== 0 && v !== false) continue;   // optional and empty
+    if (isBlank(v)) continue;   // optional and empty
 
     if (f.data_type === "number" && !Number.isFinite(v)) {
       errors[f.key] = `${f.label} must be a number.`;

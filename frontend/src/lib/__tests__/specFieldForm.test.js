@@ -20,13 +20,17 @@ const FIELDS = [
   { category_id: "fabrication", key: "process", label: "Process",
     data_type: "enum", enum_options: ["CNC milling"], required: true, sort: 0,
     archived_at: null },
+  { category_id: "sensors", key: "req_count", label: "Required count",
+    data_type: "number", required: true, sort: 6, archived_at: null },
+  { category_id: "sensors", key: "req_flag", label: "Required flag",
+    data_type: "boolean", required: true, sort: 7, archived_at: null },
 ];
 
 describe("describeFields", () => {
   it("returns only this category's fields, in sort order", () => {
     const out = describeFields(FIELDS, "sensors");
     expect(out.map((f) => f.key)).toEqual(
-      ["modality", "channels", "interface", "grade", "rohs"]);
+      ["modality", "channels", "interface", "grade", "rohs", "req_count", "req_flag"]);
   });
 
   it("excludes archived fields", () => {
@@ -70,45 +74,50 @@ describe("coerceValue", () => {
   });
 });
 
+// Required fields the tests are not themselves exercising. Spread this into a
+// values object so a test only has to state the field it cares about.
+const REQ = { modality: "Acoustic", req_count: 1, req_flag: true };
+
 describe("validateSpecs", () => {
   const live = describeFields(FIELDS, "sensors");
 
   it("passes when required fields are filled", () => {
-    expect(validateSpecs(live, { modality: "Acoustic" })).toEqual({ ok: true, errors: {} });
+    expect(validateSpecs(live, { ...REQ })).toEqual({ ok: true, errors: {} });
   });
 
   it("fails a missing required field", () => {
-    const r = validateSpecs(live, {});
+    const v = { ...REQ }; delete v.modality;
+    const r = validateSpecs(live, v);
     expect(r.ok).toBe(false);
     expect(r.errors.modality).toMatch(/required/i);
   });
 
   it("treats whitespace as missing", () => {
-    expect(validateSpecs(live, { modality: "   " }).ok).toBe(false);
+    expect(validateSpecs(live, { ...REQ, modality: "   " }).ok).toBe(false);
   });
 
   it("rejects a non-numeric value in a number field", () => {
-    const r = validateSpecs(live, { modality: "Acoustic", channels: "eight" });
+    const r = validateSpecs(live, { ...REQ, channels: "eight" });
     expect(r.ok).toBe(false);
     expect(r.errors.channels).toMatch(/number/i);
   });
 
   it("accepts zero as a real number, not as missing", () => {
-    expect(validateSpecs(live, { modality: "Acoustic", channels: 0 }).ok).toBe(true);
+    expect(validateSpecs(live, { ...REQ, channels: 0 }).ok).toBe(true);
   });
 
   it("rejects an enum value outside its options", () => {
-    const r = validateSpecs(live, { modality: "Acoustic", grade: "Z" });
+    const r = validateSpecs(live, { ...REQ, grade: "Z" });
     expect(r.errors.grade).toMatch(/not an allowed/i);
   });
 
   it("rejects a multi_enum containing an unknown option", () => {
-    const r = validateSpecs(live, { modality: "Acoustic", interface: ["I2C", "CAN"] });
+    const r = validateSpecs(live, { ...REQ, interface: ["I2C", "CAN"] });
     expect(r.errors.interface).toMatch(/CAN/);
   });
 
   it("rejects a key that is not a live field for this category", () => {
-    const r = validateSpecs(live, { modality: "Acoustic", process: "CNC milling" });
+    const r = validateSpecs(live, { ...REQ, process: "CNC milling" });
     expect(r.ok).toBe(false);
     expect(r.errors.process).toMatch(/not a field/i);
   });
@@ -116,7 +125,25 @@ describe("validateSpecs", () => {
   it("does NOT require a field that has been archived", () => {
     // `legacy` is required but archived — an admin archiving a field must not
     // retroactively invalidate every product that never had it.
-    expect(validateSpecs(live, { modality: "Acoustic" }).ok).toBe(true);
+    expect(validateSpecs(live, { ...REQ }).ok).toBe(true);
+  });
+
+  it("accepts 0 in a REQUIRED number field — 0 is a value, not a blank", () => {
+    expect(validateSpecs(live, { ...REQ, req_count: 0 }).ok).toBe(true);
+  });
+
+  it("accepts false in a REQUIRED boolean field", () => {
+    expect(validateSpecs(live, { ...REQ, req_flag: false }).ok).toBe(true);
+  });
+
+  it("still rejects a required number that is genuinely absent", () => {
+    const v = { ...REQ }; delete v.req_count;
+    expect(validateSpecs(live, v).ok).toBe(false);
+  });
+
+  it("throws if handed the raw registry instead of describeFields output", () => {
+    expect(() => validateSpecs(FIELDS, { modality: "Acoustic" }))
+      .toThrow(/describeFields/);
   });
 });
 
@@ -124,6 +151,7 @@ describe("emptyValues", () => {
   it("seeds blanks appropriate to each type", () => {
     expect(emptyValues(describeFields(FIELDS, "sensors"))).toEqual({
       modality: "", channels: null, interface: [], grade: "", rohs: false,
+      req_count: null, req_flag: false,
     });
   });
 });
