@@ -14,6 +14,18 @@ beforeEach(() => {
 // same admin-list + vendor-scoped write calls the real screen uses.
 const findProduct = async (id) => (await store.adminListProducts({})).items.find((p) => p.id === id);
 
+// The Category select renders before its options load, so findByLabelText
+// resolves instantly and a change fired here can land while the spec-field
+// registry is still empty -- leaving no fields to assert on. Wait for
+// observable readiness (real options) rather than for an element that is
+// always present.
+async function chooseCategory(value) {
+  const cat = await screen.findByLabelText("Category");
+  await waitFor(() => expect(cat.options.length).toBeGreaterThan(1));
+  fireEvent.change(cat, { target: { value } });
+  return cat;
+}
+
 describe("ArtInfraProductEditor", () => {
   it("loads an existing product into the form", async () => {
     render(<ArtInfraProductEditor store={store} productId="c1" onDone={vi.fn()} />);
@@ -45,8 +57,7 @@ describe("ArtInfraProductEditor", () => {
 
   it("swaps the whole spec field set when the category changes", async () => {
     render(<ArtInfraProductEditor store={store} productId={null} onDone={vi.fn()} />);
-    const cat = await screen.findByLabelText("Category");
-    fireEvent.change(cat, { target: { value: "sensors" } });
+    const cat = await chooseCategory("sensors");
     await screen.findByLabelText("Sensing modality");
     expect(screen.getByLabelText("Channels")).toBeInTheDocument();
 
@@ -71,7 +82,7 @@ describe("ArtInfraProductEditor", () => {
     };
     render(<ArtInfraProductEditor store={requiredStore} productId={null} onDone={vi.fn()} />);
     fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Mic" } });
-    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "sensors" } });
+    await chooseCategory("sensors");
     await screen.findByLabelText("Sensing modality");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText(/Sensing modality is required/i);

@@ -15,6 +15,18 @@ const renderNew = (theStore = store) =>
   render(<VendorProductEditor store={theStore} vendorId={vendorId}
     productId={null} onDone={vi.fn()} />);
 
+// The Category select renders before its options load, so findByLabelText
+// resolves instantly and a change fired here can land while the spec-field
+// registry is still empty -- leaving no fields to assert on. Wait for
+// observable readiness (real options) rather than for an element that is
+// always present.
+async function chooseCategory(value) {
+  const cat = await screen.findByLabelText("Category");
+  await waitFor(() => expect(cat.options.length).toBeGreaterThan(1));
+  fireEvent.change(cat, { target: { value } });
+  return cat;
+}
+
 describe("VendorProductEditor — dynamic spec fields", () => {
   it("shows no spec fields until a category is chosen", async () => {
     renderNew();
@@ -24,8 +36,7 @@ describe("VendorProductEditor — dynamic spec fields", () => {
 
   it("renders the Sensors field set when Sensors is chosen", async () => {
     renderNew();
-    const cat = await screen.findByLabelText("Category");
-    fireEvent.change(cat, { target: { value: "sensors" } });
+    await chooseCategory("sensors");
     await screen.findByLabelText("Sensing modality");
     expect(screen.getByLabelText("Channels")).toBeInTheDocument();
     expect(screen.getByLabelText("SNR")).toBeInTheDocument();
@@ -33,8 +44,7 @@ describe("VendorProductEditor — dynamic spec fields", () => {
 
   it("swaps the whole field set when the category changes", async () => {
     renderNew();
-    const cat = await screen.findByLabelText("Category");
-    fireEvent.change(cat, { target: { value: "sensors" } });
+    const cat = await chooseCategory("sensors");
     await screen.findByLabelText("Sensing modality");
     fireEvent.change(cat, { target: { value: "fabrication" } });
     await screen.findByLabelText("Process");
@@ -45,16 +55,21 @@ describe("VendorProductEditor — dynamic spec fields", () => {
 
   it("renders a unit next to a number field that declares one", async () => {
     renderNew();
-    fireEvent.change(await screen.findByLabelText("Category"), { target: { value: "sensors" } });
-    await screen.findByLabelText("SNR");
-    expect(screen.getByText("dB(A)")).toBeInTheDocument();
+    await chooseCategory("sensors");
+    // supply_voltage is the sensors field that still declares a unit: snr and
+    // channels are text, because the catalog stores "68 dB(A)" as free text.
+    await screen.findByLabelText("Supply voltage");
+    expect(screen.getByText("V")).toBeInTheDocument();
   });
 
   it("renders a multi_enum as checkboxes, not a text box", async () => {
     renderNew();
-    fireEvent.change(await screen.findByLabelText("Category"), { target: { value: "fabrication" } });
+    await chooseCategory("fabrication");
+    // surface_finish is the fabrication field still typed multi_enum:
+    // materials was retyped to text because the catalog stores lists like
+    // "Al 6061, ABS, PC" as free text.
     await screen.findByLabelText("Process");
-    expect(screen.getByRole("checkbox", { name: "Aluminium" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Anodised" })).toBeInTheDocument();
   });
 
   it("blocks save when a required spec field is empty, and says which", async () => {
@@ -72,7 +87,7 @@ describe("VendorProductEditor — dynamic spec fields", () => {
     };
     renderNew(requiredStore);
     fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Mic" } });
-    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "sensors" } });
+    await chooseCategory("sensors");
     await screen.findByLabelText("Sensing modality");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText(/Sensing modality is required/i);
@@ -83,7 +98,7 @@ describe("VendorProductEditor — dynamic spec fields", () => {
     render(<VendorProductEditor store={store} vendorId={vendorId}
       productId={null} onDone={onDone} />);
     fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Mic" } });
-    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "sensors" } });
+    await chooseCategory("sensors");
     await screen.findByLabelText("Sensing modality");
     fireEvent.change(screen.getByLabelText("Sensing modality"), { target: { value: "Acoustic" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
