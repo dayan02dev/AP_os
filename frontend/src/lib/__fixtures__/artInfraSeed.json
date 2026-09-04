@@ -142,6 +142,706 @@
       "sort": 7
     }
   ],
+  "spec_fields": [
+    {
+      "id": "sf-sensors-modality",
+      "category_id": "sensors",
+      "key": "modality",
+      "label": "Sensing modality",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": true,
+      "filterable": false,
+      "help_text": "",
+      "sort": 0,
+      "archived_at": null
+    },
+    {
+      "id": "sf-sensors-channels",
+      "category_id": "sensors",
+      "key": "channels",
+      "label": "Channels",
+      "data_type": "number",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": true,
+      "help_text": "",
+      "sort": 1,
+      "archived_at": null
+    },
+    {
+      "id": "sf-sensors-snr",
+      "category_id": "sensors",
+      "key": "snr",
+      "label": "SNR",
+      "data_type": "number",
+      "unit": "dB(A)",
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 2,
+      "archived_at": null
+    },
+    {
+      "id": "sf-sensors-interface",
+      "category_id": "sensors",
+      "key": "interface",
+      "label": "Interface",
+      "data_type": "multi_enum",
+      "unit": null,
+      "enum_options": [
+        "I2C",
+        "SPI",
+        "TDM",
+        "PDM",
+        "UART",
+        "Analog"
+      ],
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 3,
+      "archived_at": null
+    },
+    {
+      "id": "sf-sensors-supply_voltage",
+      "category_id": "sensors",
+      "key": "supply_voltage",
+      "label": "Supply voltage",
+      "data_type": "number",
+      "unit": "V",
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 4,
+      "archived_at": null
+    },
+    {
+      "id": "sf-sensors-operating_temp",
+      "category_id": "sensors",
+      "key": "operating_temp",
+      "label": "Operating temperature",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 5,
+      "archived_at": null
+    },
+    {
+      "id": "sf-boards-form_factor",
+      "category_id": "boards",
+      "key": "form_factor",
+      "label": "Form factor",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": true,
+      "filterable": false,
+      "help_text": "",
+      "sort": 0,
+      "archived_at": null
+    },
+    {
+      "id": "sf-boards-mcu",
+      "category_id": "boards",
+      "key": "mcu",
+      "label": "MCU / SoC",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 1,
+      "archived_at": null
+    },
+    {
+      "id": "sf-boards-io_count",
+      "category_id": "boards",
+      "key": "io_count",
+      "label": "I/O count",
+      "data_type": "number",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 2,
+      "archived_at": null
+    },
+    {
+      "id": "sf-boards-connectivity",
+      "category_id": "boards",
+      "key": "connectivity",
+      "label": "Connectivity",
+      "data_type": "multi_enum",
+      "unit": null,
+      "enum_options": [
+        "Wi-Fi",
+        "BLE",
+        "LoRa",
+        "Ethernet",
+        "USB",
+        "CAN"
+      ],
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 3,
+      "archived_at": null
+    },
+    {
+      "id": "sf-boards-supply_voltage",
+      "category_id": "boards",
+      "key": "supply_voltage",
+      "label": "Supply voltage",
+      "data_type": "number",
+      "unit": "V",
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 4,
+      "archived_at": null
+    },
+    {
+      "id": "sf-boards-toolchain",
+      "category_id": "boards",
+      "key": "toolchain",
+      "label": "Toolchain",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 5,
+      "archived_at": null
+    },
+    {
+      "id": "sf-compute-architecture",
+      "category_id": "compute",
+      "key": "architecture",
+      "label": "Architecture",
+      "data_type": "enum",
+      "unit": null,
+      "enum_options": [
+        "x86",
+        "ARM",
+        "RISC-V"
+      ],
+      "required": true,
+      "filterable": true,
+      "help_text": "",
+      "sort": 0,
+      "archived_at": null
+    },
+    {
+      "id": "sf-compute-cores",
+      "category_id": "compute",
+      "key": "cores",
+      "label": "Cores",
+      "data_type": "number",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 1,
+      "archived_at": null
+    },
+    {
+      "id": "sf-compute-ram",
+      "category_id": "compute",
+      "key": "ram",
+      "label": "RAM",
+      "data_type": "number",
+      "unit": "GB",
+      "enum_options": null,
+      "required": false,
+      "filterable": true,
+      "help_text": "",
+      "sort": 2,
+      "archived_at": null
+    },
+    {
+      "id": "sf-compute-accelerator",
+      "category_id": "compute",
+      "key": "accelerator",
+      "label": "Accelerator",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 3,
+      "archived_at": null
+    },
+    {
+      "id": "sf-compute-tdp",
+      "category_id": "compute",
+      "key": "tdp",
+      "label": "TDP",
+      "data_type": "number",
+      "unit": "W",
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 4,
+      "archived_at": null
+    },
+    {
+      "id": "sf-prototyping-service_type",
+      "category_id": "prototyping",
+      "key": "service_type",
+      "label": "Service type",
+      "data_type": "enum",
+      "unit": null,
+      "enum_options": [
+        "3D printing",
+        "PCB assembly",
+        "Wire harness",
+        "Enclosure"
+      ],
+      "required": true,
+      "filterable": true,
+      "help_text": "",
+      "sort": 0,
+      "archived_at": null
+    },
+    {
+      "id": "sf-prototyping-technology",
+      "category_id": "prototyping",
+      "key": "technology",
+      "label": "Technology",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 1,
+      "archived_at": null
+    },
+    {
+      "id": "sf-prototyping-tolerance",
+      "category_id": "prototyping",
+      "key": "tolerance",
+      "label": "Tolerance",
+      "data_type": "number",
+      "unit": "mm",
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 2,
+      "archived_at": null
+    },
+    {
+      "id": "sf-prototyping-materials",
+      "category_id": "prototyping",
+      "key": "materials",
+      "label": "Materials",
+      "data_type": "multi_enum",
+      "unit": null,
+      "enum_options": [
+        "PLA",
+        "ABS",
+        "Nylon",
+        "Resin",
+        "FR4",
+        "Aluminium"
+      ],
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 3,
+      "archived_at": null
+    },
+    {
+      "id": "sf-prototyping-turnaround",
+      "category_id": "prototyping",
+      "key": "turnaround",
+      "label": "Turnaround",
+      "data_type": "number",
+      "unit": "days",
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 4,
+      "archived_at": null
+    },
+    {
+      "id": "sf-prototyping-moq",
+      "category_id": "prototyping",
+      "key": "moq",
+      "label": "Minimum order qty",
+      "data_type": "number",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 5,
+      "archived_at": null
+    },
+    {
+      "id": "sf-fabrication-process",
+      "category_id": "fabrication",
+      "key": "process",
+      "label": "Process",
+      "data_type": "enum",
+      "unit": null,
+      "enum_options": [
+        "CNC milling",
+        "CNC turning",
+        "Sheet metal",
+        "Laser cutting",
+        "Injection moulding"
+      ],
+      "required": true,
+      "filterable": true,
+      "help_text": "",
+      "sort": 0,
+      "archived_at": null
+    },
+    {
+      "id": "sf-fabrication-materials",
+      "category_id": "fabrication",
+      "key": "materials",
+      "label": "Materials",
+      "data_type": "multi_enum",
+      "unit": null,
+      "enum_options": [
+        "Aluminium",
+        "Steel",
+        "Stainless",
+        "Brass",
+        "Delrin",
+        "ABS"
+      ],
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 1,
+      "archived_at": null
+    },
+    {
+      "id": "sf-fabrication-tolerance",
+      "category_id": "fabrication",
+      "key": "tolerance",
+      "label": "Tolerance",
+      "data_type": "number",
+      "unit": "mm",
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 2,
+      "archived_at": null
+    },
+    {
+      "id": "sf-fabrication-max_envelope",
+      "category_id": "fabrication",
+      "key": "max_envelope",
+      "label": "Max part envelope",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 3,
+      "archived_at": null
+    },
+    {
+      "id": "sf-fabrication-surface_finish",
+      "category_id": "fabrication",
+      "key": "surface_finish",
+      "label": "Surface finish",
+      "data_type": "multi_enum",
+      "unit": null,
+      "enum_options": [
+        "As-machined",
+        "Bead blast",
+        "Anodised",
+        "Powder coat"
+      ],
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 4,
+      "archived_at": null
+    },
+    {
+      "id": "sf-fabrication-moq",
+      "category_id": "fabrication",
+      "key": "moq",
+      "label": "Minimum order qty",
+      "data_type": "number",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 5,
+      "archived_at": null
+    },
+    {
+      "id": "sf-components-component_type",
+      "category_id": "components",
+      "key": "component_type",
+      "label": "Component type",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": true,
+      "filterable": false,
+      "help_text": "",
+      "sort": 0,
+      "archived_at": null
+    },
+    {
+      "id": "sf-components-package",
+      "category_id": "components",
+      "key": "package",
+      "label": "Package",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 1,
+      "archived_at": null
+    },
+    {
+      "id": "sf-components-tolerance",
+      "category_id": "components",
+      "key": "tolerance",
+      "label": "Tolerance",
+      "data_type": "number",
+      "unit": "%",
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 2,
+      "archived_at": null
+    },
+    {
+      "id": "sf-components-operating_temp",
+      "category_id": "components",
+      "key": "operating_temp",
+      "label": "Operating temperature",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 3,
+      "archived_at": null
+    },
+    {
+      "id": "sf-components-rohs",
+      "category_id": "components",
+      "key": "rohs",
+      "label": "RoHS compliant",
+      "data_type": "boolean",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 4,
+      "archived_at": null
+    },
+    {
+      "id": "sf-components-moq",
+      "category_id": "components",
+      "key": "moq",
+      "label": "Minimum order qty",
+      "data_type": "number",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 5,
+      "archived_at": null
+    },
+    {
+      "id": "sf-power-cell_type",
+      "category_id": "power",
+      "key": "cell_type",
+      "label": "Chemistry / type",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": true,
+      "filterable": false,
+      "help_text": "",
+      "sort": 0,
+      "archived_at": null
+    },
+    {
+      "id": "sf-power-nominal_voltage",
+      "category_id": "power",
+      "key": "nominal_voltage",
+      "label": "Nominal voltage",
+      "data_type": "number",
+      "unit": "V",
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 1,
+      "archived_at": null
+    },
+    {
+      "id": "sf-power-capacity",
+      "category_id": "power",
+      "key": "capacity",
+      "label": "Capacity",
+      "data_type": "number",
+      "unit": "Wh",
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 2,
+      "archived_at": null
+    },
+    {
+      "id": "sf-power-max_current",
+      "category_id": "power",
+      "key": "max_current",
+      "label": "Max current",
+      "data_type": "number",
+      "unit": "A",
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 3,
+      "archived_at": null
+    },
+    {
+      "id": "sf-power-protection",
+      "category_id": "power",
+      "key": "protection",
+      "label": "Protection",
+      "data_type": "multi_enum",
+      "unit": null,
+      "enum_options": [
+        "OVP",
+        "OCP",
+        "OTP",
+        "Short-circuit",
+        "Cell balancing"
+      ],
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 4,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-licensing",
+      "category_id": "software",
+      "key": "licensing",
+      "label": "Licensing model",
+      "data_type": "enum",
+      "unit": null,
+      "enum_options": [
+        "Perpetual",
+        "Subscription",
+        "Usage-based"
+      ],
+      "required": true,
+      "filterable": true,
+      "help_text": "",
+      "sort": 0,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-deployment",
+      "category_id": "software",
+      "key": "deployment",
+      "label": "Deployment",
+      "data_type": "enum",
+      "unit": null,
+      "enum_options": [
+        "Cloud",
+        "On-premise",
+        "Hybrid"
+      ],
+      "required": false,
+      "filterable": true,
+      "help_text": "",
+      "sort": 1,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-seats",
+      "category_id": "software",
+      "key": "seats",
+      "label": "Seats included",
+      "data_type": "number",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 2,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-compliance",
+      "category_id": "software",
+      "key": "compliance",
+      "label": "Compliance",
+      "data_type": "multi_enum",
+      "unit": null,
+      "enum_options": [
+        "HIPAA",
+        "GDPR",
+        "ISO 13485",
+        "21 CFR Part 11",
+        "SOC 2"
+      ],
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 3,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-support_sla",
+      "category_id": "software",
+      "key": "support_sla",
+      "label": "Support SLA",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 4,
+      "archived_at": null
+    }
+  ],
   "products": [
     {
       "id": "c1",
@@ -156,20 +856,12 @@
       "price": 8200,
       "lead_time_weeks_min": 3,
       "lead_time_weeks_max": 4,
-      "specs": [
-        {
-          "k": "Channels",
-          "v": "8, matched ±1 dB"
-        },
-        {
-          "k": "SNR",
-          "v": "68 dB(A)"
-        },
-        {
-          "k": "Interface",
-          "v": "TDM / PDM"
-        }
-      ],
+      "specs": {
+        "channels": "8, matched ±1 dB",
+        "snr": "68 dB(A)",
+        "interface": "TDM / PDM"
+      },
+      "extra_specs": [],
       "status": "published",
       "sort": 0,
       "visible_tracks": [
@@ -189,7 +881,8 @@
       "price": 12500,
       "lead_time_weeks_min": 5,
       "lead_time_weeks_max": 6,
-      "specs": [
+      "specs": {},
+      "extra_specs": [
         {
           "k": "Resolution",
           "v": "24-bit"
@@ -222,7 +915,8 @@
       "price": 15500,
       "lead_time_weeks_min": 2,
       "lead_time_weeks_max": 3,
-      "specs": [
+      "specs": {},
+      "extra_specs": [
         {
           "k": "Compute",
           "v": "40 TOPS"
@@ -255,7 +949,10 @@
       "price": 6500,
       "lead_time_weeks_min": null,
       "lead_time_weeks_max": null,
-      "specs": [
+      "specs": {
+        "turnaround": "48–72 hrs"
+      },
+      "extra_specs": [
         {
           "k": "Layers",
           "v": "2"
@@ -267,10 +964,6 @@
         {
           "k": "Qty",
           "v": "10 boards"
-        },
-        {
-          "k": "Turnaround",
-          "v": "48–72 hrs"
         }
       ],
       "status": "published",
@@ -292,7 +985,10 @@
       "price": 1800,
       "lead_time_weeks_min": null,
       "lead_time_weeks_max": null,
-      "specs": [
+      "specs": {
+        "turnaround": "24–48 hrs"
+      },
+      "extra_specs": [
         {
           "k": "Process",
           "v": "SLA"
@@ -304,10 +1000,6 @@
         {
           "k": "Build volume",
           "v": "192 × 120 × 245 mm"
-        },
-        {
-          "k": "Turnaround",
-          "v": "24–48 hrs"
         }
       ],
       "status": "published",
@@ -329,18 +1021,14 @@
       "price": null,
       "lead_time_weeks_min": 3,
       "lead_time_weeks_max": 5,
-      "specs": [
-        {
-          "k": "Materials",
-          "v": "Al 6061, ABS, PC"
-        },
+      "specs": {
+        "materials": "Al 6061, ABS, PC",
+        "moq": "1"
+      },
+      "extra_specs": [
         {
           "k": "Finish",
           "v": "Anodise, bead-blast"
-        },
-        {
-          "k": "MOQ",
-          "v": "1"
         }
       ],
       "status": "published",
@@ -362,7 +1050,10 @@
       "price": 3400,
       "lead_time_weeks_min": 4,
       "lead_time_weeks_max": 6,
-      "specs": [
+      "specs": {
+        "moq": "25"
+      },
+      "extra_specs": [
         {
           "k": "Shielding",
           "v": "Braid + foil"
@@ -370,10 +1061,6 @@
         {
           "k": "Sterilisation",
           "v": "Autoclave / EtO"
-        },
-        {
-          "k": "MOQ",
-          "v": "25"
         }
       ],
       "status": "published",
@@ -395,7 +1082,8 @@
       "price": null,
       "lead_time_weeks_min": 6,
       "lead_time_weeks_max": 8,
-      "specs": [
+      "specs": {},
+      "extra_specs": [
         {
           "k": "Chemistry",
           "v": "Li-ion / LiFePO₄"
@@ -428,11 +1116,10 @@
       "price": 45000,
       "lead_time_weeks_min": null,
       "lead_time_weeks_max": null,
-      "specs": [
-        {
-          "k": "Seats",
-          "v": "1 (add-on available)"
-        },
+      "specs": {
+        "seats": "1 (add-on available)"
+      },
+      "extra_specs": [
         {
           "k": "Targets",
           "v": "Jetson, ARM, x86"
@@ -465,7 +1152,8 @@
       "price": null,
       "lead_time_weeks_min": null,
       "lead_time_weeks_max": null,
-      "specs": [
+      "specs": {},
+      "extra_specs": [
         {
           "k": "Modalities",
           "v": "Imaging, signal, video"
@@ -502,7 +1190,8 @@
       "price": 60000,
       "lead_time_weeks_min": null,
       "lead_time_weeks_max": null,
-      "specs": [
+      "specs": {},
+      "extra_specs": [
         {
           "k": "Credit value",
           "v": "₹60,000"
@@ -539,7 +1228,8 @@
       "price": null,
       "lead_time_weeks_min": null,
       "lead_time_weeks_max": null,
-      "specs": [
+      "specs": {},
+      "extra_specs": [
         {
           "k": "Standards",
           "v": "ISO 13485, 21 CFR 820"
