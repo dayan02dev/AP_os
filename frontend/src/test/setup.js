@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, vi } from "vitest";
 import { clearStickyState } from "../hooks/useStickyState.js";
+import { resetLatency } from "../lib/artInfraLatency.js";
 
 // Every test starts with clean web storage. jsdom's Storage impl doesn't
 // always expose .clear() as a real method, so loop safely.
@@ -25,6 +26,9 @@ beforeEach(() => {
   // the hook's module-level mirror, which storage clearing alone cannot reach.
   clearStorage(typeof sessionStorage !== "undefined" ? sessionStorage : null);
   clearStickyState();
+  // Art Infra mock latency/failure injection is module-level state; without
+  // this a configure() in one test leaks into the next.
+  resetLatency();
 });
 
 afterEach(() => {
