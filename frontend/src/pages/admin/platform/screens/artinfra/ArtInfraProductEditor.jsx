@@ -41,12 +41,16 @@ export default function ArtInfraProductEditor({ store, productId, onDone }) {
 
   // What the founder components will receive. Vendor and category are resolved
   // here because the form holds ids, but the founder view holds objects.
+  // Reviews are always forced empty in a draft preview (there is nothing to
+  // review yet), so rating must be forced to match — otherwise a product that
+  // already has approved reviews elsewhere would preview "★ 4.5 (2)" directly
+  // above "No reviews yet.", which is a straight contradiction.
   const preview = {
     ...form,
     vendor: vendors.find((v) => v.id === form.vendor_id) || { name: "(no vendor)" },
     category: categories.find((c) => c.id === form.category_id) || { label: "(no category)" },
     datasheets: [], reviews: [],
-    rating: form.rating || { avg: 0, count: 0 },
+    rating: { avg: 0, count: 0 },
     can_review: false, my_review: null, in_shortlist_qty: 0,
   };
 

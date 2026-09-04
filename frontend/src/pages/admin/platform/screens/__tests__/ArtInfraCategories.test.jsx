@@ -1,8 +1,11 @@
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import ArtInfraCategories from "../artinfra/ArtInfraCategories.jsx";
 import { createArtInfraStore } from "../../../../../lib/artInfraMock.js";
 import seed from "../../../../../lib/__fixtures__/artInfraSeed.json";
+
+const rowLabels = () => screen.getAllByRole("row").slice(1) // drop the header row
+  .map((row) => within(row).getAllByRole("cell")[0].textContent);
 
 let store;
 beforeEach(() => { store = createArtInfraStore(); });
@@ -43,5 +46,32 @@ describe("ArtInfraCategories", () => {
     await waitFor(() => {
       expect(screen.queryByText(/still used by a product/i)).not.toBeInTheDocument();
     });
+  });
+
+  it("moves the second category up on the first click, not the second", async () => {
+    render(<ArtInfraCategories store={store} />);
+    await waitFor(() => expect(screen.getAllByRole("row").length).toBe(9));
+
+    const before = rowLabels();
+    expect(before).toEqual([
+      "Sensors", "Boards", "Compute", "Prototyping",
+      "Fabrication", "Components", "Power", "Software",
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Move Boards up" }));
+
+    await waitFor(() => {
+      expect(rowLabels()).toEqual([
+        "Boards", "Sensors", "Compute", "Prototyping",
+        "Fabrication", "Components", "Power", "Software",
+      ]);
+    });
+  });
+
+  it("shows an error instead of an empty table when the load fails", async () => {
+    const badStore = { listCategories: vi.fn().mockRejectedValue(new Error("boom")) };
+    render(<ArtInfraCategories store={badStore} />);
+    expect(await screen.findByText(/could not load categories/i)).toBeInTheDocument();
+    expect(screen.queryByText("No categories yet.")).not.toBeInTheDocument();
   });
 });

@@ -49,8 +49,8 @@ function ReviewForm({ product, onSubmitReview }) {
 }
 
 export default function ProductModal({ product, onClose, onPrimary, onSubmitReview,
-  busy = false, contactOpen = false }) {
-  const [showContact, setShowContact] = useState(contactOpen);
+  busy = false }) {
+  const [showContact, setShowContact] = useState(false);
   const { rating = { avg: 0, count: 0 }, datasheets = [], reviews = [] } = product;
   const leadTime = product.lead_time_weeks_min
     ? `${product.lead_time_weeks_min}–${product.lead_time_weeks_max} weeks`
@@ -87,8 +87,8 @@ export default function ProductModal({ product, onClose, onPrimary, onSubmitRevi
             </div>
             <div>
               <div className="section-lbl">Specifications</div>
-              {(product.specs || []).map((s) => (
-                <div className="spec-row" key={s.k}>
+              {(product.specs || []).map((s, i) => (
+                <div className="spec-row" key={i}>
                   <span className="k">{s.k}</span><span className="v">{s.v}</span>
                 </div>
               ))}

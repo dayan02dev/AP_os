@@ -28,6 +28,11 @@ export default function FounderStore({ store = artInfraMock }) {
   const [listOpen, setListOpen] = useState(false);
   const [openId, setOpenId] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Confirmation for a successful "Push to procurement" — cleared the moment
+  // the shortlist changes again, so it never lingers past the state it
+  // described. Without this the push has no visible effect at all: the
+  // shortlist just goes empty and the popover closes.
+  const [pushedCount, setPushedCount] = useState(null);
 
   const load = useCallback(
     () => store.founderStore().then(setData).catch(setError), [store]);
@@ -43,17 +48,23 @@ export default function FounderStore({ store = artInfraMock }) {
   const addToShortlist = async (product) => {
     if (busy) return;
     setBusy(true);
+    setPushedCount(null);
     try { await store.addToShortlist(product.id, 1); await load(); }
     finally { setBusy(false); }
   };
   const setQty = async (productId, qty) => {
+    setPushedCount(null);
     await store.setShortlistQty(productId, qty); await load();
   };
   const push = async () => {
     if (busy || data.shortlist.length === 0) return;
     setBusy(true);
-    try { await store.pushToProcurement(); setListOpen(false); await load(); }
-    finally { setBusy(false); }
+    try {
+      const { pushed } = await store.pushToProcurement();
+      setPushedCount(pushed);
+      setListOpen(false);
+      await load();
+    } finally { setBusy(false); }
   };
   const submitReview = async (productId, payload) => {
     await store.submitReview(productId, payload); await load();
@@ -71,52 +82,59 @@ export default function FounderStore({ store = artInfraMock }) {
             from other founders.
           </p>
         </div>
-        <div className="cart-wrap">
-          <button type="button" className="cart-btn" onClick={() => setListOpen((v) => !v)}>
-            <span className="cart-icon" aria-hidden="true" />
-            <span>Shortlist</span>
-            {count > 0 && <span className="cart-count" data-testid="shortlist-count">{count}</span>}
-          </button>
-          {listOpen && (
-            <>
-              <div className="cart-backdrop" onClick={() => setListOpen(false)} />
-              <div className="cart-pop card">
-                <div className="cart-pop-head">Shortlist · {count} items</div>
-                <div className="cart-pop-body">
-                  {data.shortlist.length === 0 ? (
-                    <div className="cart-pop-empty">
-                      Your shortlist is empty. Add parts and services from the catalog.
-                    </div>
-                  ) : data.shortlist.map((l) => (
-                    /* Markup preserved verbatim from the shipped page — only the
-                       word Cart changes. This is a UI-approval build, so the
-                       popover must not regress visually. */
-                    <div className="cart-pop-item" key={l.product_id}>
-                      <div className="ci-info">
-                        <div className="ci-name">{l.product?.name}</div>
-                        <div className="ci-price">{fmtINR(l.product?.price)} each</div>
+        <div className="cart-col">
+          <div className="cart-wrap">
+            <button type="button" className="cart-btn" onClick={() => setListOpen((v) => !v)}>
+              <span className="cart-icon" aria-hidden="true" />
+              <span>Shortlist</span>
+              {count > 0 && <span className="cart-count" data-testid="shortlist-count">{count}</span>}
+            </button>
+            {listOpen && (
+              <>
+                <div className="cart-backdrop" onClick={() => setListOpen(false)} />
+                <div className="cart-pop card">
+                  <div className="cart-pop-head">Shortlist · {count} items</div>
+                  <div className="cart-pop-body">
+                    {data.shortlist.length === 0 ? (
+                      <div className="cart-pop-empty">
+                        Your shortlist is empty. Add parts and services from the catalog.
                       </div>
-                      <div className="qty-step">
-                        <button type="button" onClick={() => setQty(l.product_id, l.qty - 1)}
-                          aria-label={`Decrease ${l.product?.name} quantity`}>−</button>
-                        <span>{l.qty}</span>
-                        <button type="button" onClick={() => setQty(l.product_id, l.qty + 1)}
-                          aria-label={`Increase ${l.product?.name} quantity`}>+</button>
+                    ) : data.shortlist.map((l) => (
+                      /* Markup preserved verbatim from the shipped page — only the
+                         word Cart changes. This is a UI-approval build, so the
+                         popover must not regress visually. */
+                      <div className="cart-pop-item" key={l.product_id}>
+                        <div className="ci-info">
+                          <div className="ci-name">{l.product?.name}</div>
+                          <div className="ci-price">{fmtINR(l.product?.price)} each</div>
+                        </div>
+                        <div className="qty-step">
+                          <button type="button" onClick={() => setQty(l.product_id, l.qty - 1)}
+                            aria-label={`Decrease ${l.product?.name} quantity`}>−</button>
+                          <span>{l.qty}</span>
+                          <button type="button" onClick={() => setQty(l.product_id, l.qty + 1)}
+                            aria-label={`Increase ${l.product?.name} quantity`}>+</button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="cart-pop-foot">
-                  <div className="cart-pop-sub">
-                    <span>Subtotal</span><span className="v">{fmtINR(data.shortlist_subtotal)}</span>
+                    ))}
                   </div>
-                  <button type="button" className="btn btn-primary" style={{ justifyContent: "center" }}
-                    disabled={data.shortlist.length === 0 || busy} onClick={push}>
-                    Push to procurement <span className="arrow">→</span>
-                  </button>
+                  <div className="cart-pop-foot">
+                    <div className="cart-pop-sub">
+                      <span>Subtotal</span><span className="v">{fmtINR(data.shortlist_subtotal)}</span>
+                    </div>
+                    <button type="button" className="btn btn-primary" style={{ justifyContent: "center" }}
+                      disabled={data.shortlist.length === 0 || busy} onClick={push}>
+                      Push to procurement <span className="arrow">→</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </>
+              </>
+            )}
+          </div>
+          {pushedCount != null && (
+            <div className="procure-confirm" data-testid="procurement-confirmation">
+              {pushedCount} item{pushedCount === 1 ? "" : "s"} moved to your procurement plan.
+            </div>
           )}
         </div>
       </div>

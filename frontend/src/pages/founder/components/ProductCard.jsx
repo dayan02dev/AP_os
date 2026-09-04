@@ -1,6 +1,6 @@
 import { fmtINR } from "../ui.jsx";
 
-export function priceLabel(product) {
+function priceLabel(product) {
   return product.pricing === "quote" ? "On request" : fmtINR(product.price);
 }
 

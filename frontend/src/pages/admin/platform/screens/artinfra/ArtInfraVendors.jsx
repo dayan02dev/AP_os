@@ -8,8 +8,12 @@ export default function ArtInfraVendors({ store }) {
   const [rows, setRows] = useState([]);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(() => store.listVendors().then(setRows), [store]);
+  const load = useCallback(() => store.listVendors()
+    .then((r) => { setRows(r); setError(""); })
+    .catch(() => setError("Could not load vendors."))
+    .finally(() => setLoading(false)), [store]);
   useEffect(() => { load(); }, [load]);
 
   const save = async () => {
@@ -38,28 +42,35 @@ export default function ArtInfraVendors({ store }) {
 
       {error && <div className="inline-error">{error}</div>}
 
-      <table className="os-table">
-        <thead>
-          <tr><th>Vendor</th><th>Contact</th><th>Email</th><th>Phone</th><th>ARTPARK ref</th><th /></tr>
-        </thead>
-        <tbody>
-          {rows.map((v) => (
-            <tr key={v.id}>
-              <td>{v.name}</td>
-              <td>{v.contact_name || "—"}</td>
-              <td>{v.contact_email || "—"}</td>
-              <td>{v.contact_phone || "—"}</td>
-              <td>{v.artpark_ref || "—"}</td>
-              <td className="ai-row-actions">
-                <button type="button" className="os-btn ghost" aria-label={`Edit ${v.name}`}
-                  onClick={() => setEditing({ ...v })}>Edit</button>
-                <button type="button" className="os-btn ghost" aria-label={`Delete ${v.name}`}
-                  onClick={() => remove(v)}>Delete</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {loading ? (
+        <div className="inline-loading">Loading vendors…</div>
+      ) : (
+        <table className="os-table">
+          <thead>
+            <tr><th>Vendor</th><th>Contact</th><th>Email</th><th>Phone</th><th>ARTPARK ref</th><th /></tr>
+          </thead>
+          <tbody>
+            {rows.map((v) => (
+              <tr key={v.id}>
+                <td>{v.name}</td>
+                <td>{v.contact_name || "—"}</td>
+                <td>{v.contact_email || "—"}</td>
+                <td>{v.contact_phone || "—"}</td>
+                <td>{v.artpark_ref || "—"}</td>
+                <td className="ai-row-actions">
+                  <button type="button" className="os-btn ghost" aria-label={`Edit ${v.name}`}
+                    onClick={() => setEditing({ ...v })}>Edit</button>
+                  <button type="button" className="os-btn ghost" aria-label={`Delete ${v.name}`}
+                    onClick={() => remove(v)}>Delete</button>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && !error && (
+              <tr><td colSpan={6} className="tbl-empty">No vendors yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+      )}
 
       {editing && (
         <div className="modal-bg" onClick={() => setEditing(null)}>

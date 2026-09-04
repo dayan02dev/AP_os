@@ -22,6 +22,14 @@ export default function ArtInfraInsights({ store }) {
           <div className="ai-stat-num">{data.topShortlisted.length}</div>
           <div className="ai-stat-label">Shortlisted at least once</div>
         </div>
+        <div className="ai-stat">
+          <div className="ai-stat-num" data-testid="mean-approved-rating">
+            {data.meanApprovedRating.count > 0
+              ? `★ ${data.meanApprovedRating.avg.toFixed(1)}`
+              : "—"}
+          </div>
+          <div className="ai-stat-label">Mean approved rating</div>
+        </div>
       </div>
 
       <div className="section-lbl">Most shortlisted</div>

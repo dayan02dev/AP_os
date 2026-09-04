@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import ArtInfraCatalog from "../artinfra/ArtInfraCatalog.jsx";
 import { createArtInfraStore } from "../../../../../lib/artInfraMock.js";
@@ -38,5 +38,32 @@ describe("ArtInfraCatalog", () => {
     await screen.findByText("12 of 12");
     fireEvent.click(screen.getAllByRole("button", { name: "Retire" })[0]);
     await waitFor(() => expect(screen.getAllByText("retired").length).toBe(1));
+  });
+
+  it("filters by type", async () => {
+    render(<ArtInfraCatalog store={store} goEditor={vi.fn()} />);
+    await screen.findByText("12 of 12");
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "Software" } });
+    await waitFor(() => expect(screen.getByText("4 of 12")).toBeInTheDocument());
+  });
+
+  it("filters by vendor", async () => {
+    render(<ArtInfraCatalog store={store} goEditor={vi.fn()} />);
+    await screen.findByText("12 of 12");
+    await waitFor(() =>
+      expect(within(screen.getByLabelText("Vendor")).getByText("Knowles")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("Vendor"), { target: { value: "knowles" } });
+    await waitFor(() => expect(screen.getByText("1 of 12")).toBeInTheDocument());
+  });
+
+  it("shows an error instead of an empty table when the load fails", async () => {
+    const badStore = {
+      listProducts: vi.fn().mockRejectedValue(new Error("boom")),
+      listVendors: vi.fn().mockResolvedValue([]),
+      listCategories: vi.fn().mockResolvedValue([]),
+    };
+    render(<ArtInfraCatalog store={badStore} goEditor={vi.fn()} />);
+    expect(await screen.findByText(/could not load the catalog/i)).toBeInTheDocument();
+    expect(screen.queryByText("No products match these filters.")).not.toBeInTheDocument();
   });
 });

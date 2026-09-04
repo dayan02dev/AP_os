@@ -31,4 +31,11 @@ describe("ArtInfraReviews", () => {
     render(<ArtInfraReviews store={store} onChange={vi.fn()} />);
     expect(await screen.findByText("GridSense")).toBeInTheDocument();
   });
+
+  it("shows an error instead of an empty table when the load fails", async () => {
+    const badStore = { listReviews: vi.fn().mockRejectedValue(new Error("boom")) };
+    render(<ArtInfraReviews store={badStore} onChange={vi.fn()} />);
+    expect(await screen.findByText(/could not load reviews/i)).toBeInTheDocument();
+    expect(screen.queryByText("Nothing in this queue.")).not.toBeInTheDocument();
+  });
 });

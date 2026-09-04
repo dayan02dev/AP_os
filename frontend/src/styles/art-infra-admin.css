@@ -69,6 +69,16 @@
 .ai-admin .ai-stat-num { font-size: 28px; font-weight: 700; }
 .ai-admin .ai-stat-label { font-size: 12px; color: var(--ink-soft); text-transform: uppercase; }
 
+/* Push-to-procurement confirmation — sits under the cart button so it is
+   visible whether or not the shortlist popover is still open (the popover
+   closes on a successful push, which is why the message can't live inside
+   it). Cleared the moment the shortlist changes again. */
+.founder-portal .cart-col { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.founder-portal .procure-confirm {
+  font-size: 12.5px; color: #1e6b34; background: #e6f4ea;
+  border: 1px solid #1e6b34; border-radius: 2px; padding: 6px 12px; max-width: 260px; text-align: right;
+}
+
 /* Vendor contact block — founder-side, so it lives under .founder-portal. */
 .founder-portal .vendor-contact {
   border: 1px solid var(--line); padding: 12px 14px; margin-top: 4px;

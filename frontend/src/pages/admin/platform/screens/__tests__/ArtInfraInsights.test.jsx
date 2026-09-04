@@ -19,4 +19,11 @@ describe("ArtInfraInsights", () => {
       expect(screen.getByTestId("never-shortlisted-count")).toHaveTextContent("11"));
     expect(screen.getByTestId("top-shortlisted")).toHaveTextContent("MEMS microphone array (8-ch)");
   });
+
+  it("shows the mean approved rating across the whole catalog", async () => {
+    // Sample data ships two APPROVED reviews (5 and 4, both on c1) and two
+    // pending reviews that must not count — mean is (5+4)/2 = 4.5.
+    render(<ArtInfraInsights store={store} />);
+    expect(await screen.findByTestId("mean-approved-rating")).toHaveTextContent("★ 4.5");
+  });
 });

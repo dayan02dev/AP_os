@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createArtInfraStore } from "../artInfraMock";
+import { createArtInfraStore, artInfraMock } from "../artInfraMock";
 
 describe("artInfraMock", () => {
   it("loads the real 12-product catalog by default", async () => {
@@ -88,6 +88,14 @@ describe("artInfraMock", () => {
     const i = await s.insights();
     expect(i.neverShortlisted.some((p) => p.id === "c1")).toBe(false);
     expect(i.neverShortlisted.length).toBe(11);
+  });
+
+  it("seeds the shared singleton's shortlist but keeps every bare store empty", async () => {
+    const bare = createArtInfraStore();
+    expect((await bare.founderStore()).shortlist).toHaveLength(0);
+
+    const singleton = await artInfraMock.founderStore();
+    expect(singleton.shortlist.length).toBeGreaterThan(0);
   });
 
   it("creates a product when saveProduct has no id", async () => {

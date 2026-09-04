@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import ArtInfraVendors from "../artinfra/ArtInfraVendors.jsx";
 import { createArtInfraStore } from "../../../../../lib/artInfraMock.js";
 
@@ -43,5 +43,12 @@ describe("ArtInfraVendors", () => {
     await waitFor(() => {
       expect(screen.queryByText(/still used by a product/i)).not.toBeInTheDocument();
     });
+  });
+
+  it("shows an error instead of an empty table when the load fails", async () => {
+    const badStore = { listVendors: vi.fn().mockRejectedValue(new Error("boom")) };
+    render(<ArtInfraVendors store={badStore} />);
+    expect(await screen.findByText(/could not load vendors/i)).toBeInTheDocument();
+    expect(screen.queryByText("No vendors yet.")).not.toBeInTheDocument();
   });
 });

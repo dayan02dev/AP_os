@@ -26,8 +26,11 @@ export default function ArtInfraShell({ store = artInfraMock }) {
   const [editingId, setEditingId] = useState(null);
   const [pending, setPending] = useState(0);
 
+  // Silently ignored: a failed badge fetch should not surface a screen-level
+  // error banner over sub-nav — the worst case is a stale/missing count,
+  // which the next successful poll corrects.
   const refreshPending = () =>
-    store.listReviews({ status: "pending" }).then((r) => setPending(r.length));
+    store.listReviews({ status: "pending" }).then((r) => setPending(r.length)).catch(() => {});
   useEffect(() => { refreshPending(); }, [store, view]);
 
   const goEditor = (productId) => { setEditingId(productId); setView("editor"); };

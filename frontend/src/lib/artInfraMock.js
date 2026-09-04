@@ -46,14 +46,25 @@ const slugify = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").repla
 // The single founder the preview simulates.
 const ME = "app-me";
 
-export function createArtInfraStore(initial = seed) {
+// Sample shortlist so the Insights screen has something to show the moment an
+// admin opens it, without depending on a founder having shortlisted anything
+// first in the same session. MOCK ONLY — see SAMPLE_REVIEWS above; the
+// Phase-2 migration seed ships an empty shortlist, same as every other
+// `createArtInfraStore()` call in this module (tests rely on that).
+const SAMPLE_SHORTLIST = [
+  { product_id: "c1", qty: 1 },
+  { product_id: "c3", qty: 2 },
+  { product_id: "c9", qty: 1 },
+];
+
+export function createArtInfraStore(initial = seed, { seedShortlist = false } = {}) {
   const db = {
     vendors: clone(initial.vendors),
     categories: clone(initial.categories),
     products: clone(initial.products),
     datasheets: clone(SAMPLE_DATASHEETS),
     reviews: clone(SAMPLE_REVIEWS),
-    shortlist: [],      // {product_id, qty}
+    shortlist: seedShortlist ? clone(SAMPLE_SHORTLIST) : [],      // {product_id, qty}
     procurement: [],    // rows pushed out of the shortlist
   };
 
@@ -151,13 +162,6 @@ export function createArtInfraStore(initial = seed) {
       return ok(adminView(p));
     },
 
-    deleteProduct(id) {
-      db.products = db.products.filter((p) => p.id !== id);
-      db.datasheets = db.datasheets.filter((d) => d.product_id !== id);
-      db.reviews = db.reviews.filter((r) => r.product_id !== id);
-      return ok(undefined);
-    },
-
     // ── admin: vendors + categories ──────────────────────────────────
     listVendors() { return ok([...db.vendors].sort((a, b) => a.name.localeCompare(b.name))); },
 
@@ -230,12 +234,20 @@ export function createArtInfraStore(initial = seed) {
           rating: ratingOf(p),
         };
       });
+      const approvedReviews = db.reviews.filter((r) => r.status === "approved");
+      const meanApprovedRating = {
+        avg: approvedReviews.length
+          ? approvedReviews.reduce((a, r) => a + r.rating, 0) / approvedReviews.length
+          : 0,
+        count: approvedReviews.length,
+      };
       return ok({
         perProduct,
         topShortlisted: [...perProduct]
           .filter((p) => p.shortlisted_by > 0)
           .sort((a, b) => b.shortlisted_by - a.shortlisted_by),
         neverShortlisted: perProduct.filter((p) => p.shortlisted_by === 0),
+        meanApprovedRating,
       });
     },
 
@@ -309,4 +321,6 @@ export function createArtInfraStore(initial = seed) {
 }
 
 // Shared singleton so every screen in the preview sees the same edits.
-export const artInfraMock = createArtInfraStore();
+// Seeded with a small shortlist so Insights and the founder popover are never
+// empty on first open — see F2 in the fix-wave report.
+export const artInfraMock = createArtInfraStore(seed, { seedShortlist: true });

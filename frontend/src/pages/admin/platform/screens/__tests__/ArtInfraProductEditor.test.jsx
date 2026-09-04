@@ -79,6 +79,15 @@ describe("ArtInfraProductEditor", () => {
     expect((await store.getProduct("c1")).name).toBe("Saved name");
   });
 
+  it("never shows a rating in the preview, since its reviews are always forced empty", async () => {
+    render(<ArtInfraProductEditor store={store} productId="c1" onDone={vi.fn()} />);
+    await waitFor(() => screen.getByLabelText("Name"));
+    // c1 ships two approved reviews (avg 4.5) in the real catalog view, but the
+    // preview pane always renders reviews: [] — showing a rating here would
+    // contradict the "No reviews yet." text right below it.
+    expect(within(screen.getByTestId("founder-preview")).queryByText(/★/)).not.toBeInTheDocument();
+  });
+
   it("blocks saving without a name", async () => {
     render(<ArtInfraProductEditor store={store} productId={null} onDone={vi.fn()} />);
     await waitFor(() => screen.getByLabelText("Name"));
