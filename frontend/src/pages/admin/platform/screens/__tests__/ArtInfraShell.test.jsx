@@ -1,7 +1,15 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import ArtInfraShell from "../artinfra/ArtInfraShell.jsx";
 import { createArtInfraStore } from "../../../../../lib/artInfraMock.js";
+import { configure } from "../../../../../lib/artInfraLatency.js";
+
+beforeEach(() => {
+  // Pin latency: the mock resolves with 40-260ms jitter by default, which
+  // makes findBy* timeouts race under parallel load. resetLatency() already
+  // runs in the global setup, so this only needs to set the floor.
+  configure({ minMs: 0, maxMs: 0 });
+});
 
 describe("ArtInfraShell", () => {
   it("renders the six sub-nav entries plus New product (editor is not in the sub-nav)", () => {

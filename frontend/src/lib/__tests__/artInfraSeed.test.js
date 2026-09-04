@@ -55,4 +55,23 @@ describe("artInfraSeed fixture", () => {
   it("marks no seeded field required, so legacy products stay editable", () => {
     for (const f of seed.spec_fields) expect(f.required).toBe(false);
   });
+
+  it("every seeded spec value satisfies its field's declared type", () => {
+    const byKey = new Map(
+      seed.spec_fields.map((f) => [`${f.category_id}/${f.key}`, f]));
+    const bad = [];
+    for (const p of seed.products) {
+      for (const [k, v] of Object.entries(p.specs || {})) {
+        const f = byKey.get(`${p.category_id}/${k}`);
+        if (!f) continue;
+        if (f.data_type === "number" && !Number.isFinite(Number(v))) bad.push(`${p.id}.${k}=${v}`);
+        if (f.data_type === "enum" && !(f.enum_options || []).includes(v)) bad.push(`${p.id}.${k}=${v}`);
+        if (f.data_type === "multi_enum" && !Array.isArray(v)) bad.push(`${p.id}.${k}=${v}`);
+        if (f.data_type === "boolean" && typeof v !== "boolean") bad.push(`${p.id}.${k}=${v}`);
+      }
+    }
+    // A mismatch here means the editor will blank a real value on load and
+    // discard it on save. Retype the field to match the data, never the reverse.
+    expect(bad).toEqual([]);
+  });
 });

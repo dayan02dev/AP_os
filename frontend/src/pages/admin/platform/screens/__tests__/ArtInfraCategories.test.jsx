@@ -2,13 +2,20 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import ArtInfraCategories from "../artinfra/ArtInfraCategories.jsx";
 import { createArtInfraStore } from "../../../../../lib/artInfraMock.js";
+import { configure } from "../../../../../lib/artInfraLatency.js";
 import seed from "../../../../../lib/__fixtures__/artInfraSeed.json";
 
 const rowLabels = () => screen.getAllByRole("row").slice(1) // drop the header row
   .map((row) => within(row).getAllByRole("cell")[0].textContent);
 
 let store;
-beforeEach(() => { store = createArtInfraStore(); });
+beforeEach(() => {
+  // Pin latency: the mock resolves with 40-260ms jitter by default, which
+  // makes findBy* timeouts race under parallel load. resetLatency() already
+  // runs in the global setup, so this only needs to set the floor.
+  configure({ minMs: 0, maxMs: 0 });
+  store = createArtInfraStore();
+});
 
 describe("ArtInfraCategories", () => {
   it("lists the 8 seeded categories in sort order", async () => {

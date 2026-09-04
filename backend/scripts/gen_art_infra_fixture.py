@@ -47,16 +47,21 @@ def split_lead_time(specs: list[dict]) -> tuple[list[dict], int | None, int | No
     return kept, lo, hi
 
 
+# Six fields are `text` despite describing quantities: the catalog's real values
+# embed units or lists ("68 dB(A)", "TDM / PDM", "Al 6061, ABS, PC"), so typing
+# them number/multi_enum would make every seeded product fail validation and let
+# an editor silently blank a real value. Typed inputs are demonstrated by the
+# ~70 fields whose values are absent from the seed.
+#
 # Per-category spec fields. Keys are plain slugs so the existing free-text
 # spec labels ("Channels", "SNR") map onto them by slugify() with no hand table.
 # data_type is one of: text | number | enum | multi_enum | boolean
 SPEC_FIELDS: dict[str, list[dict]] = {
     "sensors": [
         {"key": "modality", "label": "Sensing modality", "data_type": "text"},
-        {"key": "channels", "label": "Channels", "data_type": "number", "filterable": True},
-        {"key": "snr", "label": "SNR", "data_type": "number", "unit": "dB(A)"},
-        {"key": "interface", "label": "Interface", "data_type": "multi_enum",
-         "enum_options": ["I2C", "SPI", "TDM", "PDM", "UART", "Analog"]},
+        {"key": "channels", "label": "Channels", "data_type": "text", "filterable": True},
+        {"key": "snr", "label": "SNR", "data_type": "text"},
+        {"key": "interface", "label": "Interface", "data_type": "text"},
         {"key": "supply_voltage", "label": "Supply voltage", "data_type": "number", "unit": "V"},
         {"key": "operating_temp", "label": "Operating temperature", "data_type": "text"},
     ],
@@ -91,7 +96,7 @@ SPEC_FIELDS: dict[str, list[dict]] = {
         {"key": "tolerance", "label": "Tolerance", "data_type": "number", "unit": "mm"},
         {"key": "materials", "label": "Materials", "data_type": "multi_enum",
          "enum_options": ["PLA", "ABS", "Nylon", "Resin", "FR4", "Aluminium"]},
-        {"key": "turnaround", "label": "Turnaround", "data_type": "number", "unit": "days"},
+        {"key": "turnaround", "label": "Turnaround", "data_type": "text"},
         {"key": "moq", "label": "Minimum order qty", "data_type": "number"},
         {"key": "process", "label": "Process", "data_type": "text"},
         {"key": "layers", "label": "Layers", "data_type": "text"},
@@ -102,8 +107,7 @@ SPEC_FIELDS: dict[str, list[dict]] = {
     ],
     "fabrication": [
         {"key": "process", "label": "Process", "data_type": "text"},
-        {"key": "materials", "label": "Materials", "data_type": "multi_enum",
-         "enum_options": ["Aluminium", "Steel", "Stainless", "Brass", "Delrin", "ABS"]},
+        {"key": "materials", "label": "Materials", "data_type": "text"},
         {"key": "tolerance", "label": "Tolerance", "data_type": "number", "unit": "mm"},
         {"key": "max_envelope", "label": "Max part envelope", "data_type": "text"},
         {"key": "surface_finish", "label": "Surface finish", "data_type": "multi_enum",
@@ -138,7 +142,7 @@ SPEC_FIELDS: dict[str, list[dict]] = {
          "filterable": True},
         {"key": "deployment", "label": "Deployment", "data_type": "enum",
          "enum_options": ["Cloud", "On-premise", "Hybrid"], "filterable": True},
-        {"key": "seats", "label": "Seats included", "data_type": "number"},
+        {"key": "seats", "label": "Seats included", "data_type": "text"},
         {"key": "compliance", "label": "Compliance", "data_type": "multi_enum",
          "enum_options": ["HIPAA", "GDPR", "ISO 13485", "21 CFR Part 11", "SOC 2"]},
         {"key": "support_sla", "label": "Support SLA", "data_type": "text"},
