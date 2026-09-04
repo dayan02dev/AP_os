@@ -29,7 +29,8 @@ const SAMPLE_REVIEWS = [
 const WRITABLE = {
   vendor: ["legal_name", "display_name", "website", "contact_name", "contact_email",
     "contact_phone", "city", "state", "country", "capabilities", "categories_served",
-    "gstin", "udyam_number", "cin", "certifications"],
+    "gstin", "udyam_number", "cin", "certifications",
+    "artpark_ref", "notes"],
   product: ["name", "slug", "blurb", "description", "category_id", "type", "pricing",
     "price", "lead_time_weeks_min", "lead_time_weeks_max", "specs", "sort",
     "visible_tracks"],
@@ -321,6 +322,17 @@ export function createArtInfraStore(initial = seed, { seedSamples = true } = {})
     return settle(p);
   };
 
+  /** Admin-side retire. Distinct from the vendor's own retireProduct: no
+   *  vendor scoping, and it does NOT go through send-back, because a retired
+   *  product is terminal rather than something the vendor should resubmit. */
+  const adminRetireProduct = (id) => {
+    const p = db.products.find((x) => x.id === id);
+    if (!p) return reject("not_found");
+    p.status = "retired";
+    p.review_note = "";
+    return settle(p);
+  };
+
   const saveCategory = (patch) => {
     try { assertWritable(patch, WRITABLE.category); } catch (e) { return Promise.reject(e); }
     if (!patch.label) return reject("label_required");
@@ -534,7 +546,7 @@ export function createArtInfraStore(initial = seed, { seedSamples = true } = {})
     listVendorProducts, getVendorProduct, createVendorProduct, updateVendorProduct,
     submitProduct, retireProduct, deleteVendorProduct,
     adminListVendors, inviteVendor, approveVendor, suspendVendor,
-    adminListProducts, publishProduct, sendBackProduct,
+    adminListProducts, publishProduct, sendBackProduct, adminRetireProduct,
     saveCategory, deleteCategory, saveSpecField, archiveSpecField,
     listRequests, approveRequest, declineRequest,
     listVendorReviews, moderateVendorReview, deleteVendorReview,

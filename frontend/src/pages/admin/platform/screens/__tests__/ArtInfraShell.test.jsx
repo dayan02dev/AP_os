@@ -20,16 +20,17 @@ describe("ArtInfraShell", () => {
   });
 
   it("shows a pending-review badge from the store", async () => {
+    // SAMPLE_REVIEWS seeds exactly one pending review (plus one approved).
     render(<ArtInfraShell store={createArtInfraStore()} />);
-    expect(await screen.findByTestId("artinfra-pending-badge")).toHaveTextContent("2");
+    expect(await screen.findByTestId("artinfra-pending-badge")).toHaveTextContent("1");
   });
 
   it("does not crash when the pending-badge fetch rejects", async () => {
     const badStore = {
       listVendorReviews: vi.fn().mockRejectedValue(new Error("boom")),
       listRequests: vi.fn().mockRejectedValue(new Error("boom")),
-      listProducts: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-      listVendors: vi.fn().mockResolvedValue([]),
+      adminListProducts: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      adminListVendors: vi.fn().mockResolvedValue([]),
       listCategories: vi.fn().mockResolvedValue([]),
     };
     render(<ArtInfraShell store={badStore} />);

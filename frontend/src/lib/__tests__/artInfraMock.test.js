@@ -171,6 +171,17 @@ describe("product lifecycle", () => {
     const { catalog } = await store.founderStore();
     expect(catalog.find((c) => c.id === p.id)).toBeUndefined();
   });
+
+  it("admin retire is terminal — it does not send the product back to draft", async () => {
+    const [v] = await store.adminListVendors();
+    let p = await store.createVendorProduct(v.id, { name: "Bye", category_id: "sensors" });
+    p = await store.submitProduct(v.id, p.id);
+    p = await store.publishProduct(p.id);
+    p = await store.adminRetireProduct(p.id);
+    expect(p.status).toBe("retired");
+    // A send-back would have left it resubmittable with a review note.
+    expect(p.review_note).toBe("");
+  });
 });
 
 describe("reviews are vendor-level and gated on an approved request", () => {
@@ -212,6 +223,17 @@ describe("reviews are vendor-level and gated on an approved request", () => {
       expect(p.rating.count).toBeGreaterThan(0);
       expect(p.rating.avg).toBe(4);
     }
+  });
+});
+
+describe("vendor profile fields the founder payload exposes", () => {
+  it("accepts artpark_ref and notes, which the founder payload exposes", async () => {
+    const [v] = await store.adminListVendors();
+    const saved = await store.saveVendorProfile(v.id, {
+      artpark_ref: "ARTPARK-2026-011", notes: "Preferred for acoustics",
+    });
+    expect(saved.artpark_ref).toBe("ARTPARK-2026-011");
+    expect(saved.notes).toBe("Preferred for acoustics");
   });
 });
 

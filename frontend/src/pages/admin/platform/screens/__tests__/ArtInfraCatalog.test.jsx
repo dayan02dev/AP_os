@@ -37,11 +37,11 @@ describe("ArtInfraCatalog", () => {
     expect(goEditor).toHaveBeenCalledWith("c1");
   });
 
-  it("retires a published product back to draft with a note", async () => {
+  it("retires a published product — terminally, not back to draft", async () => {
     render(<ArtInfraCatalog store={store} goEditor={vi.fn()} />);
     await screen.findByText("12 of 12");
     fireEvent.click(screen.getAllByRole("button", { name: "Retire" })[0]);
-    await waitFor(() => expect(screen.getAllByText("draft").length).toBe(1));
+    await waitFor(() => expect(screen.getAllByText("retired").length).toBe(1));
   });
 
   it("filters by type", async () => {

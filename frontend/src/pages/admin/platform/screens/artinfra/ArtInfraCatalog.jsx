@@ -79,7 +79,7 @@ export default function ArtInfraCatalog({ store, goEditor }) {
 
   const retire = async (id) => {
     setError("");
-    try { await store.sendBackProduct(id, "Retired by admin"); load(); }
+    try { await store.adminRetireProduct(id); load(); }
     catch (e) { setError(e.message); }
   };
 

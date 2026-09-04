@@ -6,6 +6,7 @@ const BLANK_INVITE = { display_name: "", contact_email: "" };
 const EDIT_FIELDS = [
   ["display_name", "Display name"], ["contact_name", "Contact name"],
   ["contact_email", "Contact email"], ["contact_phone", "Contact phone"],
+  ["artpark_ref", "ARTPARK ref"], ["notes", "Notes (internal)"],
 ];
 
 export default function ArtInfraVendors({ store }) {
