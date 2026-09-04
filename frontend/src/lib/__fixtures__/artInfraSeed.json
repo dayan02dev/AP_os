@@ -151,7 +151,7 @@
       "data_type": "text",
       "unit": null,
       "enum_options": null,
-      "required": true,
+      "required": false,
       "filterable": false,
       "help_text": "",
       "sort": 0,
@@ -242,7 +242,7 @@
       "data_type": "text",
       "unit": null,
       "enum_options": null,
-      "required": true,
+      "required": false,
       "filterable": false,
       "help_text": "",
       "sort": 0,
@@ -326,6 +326,48 @@
       "archived_at": null
     },
     {
+      "id": "sf-boards-resolution",
+      "category_id": "boards",
+      "key": "resolution",
+      "label": "Resolution",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 6,
+      "archived_at": null
+    },
+    {
+      "id": "sf-boards-leads",
+      "category_id": "boards",
+      "key": "leads",
+      "label": "Leads",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 7,
+      "archived_at": null
+    },
+    {
+      "id": "sf-boards-isolation",
+      "category_id": "boards",
+      "key": "isolation",
+      "label": "Isolation",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 8,
+      "archived_at": null
+    },
+    {
       "id": "sf-compute-architecture",
       "category_id": "compute",
       "key": "architecture",
@@ -337,7 +379,7 @@
         "ARM",
         "RISC-V"
       ],
-      "required": true,
+      "required": false,
       "filterable": true,
       "help_text": "",
       "sort": 0,
@@ -400,6 +442,48 @@
       "archived_at": null
     },
     {
+      "id": "sf-compute-compute",
+      "category_id": "compute",
+      "key": "compute",
+      "label": "Compute",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 5,
+      "archived_at": null
+    },
+    {
+      "id": "sf-compute-memory",
+      "category_id": "compute",
+      "key": "memory",
+      "label": "Memory",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 6,
+      "archived_at": null
+    },
+    {
+      "id": "sf-compute-power",
+      "category_id": "compute",
+      "key": "power",
+      "label": "Power",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 7,
+      "archived_at": null
+    },
+    {
       "id": "sf-prototyping-service_type",
       "category_id": "prototyping",
       "key": "service_type",
@@ -412,7 +496,7 @@
         "Wire harness",
         "Enclosure"
       ],
-      "required": true,
+      "required": false,
       "filterable": true,
       "help_text": "",
       "sort": 0,
@@ -496,21 +580,99 @@
       "archived_at": null
     },
     {
+      "id": "sf-prototyping-process",
+      "category_id": "prototyping",
+      "key": "process",
+      "label": "Process",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 6,
+      "archived_at": null
+    },
+    {
+      "id": "sf-prototyping-layers",
+      "category_id": "prototyping",
+      "key": "layers",
+      "label": "Layers",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 7,
+      "archived_at": null
+    },
+    {
+      "id": "sf-prototyping-max_size",
+      "category_id": "prototyping",
+      "key": "max_size",
+      "label": "Max size",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 8,
+      "archived_at": null
+    },
+    {
+      "id": "sf-prototyping-qty",
+      "category_id": "prototyping",
+      "key": "qty",
+      "label": "Qty",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 9,
+      "archived_at": null
+    },
+    {
+      "id": "sf-prototyping-layer_height",
+      "category_id": "prototyping",
+      "key": "layer_height",
+      "label": "Layer height",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 10,
+      "archived_at": null
+    },
+    {
+      "id": "sf-prototyping-build_volume",
+      "category_id": "prototyping",
+      "key": "build_volume",
+      "label": "Build volume",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 11,
+      "archived_at": null
+    },
+    {
       "id": "sf-fabrication-process",
       "category_id": "fabrication",
       "key": "process",
       "label": "Process",
-      "data_type": "enum",
+      "data_type": "text",
       "unit": null,
-      "enum_options": [
-        "CNC milling",
-        "CNC turning",
-        "Sheet metal",
-        "Laser cutting",
-        "Injection moulding"
-      ],
-      "required": true,
-      "filterable": true,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
       "help_text": "",
       "sort": 0,
       "archived_at": null
@@ -598,6 +760,20 @@
       "archived_at": null
     },
     {
+      "id": "sf-fabrication-finish",
+      "category_id": "fabrication",
+      "key": "finish",
+      "label": "Finish",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 6,
+      "archived_at": null
+    },
+    {
       "id": "sf-components-component_type",
       "category_id": "components",
       "key": "component_type",
@@ -605,7 +781,7 @@
       "data_type": "text",
       "unit": null,
       "enum_options": null,
-      "required": true,
+      "required": false,
       "filterable": false,
       "help_text": "",
       "sort": 0,
@@ -682,6 +858,34 @@
       "archived_at": null
     },
     {
+      "id": "sf-components-shielding",
+      "category_id": "components",
+      "key": "shielding",
+      "label": "Shielding",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 6,
+      "archived_at": null
+    },
+    {
+      "id": "sf-components-sterilisation",
+      "category_id": "components",
+      "key": "sterilisation",
+      "label": "Sterilisation",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 7,
+      "archived_at": null
+    },
+    {
       "id": "sf-power-cell_type",
       "category_id": "power",
       "key": "cell_type",
@@ -689,7 +893,7 @@
       "data_type": "text",
       "unit": null,
       "enum_options": null,
-      "required": true,
+      "required": false,
       "filterable": false,
       "help_text": "",
       "sort": 0,
@@ -758,6 +962,48 @@
       "archived_at": null
     },
     {
+      "id": "sf-power-chemistry",
+      "category_id": "power",
+      "key": "chemistry",
+      "label": "Chemistry",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 5,
+      "archived_at": null
+    },
+    {
+      "id": "sf-power-bms",
+      "category_id": "power",
+      "key": "bms",
+      "label": "BMS",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 6,
+      "archived_at": null
+    },
+    {
+      "id": "sf-power-certs",
+      "category_id": "power",
+      "key": "certs",
+      "label": "Certs",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 7,
+      "archived_at": null
+    },
+    {
       "id": "sf-software-licensing",
       "category_id": "software",
       "key": "licensing",
@@ -769,7 +1015,7 @@
         "Subscription",
         "Usage-based"
       ],
-      "required": true,
+      "required": false,
       "filterable": true,
       "help_text": "",
       "sort": 0,
@@ -840,6 +1086,202 @@
       "help_text": "",
       "sort": 4,
       "archived_at": null
+    },
+    {
+      "id": "sf-software-targets",
+      "category_id": "software",
+      "key": "targets",
+      "label": "Targets",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 5,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-term",
+      "category_id": "software",
+      "key": "term",
+      "label": "Term",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 6,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-support",
+      "category_id": "software",
+      "key": "support",
+      "label": "Support",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 7,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-modalities",
+      "category_id": "software",
+      "key": "modalities",
+      "label": "Modalities",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 8,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-labellers",
+      "category_id": "software",
+      "key": "labellers",
+      "label": "Labellers",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 9,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-qa",
+      "category_id": "software",
+      "key": "qa",
+      "label": "QA",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 10,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-onboarding",
+      "category_id": "software",
+      "key": "onboarding",
+      "label": "Onboarding",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 11,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-credit_value",
+      "category_id": "software",
+      "key": "credit_value",
+      "label": "Credit value",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 12,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-baa",
+      "category_id": "software",
+      "key": "baa",
+      "label": "BAA",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 13,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-gpu",
+      "category_id": "software",
+      "key": "gpu",
+      "label": "GPU",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 14,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-validity",
+      "category_id": "software",
+      "key": "validity",
+      "label": "Validity",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 15,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-standards",
+      "category_id": "software",
+      "key": "standards",
+      "label": "Standards",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 16,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-modules",
+      "category_id": "software",
+      "key": "modules",
+      "label": "Modules",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 17,
+      "archived_at": null
+    },
+    {
+      "id": "sf-software-users",
+      "category_id": "software",
+      "key": "users",
+      "label": "Users",
+      "data_type": "text",
+      "unit": null,
+      "enum_options": null,
+      "required": false,
+      "filterable": false,
+      "help_text": "",
+      "sort": 18,
+      "archived_at": null
     }
   ],
   "products": [
@@ -881,21 +1323,12 @@
       "price": 12500,
       "lead_time_weeks_min": 5,
       "lead_time_weeks_max": 6,
-      "specs": {},
-      "extra_specs": [
-        {
-          "k": "Resolution",
-          "v": "24-bit"
-        },
-        {
-          "k": "Leads",
-          "v": "3 (expandable)"
-        },
-        {
-          "k": "Isolation",
-          "v": "Reinforced, 5 kV"
-        }
-      ],
+      "specs": {
+        "resolution": "24-bit",
+        "leads": "3 (expandable)",
+        "isolation": "Reinforced, 5 kV"
+      },
+      "extra_specs": [],
       "status": "published",
       "sort": 1,
       "visible_tracks": [
@@ -915,21 +1348,12 @@
       "price": 15500,
       "lead_time_weeks_min": 2,
       "lead_time_weeks_max": 3,
-      "specs": {},
-      "extra_specs": [
-        {
-          "k": "Compute",
-          "v": "40 TOPS"
-        },
-        {
-          "k": "Memory",
-          "v": "8 GB LPDDR5"
-        },
-        {
-          "k": "Power",
-          "v": "7–15 W"
-        }
-      ],
+      "specs": {
+        "compute": "40 TOPS",
+        "memory": "8 GB LPDDR5",
+        "power": "7–15 W"
+      },
+      "extra_specs": [],
       "status": "published",
       "sort": 2,
       "visible_tracks": [
@@ -950,22 +1374,12 @@
       "lead_time_weeks_min": null,
       "lead_time_weeks_max": null,
       "specs": {
+        "layers": "2",
+        "max_size": "100 × 100 mm",
+        "qty": "10 boards",
         "turnaround": "48–72 hrs"
       },
-      "extra_specs": [
-        {
-          "k": "Layers",
-          "v": "2"
-        },
-        {
-          "k": "Max size",
-          "v": "100 × 100 mm"
-        },
-        {
-          "k": "Qty",
-          "v": "10 boards"
-        }
-      ],
+      "extra_specs": [],
       "status": "published",
       "sort": 3,
       "visible_tracks": [
@@ -986,22 +1400,12 @@
       "lead_time_weeks_min": null,
       "lead_time_weeks_max": null,
       "specs": {
+        "process": "SLA",
+        "layer_height": "50 µm",
+        "build_volume": "192 × 120 × 245 mm",
         "turnaround": "24–48 hrs"
       },
-      "extra_specs": [
-        {
-          "k": "Process",
-          "v": "SLA"
-        },
-        {
-          "k": "Layer height",
-          "v": "50 µm"
-        },
-        {
-          "k": "Build volume",
-          "v": "192 × 120 × 245 mm"
-        }
-      ],
+      "extra_specs": [],
       "status": "published",
       "sort": 4,
       "visible_tracks": [
@@ -1023,14 +1427,10 @@
       "lead_time_weeks_max": 5,
       "specs": {
         "materials": "Al 6061, ABS, PC",
+        "finish": "Anodise, bead-blast",
         "moq": "1"
       },
-      "extra_specs": [
-        {
-          "k": "Finish",
-          "v": "Anodise, bead-blast"
-        }
-      ],
+      "extra_specs": [],
       "status": "published",
       "sort": 5,
       "visible_tracks": [
@@ -1051,18 +1451,11 @@
       "lead_time_weeks_min": 4,
       "lead_time_weeks_max": 6,
       "specs": {
+        "shielding": "Braid + foil",
+        "sterilisation": "Autoclave / EtO",
         "moq": "25"
       },
-      "extra_specs": [
-        {
-          "k": "Shielding",
-          "v": "Braid + foil"
-        },
-        {
-          "k": "Sterilisation",
-          "v": "Autoclave / EtO"
-        }
-      ],
+      "extra_specs": [],
       "status": "published",
       "sort": 6,
       "visible_tracks": [
@@ -1082,21 +1475,12 @@
       "price": null,
       "lead_time_weeks_min": 6,
       "lead_time_weeks_max": 8,
-      "specs": {},
-      "extra_specs": [
-        {
-          "k": "Chemistry",
-          "v": "Li-ion / LiFePO₄"
-        },
-        {
-          "k": "BMS",
-          "v": "Certified, configurable"
-        },
-        {
-          "k": "Certs",
-          "v": "IS 16046 path"
-        }
-      ],
+      "specs": {
+        "chemistry": "Li-ion / LiFePO₄",
+        "bms": "Certified, configurable",
+        "certs": "IS 16046 path"
+      },
+      "extra_specs": [],
       "status": "published",
       "sort": 7,
       "visible_tracks": [
@@ -1117,22 +1501,12 @@
       "lead_time_weeks_min": null,
       "lead_time_weeks_max": null,
       "specs": {
-        "seats": "1 (add-on available)"
+        "seats": "1 (add-on available)",
+        "targets": "Jetson, ARM, x86",
+        "term": "12 months",
+        "support": "Priority email"
       },
-      "extra_specs": [
-        {
-          "k": "Targets",
-          "v": "Jetson, ARM, x86"
-        },
-        {
-          "k": "Term",
-          "v": "12 months"
-        },
-        {
-          "k": "Support",
-          "v": "Priority email"
-        }
-      ],
+      "extra_specs": [],
       "status": "published",
       "sort": 8,
       "visible_tracks": [
@@ -1152,25 +1526,13 @@
       "price": null,
       "lead_time_weeks_min": null,
       "lead_time_weeks_max": null,
-      "specs": {},
-      "extra_specs": [
-        {
-          "k": "Modalities",
-          "v": "Imaging, signal, video"
-        },
-        {
-          "k": "Labellers",
-          "v": "Verified clinicians"
-        },
-        {
-          "k": "QA",
-          "v": "Consensus scoring"
-        },
-        {
-          "k": "Onboarding",
-          "v": "1–2 weeks"
-        }
-      ],
+      "specs": {
+        "modalities": "Imaging, signal, video",
+        "labellers": "Verified clinicians",
+        "qa": "Consensus scoring",
+        "onboarding": "1–2 weeks"
+      },
+      "extra_specs": [],
       "status": "published",
       "sort": 9,
       "visible_tracks": [
@@ -1190,25 +1552,13 @@
       "price": 60000,
       "lead_time_weeks_min": null,
       "lead_time_weeks_max": null,
-      "specs": {},
-      "extra_specs": [
-        {
-          "k": "Credit value",
-          "v": "₹60,000"
-        },
-        {
-          "k": "BAA",
-          "v": "Included"
-        },
-        {
-          "k": "GPU",
-          "v": "A10G / A100 on demand"
-        },
-        {
-          "k": "Validity",
-          "v": "12 months"
-        }
-      ],
+      "specs": {
+        "credit_value": "₹60,000",
+        "baa": "Included",
+        "gpu": "A10G / A100 on demand",
+        "validity": "12 months"
+      },
+      "extra_specs": [],
       "status": "published",
       "sort": 10,
       "visible_tracks": [
@@ -1228,25 +1578,13 @@
       "price": null,
       "lead_time_weeks_min": null,
       "lead_time_weeks_max": null,
-      "specs": {},
-      "extra_specs": [
-        {
-          "k": "Standards",
-          "v": "ISO 13485, 21 CFR 820"
-        },
-        {
-          "k": "Modules",
-          "v": "DControl, CAPA, Training"
-        },
-        {
-          "k": "Users",
-          "v": "From 5"
-        },
-        {
-          "k": "Onboarding",
-          "v": "2–3 weeks"
-        }
-      ],
+      "specs": {
+        "standards": "ISO 13485, 21 CFR 820",
+        "modules": "DControl, CAPA, Training",
+        "users": "From 5",
+        "onboarding": "2–3 weeks"
+      },
+      "extra_specs": [],
       "status": "published",
       "sort": 11,
       "visible_tracks": [

@@ -37,4 +37,22 @@ describe("artInfraSeed fixture", () => {
       for (const k of Object.keys(p.specs)) expect(keys.has(k)).toBe(true);
     }
   });
+
+  it("actually maps the seeded free-text specs onto registry keys", () => {
+    const mapped = seed.products.reduce((a, p) => a + Object.keys(p.specs).length, 0);
+    const extra = seed.products.reduce((a, p) => a + p.extra_specs.length, 0);
+    // Would have caught the original 9-of-42 mapping: most specs must land on
+    // a real field, not in the free-text remainder.
+    expect(mapped).toBeGreaterThan(extra);
+    // And every product with any spec at all must map at least one.
+    for (const p of seed.products) {
+      if (p.specs || p.extra_specs.length) {
+        expect(Object.keys(p.specs).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("marks no seeded field required, so legacy products stay editable", () => {
+    for (const f of seed.spec_fields) expect(f.required).toBe(false);
+  });
 });
