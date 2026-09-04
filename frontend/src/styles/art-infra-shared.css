@@ -1,0 +1,57 @@
+/* frontend/src/styles/art-infra-shared.css
+   Status-chip vocabulary shared by the Art Infra admin and vendor portals --
+   both render the SAME domain statuses (products, vendors, requests,
+   reviews), so this is one definition instead of two that drift.
+
+   Scoped on the chip class itself (not a portal ancestor) because it has to
+   work under both .ai-admin and .vendor-portal roots. */
+
+.ai-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+  background: var(--chip);
+}
+
+/* In-progress states -- muted amber (the original draft/pending treatment
+   from art-infra-admin.css), covers all five not-yet-final statuses. */
+.ai-status-draft,
+.ai-status-invited,
+.ai-status-pending,
+.ai-status-pending_review,
+.ai-status-registered {
+  background: #fdf3e0;
+  border-color: #fdf3e0;
+  color: #8a5a12;
+}
+
+/* Positive terminal states -- green. */
+.ai-status-published,
+.ai-status-approved {
+  background: #e6f4ea;
+  border-color: #2f9e4f;
+  color: #2a7a3a;
+}
+
+/* Negative / closed states -- error colour. */
+.ai-status-suspended,
+.ai-status-declined {
+  background: var(--bg-soft);
+  border-color: #c84a1a;
+  color: #c84a1a;
+}
+
+/* Inert states -- de-emphasised via opacity rather than a distinct hue. */
+.ai-status-retired,
+.ai-status-hidden,
+.ai-status-withdrawn {
+  background: var(--bg-soft);
+  border-color: var(--line-strong);
+  color: var(--ink-soft);
+  opacity: 0.6;
+}

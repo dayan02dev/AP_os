@@ -1,3 +1,5 @@
+@import "./art-infra-shared.css";
+
 /* Vendor portal. Scoped entirely under .vendor-portal so nothing leaks into
    the admin or founder shells. Tokens only -- no colour literals except the
    semantic error hex #c84a1a. */
@@ -35,6 +37,43 @@
 }
 .vendor-portal .os-btn:hover { background: var(--accent); border-color: var(--accent); }
 .vendor-portal .os-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.vendor-portal .os-btn.ghost {
+  background: transparent; color: var(--ink-soft); border-color: var(--line);
+}
+.vendor-portal .os-btn.ghost:hover {
+  background: var(--bg-soft); color: var(--ink); border-color: var(--line-strong);
+}
+
+/* Mirrors .adm-portal .os-table -- same product, second portal. */
+.vendor-portal .os-table { width: 100%; border-collapse: collapse; background: var(--bg); }
+.vendor-portal .os-table th,
+.vendor-portal .os-table td {
+  text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line);
+  font-size: 13px; vertical-align: middle;
+}
+.vendor-portal .os-table th {
+  font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-dim); font-weight: 600; background: var(--bg-soft);
+  position: sticky; top: 0; border-bottom: 1px solid var(--line);
+}
+.vendor-portal .os-table tbody tr:hover { background: var(--bg-soft); }
+
+/* Mirrors .adm-portal .os-sub. */
+.vendor-portal .os-sub { font-size: 13px; color: var(--ink-soft); margin-top: 8px; max-width: 100ch; }
+
+/* Mirrors .ai-admin .ai-linkbtn -- same "no link-styled button class" gap,
+   second portal. */
+.vendor-portal .ai-linkbtn {
+  background: none; border: 0; padding: 0; font: inherit; text-align: left;
+  color: var(--accent); cursor: pointer; text-decoration: underline;
+}
+.vendor-portal .ai-linkbtn:hover { text-decoration: none; }
+
+/* Mirrors .founder-portal .section-lbl. */
+.vendor-portal .section-lbl {
+  font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+  font-weight: 700; color: var(--ink-soft); margin-bottom: 8px;
+}
 
 .vendor-portal .os-select,
 .vendor-portal .os-input {
