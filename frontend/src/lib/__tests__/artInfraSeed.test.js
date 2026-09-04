@@ -44,11 +44,11 @@ describe("artInfraSeed fixture", () => {
     // Would have caught the original 9-of-42 mapping: most specs must land on
     // a real field, not in the free-text remainder.
     expect(mapped).toBeGreaterThan(extra);
-    // And every product with any spec at all must map at least one.
+    // Every seeded product has specs in the source catalog, so every one must
+    // map at least one field. No guard: `{}` is truthy, so the obvious
+    // `if (p.specs)` filters nothing and just hides the assertion's real scope.
     for (const p of seed.products) {
-      if (p.specs || p.extra_specs.length) {
-        expect(Object.keys(p.specs).length).toBeGreaterThan(0);
-      }
+      expect(Object.keys(p.specs).length).toBeGreaterThan(0);
     }
   });
 
