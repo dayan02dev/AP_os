@@ -167,6 +167,10 @@ describe("reviews are vendor-level and gated on an approved request", () => {
   });
 
   it("shows an approved vendor rating on every product from that vendor", async () => {
+    // Sample-free: SAMPLE_REVIEWS seeds an approved 5-star review for `knowles`,
+    // which is catalog[0]'s vendor, so the shared store's mean would be 4.5.
+    // This test is about the aggregation rule, not about the fixture's fiction.
+    const store = createArtInfraStore(undefined, { seedSamples: false });
     const { catalog } = await store.founderStore();
     const vendorId = catalog[0].vendor.id;
     const req = await store.createRequest({ product_id: catalog[0].id, note: "x" });
