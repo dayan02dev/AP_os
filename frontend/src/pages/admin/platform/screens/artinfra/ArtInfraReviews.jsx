@@ -11,22 +11,22 @@ export default function ArtInfraReviews({ store, onChange }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(() => store.listReviews({ status })
+  const load = useCallback(() => store.listVendorReviews({ status })
     .then((r) => { setRows(r); setError(""); })
     .catch(() => setError("Could not load reviews."))
     .finally(() => setLoading(false)), [store, status]);
   useEffect(() => { load(); }, [load]);
 
   const act = async (id, next) => {
-    if (next === "deleted") await store.deleteReview(id);
-    else await store.moderateReview(id, next);
+    if (next === "deleted") await store.deleteVendorReview(id);
+    else await store.moderateVendorReview(id, next);
     await load();
     onChange?.();
   };
 
   const q = search.trim().toLowerCase();
   const visible = rows.filter((r) => !q
-    || r.product_name.toLowerCase().includes(q)
+    || r.vendor_name.toLowerCase().includes(q)
     || r.author_name.toLowerCase().includes(q)
     || r.author_venture.toLowerCase().includes(q));
 
@@ -38,7 +38,7 @@ export default function ArtInfraReviews({ store, onChange }) {
       <ListToolbar
         search={search} onSearch={setSearch}
         searchLabel="Search reviews"
-        searchPlaceholder="Product, founder or venture…"
+        searchPlaceholder="Vendor, founder or venture…"
         segments={[{ ariaLabel: "Status", value: status, onChange: setStatus, options: STATUS }]}
         count={visible.length} total={rows.length}
       />
@@ -50,12 +50,12 @@ export default function ArtInfraReviews({ store, onChange }) {
       ) : (
         <table className="os-table">
           <thead>
-            <tr><th>Product</th><th>Founder</th><th>Rating</th><th>Review</th><th>Status</th><th /></tr>
+            <tr><th>Vendor</th><th>Founder</th><th>Rating</th><th>Review</th><th>Status</th><th /></tr>
           </thead>
           <tbody>
             {visible.map((r) => (
               <tr key={r.id}>
-                <td>{r.product_name}</td>
+                <td>{r.vendor_name}</td>
                 <td>{r.author_name}<div className="os-sub">{r.author_venture}</div></td>
                 <td>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</td>
                 <td className="ai-review-body">{r.body}</td>

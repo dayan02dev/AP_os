@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PageHead } from "../../shell/osAtoms";
 import ListToolbar from "../ListToolbar";
 
 const STATUS_SEGMENTS = [
-  ["", "All"], ["published", "Published"], ["draft", "Draft"], ["retired", "Retired"],
+  ["", "All"], ["draft", "Draft"], ["pending_review", "In review"],
+  ["published", "Published"], ["retired", "Retired"],
 ];
 
 const fmtPrice = (p) =>
@@ -23,30 +24,80 @@ export default function ArtInfraCatalog({ store, goEditor }) {
   const [vendor, setVendor] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [sendingBack, setSendingBack] = useState(null);
+  const [sendBackNote, setSendBackNote] = useState("");
+  const [sendBackError, setSendBackError] = useState("");
+
+  // Monotonic request id: only the newest response may commit state. Without
+  // this a slow early keystroke (or filter change) can land after and
+  // overwrite a fast later one.
+  const reqIdRef = useRef(0);
 
   const load = useCallback(async () => {
+    const myId = ++reqIdRef.current;
     try {
       const [{ items }, all] = await Promise.all([
-        store.listProducts({ search, status, category, type, vendor }),
-        store.listProducts({}),
+        store.adminListProducts({ search, status, category, type, vendor }),
+        store.adminListProducts({}),
       ]);
+      if (myId !== reqIdRef.current) return; // stale — a newer request won
       setRows(items);
       setTotal(all.total);
       setError("");
     } catch (e) {
+      if (myId !== reqIdRef.current) return;
       setError("Could not load the catalog.");
     } finally {
-      setLoading(false);
+      if (myId === reqIdRef.current) setLoading(false);
     }
   }, [store, search, status, category, type, vendor]);
 
   useEffect(() => { load(); }, [load]);
+
   useEffect(() => {
-    store.listVendors().then(setVendors).catch(() => setVendors([]));
-    store.listCategories().then(setCategories).catch(() => setCategories([]));
+    (async () => {
+      try { setVendors(await store.adminListVendors()); }
+      catch { setVendors([]); }
+    })();
+    (async () => {
+      try { setCategories(await store.listCategories()); }
+      catch { setCategories([]); }
+    })();
   }, [store]);
 
-  const setStatusFor = async (id, next) => { await store.setProductStatus(id, next); load(); };
+  const publish = async (id) => {
+    setError("");
+    try { await store.publishProduct(id); load(); }
+    catch (e) {
+      setError(e.message === "not_in_review"
+        ? "That product is not awaiting review."
+        : e.message === "vendor_not_approved"
+          ? "That product's vendor is not approved yet."
+          : e.message);
+    }
+  };
+
+  const retire = async (id) => {
+    setError("");
+    try { await store.sendBackProduct(id, "Retired by admin"); load(); }
+    catch (e) { setError(e.message); }
+  };
+
+  const openSendBack = (p) => { setSendingBack(p); setSendBackNote(""); setSendBackError(""); };
+  const closeSendBack = () => { setSendingBack(null); setSendBackNote(""); setSendBackError(""); };
+
+  const confirmSendBack = async () => {
+    setSendBackError("");
+    try {
+      await store.sendBackProduct(sendingBack.id, sendBackNote);
+      closeSendBack();
+      load();
+    } catch (e) {
+      setSendBackError(e.message === "note_required"
+        ? "A note is required."
+        : e.message);
+    }
+  };
 
   return (
     <div>
@@ -77,7 +128,7 @@ export default function ArtInfraCatalog({ store, goEditor }) {
             <select className="os-input" aria-label="Vendor"
               value={vendor} onChange={(e) => setVendor(e.target.value)}>
               <option value="">All vendors</option>
-              {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              {vendors.map((v) => <option key={v.id} value={v.id}>{v.display_name || v.name}</option>)}
             </select>
           </>
         }
@@ -105,7 +156,7 @@ export default function ArtInfraCatalog({ store, goEditor }) {
                     {p.name}
                   </button>
                 </td>
-                <td>{p.vendor?.name}</td>
+                <td>{p.vendor?.display_name || p.vendor?.name}</td>
                 <td>{p.category?.label}</td>
                 <td>{p.type}</td>
                 <td>{fmtPrice(p)}</td>
@@ -115,13 +166,17 @@ export default function ArtInfraCatalog({ store, goEditor }) {
                   {p.pending_reviews > 0 && <span className="ai-badge">{p.pending_reviews}</span>}
                 </td>
                 <td className="ai-row-actions">
-                  {p.status !== "published" && (
-                    <button type="button" className="os-btn ghost"
-                      onClick={() => setStatusFor(p.id, "published")}>Publish</button>
+                  {p.status === "pending_review" && (
+                    <>
+                      <button type="button" className="os-btn ghost"
+                        onClick={() => publish(p.id)}>Publish</button>
+                      <button type="button" className="os-btn ghost"
+                        onClick={() => openSendBack(p)}>Send back</button>
+                    </>
                   )}
                   {p.status === "published" && (
                     <button type="button" className="os-btn ghost"
-                      onClick={() => setStatusFor(p.id, "retired")}>Retire</button>
+                      onClick={() => retire(p.id)}>Retire</button>
                   )}
                 </td>
               </tr>
@@ -131,6 +186,26 @@ export default function ArtInfraCatalog({ store, goEditor }) {
             )}
           </tbody>
         </table>
+      )}
+
+      {sendingBack && (
+        <div className="modal-bg" onClick={closeSendBack}>
+          <div className="modal ai-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="mhead"><h2>Send back: {sendingBack.name}</h2></div>
+            <div className="ai-form">
+              <label>What needs fixing?
+                <textarea className="os-input" value={sendBackNote}
+                  onChange={(e) => setSendBackNote(e.target.value)} />
+              </label>
+            </div>
+            {sendBackError && <div className="inline-error">{sendBackError}</div>}
+            <div className="ai-modal-foot">
+              <button type="button" className="os-btn ghost" onClick={closeSendBack}>Cancel</button>
+              <button type="button" className="os-btn" disabled={!sendBackNote.trim()}
+                onClick={confirmSendBack}>Confirm</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

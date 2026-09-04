@@ -2,9 +2,13 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import ArtInfraVendors from "../artinfra/ArtInfraVendors.jsx";
 import { createArtInfraStore } from "../../../../../lib/artInfraMock.js";
+import { configure } from "../../../../../lib/artInfraLatency.js";
 
 let store;
-beforeEach(() => { store = createArtInfraStore(); });
+beforeEach(() => {
+  configure({ minMs: 0, maxMs: 0 });
+  store = createArtInfraStore();
+});
 
 describe("ArtInfraVendors", () => {
   it("lists the 11 seeded vendors", async () => {
@@ -19,34 +23,38 @@ describe("ArtInfraVendors", () => {
       { target: { value: "sales@knowles.example" } });
     fireEvent.click(screen.getByRole("button", { name: "Save vendor" }));
     await waitFor(async () => {
-      const v = (await store.listVendors()).find((x) => x.id === "knowles");
+      const v = (await store.adminListVendors()).find((x) => x.id === "knowles");
       expect(v.contact_email).toBe("sales@knowles.example");
     });
   });
 
-  it("refuses to delete a vendor that products still reference", async () => {
+  it("invites a vendor by email", async () => {
     render(<ArtInfraVendors store={store} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Knowles" }));
-    expect(await screen.findByText(/still used by a product/i)).toBeInTheDocument();
+    await screen.findByText("Knowles");
+    fireEvent.click(screen.getByRole("button", { name: "+ Invite vendor" }));
+    fireEvent.change(await screen.findByLabelText("Contact email"),
+      { target: { value: "new@vendor.com" } });
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "NewCo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send invite" }));
+    await screen.findByText("NewCo");
+    const rows = await store.adminListVendors({ status: "invited" });
+    expect(rows.some((v) => v.contact_email === "new@vendor.com")).toBe(true);
   });
 
-  it("clears a stale refusal banner after a later successful save", async () => {
+  it("suspending a vendor is offered for approved vendors", async () => {
     render(<ArtInfraVendors store={store} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Knowles" }));
-    expect(await screen.findByText(/still used by a product/i)).toBeInTheDocument();
+    await screen.findByText("Knowles");
+    expect(screen.getAllByRole("button", { name: /^Suspend / }).length).toBeGreaterThan(0);
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Molex" }));
-    fireEvent.change(screen.getByLabelText("Contact email"),
-      { target: { value: "hello@molex.example" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save vendor" }));
-
-    await waitFor(() => {
-      expect(screen.queryByText(/still used by a product/i)).not.toBeInTheDocument();
-    });
+  it("shows a Status column reflecting the vendor's lifecycle state", async () => {
+    render(<ArtInfraVendors store={store} />);
+    await screen.findByText("Knowles");
+    expect(screen.getByRole("columnheader", { name: "Status" })).toBeInTheDocument();
   });
 
   it("shows an error instead of an empty table when the load fails", async () => {
-    const badStore = { listVendors: vi.fn().mockRejectedValue(new Error("boom")) };
+    const badStore = { adminListVendors: vi.fn().mockRejectedValue(new Error("boom")) };
     render(<ArtInfraVendors store={badStore} />);
     expect(await screen.findByText(/could not load vendors/i)).toBeInTheDocument();
     expect(screen.queryByText("No vendors yet.")).not.toBeInTheDocument();
