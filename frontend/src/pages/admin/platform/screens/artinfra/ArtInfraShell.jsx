@@ -10,6 +10,7 @@ import ArtInfraCatalog from "./ArtInfraCatalog.jsx";
 import ArtInfraProductEditor from "./ArtInfraProductEditor.jsx";
 import ArtInfraVendors from "./ArtInfraVendors.jsx";
 import ArtInfraCategories from "./ArtInfraCategories.jsx";
+import ArtInfraRequests from "./ArtInfraRequests.jsx";
 import ArtInfraReviews from "./ArtInfraReviews.jsx";
 import ArtInfraInsights from "./ArtInfraInsights.jsx";
 
@@ -17,6 +18,7 @@ const VIEWS = [
   { id: "catalog", label: "Catalog" },
   { id: "vendors", label: "Vendors" },
   { id: "categories", label: "Categories" },
+  { id: "requests", label: "Requests" },
   { id: "reviews", label: "Reviews" },
   { id: "insights", label: "Insights" },
 ];
@@ -25,13 +27,20 @@ export default function ArtInfraShell({ store = artInfraMock }) {
   const [view, setView] = useState("catalog");
   const [editingId, setEditingId] = useState(null);
   const [pending, setPending] = useState(0);
+  const [pendingReqs, setPendingReqs] = useState(0);
 
   // Silently ignored: a failed badge fetch should not surface a screen-level
   // error banner over sub-nav — the worst case is a stale/missing count,
   // which the next successful poll corrects.
-  const refreshPending = () =>
-    store.listReviews({ status: "pending" }).then((r) => setPending(r.length)).catch(() => {});
-  useEffect(() => { refreshPending(); }, [store, view]);
+  const refreshBadges = () => {
+    // listVendorReviews, not Phase 1's listReviews -- Task 4 already replaced
+    // the store, so the old name resolves to undefined and `.then` would throw.
+    store.listVendorReviews({ status: "pending" })
+      .then((r) => setPending(r.length)).catch(() => {});
+    store.listRequests({ status: "pending" })
+      .then((r) => setPendingReqs(r.length)).catch(() => {});
+  };
+  useEffect(() => { refreshBadges(); }, [store, view]);
 
   const goEditor = (productId) => { setEditingId(productId); setView("editor"); };
   const backToCatalog = () => { setEditingId(null); setView("catalog"); };
@@ -48,6 +57,9 @@ export default function ArtInfraShell({ store = artInfraMock }) {
             onClick={() => { setEditingId(null); setView(v.id); }}
           >
             {v.label}
+            {v.id === "requests" && pendingReqs > 0 && (
+              <span className="ai-badge" data-testid="artinfra-requests-badge">{pendingReqs}</span>
+            )}
             {v.id === "reviews" && pending > 0 && (
               <span className="ai-badge" data-testid="artinfra-pending-badge">{pending}</span>
             )}
@@ -65,7 +77,8 @@ export default function ArtInfraShell({ store = artInfraMock }) {
       )}
       {view === "vendors" && <ArtInfraVendors store={store} />}
       {view === "categories" && <ArtInfraCategories store={store} />}
-      {view === "reviews" && <ArtInfraReviews store={store} onChange={refreshPending} />}
+      {view === "requests" && <ArtInfraRequests store={store} onChange={refreshBadges} />}
+      {view === "reviews" && <ArtInfraReviews store={store} onChange={refreshBadges} />}
       {view === "insights" && <ArtInfraInsights store={store} />}
     </div>
   );
