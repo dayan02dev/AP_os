@@ -99,6 +99,20 @@ describe("ProductModal", () => {
     expect(screen.getByText("asha@knowles.example")).toBeInTheDocument();
     expect(screen.getByText("AP-KN-01")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Contact available" })).toBeInTheDocument();
+
+    // The "never before" half: for none/pending/declined the contact section
+    // must be entirely absent from the DOM, not merely visually hidden. Each
+    // fixture genuinely omits the contact fields, as the real payload does --
+    // a component bug that always renders the section would still pass if the
+    // fixture carried contact data it just chose not to show.
+    const noContactVendor = { id: "knowles", name: "Knowles" };
+    for (const state of ["none", "pending", "declined"]) {
+      const { container, unmount } = render(<ProductModal product={{ ...base,
+        pricing: "quote", price: null, contact_state: state, vendor: noContactVendor }}
+        onClose={noop} onPrimary={noop} onRequestContact={noopAsync} onSubmitReview={noop} />);
+      expect(container.querySelector(".vendor-contact")).not.toBeInTheDocument();
+      unmount();
+    }
   });
 
   it("never shows the old Show contact copy", () => {

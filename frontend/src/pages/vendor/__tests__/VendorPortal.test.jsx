@@ -22,11 +22,22 @@ describe("VendorPortal", () => {
   });
 
   it("switching vendor re-scopes the screen", async () => {
+    // A previous version of this test only asserted `picker.value` matched
+    // what was typed into the <select> -- true even if the picker were fully
+    // disconnected from the screens below it. Assert the OBSERVABLE effect
+    // instead: the catalog below must show the newly-picked vendor's own
+    // products and must stop showing the previous vendor's.
     render(<VendorPortal store={store} />);
     const picker = await screen.findByLabelText("Viewing as vendor");
-    const second = picker.options[1].value;
-    fireEvent.change(picker, { target: { value: second } });
-    await waitFor(() => expect(picker.value).toBe(second));
+    fireEvent.click(screen.getByRole("button", { name: "My catalog" }));
+
+    fireEvent.change(picker, { target: { value: "knowles" } });
+    await screen.findByText("MEMS microphone array (8-ch)");
+    expect(screen.queryByText("Rapid PCB fabrication (2-layer, 10 pcs)")).toBeNull();
+
+    fireEvent.change(picker, { target: { value: "artpark-fab" } });
+    await screen.findByText("Rapid PCB fabrication (2-layer, 10 pcs)");
+    expect(screen.queryByText("MEMS microphone array (8-ch)")).toBeNull();
   });
 
   it("marks the active sub-nav entry with aria-current", async () => {

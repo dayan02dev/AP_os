@@ -1,8 +1,8 @@
 @import "./art-infra-shared.css";
 
 /* Vendor portal. Scoped entirely under .vendor-portal so nothing leaks into
-   the admin or founder shells. Tokens only -- no colour literals except the
-   semantic error hex #c84a1a. */
+   the admin or founder shells. Tokens only -- the error colour is
+   var(--accent-coral), matching .inline-error elsewhere in the app. */
 
 .vendor-portal { padding: 24px 32px 80px; background: var(--bg); color: var(--ink); }
 
@@ -26,6 +26,82 @@
 .vendor-portal .vp-viewas { display: inline-flex; align-items: center; gap: 8px; }
 .vendor-portal .vp-viewas span {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim);
+}
+
+/* === PageHead + ListToolbar, re-scoped per portal ===
+   Both components are shared with the admin platform (`osAtoms.jsx` /
+   `screens/ListToolbar.jsx`) but every class they emit is defined ONLY under
+   `.adm-portal` in admin-portal.css -- the vendor portal's root is
+   `.vendor-portal`, so none of it applied here. Mirrors reviewer-portal.css's
+   `.rv-portal` re-declaration of the same block: per-portal re-scoping, not
+   a global promotion, so nothing leaks into the admin or founder shells. */
+.vendor-portal .os-row { display: flex; align-items: center; gap: 10px; }
+.vendor-portal .os-row.gap-sm { gap: 6px; }
+
+.vendor-portal .os-breadcrumb {
+  font-size: 10px; letter-spacing: 0.06em; color: var(--ink-dim); margin-bottom: 8px;
+}
+.vendor-portal .os-breadcrumb a { color: var(--ink-soft); text-decoration: none; }
+.vendor-portal .os-breadcrumb a:hover { color: var(--accent); }
+.vendor-portal .os-breadcrumb .sep { margin: 0 6px; color: var(--line-strong); }
+
+.vendor-portal .os-page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 24px; margin-bottom: 24px;
+}
+.vendor-portal .os-eyebrow {
+  font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink-dim); margin-bottom: 6px;
+}
+.vendor-portal .os-h1 {
+  font-weight: 400; font-size: 36px; line-height: 1.1; letter-spacing: -0.01em;
+  margin: 0; color: var(--ink);
+}
+.vendor-portal .os-h1 em { font-style: italic; color: var(--accent); }
+
+/* ListToolbar's own card + search/segment row. */
+.vendor-portal .lp-filter-area {
+  padding: 40px 40px 32px; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 2px; margin-bottom: 24px; flex-shrink: 0;
+}
+.vendor-portal .lp-filter-area.is-collapsed { padding-bottom: 0; }
+.vendor-portal .lp-filter-area.is-collapsed .lp-filter-row--search { margin-bottom: 24px; }
+.vendor-portal .lp-filter-row--search {
+  display: flex; align-items: center; flex-wrap: nowrap; gap: 16px;
+  padding: 24px 26px; border: 1px solid var(--line); border-radius: 2px;
+  margin-bottom: 28px;
+}
+.vendor-portal .lp-toolbar-row { flex-wrap: wrap; }
+.vendor-portal .lp-filter-row--search .os-search-wrap { flex: 0 1 420px; }
+.vendor-portal .lp-filter-row--search .os-search-wrap::before { display: none; }
+.vendor-portal .lp-filter-row--search .os-input.search {
+  width: 100%; height: 54px; padding: 0 20px; font-size: 17px;
+  border: 1px solid var(--line-strong); border-radius: 2px; color: var(--ink);
+}
+.vendor-portal .lp-filter-row--search .os-input.search::placeholder { color: var(--ink-dim); }
+.vendor-portal .lp-toolbar-trailing {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 16px; min-width: 0;
+}
+.vendor-portal .lp-filter-panel { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 2px; }
+.vendor-portal .lp-count {
+  font-size: 14px; color: var(--ink-dim); white-space: nowrap; flex-shrink: 0;
+}
+
+/* ── Track / status segmented control ──────────────────────── */
+.vendor-portal .lp-track-group {
+  display: inline-flex; flex-shrink: 0; gap: 2px;
+  background: var(--bg-soft); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px;
+}
+.vendor-portal .lp-track-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 16px; height: 32px; background: transparent; border: none;
+  font-size: 13px; font-weight: 600; color: var(--ink-soft); cursor: pointer;
+  white-space: nowrap; border-radius: 999px; transition: all 0.15s ease;
+}
+.vendor-portal .lp-track-btn:hover { color: var(--ink); }
+.vendor-portal .lp-track-btn.active {
+  background: var(--accent); color: #fff; box-shadow: 0 1px 3px rgba(36, 36, 36, 0.08);
 }
 
 /* === Shared atoms (os-btn / os-input), scoped per portal by convention === */
@@ -83,6 +159,12 @@
 }
 .vendor-portal .os-select:focus,
 .vendor-portal .os-input:focus { border-color: var(--accent); }
+.vendor-portal .os-input.search { padding-left: 30px; width: 220px; }
+.vendor-portal .os-search-wrap { position: relative; flex-shrink: 0; }
+.vendor-portal .os-search-wrap::before {
+  content: "⌕"; position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+  color: var(--ink-dim); font-size: 15px; pointer-events: none;
+}
 
 .vendor-portal .vp-form { display: grid; gap: 16px; max-width: 720px; }
 .vendor-portal .vp-form label { display: grid; gap: 6px; font-size: 13px; color: var(--ink-soft); }
@@ -94,7 +176,7 @@
   border-left: 1px solid var(--line); padding-left: 24px;
 }
 
-.vendor-portal .vp-field-err { font-size: 12px; color: #c84a1a; }
+.vendor-portal .vp-field-err { font-size: 12px; color: var(--accent-coral); }
 .vendor-portal .vp-help { font-size: 12px; color: var(--ink-dim); }
 .vendor-portal .vp-multi { display: flex; flex-wrap: wrap; gap: 8px; }
 .vendor-portal .vp-multi label {

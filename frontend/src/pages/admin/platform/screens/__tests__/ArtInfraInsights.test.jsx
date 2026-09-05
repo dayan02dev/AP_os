@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, beforeEach } from "vitest";
 import ArtInfraInsights from "../artinfra/ArtInfraInsights.jsx";
 import { createArtInfraStore } from "../../../../../lib/artInfraMock.js";
@@ -34,9 +34,29 @@ describe("ArtInfraInsights", () => {
 
   it("counts requests rather than shortlists", async () => {
     const { catalog } = await store.founderStore();
-    await store.createRequest({ product_id: catalog[0].id, note: "x" });
+    const requested = catalog[0];
+    const untouched = catalog[1];
+    await store.createRequest({ product_id: requested.id, note: "x" });
+
     render(<ArtInfraInsights store={store} />);
     await screen.findByText("Most requested");
-    expect(screen.getByRole("columnheader", { name: "Requests" })).toBeInTheDocument();
+
+    // Assert the VALUE, not just the header: the requested product's row
+    // must show a request count of 1 (its Requests cell -- Product, Vendor,
+    // Requests, Rating).
+    const requestedRow = screen.getByText(requested.name).closest("tr");
+    expect(within(requestedRow).getAllByRole("cell")[2]).toHaveTextContent("1");
+
+    // A product nobody requested must not show up in "Most requested" at
+    // all -- i.e. its count is genuinely 0, not a hardcoded stand-in.
+    const topRequestedTable = screen.getByTestId("top-requested");
+    expect(within(topRequestedTable).queryByText(untouched.name)).not.toBeInTheDocument();
+  });
+
+  it("shows an error instead of a permanent Loading… when insights() rejects", async () => {
+    configure({ failNext: "server_error" });
+    render(<ArtInfraInsights store={store} />);
+    expect(await screen.findByText(/could not load insights/i)).toBeInTheDocument();
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
   });
 });

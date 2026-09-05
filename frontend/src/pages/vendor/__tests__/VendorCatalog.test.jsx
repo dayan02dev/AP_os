@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import VendorCatalog from "../VendorCatalog.jsx";
 import { createArtInfraStore } from "../../../lib/artInfraMock.js";
@@ -14,10 +14,22 @@ beforeEach(async () => {
 
 describe("VendorCatalog", () => {
   it("lists only this vendor's products", async () => {
-    render(<VendorCatalog store={store} vendorId={vendorId} goEditor={vi.fn()} />);
+    // artpark-fab has 2 published products -- enough to prove a real list,
+    // unlike knowles's single product which satisfies `length > 1` (header +
+    // one row) with no tenancy check at all. The discriminating half of this
+    // test is the ABSENCE assertion: a reviewer swapped listVendorProducts for
+    // adminListProducts({}) (all 12 products across all 11 vendors) and this
+    // still passed when it only checked presence -- it must also prove a
+    // named product belonging to a DIFFERENT vendor never renders here.
+    const fabId = (await store.adminListVendors()).find((v) => v.id === "artpark-fab").id;
+    render(<VendorCatalog store={store} vendorId={fabId} goEditor={vi.fn()} />);
     await waitFor(() => expect(screen.getAllByRole("row").length).toBeGreaterThan(1));
-    const { items } = await store.listVendorProducts(vendorId);
+    const { items } = await store.listVendorProducts(fabId);
+    expect(items.length).toBeGreaterThan(1);
     for (const p of items) expect(screen.getByText(p.name)).toBeInTheDocument();
+
+    // knowles's product must never appear on artpark-fab's My Catalog screen.
+    expect(screen.queryByText("MEMS microphone array (8-ch)")).toBeNull();
   });
 
   it("shows the admin's send-back note on a returned draft", async () => {
@@ -55,11 +67,37 @@ describe("VendorCatalog", () => {
   });
 
   it("ignores a stale response that lands after a newer one", async () => {
-    // Guard proof: the screen must commit only the newest request's result.
-    render(<VendorCatalog store={store} vendorId={vendorId} goEditor={vi.fn()} />);
+    // Guard proof: the screen must commit only the newest request's result,
+    // even when an EARLIER request's response arrives LATER. With latency
+    // pinned to 0ms (see beforeEach) every call is FIFO, so a stale response
+    // could never physically land late and this test could pass with the
+    // request-id guard deleted -- it never exercised a real race. To make
+    // the race real, the "zzzz" search (fired first) is delayed with a real
+    // setTimeout while every other call resolves immediately, so the "zzzz"
+    // response is guaranteed to land AFTER the later, cleared-search response.
+    const slowStore = {
+      ...store,
+      listVendorProducts: (vId, opts) => {
+        const p = store.listVendorProducts(vId, opts);
+        if (opts && opts.search === "zzzz") {
+          return new Promise((resolve, reject) => {
+            p.then((v) => setTimeout(() => resolve(v), 50), reject);
+          });
+        }
+        return p;
+      },
+    };
+    render(<VendorCatalog store={slowStore} vendorId={vendorId} goEditor={vi.fn()} />);
+    await screen.findByText("MEMS microphone array (8-ch)");
+
     const search = await screen.findByLabelText("Search products");
-    fireEvent.change(search, { target: { value: "zzzz" } });
-    fireEvent.change(search, { target: { value: "" } });
-    await waitFor(() => expect(screen.queryByText(/no products/i)).toBeNull());
+    fireEvent.change(search, { target: { value: "zzzz" } });   // slow: lands last, physically
+    fireEvent.change(search, { target: { value: "" } });        // fast: should win the render
+
+    // Give the deliberately-delayed "zzzz" response time to resolve and,
+    // if the guard were broken, clobber the screen with "no products".
+    await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
+    expect(screen.queryByText(/no products/i)).toBeNull();
+    expect(screen.getByText("MEMS microphone array (8-ch)")).toBeInTheDocument();
   });
 });

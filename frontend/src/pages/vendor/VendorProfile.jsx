@@ -31,7 +31,20 @@ const WRITABLE_KEYS = [
   ...TEXT_FIELDS.map(([key]) => key),
   "capabilities",
   "categories_served",
+  "certifications",
 ];
+
+// `certifications` is stored as an array (a repeating list, not booleans --
+// ISO 13485 is a gating question for founders building medical devices) but
+// edited here as one comma-separated text field, same shape as the other
+// optional fields. The array<->string conversion happens only at the form's
+// edges: on load/after-save (toFormShape) and on save (split back out below)
+// -- never on every keystroke, so mid-edit text like "ISO 13485, " isn't
+// clobbered by a round-trip through the array.
+const toFormShape = (v) => ({
+  ...v,
+  certifications: (v.certifications || []).join(", "),
+});
 
 export default function VendorProfile({ store, vendorId }) {
   const [form, setForm] = useState(null);
@@ -54,7 +67,7 @@ export default function VendorProfile({ store, vendorId }) {
       .getVendorMe(vendorId)
       .then((v) => {
         if (id !== requestId.current) return;
-        setForm(v);
+        setForm(toFormShape(v));
         setLoadError("");
       })
       .catch(() => {
@@ -102,8 +115,12 @@ export default function VendorProfile({ store, vendorId }) {
       for (const key of WRITABLE_KEYS) {
         if (form[key] !== undefined) patch[key] = form[key];
       }
+      if (patch.certifications !== undefined) {
+        patch.certifications = patch.certifications
+          .split(",").map((s) => s.trim()).filter(Boolean);
+      }
       const updated = await store.saveVendorProfile(vendorId, patch);
-      setForm(updated);
+      setForm(toFormShape(updated));
       setSaveError("");
       setSaved(true);
     } catch {
@@ -119,7 +136,7 @@ export default function VendorProfile({ store, vendorId }) {
     setSubmitError("");
     try {
       const updated = await store.submitVendorProfile(vendorId);
-      setForm(updated);
+      setForm(toFormShape(updated));
       setSubmitError("");
     } catch (e) {
       setSubmitError(
@@ -166,6 +183,18 @@ export default function VendorProfile({ store, vendorId }) {
             </label>
           ))}
         </div>
+
+        <label>
+          Certifications
+          <input
+            className="os-input"
+            aria-label="Certifications"
+            placeholder="ISO 13485, ISO 9001"
+            value={form.certifications ?? ""}
+            onChange={(e) => set("certifications", e.target.value)}
+          />
+          <span className="vp-help">Comma-separated. Founders building medical devices screen for ISO 13485.</span>
+        </label>
 
         <label>
           Capabilities

@@ -131,6 +131,12 @@ export function createArtInfraStore(initial = seed, { seedSamples = true } = {})
         (f) => f.category_id === p.category_id && !f.archived_at),
       datasheets: db.datasheets.filter((d) => d.product_id === p.id),
       rating: v ? ratingOfVendor(v.id) : { avg: 0, count: 0 },
+      // Vendor-level: every product from this vendor shows the same approved
+      // reviews, which is what makes the rating on the card and the list in
+      // the modal agree. Only `approved` ones are visible to other founders.
+      reviews: v
+        ? db.reviews.filter((r) => r.vendor_id === v.id && r.status === "approved")
+        : [],
       in_shortlist_qty: line ? line.qty : 0,
       // Disclosure is per-VENDOR: approving any one request unlocks every
       // product that vendor lists. vendorApprovedFor wins over this product's
@@ -446,14 +452,24 @@ export function createArtInfraStore(initial = seed, { seedSamples = true } = {})
 
   // ---- founder -----------------------------------------------------------
   const founderStore = () => {
+    // A suspended vendor's products leave the founder catalog entirely -- that
+    // is the point of suspension, and it must not depend on an admin also
+    // retiring each product by hand.
+    const liveVendor = (p) => {
+      const v = db.vendors.find((x) => x.id === p.vendor_id);
+      return !!v && v.status === "approved";
+    };
     const catalog = db.products
-      .filter((p) => p.status === "published")
+      .filter((p) => p.status === "published" && liveVendor(p))
       .sort((a, b) => a.sort - b.sort)
       .map(founderView);
-    const shortlist = db.shortlist.map((line) => ({
-      product_id: line.product_id, qty: line.qty,
-      product: founderView(db.products.find((p) => p.id === line.product_id)),
-    }));
+    const shortlist = db.shortlist
+      .map((line) => ({ line, product: db.products.find((p) => p.id === line.product_id) }))
+      .filter(({ product }) => product && liveVendor(product))
+      .map(({ line, product }) => ({
+        product_id: line.product_id, qty: line.qty,
+        product: founderView(product),
+      }));
     return settle({
       catalog,
       shortlist,

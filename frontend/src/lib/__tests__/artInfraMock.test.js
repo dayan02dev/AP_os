@@ -122,14 +122,17 @@ describe("vendor scoping", () => {
   });
 
   it("refuses to mutate a product belonging to another vendor", async () => {
+    // artpark-fab is the fixture's multi-product vendor; picking it by name
+    // rather than by index means a fixture reorder cannot silently disable
+    // this assertion the way an `if (items.length)` guard did.
     const vendors = await store.adminListVendors();
-    const { items } = await store.listVendorProducts(vendors[0].id);
-    if (items.length) {
-      const other = vendors.find((v) => v.id !== vendors[0].id);
-      await expect(
-        store.updateVendorProduct(other.id, items[0].id, { name: "hijack" }),
-      ).rejects.toThrow(/not_found/);
-    }
+    const mine = vendors.find((v) => v.id === "artpark-fab");
+    const { items } = await store.listVendorProducts(mine.id);
+    expect(items.length).toBeGreaterThan(0);
+    const other = vendors.find((v) => v.id !== mine.id);
+    await expect(
+      store.updateVendorProduct(other.id, items[0].id, { name: "hijack" }),
+    ).rejects.toThrow(/not_found/);
   });
 });
 
@@ -202,6 +205,16 @@ describe("reviews are vendor-level and gated on an approved request", () => {
     expect(r.application_id).toBe(ME);
   });
 
+  it("agrees between the card's rating count and the modal's review list", async () => {
+    // The one screen that demonstrates vendor-level reviews must actually show
+    // them: the card's aggregate count and the modal's review array come from
+    // the same approved-reviews source, so they can never disagree.
+    const { catalog } = await store.founderStore();
+    const knowles = catalog.find((p) => p.vendor.id === "knowles");
+    expect(knowles.reviews.length).toBeGreaterThan(0);
+    expect(knowles.rating.count).toBe(knowles.reviews.length);
+  });
+
   it("shows an approved vendor rating on every product from that vendor", async () => {
     // Sample-free: SAMPLE_REVIEWS seeds an approved 5-star review for `knowles`,
     // which is catalog[0]'s vendor, so the shared store's mean would be 4.5.
@@ -234,6 +247,38 @@ describe("vendor profile fields the founder payload exposes", () => {
     });
     expect(saved.artpark_ref).toBe("ARTPARK-2026-011");
     expect(saved.notes).toBe("Preferred for acoustics");
+  });
+});
+
+describe("vendor suspension darkens everything a vendor lists", () => {
+  it("removes a suspended vendor's products from founderStore().catalog", async () => {
+    const before = await store.founderStore();
+    expect(before.catalog.some((p) => p.vendor.id === "knowles")).toBe(true);
+    await store.suspendVendor("knowles");
+    const after = await store.founderStore();
+    expect(after.catalog.some((p) => p.vendor.id === "knowles")).toBe(false);
+  });
+
+  it("drops a previously shortlisted product once its vendor is suspended", async () => {
+    const { catalog } = await store.founderStore();
+    const target = catalog.find((p) => p.vendor.id === "knowles");
+    await store.addToShortlist(target.id, 1);
+    let after = await store.founderStore();
+    expect(after.shortlist.some((l) => l.product_id === target.id)).toBe(true);
+
+    await store.suspendVendor("knowles");
+    after = await store.founderStore();
+    expect(after.shortlist.some((l) => l.product_id === target.id)).toBe(false);
+  });
+});
+
+describe("founderStore survives a deleted shortlisted product", () => {
+  it("resolves rather than throwing when a shortlisted product is deleted", async () => {
+    const [v] = await store.adminListVendors();
+    const p = await store.createVendorProduct(v.id, { name: "Temp", category_id: "sensors" });
+    await store.addToShortlist(p.id, 1);
+    await store.deleteVendorProduct(v.id, p.id);
+    await expect(store.founderStore()).resolves.toBeDefined();
   });
 });
 

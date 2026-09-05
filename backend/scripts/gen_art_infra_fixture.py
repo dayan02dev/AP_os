@@ -81,7 +81,6 @@ SPEC_FIELDS: dict[str, list[dict]] = {
         {"key": "architecture", "label": "Architecture", "data_type": "enum",
          "enum_options": ["x86", "ARM", "RISC-V"], "filterable": True},
         {"key": "cores", "label": "Cores", "data_type": "number"},
-        {"key": "ram", "label": "RAM", "data_type": "number", "unit": "GB", "filterable": True},
         {"key": "accelerator", "label": "Accelerator", "data_type": "text"},
         {"key": "tdp", "label": "TDP", "data_type": "number", "unit": "W"},
         {"key": "compute", "label": "Compute", "data_type": "text"},

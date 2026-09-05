@@ -9,6 +9,15 @@ const EDIT_FIELDS = [
   ["artpark_ref", "ARTPARK ref"], ["notes", "Notes (internal)"],
 ];
 
+// Exactly the writable set the store accepts. Building the PATCH from this
+// list -- rather than spreading the loaded row -- is what stops read-model
+// fields (name, status, user_ids) from ever reaching the write call and
+// getting rejected as unwritable_fields.
+const WRITABLE_VENDOR = ["legal_name", "display_name", "website", "contact_name",
+  "contact_email", "contact_phone", "city", "state", "country", "capabilities",
+  "categories_served", "gstin", "udyam_number", "cin", "certifications",
+  "artpark_ref", "notes"];
+
 export default function ArtInfraVendors({ store }) {
   const [rows, setRows] = useState([]);
   const [editing, setEditing] = useState(null);
@@ -25,12 +34,16 @@ export default function ArtInfraVendors({ store }) {
   const save = async () => {
     setError("");
     try {
-      const { id, ...patch } = editing;
-      await store.saveVendorProfile(id, patch);
+      // Build the PATCH from the writable list rather than spreading the row:
+      // `editing` is the READ model and also carries name/status/user_ids,
+      // which the store rejects outright.
+      const patch = {};
+      for (const k of WRITABLE_VENDOR) if (editing[k] !== undefined) patch[k] = editing[k];
+      await store.saveVendorProfile(editing.id, patch);
       setEditing(null);
       load();
-    } catch (e) {
-      setError(e.message);
+    } catch {
+      setError("Could not save that vendor.");
     }
   };
 
@@ -43,7 +56,9 @@ export default function ArtInfraVendors({ store }) {
     } catch (e) {
       setError(e.message === "vendor_exists"
         ? "A vendor with that name already exists."
-        : e.message);
+        : e.message === "email_required"
+          ? "A contact email is required."
+          : "Could not send that invite.");
     }
   };
 

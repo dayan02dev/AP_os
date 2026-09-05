@@ -17,6 +17,7 @@ export default function ArtInfraSpecFields({ store, categoryId, categoryLabel, o
   const [rows, setRows] = useState([]);
   const [draft, setDraft] = useState({ label: "", key: "", data_type: "text",
     unit: "", enum_options: "", required: false });
+  const [editing, setEditing] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -55,6 +56,27 @@ export default function ArtInfraSpecFields({ store, categoryId, categoryLabel, o
     setError("");
     try { await store.archiveSpecField(row.id); load(); }
     catch { setError("Could not archive that field."); }
+  };
+
+  // Only label / unit / help_text are free to edit here. `key` is the
+  // identity a product's stored values are keyed under -- changing it would
+  // orphan every existing value -- and `data_type` changes are restricted to
+  // widening by the spec, which is out of scope for this inline editor, so
+  // neither is exposed as an editable field.
+  const saveEdit = async () => {
+    setError("");
+    try {
+      await store.saveSpecField({
+        id: editing.id, category_id: editing.category_id, key: editing.key,
+        data_type: editing.data_type,
+        label: editing.label.trim(), unit: editing.unit.trim() || null,
+        help_text: editing.help_text.trim(),
+      });
+      setEditing(null);
+      load();
+    } catch {
+      setError("Could not save that field.");
+    }
   };
 
   const needsOptions = ["enum", "multi_enum"].includes(draft.data_type);
@@ -115,6 +137,12 @@ export default function ArtInfraSpecFields({ store, categoryId, categoryLabel, o
                 <td>{f.required ? "Yes" : "—"}</td>
                 <td className="ai-row-actions">
                   <button type="button" className="os-btn ghost"
+                    aria-label={`Edit ${f.label}`}
+                    onClick={() => setEditing({ ...f, unit: f.unit || "",
+                      help_text: f.help_text || "" })}>
+                    Edit
+                  </button>
+                  <button type="button" className="os-btn ghost"
                     aria-label={`Archive ${f.label}`} onClick={() => archive(f)}>
                     Archive
                   </button>
@@ -126,6 +154,38 @@ export default function ArtInfraSpecFields({ store, categoryId, categoryLabel, o
             )}
           </tbody>
         </table>
+      )}
+
+      {editing && (
+        <div className="modal-bg" onClick={() => setEditing(null)}>
+          <div className="modal ai-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="mhead"><h2>Edit field</h2></div>
+            <div className="ai-form">
+              {/* `key` and `data_type` are not editable here -- see saveEdit. */}
+              <label>Label
+                <input className="os-input" aria-label="Edit label" value={editing.label}
+                  onChange={(e) => setEditing({ ...editing, label: e.target.value })} />
+              </label>
+              <label>Unit
+                <input className="os-input" aria-label="Edit unit" value={editing.unit}
+                  onChange={(e) => setEditing({ ...editing, unit: e.target.value })} />
+              </label>
+              <label>Help text
+                <input className="os-input" aria-label="Edit help text" value={editing.help_text}
+                  onChange={(e) => setEditing({ ...editing, help_text: e.target.value })} />
+              </label>
+            </div>
+            <div className="ai-modal-foot">
+              <button type="button" className="os-btn ghost" onClick={() => setEditing(null)}>
+                Cancel
+              </button>
+              <button type="button" className="os-btn"
+                disabled={!editing.label.trim()} onClick={saveEdit}>
+                Save field
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

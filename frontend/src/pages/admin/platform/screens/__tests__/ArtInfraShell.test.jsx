@@ -23,8 +23,15 @@ describe("ArtInfraShell", () => {
   it("starts on Catalog and switches view on click", () => {
     render(<ArtInfraShell store={createArtInfraStore()} />);
     expect(screen.getByRole("button", { name: "Catalog" })).toHaveAttribute("aria-current", "page");
+    // Nothing Vendors-only rendered yet -- proves the baseline before we click.
+    expect(screen.queryByRole("button", { name: "+ Invite vendor" })).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "Vendors" }));
+
     expect(screen.getByRole("button", { name: "Vendors" })).toHaveAttribute("aria-current", "page");
+    // Something only the Vendors screen renders, so this fails if a view
+    // branch were deleted even though aria-current still flips correctly.
+    expect(screen.getByRole("button", { name: "+ Invite vendor" })).toBeInTheDocument();
   });
 
   it("shows a pending-review badge from the store", async () => {

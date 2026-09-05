@@ -3,7 +3,11 @@ import { PageHead } from "../../shell/osAtoms";
 
 export default function ArtInfraInsights({ store }) {
   const [data, setData] = useState(null);
-  useEffect(() => { store.insights().then(setData); }, [store]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    store.insights().then(setData).catch(() => setError("Could not load insights."));
+  }, [store]);
+  if (error) return <div className="inline-error">{error}</div>;
   if (!data) return <div className="adm-async adm-async-empty">Loading…</div>;
 
   return (

@@ -42,8 +42,8 @@
 .ai-status-suspended,
 .ai-status-declined {
   background: var(--bg-soft);
-  border-color: #c84a1a;
-  color: #c84a1a;
+  border-color: var(--accent-coral);
+  color: var(--accent-coral);
 }
 
 /* Inert states -- de-emphasised via opacity rather than a distinct hue. */

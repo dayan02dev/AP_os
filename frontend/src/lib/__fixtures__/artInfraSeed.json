@@ -393,20 +393,6 @@
       "archived_at": null
     },
     {
-      "id": "sf-compute-ram",
-      "category_id": "compute",
-      "key": "ram",
-      "label": "RAM",
-      "data_type": "number",
-      "unit": "GB",
-      "enum_options": null,
-      "required": false,
-      "filterable": true,
-      "help_text": "",
-      "sort": 2,
-      "archived_at": null
-    },
-    {
       "id": "sf-compute-accelerator",
       "category_id": "compute",
       "key": "accelerator",
@@ -417,7 +403,7 @@
       "required": false,
       "filterable": false,
       "help_text": "",
-      "sort": 3,
+      "sort": 2,
       "archived_at": null
     },
     {
@@ -431,7 +417,7 @@
       "required": false,
       "filterable": false,
       "help_text": "",
-      "sort": 4,
+      "sort": 3,
       "archived_at": null
     },
     {
@@ -445,7 +431,7 @@
       "required": false,
       "filterable": false,
       "help_text": "",
-      "sort": 5,
+      "sort": 4,
       "archived_at": null
     },
     {
@@ -459,7 +445,7 @@
       "required": false,
       "filterable": false,
       "help_text": "",
-      "sort": 6,
+      "sort": 5,
       "archived_at": null
     },
     {
@@ -473,7 +459,7 @@
       "required": false,
       "filterable": false,
       "help_text": "",
-      "sort": 7,
+      "sort": 6,
       "archived_at": null
     },
     {

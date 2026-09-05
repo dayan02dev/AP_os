@@ -33,9 +33,13 @@ export default function ArtInfraCategories({ store }) {
       ? rows.filter((r) => r.sort < row.sort).sort((a, b) => b.sort - a.sort)[0]
       : rows.filter((r) => r.sort > row.sort).sort((a, b) => a.sort - b.sort)[0];
     if (!neighbour) return; // already first (up) or last (down) — no-op
+    // Explicit id/label/sort rather than spreading the row: it happens to be
+    // exactly those three keys today, but saveCategory's writable set is a
+    // fixed allow-list and a row that grows a new field would otherwise be
+    // rejected as unwritable_fields.
     await Promise.all([
-      store.saveCategory({ ...row, sort: neighbour.sort }),
-      store.saveCategory({ ...neighbour, sort: row.sort }),
+      store.saveCategory({ id: row.id, label: row.label, sort: neighbour.sort }),
+      store.saveCategory({ id: neighbour.id, label: neighbour.label, sort: row.sort }),
     ]);
     load();
   };

@@ -5,7 +5,10 @@ import { createArtInfraStore } from "../../../lib/artInfraMock.js";
 import { configure } from "../../../lib/artInfraLatency.js";
 
 let store;
-beforeEach(() => { store = createArtInfraStore(); });
+beforeEach(() => {
+  configure({ minMs: 0, maxMs: 0 });   // deterministic in tests
+  store = createArtInfraStore();
+});
 
 describe("FounderStore (Art Infra)", () => {
   it("renders the catalog and says Shortlist, never Cart", async () => {
@@ -151,14 +154,29 @@ describe("request flow", () => {
     await screen.findByText("Requested — awaiting approval");
   });
 
-  it("shows the contact block once an admin approves, without a reload", async () => {
+  // FounderStore refetches on mount and after the founder's own actions; there
+  // is no live cross-portal channel, and the spec does not ask for one. An
+  // approval made elsewhere while this page stays mounted therefore needs a
+  // reload. Real navigation (founder -> admin -> founder) remounts and refetches,
+  // so this only bites a page left open. Revisit when Phase 2 picks a refetch
+  // strategy.
+  it("shows the contact block after an approval, on the next load", async () => {
     const store = createArtInfraStore();
     const { catalog } = await store.founderStore();
     const quote = catalog.find((p) => p.pricing === "quote");
+
+    // Approve first, THEN render -- this is the realistic founder -> admin ->
+    // founder navigation, which remounts the component and refetches.
     const req = await store.createRequest({ product_id: quote.id, note: "x" });
     await store.approveRequest(req.id);
     render(<FounderStore store={store} />);
     await screen.findAllByRole("button", { name: "Contact available" });
+
+    // Assert the contact block itself, inside the product's own modal, not
+    // just the button label.
+    fireEvent.click(screen.getByText(quote.name));
+    await screen.findByText("Overview");
+    expect(await screen.findByText("Vendor contact")).toBeInTheDocument();
   });
 
   it("surfaces a failed request instead of appearing to succeed", async () => {

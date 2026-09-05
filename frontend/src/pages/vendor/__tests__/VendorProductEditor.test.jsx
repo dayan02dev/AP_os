@@ -93,16 +93,21 @@ describe("VendorProductEditor — dynamic spec fields", () => {
     await screen.findByText(/Sensing modality is required/i);
   });
 
-  it("saves a valid product and sends only writable fields", async () => {
+  it("sends only writable fields", async () => {
+    // A brand-new product's form holds nothing but writable keys (BLANK is
+    // exactly the WRITABLE list), so spreading the whole form on save was
+    // indistinguishable from building the patch explicitly -- both produced
+    // the same payload and both passed. Loading an EXISTING seeded product
+    // instead gives the form extra read-model fields the store does NOT
+    // accept (vendor_id, status, extra_specs, sort, slug, id): save can only
+    // succeed if the patch is still built from the explicit WRITABLE list.
     const onDone = vi.fn();
-    render(<VendorProductEditor store={store} vendorId={vendorId}
-      productId={null} onDone={onDone} />);
-    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Mic" } });
-    await chooseCategory("sensors");
-    await screen.findByLabelText("Sensing modality");
-    fireEvent.change(screen.getByLabelText("Sensing modality"), { target: { value: "Acoustic" } });
+    render(<VendorProductEditor store={store} vendorId="artpark-fab"
+      productId="c4" onDone={onDone} />);
+    await screen.findByDisplayValue("Rapid PCB fabrication (2-layer, 10 pcs)");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    // If the editor spread its read model, the mock would reject the write.
+    // If the editor spread its read model, the mock would reject the write
+    // (unwritable_fields) and onDone would never be called.
     await waitFor(() => expect(onDone).toHaveBeenCalled());
   });
 
