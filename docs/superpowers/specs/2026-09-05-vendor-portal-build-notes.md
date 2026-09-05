@@ -81,3 +81,20 @@ share almost nothing. That is a signal `Software` is doing the work of several
 categories. Splitting it is a design conversation, not a bug fix.
 
 `prototyping` has 12 fields for two products, for the same reason.
+
+## Migration numbering (settled 2026-09-06)
+
+`feat/vip-onboarding` holds 043-045 (staging only; production is at 042), so 046
+was the next free number. It is now taken by **`046_vendor_role.sql`** — the
+CHECK-constraint widening that lets `user_roles.role` hold `vendor`, plus a grant
+to a test account. That is the only schema change the Phase-1 portal needs.
+
+**The catalog migration therefore becomes `047_art_infra_catalog.sql`**, not 046
+as the design spec says. Re-check both numbers at merge time: this exact
+collision already happened once on 037/038/039.
+
+Verified on staging 2026-09-06 before writing 046: `user_roles_role_check`
+accepted exactly applicant, founder, reviewer, jury, mentor, leadership, admin,
+and rejected `vendor` and `infra_manager` with 23514. `user_roles_pkey` is a
+composite key on `(user_id, role)`, so `on conflict (user_id, role)` is safe.
+None of the six `art_infra_*` tables exist on staging.
