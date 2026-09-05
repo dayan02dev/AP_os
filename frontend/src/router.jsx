@@ -384,10 +384,14 @@ export default function AppRoutes() {
       <Route path="/founder/assets" element={<FounderRoute tab="assets" />} />
       <Route path="/founder/support" element={<FounderRoute tab="support" />} />
 
-      {/* Vendor portal. No ProtectedRoute yet: the `vendor` role does not
-          exist in this phase and the shell's view-as picker stands in for a
-          session. Gate this the moment the role ships. */}
-      <Route path="/vendor" element={<VendorPortal />} />
+      {/* Vendor portal. Requires a session, but NOT the `vendor` role yet:
+          `user_roles.role` carries a CHECK constraint that rejects "vendor"
+          until a migration widens it, so role-gating here would lock every
+          account out of a portal that exists to be reviewed. The shell's
+          view-as picker still stands in for vendor identity. Tighten this to
+          hasCapability(roles, "manage_own_products") once the constraint and
+          the grant are in place. */}
+      <Route path="/vendor" element={<ProtectedRoute><VendorPortal /></ProtectedRoute>} />
 
       {/* Legacy admin user-management shell (Session 3). Gated to `manage_users`.
           Kept intact under /admin/users* so user CRUD is unaffected.

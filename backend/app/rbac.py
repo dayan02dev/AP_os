@@ -44,6 +44,14 @@ ROLE_CAPABILITIES: dict[str, Set[str]] = {
         "view_assigned_founders",
         "comment_founder",
     },
+    # External commercial party -- a supplier, not ARTPARK staff. Scoped to
+    # its OWN vendor row and its OWN products and nothing else: no
+    # applications, no founders, no other vendors. Every vendor-scoped call
+    # takes vendorId as its first argument and never reads it from a payload.
+    "vendor": {
+        "manage_own_vendor_profile",
+        "manage_own_products",
+    },
     "leadership": {
         "view_all_apps",
         "view_app_detail",

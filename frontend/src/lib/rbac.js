@@ -32,6 +32,14 @@ export const ROLE_CAPABILITIES = Object.freeze({
     "view_assigned_founders",
     "comment_founder",
   ]),
+  // MIRROR of backend/app/rbac.py -- these two files are hand-synced and have
+  // drifted before. Change one, change the other.
+  // External commercial party: scoped to its own vendor row and its own
+  // products, nothing else.
+  vendor: new Set([
+    "manage_own_vendor_profile",
+    "manage_own_products",
+  ]),
   leadership: new Set([
     "view_all_apps",
     "view_app_detail",

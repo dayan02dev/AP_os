@@ -17,6 +17,7 @@ const PORTALS = [
   { key: "jury", label: "Jury Member", to: "/jury" },
   { key: "admin", label: "Admin", to: "/admin" },
   { key: "founder", label: "Founder", to: "/founder" },
+  { key: "vendor", label: "Vendor", to: "/vendor" },
 ];
 
 export default function PortalSwitcher({ current }) {
