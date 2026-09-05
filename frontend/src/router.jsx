@@ -128,6 +128,29 @@ function ApplyRoleGate({ children }) {
 
 // Capability gate for /admin. ProtectedRoute already enforces auth;
 // this layer enforces the `manage_users` capability (admin role).
+// Capability gate for /vendor. ProtectedRoute enforces auth; this layer
+// enforces `manage_own_products`, which only the `vendor` role holds. An admin
+// is NOT a vendor -- they moderate the catalog from /admin, they do not author
+// through the vendor portal -- so admin deliberately does not pass this gate.
+function VendorRoute() {
+  const { user } = useAuth();
+  const roles = user?.roles || [];
+  if (!hasCapability(roles, "manage_own_products")) {
+    return (
+      <div style={{ padding: 40, fontFamily: "system-ui" }}>
+        <h1>Access denied — vendor role required</h1>
+        <p>
+          You need the <code>vendor</code> role to view this page.
+        </p>
+        <p>
+          Your roles: <code>{roles.join(", ") || "(none)"}</code>
+        </p>
+      </div>
+    );
+  }
+  return <VendorPortal />;
+}
+
 function AdminRoute() {
   const { user } = useAuth();
   const roles = user?.roles || [];
@@ -384,14 +407,13 @@ export default function AppRoutes() {
       <Route path="/founder/assets" element={<FounderRoute tab="assets" />} />
       <Route path="/founder/support" element={<FounderRoute tab="support" />} />
 
-      {/* Vendor portal. Requires a session, but NOT the `vendor` role yet:
-          `user_roles.role` carries a CHECK constraint that rejects "vendor"
-          until a migration widens it, so role-gating here would lock every
-          account out of a portal that exists to be reviewed. The shell's
-          view-as picker still stands in for vendor identity. Tighten this to
-          hasCapability(roles, "manage_own_products") once the constraint and
-          the grant are in place. */}
-      <Route path="/vendor" element={<ProtectedRoute><VendorPortal /></ProtectedRoute>} />
+      {/* Vendor portal. Auth via ProtectedRoute, then the `manage_own_products`
+          capability via VendorRoute -- migration 046 widened the user_roles
+          CHECK so the `vendor` role can actually be held. The shell's view-as
+          picker still stands in for WHICH vendor you are, since a vendor is a
+          company and a login is a person; that mapping arrives with the real
+          vendor↔user link. */}
+      <Route path="/vendor" element={<ProtectedRoute><VendorRoute /></ProtectedRoute>} />
 
       {/* Legacy admin user-management shell (Session 3). Gated to `manage_users`.
           Kept intact under /admin/users* so user CRUD is unaffected.
