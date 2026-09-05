@@ -247,6 +247,15 @@ art_infra_vendor_reviews vendor_id, application_id, rating 1-5, body,
 could not be filtered or sorted. v1 promotes nothing further; any future
 promotion is a deliberate migration.
 
+**Vendor contacts are not seeded.** The generator deliberately emits empty
+`contact_*` fields — it invents no contact data. The Phase-1 mock fills in
+placeholders (`sales@<vendor>.example`) purely so the approved state is
+demonstrable in review; those live in `artInfraMock.js`, never in the fixture.
+The obvious way to write migration 046's seed is to reuse the generator's
+output, at which point someone will notice the empty contacts and be tempted to
+copy the demo values across. Do not — that ships fiction as fact. Real contacts
+are entered by an admin through the Vendors screen.
+
 **Legacy seed.** The 12 seeded products carry free-text specs. Rather than
 hand-convert them, extend `backend/scripts/gen_art_infra_fixture.py` — which
 already transcribes the catalog mechanically and splits lead time out — to emit
@@ -382,6 +391,16 @@ POST   /founder/store/vendors/{vendor_id}/review {rating, body}
 ship contacts always, hide them in the UI — puts every vendor's contact details
 in a response any founder can read. This is the one place where a UI decision is
 a security decision, and it is cheapest to fix while the contract is a document.
+
+> **Amended during implementation.** As first written, this rule and the
+> Founder-portal table disagreed: this describes `contact_state` as derived from
+> the product's own request, while Decision 4 promises that approving one
+> request unlocks the whole vendor. Implemented per Decision 4, because that is
+> the user-visible promise: `contact_state` is `approved` whenever ANY approved
+> request exists for that vendor, and vendor-level approval **wins over** the
+> product's own request row — so an older decline on one product cannot mask a
+> vendor unlocked through another. Phase 2 must implement the behaviour, not
+> this paragraph's original wording.
 
 **2. Read and write shapes are defined separately.** Phase 1's product editor
 loaded the admin *read* model (resolved `vendor`/`category` objects, `rating`,
