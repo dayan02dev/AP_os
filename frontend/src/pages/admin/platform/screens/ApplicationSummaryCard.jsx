@@ -56,17 +56,15 @@ export default function ApplicationSummaryCard({
 
         {s.track === "sip" && (
           <div className="vip-memo-actions">
-            {!memo && (
-              <button className="os-btn" onClick={onCreateMemo} disabled={memoBusy}>
-                {memoBusy ? "Generating investment memo…" : <>Create investment memo <span className="arrow">→</span></>}
-              </button>
-            )}
             {memo && (
               <VipMemoPreview memo={memo} onDownload={onDownloadMemo} generating={memoBusy} />
             )}
+            {!memo && memoBusy && (
+              <p className="vip-memo-status">Preparing the investment memo — this can take a moment.</p>
+            )}
           </div>
         )}
-        {!memo && <AiSections variant="dropdown" sections={s.aiSections} />}
+        {!memo && !memoBusy && <AiSections variant="dropdown" sections={s.aiSections} />}
 
         {s.reviews && s.reviews.length > 0 && (
           <div>

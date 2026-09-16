@@ -39,6 +39,10 @@ import "../../styles/leadership.css";
 import "../../styles/review-application.css";
 import "../../styles/vip-memo.css";
 
+const PILOT_VIP_IDS = new Set([
+  "0117bc80-98c1-4172-bccd-af61327ac580",
+  "c8e45451-b9eb-4bed-8293-7a6782237168",
+]);
 const ID_LIST_KEY = "review_app_id_list";
 const PANEL_KEY = "review_panel_collapsed";
 
@@ -248,6 +252,10 @@ export default function ReviewApplicationPage() {
     URL.revokeObjectURL(url);
   }, [id]);
 
+  useEffect(() => {
+    if (track === "sip" && PILOT_VIP_IDS.has(id)) generateVipMemo();
+  }, [track, id, generateVipMemo]);
+
   // ─── Keyboard navigation: ← / → ───────────────────────────
   useEffect(() => {
     const onKey = (e) => {
@@ -316,9 +324,7 @@ export default function ReviewApplicationPage() {
                 )}
                 {track === "sip" && (
                   <div className="vip-memo-actions">
-                    <button className="os-btn" onClick={generateVipMemo} disabled={vipMemoBusy}>
-                      {vipMemoBusy ? "Generating investment memo…" : <>Create investment memo <span className="arrow">→</span></>}
-                    </button>
+                    {vipMemoBusy && <p className="vip-memo-status">Preparing the investment memo — this can take a moment.</p>}
                     <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />
                   </div>
                 )}

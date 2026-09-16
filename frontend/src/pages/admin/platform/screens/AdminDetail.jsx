@@ -34,8 +34,13 @@ const METRICS = [
   { key: 'commit',   label: 'Commitment to be fully available' },
 ];
 
+const PILOT_VIP_IDS = new Set([
+  "0117bc80-98c1-4172-bccd-af61327ac580",
+  "c8e45451-b9eb-4bed-8293-7a6782237168",
+]);
 // ── Seeded jury helpers (read s.id only, NOT window.OS_DATA) ─────────────────
 function getJuryMetricScore(scores, key, startupId) {
+
   let val = scores ? scores[key] : null;
   if (val == null || val < 5) {
     const seed = (startupId || '').charCodeAt((startupId || '').length - 1) + key.charCodeAt(0) + 12;
@@ -149,7 +154,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosit
   const doLoad = useCallback(async () => {
     if (!startupId || !track) return;
     setLoading(true);
-    setError(null);
+    setVipMemo(null);
     try {
       const d = await loadDetail(track, startupId);
       setS(d);
@@ -183,6 +188,13 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosit
       setVipMemoBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (track !== "sip" || !PILOT_VIP_IDS.has(s?.id)) return;
+    generateVipMemo();
+    // Memo generation is intentionally automatic only for the two pilot apps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s?.id, track]);
 
   const downloadVipMemo = async (format) => {
     if (!s?.id) return;

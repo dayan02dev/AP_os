@@ -46,6 +46,11 @@ import {
   evaluationToPatch,
 } from "./ui.jsx";
 
+const PILOT_VIP_IDS = new Set([
+  "0117bc80-98c1-4172-bccd-af61327ac580",
+  "c8e45451-b9eb-4bed-8293-7a6782237168",
+]);
+
 const MAX_FLAGS = 8;
 
 // ── Loader ─────────────────────────────────────────────────────────────
@@ -232,6 +237,12 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
       setVipMemoBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (content.track === "sip" && PILOT_VIP_IDS.has(content.id)) generateVipMemo();
+    // Memo generation is intentionally automatic only for the two pilot apps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content.track, content.id]);
   const removeFlag = (i) => setFlags((prev) => prev.filter((_, j) => j !== i));
 
   const currentEval = { scores, recommendation: reco, notes, flags, disagreements };
@@ -519,9 +530,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               <AiSections variant="dropdown" sections={content.aiSections} />
               {content.track === "sip" && (
                 <div className="vip-memo-actions">
-                  <button className="os-btn" onClick={generateVipMemo} disabled={vipMemoBusy}>
-                    {vipMemoBusy ? "Generating investment memo…" : <>Create investment memo <span className="arrow">→</span></>}
-                  </button>
+                  {vipMemoBusy && <p className="vip-memo-status">Preparing the investment memo — this can take a moment.</p>}
                   <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />
                 </div>
               )}
