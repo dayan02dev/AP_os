@@ -14,6 +14,13 @@ from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
+MEMO_ORDER = (
+    "title_block", "deal_snapshot", "company_explanation", "why_solution_matters",
+    "product_business_model", "technology_edge", "competitive_landscape",
+    "addressable_market", "founding_team", "milestones", "use_of_funds",
+    "risks_mitigants", "ic_recommendation", "ic_reviewer_notes", "attribution",
+)
+
 def _label(key: str) -> str:
     return key.replace("_", " ").title()
 
@@ -69,30 +76,93 @@ def render_docx(memo: dict[str, Any]) -> bytes:
 
 
 def render_pdf(memo: dict[str, Any]) -> bytes:
+    """Render a flat, sharp-cornered ARTPARK investment memo PDF."""
+    from xml.sax.saxutils import escape
+
     output = io.BytesIO()
-    doc = SimpleDocTemplate(output, pagesize=letter, rightMargin=.8 * inch,
-                            leftMargin=.8 * inch, topMargin=.8 * inch, bottomMargin=.8 * inch)
+    doc = SimpleDocTemplate(
+        output,
+        pagesize=letter,
+        rightMargin=0.72 * inch,
+        leftMargin=0.72 * inch,
+        topMargin=0.68 * inch,
+        bottomMargin=0.68 * inch,
+    )
     styles = getSampleStyleSheet()
-    body = ParagraphStyle("MemoBody", parent=styles["BodyText"], fontName="Helvetica",
-                          fontSize=9.5, leading=13, alignment=TA_LEFT, spaceAfter=4)
-    heading = ParagraphStyle("MemoHeading", parent=styles["Heading2"], fontName="Helvetica-Bold",
-                             fontSize=13, leading=16, textColor=colors.HexColor("#182a54"), spaceBefore=10)
-    story = [Paragraph("CONFIDENTIAL — INVESTMENT COMMITTEE MEMO", heading)]
-    for key, value in memo.items():
-        if key in {"meta", "memo_scores"}:
+    ink = colors.HexColor("#242424")
+    ink_soft = colors.HexColor("#4a4a52")
+    ink_dim = colors.HexColor("#8a8a92")
+    line = colors.HexColor("#e3e3e8")
+    purple = colors.HexColor("#3213b7")
+    paper_soft = colors.HexColor("#f6f6f8")
+    kicker = ParagraphStyle(
+        "MemoKicker", parent=styles["Normal"], fontName="Helvetica-Bold",
+        fontSize=10, leading=13, textColor=purple, spaceAfter=8,
+    )
+    title = ParagraphStyle(
+        "MemoTitle", parent=styles["Normal"], fontName="Helvetica-Bold",
+        fontSize=27, leading=31, textColor=ink, spaceAfter=15,
+    )
+    heading = ParagraphStyle(
+        "MemoHeading", parent=styles["Normal"], fontName="Helvetica-Bold",
+        fontSize=13, leading=17, textColor=ink, spaceBefore=15,
+        spaceAfter=6, keepWithNext=True,
+    )
+    body = ParagraphStyle(
+        "MemoBody", parent=styles["BodyText"], fontName="Helvetica",
+        fontSize=9.5, leading=13.5, textColor=ink_soft, spaceAfter=5,
+    )
+    score_label = ParagraphStyle(
+        "MemoScoreLabel", parent=body, fontSize=8.5, leading=10, textColor=ink_soft,
+    )
+    score_value = ParagraphStyle(
+        "MemoScoreValue", parent=body, fontName="Helvetica-Bold",
+        fontSize=15, leading=17, textColor=purple, alignment=TA_LEFT,
+    )
+
+    def p(text: Any, style: ParagraphStyle = body) -> Paragraph:
+        return Paragraph(escape(str(text)).replace("\n", "<br/>"), style)
+
+    story = [
+        Table([[""]], colWidths=[0.42 * inch], rowHeights=[0.03 * inch],
+              style=TableStyle([("BACKGROUND", (0, 0), (-1, -1), purple),
+                                ("BOX", (0, 0), (-1, -1), 0, purple)])),
+        Spacer(1, 0.12 * inch),
+        Paragraph("VIP INVESTMENT MEMO · PILOT", kicker),
+        Paragraph("Investment Committee Memo.", title),
+    ]
+    if memo.get("memo_scores"):
+        score_cells = []
+        for key, value in memo["memo_scores"].items():
+            score = value.get("score", value) if isinstance(value, dict) else value
+            score_cells.append([p(_label(key), score_label), p(f"{score} / 10", score_value)])
+        columns = 3
+        rows = [score_cells[i:i + columns] for i in range(0, len(score_cells), columns)]
+        normalized = []
+        for row in rows:
+            normalized.append(row + [["", ""]] * (columns - len(row)))
+        score_table = Table(normalized, colWidths=[2.1 * inch] * columns)
+        score_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), paper_soft),
+            ("BOX", (0, 0), (-1, -1), 0.5, line),
+            ("INNERGRID", (0, 0), (-1, -1), 0.5, line),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 9),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        story += [score_table, Spacer(1, 0.08 * inch)]
+    for key in MEMO_ORDER:
+        value = memo.get(key)
+        if value is None:
             continue
-        story.append(Paragraph(_label(key), heading))
-        for line in _lines(value):
-            story.append(Paragraph(line.replace("&", "&amp;"), body))
-    if memo.get("memo_scores") is not None:
-        story.append(Paragraph("Memo scores", heading))
-        rows = [[_label(k), str(v.get("score", v) if isinstance(v, dict) else v)]
-                for k, v in memo["memo_scores"].items()]
-        table = Table(rows, colWidths=[3.8 * inch, 1 * inch])
-        table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e9eef8")),
-                                   ("GRID", (0, 0), (-1, -1), .25, colors.HexColor("#b9c2d0")),
-                                   ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-                                   ("FONTSIZE", (0, 0), (-1, -1), 9)]))
-        story.append(table)
+        story.append(Paragraph(escape(_label(key)), heading))
+        for line_text in _lines(value):
+            story.append(p(line_text))
+    if memo.get("meta"):
+        story.append(Spacer(1, 0.1 * inch))
+        story.append(p(f"Generated by {memo['meta'].get('model', '[To be confirmed]')} · pilot",
+                       ParagraphStyle("MemoMeta", parent=body, fontSize=8, textColor=ink_dim)))
     doc.build(story)
     return output.getvalue()

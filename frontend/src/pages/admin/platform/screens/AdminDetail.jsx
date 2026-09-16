@@ -408,15 +408,14 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosit
         {/* LEFT — application & score summaries */}
         <div className="os-stack">
           {/* Application Details Card (shared with the gate) */}
-          <ApplicationSummaryCard startup={s} onViewFullApplication={() => setViewApp(true)} />
-          {track === "sip" && (
-            <div className="vip-memo-actions">
-              <button className="os-btn secondary os-w-100" onClick={generateVipMemo} disabled={vipMemoBusy}>
-                {vipMemoBusy ? "Generating VIP investment memo…" : "Generate VIP investment memo"}
-              </button>
-              <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />
-            </div>
-          )}
+          <ApplicationSummaryCard
+            startup={s}
+            onViewFullApplication={() => setViewApp(true)}
+            memo={vipMemo}
+            memoBusy={vipMemoBusy}
+            onCreateMemo={generateVipMemo}
+            onDownloadMemo={downloadVipMemo}
+          />
 
           {/* Comparative review model — real reviewer evaluations */}
           <ComparativeReviewModel startup={s} reviewersById={reviewersById} />

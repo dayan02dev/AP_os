@@ -37,6 +37,7 @@ import VipMemoPreview from "../../components/VipMemoPreview.jsx";
 import "../../styles/admin.css";
 import "../../styles/leadership.css";
 import "../../styles/review-application.css";
+import "../../styles/vip-memo.css";
 
 const ID_LIST_KEY = "review_app_id_list";
 const PANEL_KEY = "review_panel_collapsed";
@@ -315,8 +316,8 @@ export default function ReviewApplicationPage() {
                 )}
                 {track === "sip" && (
                   <div className="vip-memo-actions">
-                    <button className="os-btn secondary" onClick={generateVipMemo} disabled={vipMemoBusy}>
-                      {vipMemoBusy ? "Generating VIP investment memo…" : "Generate VIP investment memo"}
+                    <button className="os-btn" onClick={generateVipMemo} disabled={vipMemoBusy}>
+                      {vipMemoBusy ? "Generating investment memo…" : <>Create investment memo <span className="arrow">→</span></>}
                     </button>
                     <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />
                   </div>

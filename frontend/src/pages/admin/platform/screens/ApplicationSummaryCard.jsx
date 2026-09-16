@@ -6,12 +6,20 @@
 // signed-url opener from `startup` via leadershipApi.
 import React, { useState } from "react";
 import AiSections from "../../../../components/AiSections.jsx";
+import VipMemoPreview from "../../../../components/VipMemoPreview.jsx";
 import ProfilePills from "../../../../components/ProfilePills";
 import { Chip } from "../shell/osAtoms";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 import { trackLabel } from "../../../../lib/trackLabel";
 
-export default function ApplicationSummaryCard({ startup, onViewFullApplication }) {
+export default function ApplicationSummaryCard({
+  startup,
+  onViewFullApplication,
+  memo,
+  memoBusy = false,
+  onCreateMemo,
+  onDownloadMemo,
+}) {
   const s = startup || {};
   const [secOpen, setSecOpen] = useState({});
 
@@ -46,7 +54,19 @@ export default function ApplicationSummaryCard({ startup, onViewFullApplication 
           </div>
         )}
 
-        <AiSections variant="dropdown" sections={s.aiSections} />
+        {s.track === "sip" && (
+          <div className="vip-memo-actions">
+            {!memo && (
+              <button className="os-btn" onClick={onCreateMemo} disabled={memoBusy}>
+                {memoBusy ? "Generating investment memo…" : <>Create investment memo <span className="arrow">→</span></>}
+              </button>
+            )}
+            {memo && (
+              <VipMemoPreview memo={memo} onDownload={onDownloadMemo} generating={memoBusy} />
+            )}
+          </div>
+        )}
+        {!memo && <AiSections variant="dropdown" sections={s.aiSections} />}
 
         {s.reviews && s.reviews.length > 0 && (
           <div>

@@ -19,6 +19,7 @@ import { useAdminData } from "../../../hooks/useAdminData";
 import { writeStickyState } from "../../../hooks/useStickyState.js";
 import { pipelineBadges } from "../../../lib/adminBadges";
 import "../../../styles/admin-portal.css";
+import "../../../styles/vip-memo.css";
 import { AdminDashboard } from "./screens/AdminDashboard";
 import { AdminPipeline } from "./screens/AdminPipeline";
 import { AdminDetail } from "./screens/AdminDetail";

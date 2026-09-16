@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 
 import "../../../styles/reviewer-portal.css";
+import "../../../styles/vip-memo.css";
 
 import { useAuth } from "../../../hooks/useAuth.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";

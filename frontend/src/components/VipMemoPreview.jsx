@@ -37,20 +37,25 @@ export default function VipMemoPreview({ memo, onDownload, generating = false })
     <section className="vip-memo-card" aria-label="VIP investment memo">
       <header className="vip-memo-head">
         <div>
-          <div className="ps-ai-label">VIP investment memo · pilot</div>
-          <h3>Investment Committee Memo</h3>
+          <div className="vip-memo-kicker">VIP investment memo · pilot</div>
+          <h3 className="vip-memo-title">Investment Committee Memo.</h3>
         </div>
         {onDownload && (
-          <div className="os-row gap-sm">
-            <button className="os-btn secondary" onClick={() => onDownload("pdf")}>PDF</button>
-            <button className="os-btn secondary" onClick={() => onDownload("docx")}>DOCX</button>
+          <div className="vip-memo-actions" aria-label="Download investment memo">
+            <button className="os-btn secondary" onClick={() => onDownload("pdf")}>Download PDF</button>
+            <button className="os-btn secondary" onClick={() => onDownload("docx")}>Download DOCX</button>
           </div>
         )}
       </header>
       {memo.memo_scores && (
-        <div className="vip-memo-scores" aria-label="Memo scores">
+        <div className="vip-memo-score-grid" aria-label="Memo scores">
           {Object.entries(memo.memo_scores).map(([key, value]) => (
-            <div key={key}><span>{key.replaceAll("_", " ")}</span><strong>{typeof value === "object" ? value.score : value}</strong></div>
+            <div className="vip-memo-score" key={key}>
+              <span className="vip-memo-score-label">{key.replaceAll("_", " ")}</span>
+              <strong className="vip-memo-score-value">
+                {typeof value === "object" ? value.score : value}<small> / 10</small>
+              </strong>
+            </div>
           ))}
         </div>
       )}
@@ -62,14 +67,15 @@ export default function VipMemoPreview({ memo, onDownload, generating = false })
           return (
             <div className={`vip-memo-section${isOpen ? " is-open" : ""}`} key={key}>
               <button type="button" onClick={() => setOpen(prev => ({ ...prev, [key]: !isOpen }))} aria-expanded={isOpen}>
-                <span>{isOpen ? "▾" : "▸"}</span><strong>{label}</strong>
+                <span className="vip-memo-toggle" aria-hidden="true">{isOpen ? "−" : "+"}</span>
+                <strong>{label}</strong>
               </button>
               {isOpen && <div className="vip-memo-body">{renderValue(value)}</div>}
             </div>
           );
         })}
       </div>
-      {generating && <p className="os-text-soft">Generating memo…</p>}
+      {generating && <p className="vip-memo-status">Generating memo — this can take a moment.</p>}
     </section>
   );
 }
