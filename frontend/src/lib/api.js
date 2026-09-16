@@ -211,6 +211,15 @@ export const api = {
   patch: (path, body, opts = {}) => apiCall(path, { ...opts, method: "PATCH", body }),
   put: (path, body, opts = {}) => apiCall(path, { ...opts, method: "PUT", body }),
   del: (path, opts = {}) => apiCall(path, { ...opts, method: "DELETE" }),
+  download: async (path, opts = {}) => {
+    const response = await fetch(`${baseUrl()}${path}`, {
+      method: opts.method || "POST",
+      headers: _buildHeaders(opts),
+      credentials: "omit",
+    });
+    if (!response.ok) throw await _buildError(response);
+    return response.blob();
+  },
 
   // Edit a SUBMITTED application by id (edit-after-submit window).
   editSubmitted(track, id, patch) {

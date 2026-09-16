@@ -40,7 +40,12 @@ export default function VipMemoPreview({ memo, onDownload, generating = false })
           <div className="ps-ai-label">VIP investment memo · pilot</div>
           <h3>Investment Committee Memo</h3>
         </div>
-        {onDownload && <button className="os-btn secondary" onClick={onDownload}>Download memo</button>}
+        {onDownload && (
+          <div className="os-row gap-sm">
+            <button className="os-btn secondary" onClick={() => onDownload("pdf")}>PDF</button>
+            <button className="os-btn secondary" onClick={() => onDownload("docx")}>DOCX</button>
+          </div>
+        )}
       </header>
       {memo.memo_scores && (
         <div className="vip-memo-scores" aria-label="Memo scores">

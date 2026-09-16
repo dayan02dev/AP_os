@@ -26,6 +26,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import AiSections from "../../../components/AiSections.jsx";
 import FullApplication from "../../../components/FullApplication.jsx";
+import VipMemoPreview from "../../../components/VipMemoPreview.jsx";
 import ProfilePills from "../../../components/ProfilePills.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
@@ -199,9 +200,9 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   const [showRubric, setShowRubric] = useState(false);
   const [showAi, setShowAi] = useState(false);
   const [viewApp, setViewApp] = useState(false);
+  const [vipMemo, setVipMemo] = useState(null);
+  const [vipMemoBusy, setVipMemoBusy] = useState(false);
   const [flagInput, setFlagInput] = useState("");
-  const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
-  const [fieldErrors, setFieldErrors] = useState({ notes: false, dimensions: [] });
 
   const expired = false; // edit lock removed 2026-06-29 — reviewers edit anytime
 
@@ -211,11 +212,25 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   const setScore = (k) => (v) => setScores((prev) => ({ ...prev, [k]: v }));
   const overall = weightedOverall(scores);
 
-  const addFlag = () => {
-    const t = flagInput.trim();
-    if (!t || flags.length >= MAX_FLAGS) return;
-    setFlags((prev) => [...prev, t]);
-    setFlagInput("");
+  const downloadVipMemo = async (format) => {
+    const blob = await reviewerApi.downloadVipMemo(content.track, content.id, format);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `vip-memo-${content.id}.${format}`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const generateVipMemo = async () => {
+    if (content.track !== "sip") return;
+    setVipMemoBusy(true);
+    try {
+      const result = await reviewerApi.generateVipMemo(content.track, content.id);
+      setVipMemo(result.memo || null);
+    } finally {
+      setVipMemoBusy(false);
+    }
   };
   const removeFlag = (i) => setFlags((prev) => prev.filter((_, j) => j !== i));
 
@@ -502,6 +517,14 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               )}
 
               <AiSections variant="dropdown" sections={content.aiSections} />
+              {content.track === "sip" && (
+                <div className="vip-memo-actions">
+                  <button className="os-btn secondary os-w-100" onClick={generateVipMemo} disabled={vipMemoBusy}>
+                    {vipMemoBusy ? "Generating VIP investment memo…" : "Generate VIP investment memo"}
+                  </button>
+                  <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />
+                </div>
+              )}
 
               <hr className="os-divider" />
 

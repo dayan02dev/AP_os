@@ -23,10 +23,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from ..rbac import require_capability
-from ..services import admin_query, applications_query, industry_categories, stats
+from ..services import admin_query, applications_query, industry_categories, stats, vip_memo, vip_memo_export
 from ..services.founder_check.render import merge_sections as _merge_founder_sections
 from ..supabase_client import get_admin_client
 
@@ -420,6 +420,42 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
         "reviewer_assignments": reviewer_assignments,
         "status_history":       status_history,
     }
+
+@router.post(
+    "/applications/{application_id}/vip-memo",
+    dependencies=[Depends(require_capability("view_app_detail"))],
+)
+async def generate_vip_memo(application_id: str) -> dict[str, Any]:
+    """Generate the pilot memo for a VIP application."""
+    if application_id not in vip_memo.PILOT_APPLICATION_IDS:
+        raise HTTPException(status_code=404, detail={"code": "vip_memo_pilot_only"})
+    payload = await get_application_detail(application_id)
+    if payload.get("track") != "sip":
+        raise HTTPException(status_code=404, detail={"code": "vip_memo_requires_sip"})
+    memo = vip_memo.generate_memo(
+        {**(payload.get("application") or {}), "id": application_id, "track": "sip"},
+        payload.get("ai_screening"),
+        payload.get("reviews") or [],
+    )
+    return {"application_id": application_id, "track": "sip", "memo": memo}
+
+@router.post(
+    "/applications/{application_id}/vip-memo/download",
+    dependencies=[Depends(require_capability("view_app_detail"))],
+)
+async def download_vip_memo(
+    application_id: str,
+    format: str = Query("pdf", pattern="^(pdf|docx)$"),
+) -> Response:
+    result = await generate_vip_memo(application_id)
+    memo = result["memo"]
+    if format == "docx":
+        body = vip_memo_export.render_docx(memo)
+        return Response(body, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        headers={"Content-Disposition": f'attachment; filename="vip-memo-{application_id}.docx"'})
+    body = vip_memo_export.render_pdf(memo)
+    return Response(body, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="vip-memo-{application_id}.pdf"'})
 
 
 # ─── Attachment signed-download URL (Phase 1.5) ─────────────────────────

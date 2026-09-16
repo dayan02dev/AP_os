@@ -33,6 +33,10 @@ export const reviewerApi = {
   getQueue: () => api.get("/reviewer/queue"),
   getContent: (track, id) =>
     api.get(`/reviewer/applications/${track}/${id}/content`),
+  generateVipMemo: (track, id) =>
+    api.post(`/reviewer/applications/${track}/${id}/vip-memo`),
+  downloadVipMemo: (track, id, format) =>
+    api.download(`/reviewer/applications/${track}/${id}/vip-memo/download?format=${format}`),
   fileSignedUrl: (track, id, storagePath) =>
     api.get(
       `/reviewer/applications/${track}/${id}/files/signed-url?storage_path=${encodeURIComponent(storagePath)}`,

@@ -35,6 +35,8 @@ export const adminPlatformApi = {
 
   generateVipMemo: (track, id) =>
     api.post(`/admin/platform/applications/${track}/${id}/vip-memo`, {}),
+  downloadVipMemo: (track, id, format) =>
+    api.download(`/admin/platform/applications/${track}/${id}/vip-memo/download?format=${format}`),
 
   decide: (track, id, body) =>
     api.post(`/admin/platform/applications/${track}/${id}/decision`, body),

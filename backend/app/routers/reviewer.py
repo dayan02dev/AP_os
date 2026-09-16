@@ -22,13 +22,13 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi import status as http_status
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..deps import get_current_user
 from ..rbac import require_capability
-from ..services import applications_query, review_presenter, reviewer_query, state_machine
+from ..services import applications_query, review_presenter, reviewer_query, state_machine, vip_memo, vip_memo_export
 from ..services import rubric as rubric_service
 from ..services.audit import write_audit
 from ..services.founder_check.render import merge_sections as _merge_founder_sections
@@ -114,6 +114,56 @@ async def get_application_content(
         "evaluation": payload.get("my_review"),
         "assignment": payload.get("assignment"),
     }
+
+@router.post(
+    "/applications/{track}/{application_id}/vip-memo",
+    dependencies=[Depends(require_capability("view_assigned_apps"))],
+)
+async def generate_vip_memo_for_reviewer(
+    track: Literal["tir", "sip"],
+    application_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Generate the pilot memo only for an assigned VIP application."""
+    if track != "sip" or application_id not in vip_memo.PILOT_APPLICATION_IDS:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                            detail={"code": "vip_memo_pilot_only"})
+    payload = reviewer_query.fetch_application_for_reviewer(
+        user["user_id"], "sip", application_id,
+    )
+    if payload is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                            detail={"code": "not_found"})
+    memo = vip_memo.generate_memo(
+        {**(payload.get("application") or {}), "id": application_id, "track": "sip"},
+        payload.get("ai_screening"),
+        payload.get("reviews") or [],
+    )
+    return {"application_id": application_id, "track": "sip", "memo": memo}
+
+@router.post(
+    "/applications/{track}/{application_id}/vip-memo/download",
+    dependencies=[Depends(require_capability("view_assigned_apps"))],
+)
+async def download_vip_memo_for_reviewer(
+    track: Literal["tir", "sip"],
+    application_id: str,
+    format: str = Query("pdf", pattern="^(pdf|docx)$"),
+    user: dict = Depends(get_current_user),
+) -> Response:
+    result = await generate_vip_memo_for_reviewer(track, application_id, user)
+    if format == "docx":
+        return Response(
+            vip_memo_export.render_docx(result["memo"]),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="vip-memo-{application_id}.docx"',
+                     },
+        )
+    return Response(
+        vip_memo_export.render_pdf(result["memo"]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="vip-memo-{application_id}.pdf"'},
+    )
 
 
 @router.get(

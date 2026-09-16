@@ -184,6 +184,21 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosit
     }
   };
 
+  const downloadVipMemo = async (format) => {
+    if (!s?.id) return;
+    try {
+      const blob = await adminPlatformApi.downloadVipMemo("sip", s.id, format);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `vip-memo-${s.id}.${format}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setBanner({ kind: "error", text: e?.message || "Could not download VIP memo." });
+    }
+  };
+
   const onApplyDecision = async () => {
     if (!decision || !s) return;
     const apiDecision = BUTTON_TO_DECISION[decision];
@@ -433,7 +448,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosit
                     disabled={vipMemoBusy}>
                     {vipMemoBusy ? "Generating VIP investment memo…" : "Generate VIP investment memo"}
                   </button>
-                  <VipMemoPreview memo={vipMemo} generating={vipMemoBusy} />
+                  <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />
                 </div>
               )}
 

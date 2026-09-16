@@ -21,6 +21,9 @@ export const leadershipApi = {
   listApplications: (params = {}) =>
     api.get(`/leadership/applications${buildQuery(params)}`),
   getApplication: (id) => api.get(`/leadership/applications/${id}`),
+  generateVipMemo: (id) => api.post(`/leadership/applications/${id}/vip-memo`),
+  downloadVipMemo: (id, format) =>
+    api.download(`/leadership/applications/${id}/vip-memo/download?format=${format}`),
 
   // Filter-pill + dashboard-tab data source. Replaces the legacy
   // stats.industry block — returns categories with counts, cap (12), and

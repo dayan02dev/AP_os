@@ -33,6 +33,7 @@ import ApplicationTab from "./review/ApplicationTab.jsx";
 import ReviewsTab from "./review/ReviewsTab.jsx";
 import HistoryTab from "./review/HistoryTab.jsx";
 import AIScreeningPanel from "./review/AIScreeningPanel.jsx";
+import VipMemoPreview from "../../components/VipMemoPreview.jsx";
 import "../../styles/admin.css";
 import "../../styles/leadership.css";
 import "../../styles/review-application.css";
@@ -99,6 +100,8 @@ export default function ReviewApplicationPage() {
   const [pendingPrint, setPendingPrint] = useState(false);
 
   const [asideCollapsed, setAsideCollapsed] = useState(() => readPanelCollapsed());
+  const [vipMemo, setVipMemo] = useState(null);
+  const [vipMemoBusy, setVipMemoBusy] = useState(false);
 
   const [idList, setIdList] = useState(() => readIdList() || []);
 
@@ -221,6 +224,29 @@ export default function ReviewApplicationPage() {
     setAsideCollapsed((v) => !v);
   }, []);
 
+  const generateVipMemo = useCallback(async () => {
+    if (track !== "sip" || !id) return;
+    setVipMemoBusy(true);
+    try {
+      const response = await leadershipApi.generateVipMemo(id);
+      setVipMemo(response.memo || null);
+    } catch (err) {
+      setError(err?.message || "Could not generate VIP memo.");
+    } finally {
+      setVipMemoBusy(false);
+    }
+  }, [track, id]);
+
+  const downloadVipMemo = useCallback(async (format) => {
+    const blob = await leadershipApi.downloadVipMemo(id, format);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `vip-memo-${id}.${format}`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [id]);
+
   // ─── Keyboard navigation: ← / → ───────────────────────────
   useEffect(() => {
     const onKey = (e) => {
@@ -286,6 +312,14 @@ export default function ReviewApplicationPage() {
                     applicationId={id}
                     signedUrl={(appId, path) => leadershipApi.fileSignedUrl(appId, path)}
                   />
+                )}
+                {track === "sip" && (
+                  <div className="vip-memo-actions">
+                    <button className="os-btn secondary" onClick={generateVipMemo} disabled={vipMemoBusy}>
+                      {vipMemoBusy ? "Generating VIP investment memo…" : "Generate VIP investment memo"}
+                    </button>
+                    <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />
+                  </div>
                 )}
                 {tab === "reviews" && (
                   <ReviewsTab reviews={reviews} assignments={assignments} />
