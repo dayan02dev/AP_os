@@ -33,6 +33,9 @@ export const adminPlatformApi = {
   getApplication: (track, id) =>
     api.get(`/admin/platform/applications/${track}/${id}`),
 
+  generateVipMemo: (track, id) =>
+    api.post(`/admin/platform/applications/${track}/${id}/vip-memo`, {}),
+
   decide: (track, id, body) =>
     api.post(`/admin/platform/applications/${track}/${id}/decision`, body),
 

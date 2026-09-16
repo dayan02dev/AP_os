@@ -21,6 +21,9 @@ email-validator==2.*
 # Resume parsing (Phase 5).
 pypdf==5.*
 python-docx==1.1.*
+
+# Investment memo preview export.
+reportlab==4.*
 # Fallback when an LLM returns *almost* valid JSON (unescaped quotes
 # inside a long string, trailing commas, dropped braces under load).
 # Cheaper and more deterministic than retrying the whole API call.

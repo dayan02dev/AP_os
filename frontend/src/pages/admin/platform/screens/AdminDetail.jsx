@@ -18,6 +18,7 @@ import { loadDetail, useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 import { BUTTON_TO_DECISION, chipLabel } from "../../../../lib/adminDataAdapter";
+from ..services import vip_memo, vip_memo_export
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import FullApplication from "../../../../components/FullApplication";
 import ApplicationSummaryCard from "./ApplicationSummaryCard";
@@ -126,7 +127,8 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosit
   const [error, setError] = useState(null);
 
   const [viewApp, setViewApp] = useState(false);
-
+  const [vipMemo, setVipMemo] = useState(null);
+  const [vipMemoBusy, setVipMemoBusy] = useState(false);
   // Decision panel
   const [decision, setDecision] = useState(null);   // 'approve' | 'hold' | 'reject' | 'waitlist'
   const [rationale, setRationale] = useState('');
@@ -167,6 +169,20 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosit
   }, [startupId, track]);
 
   useEffect(() => { doLoad(); }, [doLoad]);
+
+  const generateVipMemo = async () => {
+    if (track !== "sip" || !s?.id) return;
+    setVipMemoBusy(true);
+    setBanner(null);
+    try {
+      const response = await adminPlatformApi.generateVipMemo("sip", s.id);
+      setVipMemo(response.memo || null);
+    } catch (e) {
+      setBanner({ kind: "error", text: e?.message || "Could not generate VIP memo." });
+    } finally {
+      setVipMemoBusy(false);
+    }
+  };
 
   const onApplyDecision = async () => {
     if (!decision || !s) return;
@@ -376,8 +392,84 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosit
       <div className="os-grid-evaluation">
         {/* LEFT — application & score summaries */}
         <div className="os-stack">
+<<<<<<< HEAD
           {/* Application Details Card (shared with the gate) */}
           <ApplicationSummaryCard startup={s} onViewFullApplication={() => setViewApp(true)} />
+=======
+          {/* Application Details Card */}
+          <div className="os-card">
+            <div className="os-card-head">
+              <div className="os-card-title">Application · {s.name}</div>
+              <div className="os-row gap-sm" style={{ alignItems: "center" }}>
+                <ProfilePills
+                  alsoInTrack={s.alsoInTrack ? trackLabel(s.alsoInTrack) : null}
+                  resumeFile={s.application?.resume_file}
+                  linkedinUrl={s.application?.linkedin_url}
+                  onOpenResume={async () => {
+                    const rf = s.application.resume_file;
+                    const { url } = await leadershipApi.fileSignedUrl(s.id, rf.storage_path);
+                    window.open(url, "_blank", "noopener,noreferrer");
+                  }}
+                />
+
+                <Chip>{s.domain}</Chip>
+                <Chip>{s.stage}</Chip>
+                {s.trl && s.trl !== '—' && <Chip>TRL {s.trl}</Chip>}
+              </div>
+            </div>
+            <div className="os-stack">
+              {/* AI summary */}
+              {s.aiSummary && (
+                <div className="ps-ai-summary">
+                  <div className="ps-ai-label">AI summary</div>
+                  <p className="ps-ai-text">{s.aiSummary}</p>
+                </div>
+              )}
+
+              <AiSections variant="dropdown" sections={s.aiSections} />
+              {track === "sip" && (
+                <div className="vip-memo-actions">
+                  <button className="os-btn secondary os-w-100" onClick={generateVipMemo}
+                    disabled={vipMemoBusy}>
+                    {vipMemoBusy ? "Generating VIP investment memo…" : "Generate VIP investment memo"}
+                  </button>
+                  <VipMemoPreview memo={vipMemo} generating={vipMemoBusy} />
+                </div>
+              )}
+
+              {/* Problem & solution — collapsible bullet sections */}
+              {s.reviews && s.reviews.length > 0 && (
+                <div>
+                  <div className="ps-group-label">Reviewer Notes</div>
+                  <div className="ps-sections">
+                    {s.reviews.map((rv, i) => {
+                      const open = secOpen[`rev-${i}`] !== false;
+                      return (
+                        <div className={"ps-sec" + (open ? " is-open" : "")} key={i}>
+                          <button className="ps-sec-head" aria-expanded={open}
+                            onClick={() => setSecOpen(prev => ({ ...prev, [`rev-${i}`]: !open }))}>
+                            <span className="ps-sec-chev">{open ? '▾' : '▸'}</span>
+                            <span className="ps-sec-label">Reviewer {i + 1} · {rv.reco || '—'}</span>
+                            <span className="ps-sec-hint">{open ? '' : (rv.overall ? rv.overall.toFixed(1) : '—')}</span>
+                          </button>
+                          {open && rv.notes && (
+                            <ul className="ps-bullets"><li>{rv.notes}</li></ul>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <hr className="os-divider" />
+
+              <button className="os-btn secondary os-w-100" onClick={() => setViewApp(true)}>
+                View full application →
+              </button>
+            </div>
+          </div>
+>>>>>>> 3ce1f97 (feat(vip): add pilot investment memo workflow)
 
           {/* Comparative review model — real reviewer evaluations */}
           <ComparativeReviewModel startup={s} reviewersById={reviewersById} />

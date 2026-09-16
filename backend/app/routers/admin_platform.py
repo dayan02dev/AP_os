@@ -38,6 +38,8 @@ from ..services import (
     decisions,
     roster_removal,
     track_move,
+    vip_memo,
+    vip_memo_export,
 )
 from ..services.assignment_email import notify_reviewers_assigned
 from ..services.audit import actor_role_of, write_audit
@@ -109,6 +111,77 @@ async def get_detail(
             detail={"code": "application_not_found"},
         )
     return payload
+
+@router.post(
+    "/applications/{track}/{application_id}/vip-memo",
+    dependencies=[Depends(require_capability("view_app_detail"))],
+)
+async def generate_vip_memo(
+    track: Literal["tir", "sip"],
+    application_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Generate the pilot investment memo for one VIP application."""
+    if track != "sip":
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail={"code": "vip_memo_requires_sip"},
+        )
+    if application_id not in vip_memo.PILOT_APPLICATION_IDS:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "vip_memo_pilot_only"},
+        )
+    payload = admin_query.fetch_detail("sip", application_id)
+    if payload is None or payload.get("track") != "sip":
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "application_not_found"},
+        )
+    memo = vip_memo.generate_memo(
+        {**(payload.get("application") or {}), "id": application_id, "track": "sip"},
+        payload.get("ai_screening"),
+        payload.get("reviews") or [],
+    )
+    return {"application_id": application_id, "track": "sip", "memo": memo}
+
+@router.post(
+    "/applications/{track}/{application_id}/vip-memo/download",
+    dependencies=[Depends(require_capability("view_app_detail"))],
+)
+async def download_vip_memo(
+    track: Literal["tir", "sip"],
+    application_id: str,
+    format: Literal["docx", "pdf"] = Query("pdf"),
+    user: dict = Depends(get_current_user),
+) -> Response:
+    """Generate and download the pilot memo in editable or preview format."""
+    if track != "sip" or application_id not in vip_memo.PILOT_APPLICATION_IDS:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "vip_memo_pilot_only"},
+        )
+    payload = admin_query.fetch_detail("sip", application_id)
+    if payload is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "application_not_found"},
+        )
+    memo = vip_memo.generate_memo(
+        {**(payload.get("application") or {}), "id": application_id, "track": "sip"},
+        payload.get("ai_screening"),
+        payload.get("reviews") or [],
+    )
+    if format == "docx":
+        body, media, suffix = vip_memo_export.render_docx(memo), (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"), "docx"
+    else:
+        body, media, suffix = vip_memo_export.render_pdf(memo), "application/pdf", "pdf"
+    return Response(
+        content=body,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="vip-investment-memo-{application_id[:8]}.{suffix}"'},
+    )
 
 
 class DecisionBody(BaseModel):
