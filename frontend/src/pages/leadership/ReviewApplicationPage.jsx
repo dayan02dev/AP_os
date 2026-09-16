@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { readVipMemo, writeVipMemo } from "../../lib/vipMemoCache.js";
+import { leadershipApi } from "../../lib/leadershipApi.js";
 import { labelFor } from "../../lib/statusMachine.js";
 import { printWithTitle } from "../../lib/printDocument.js";
 import { trackLabel } from "../../lib/trackLabel.js";

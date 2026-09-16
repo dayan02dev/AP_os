@@ -4,13 +4,16 @@ The memo is deliberately separate from the legacy five-dimension AI screen. It
 accepts the complete application payload, preserves source fields, and asks the
 model for a structured, neutral memo. This module does not run for TIR.
 """
-from __future__ import annotations
-
 import json
+import logging
 import os
 from typing import Any
 
 import httpx
+
+from ..supabase_client import get_admin_client
+
+log = logging.getLogger(__name__)
 
 PILOT_APPLICATION_IDS = frozenset({
     "0117bc80-98c1-4172-bccd-af61327ac580",
@@ -73,6 +76,27 @@ def _packet(row: dict[str, Any], ai: dict[str, Any] | None, reviews: list[dict[s
     return json.dumps(evidence, ensure_ascii=False, default=str)
 
 
+
+def _cached_memo(ai: dict[str, Any] | None) -> dict[str, Any] | None:
+    sections = (ai or {}).get("sections")
+    cached = sections.get("vip_memo") if isinstance(sections, dict) else None
+    if not isinstance(cached, dict):
+        return None
+    if not all(key in cached for key in MEMO_SECTIONS):
+        return None
+    return cached
+
+
+def _store_memo(ai: dict[str, Any] | None, app_id: str, memo: dict[str, Any]) -> None:
+    """Persist the generated memo in the existing AI row for cross-device reuse."""
+    sections = dict((ai or {}).get("sections") or {})
+    sections["vip_memo"] = memo
+    try:
+        get_admin_client().table("ai_screening").update(
+            {"sections": sections},
+        ).eq("application_id", app_id).eq("application_track", "sip").execute()
+    except Exception:
+        log.exception("vip memo persistence failed", extra={"application_id": app_id})
 def build_prompt(row: dict[str, Any], ai: dict[str, Any] | None = None,
                  reviews: list[dict[str, Any]] | None = None) -> str:
     return _PROMPT + _packet(row, ai, reviews or [])
@@ -87,6 +111,9 @@ def generate_memo(row: dict[str, Any], ai: dict[str, Any] | None = None,
     if row.get("track", "sip") != "sip":
         raise ValueError("VIP memo generation requires the sip track")
 
+    cached = _cached_memo(ai)
+    if cached:
+        return cached
     key = os.getenv("VIP_MEMO_MODEL") or os.getenv("OPENROUTER_MODEL") or "openai/gpt-5.6"
     response = httpx.post(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -112,5 +139,5 @@ def generate_memo(row: dict[str, Any], ai: dict[str, Any] | None = None,
     }
     if len(memo["memo_scores"]) != len(MEMO_SCORE_KEYS):
         raise ValueError("Memo response must contain exactly six memo scores")
-    memo["meta"] = {"application_id": app_id, "track": "sip", "model": key, "pilot": True}
+    _store_memo(ai, app_id, memo)
     return memo
