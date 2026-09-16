@@ -19,6 +19,7 @@ import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 import { BUTTON_TO_DECISION, chipLabel } from "../../../../lib/adminDataAdapter";
 import VipMemoPreview from "../../../../components/VipMemoPreview.jsx";
+import { readVipMemo, writeVipMemo } from "../../../../lib/vipMemoCache";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import FullApplication from "../../../../components/FullApplication";
 import ApplicationSummaryCard from "./ApplicationSummaryCard";
@@ -178,10 +179,10 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosit
   const generateVipMemo = async () => {
     if (track !== "sip" || !s?.id) return;
     setVipMemoBusy(true);
-    setBanner(null);
     try {
       const response = await adminPlatformApi.generateVipMemo("sip", s.id);
       setVipMemo(response.memo || null);
+      writeVipMemo(s.id, response.memo);
     } catch (e) {
       setBanner({ kind: "error", text: e?.message || "Could not generate VIP memo." });
     } finally {
@@ -191,6 +192,11 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosit
 
   useEffect(() => {
     if (track !== "sip" || !PILOT_VIP_IDS.has(s?.id)) return;
+    const cached = readVipMemo(s.id);
+    if (cached) {
+      setVipMemo(cached);
+      return;
+    }
     generateVipMemo();
     // Memo generation is intentionally automatic only for the two pilot apps.
     // eslint-disable-next-line react-hooks/exhaustive-deps

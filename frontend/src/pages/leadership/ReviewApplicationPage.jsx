@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { leadershipApi } from "../../lib/leadershipApi.js";
+import { readVipMemo, writeVipMemo } from "../../lib/vipMemoCache.js";
 import { labelFor } from "../../lib/statusMachine.js";
 import { printWithTitle } from "../../lib/printDocument.js";
 import { trackLabel } from "../../lib/trackLabel.js";
@@ -235,6 +235,7 @@ export default function ReviewApplicationPage() {
     try {
       const response = await leadershipApi.generateVipMemo(id);
       setVipMemo(response.memo || null);
+      writeVipMemo(id, response.memo);
     } catch (err) {
       setError(err?.message || "Could not generate VIP memo.");
     } finally {
@@ -253,7 +254,13 @@ export default function ReviewApplicationPage() {
   }, [id]);
 
   useEffect(() => {
-    if (track === "sip" && PILOT_VIP_IDS.has(id)) generateVipMemo();
+    if (track !== "sip" || !PILOT_VIP_IDS.has(id)) return;
+    const cached = readVipMemo(id);
+    if (cached) {
+      setVipMemo(cached);
+      return;
+    }
+    generateVipMemo();
   }, [track, id, generateVipMemo]);
 
   // ─── Keyboard navigation: ← / → ───────────────────────────

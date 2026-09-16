@@ -31,6 +31,7 @@ import ProfilePills from "../../../components/ProfilePills.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
 import { trackLabel } from "../../../lib/trackLabel.js";
+import { readVipMemo, writeVipMemo } from "../../../lib/vipMemoCache.js";
 import { moveBadgeText } from "../../../lib/trackMove";
 import {
   LoadingState,
@@ -233,13 +234,20 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     try {
       const result = await reviewerApi.generateVipMemo(content.track, content.id);
       setVipMemo(result.memo || null);
+      writeVipMemo(content.id, result.memo);
     } finally {
       setVipMemoBusy(false);
     }
   };
 
   useEffect(() => {
-    if (content.track === "sip" && PILOT_VIP_IDS.has(content.id)) generateVipMemo();
+    if (content.track !== "sip" || !PILOT_VIP_IDS.has(content.id)) return;
+    const cached = readVipMemo(content.id);
+    if (cached) {
+      setVipMemo(cached);
+      return;
+    }
+    generateVipMemo();
     // Memo generation is intentionally automatic only for the two pilot apps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content.track, content.id]);
