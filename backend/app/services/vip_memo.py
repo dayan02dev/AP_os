@@ -24,6 +24,11 @@ MEMO_SECTIONS = (
     "risks_mitigants", "ic_recommendation", "ic_reviewer_notes", "attribution",
 )
 
+MEMO_SCORE_KEYS = (
+    "problem_urgency", "technical_differentiation", "commercial_validation",
+    "team_execution", "market_position", "risk_adjusted_confidence",
+)
+
 _PROMPT = """You are preparing a professional ARTPARK Venture Innovation Programme (VIP)
 Investment Committee memo for a non-technical committee. Use ONLY the supplied
 application packet and explicitly provided evidence. Never invent metrics,
@@ -99,5 +104,13 @@ def generate_memo(row: dict[str, Any], ai: dict[str, Any] | None = None,
     missing = [section for section in MEMO_SECTIONS if section not in memo]
     if missing:
         raise ValueError(f"Memo response missing sections: {', '.join(missing)}")
+    scores = memo.get("memo_scores")
+    if not isinstance(scores, dict):
+        raise ValueError("Memo response missing memo_scores")
+    memo["memo_scores"] = {
+        key: scores[key] for key in MEMO_SCORE_KEYS if key in scores
+    }
+    if len(memo["memo_scores"]) != len(MEMO_SCORE_KEYS):
+        raise ValueError("Memo response must contain exactly six memo scores")
     memo["meta"] = {"application_id": app_id, "track": "sip", "model": key, "pilot": True}
     return memo
