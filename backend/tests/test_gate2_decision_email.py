@@ -32,21 +32,19 @@ def _svc(selected, rejected):
     )
 
 
-def test_gate2_offered_sends_NOTHING_yet(monkeypatch):
-    """The selection templates exist and render, but are deliberately NOT wired
-    to the decision yet: VIP's programme terms are still unconfirmed, the VIP
-    portal is not in production, and FOUNDER_PORTAL_ALLOWLIST would block the
-    founder the mail invites. Rejection ships first; selection follows once
-    those three are resolved."""
+def test_gate2_offered_sends_only_the_tir_selection_email(monkeypatch):
+    """The final selection email is enabled for TIR only."""
     selected, rejected = [], []
     monkeypatch.setattr(decision_email, "get_email_service", lambda: _svc(selected, rejected))
     sb = _SB([{"basic_full_name": "Ada", "basic_email": "ada@x.com"}])
 
-    for track in ("tir", "sip"):
-        decision_email.notify_applicant_gate2(
-            sb, track=track, application_id="id1", decision="offered")
+    decision_email.notify_applicant_gate2(
+        sb, track="tir", application_id="id1", decision="offered")
+    decision_email.notify_applicant_gate2(
+        sb, track="sip", application_id="id1", decision="offered")
 
-    assert not selected, "selection email must not fire until it is deliberately enabled"
+    assert len(selected) == 1
+    assert selected[0]["track"] == "tir"
     assert not rejected
 
 

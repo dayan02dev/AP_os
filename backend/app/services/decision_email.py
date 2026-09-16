@@ -48,30 +48,25 @@ def notify_applicant_decided(sb, *, track: str, application_id: str, decision: s
         log.warning("notify_applicant_decided failed for %s/%s", track, application_id, exc_info=True)
 
 
-# Gate-2 decisions used to notify the applicant of nothing at all. Today exactly
-# one does: `rejected` reuses the SAME gracious decline gate-1 already sends, so
-# the applicant cannot tell which round declined them. `waitlisted` and `on_hold`
-# stay silent because neither is a final answer.
-#
-# `offered` is SILENT ON PURPOSE. The selection templates
-# (applicant_selected_{tir,vip}) and EmailService.send_applicant_selected are
-# built and tested, but must not fire until three things are true:
-#   1. VIP's funding amount and duration are confirmed — the VIP template still
-#      renders a DRAFT banner without them;
-#   2. the VIP portal (TLR evaluation / MIS filling) is live in production, not
-#      just staging;
-#   3. FOUNDER_PORTAL_ALLOWLIST is opened up, or the mail invites a founder into
-#      a portal that will refuse them.
-# Move "offered" out of this tuple to switch selection mail on.
-_GATE2_SILENT = ("waitlisted", "on_hold", "offered")
+# Gate-2 decisions used to notify the applicant of nothing at all. The final
+# TIR offer sends the concise selection email; VIP offers remain silent until
+# their programme terms and portal are ready. Rejections reuse the same
+# gracious decline email. Waitlists and holds stay silent because neither is
+# a final answer.
+_GATE2_SILENT = ("waitlisted", "on_hold")
 
 
 def notify_applicant_gate2(sb, *, track: str, application_id: str, decision: str) -> None:
-    """Applicant-facing gate-2 email. Best-effort: the decision has already
-    committed by the time this runs, so nothing here may raise."""
+    """Send the final TIR offer or the Gate-2 rejection notice.
+
+    Gate-2 decisions are already committed before this best-effort notification
+    runs, so delivery failures must never escape to the admin action.
+    """
     if decision in _GATE2_SILENT:
         return
-    if decision != "rejected":
+    if decision == "offered" and track != "tir":
+        return
+    if decision not in ("offered", "rejected"):
         return
     try:
         table = f"{track}_applications"
@@ -100,6 +95,13 @@ def notify_applicant_gate2(sb, *, track: str, application_id: str, decision: str
                 program_label="VIP" if (rows[0].get("moved_to_track") or track) == "sip" else "TIR",
             )
             return
+
+        get_email_service().send_applicant_selected(
+            to=email,
+            applicant_name=name,
+            track="tir",
+            venture=_venture_name(sb, track, application_id),
+        )
     except Exception:  # noqa: BLE001
         log.warning("notify_applicant_gate2 failed for %s/%s", track, application_id, exc_info=True)
 
