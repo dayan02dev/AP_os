@@ -18,6 +18,7 @@ import { loadDetail, useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 import { BUTTON_TO_DECISION, chipLabel } from "../../../../lib/adminDataAdapter";
+import VipMemoPreview from "../../../../components/VipMemoPreview.jsx";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import FullApplication from "../../../../components/FullApplication";
 import ApplicationSummaryCard from "./ApplicationSummaryCard";
