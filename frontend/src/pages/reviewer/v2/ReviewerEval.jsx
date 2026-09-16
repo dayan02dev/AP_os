@@ -519,8 +519,8 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               <AiSections variant="dropdown" sections={content.aiSections} />
               {content.track === "sip" && (
                 <div className="vip-memo-actions">
-                  <button className="os-btn secondary os-w-100" onClick={generateVipMemo} disabled={vipMemoBusy}>
-                    {vipMemoBusy ? "Generating VIP investment memo…" : "Generate VIP investment memo"}
+                  <button className="os-btn" onClick={generateVipMemo} disabled={vipMemoBusy}>
+                    {vipMemoBusy ? "Generating investment memo…" : <>Create investment memo <span className="arrow">→</span></>}
                   </button>
                   <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />
                 </div>
