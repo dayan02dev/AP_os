@@ -375,6 +375,9 @@ function AdminApp() {
     setPage(backPage);
   };
 
+  const seqIdx = detailSeq.findIndex(
+    row => String(row.id) === String(selectedStartupId),
+  );
   const isDetail = page === 'detail';
 
   return (
