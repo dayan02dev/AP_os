@@ -366,7 +366,12 @@ function AdminApp() {
   };
 
   const advanceAfterDecision = (decidedId) => {
-    if (goSeq(1, decidedId)) return;
+    // Detail and pipeline payloads can expose different ID aliases. Prefer the
+    // route ID that opened the detail when the response ID is not in the saved
+    // sequence; otherwise a valid next application would look like "no next".
+    const hasDecidedId = detailSeq.some(r => String(r.id) === String(decidedId));
+    const sequenceId = hasDecidedId ? decidedId : selectedStartupId;
+    if (goSeq(1, sequenceId)) return;
     setPage(backPage);
   };
 
