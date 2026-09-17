@@ -171,8 +171,8 @@ def test_classify_industry_is_case_insensitive():
     assert bucket_id == "robotics"
 
 
-def test_phase_1_statuses_has_twelve_entries():
-    assert len(PHASE_1_STATUSES) == 12
+def test_phase_1_statuses_has_thirteen_entries():
+    assert len(PHASE_1_STATUSES) == 13
 
 
 def test_phase_1_statuses_includes_jury_review():

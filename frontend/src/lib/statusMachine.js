@@ -40,10 +40,11 @@ export const STATUS_LABELS = {
   shortlisted:      "Shortlisted",
   interview:        "Interview",
   offered:          "Offered",
-  onboarded:        "Onboarded",
-  rejected:         "Not selected",
-  waitlisted:       "Waitlisted",
-  withdrawn:        "Withdrawn",
+  onboarded:         "Onboarded",
+  accepted:          "Accepted",
+  rejected:          "Rejected",
+  waitlisted:        "Waitlisted",
+  withdrawn:         "Withdrawn",
 };
 
 export function legalNextStates(fromStatus) {

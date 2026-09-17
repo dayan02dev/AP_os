@@ -11,7 +11,7 @@ export const STATUS_BUCKET = {
   interview:    "advance",
   offered:      "decision",
   onboarded:    "decision",
-  rejected:     "decision",
+  accepted:     "decision",
   waitlisted:   "decision",
   withdrawn:    "decision",
 };

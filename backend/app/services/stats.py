@@ -46,10 +46,78 @@ PHASE_1_STATUSES: list[tuple[str, str]] = [
     ("interview",    "Interview"),
     ("offered",      "Offered"),
     ("onboarded",    "Onboarded"),
-    ("rejected",     "Not selected"),
+    ("accepted",     "Accepted"),
+    ("rejected",     "Rejected"),
     ("waitlisted",   "Waitlisted"),
     ("withdrawn",    "Withdrawn"),
 ]
+
+
+def effective_status(
+    application_status: str | None,
+    admin_decision: str | dict | None = None,
+) -> str | None:
+    """Map the admin portal's final decision to the shared display status."""
+    decision = admin_decision
+    if isinstance(decision, dict):
+        decision = decision.get("decision")
+    decision = str(decision or "").strip().lower()
+    if decision in {"accepted", "approved", "selected", "shortlisted"}:
+        return "accepted"
+    if decision in {"rejected", "reject"}:
+        return "rejected"
+    return application_status
+
+
+def overlay_admin_decisions(
+    per_status_per_track: dict[str, dict[str, int]],
+    per_status_total: dict[str, int],
+) -> None:
+    """Move legacy status counts into Accepted/Rejected for final decisions."""
+    try:
+        decisions = (get_admin_client().table("admin_decisions").select(
+            "application_id,application_track,decision,decided_at"
+        ).execute().data) or []
+    except Exception as exc:
+        log.warning("stats: admin decision overlay failed", extra={"err": str(exc)})
+        return
+
+    latest: dict[tuple[str, str], dict] = {}
+    for row in decisions:
+        key = (row.get("application_track"), row.get("application_id"))
+        if not key[0] or not key[1]:
+            continue
+        old = latest.get(key)
+        if old is None or (row.get("decided_at") or "") >= (old.get("decided_at") or ""):
+            latest[key] = row
+
+    for track in ("tir", "sip"):
+        ids = [aid for (tr, aid), row in latest.items()
+               if tr == track and effective_status(None, row) in {"accepted", "rejected"}]
+        if not ids:
+            continue
+        try:
+            rows = (get_admin_client().table(f"{track}_applications")
+                    .select("id,status").in_("id", ids).execute().data) or []
+        except Exception as exc:
+            log.warning("stats: application status overlay failed",
+                        extra={"track": track, "err": str(exc)})
+            continue
+        for app in rows:
+            key = (track, app.get("id"))
+            decision = latest.get(key)
+            new = effective_status(app.get("status"), decision)
+            old_status = app.get("status")
+            if not old_status or new == old_status:
+                continue
+            per_status_per_track.setdefault(old_status, {}).setdefault(track, 0)
+            per_status_per_track[old_status][track] = max(
+                0, per_status_per_track[old_status][track] - 1
+            )
+            per_status_total[old_status] = max(0, per_status_total.get(old_status, 0) - 1)
+            per_status_per_track.setdefault(new, {}).setdefault(track, 0)
+            per_status_per_track[new][track] += 1
+            per_status_total[new] = per_status_total.get(new, 0) + 1
 
 # Statuses that count as "submitted" for the totals.apps_submitted figure —
 # everything except 'draft'.

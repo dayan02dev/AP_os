@@ -59,6 +59,7 @@ async def get_stats() -> dict:
         }
         per_status_per_track[status_id] = per_track
         per_status_total[status_id] = sum(per_track.values())
+    stats.overlay_admin_decisions(per_status_per_track, per_status_total)
 
     status_counts = [
         {"id": status_id, "label": label, "n": per_status_total[status_id]}
@@ -199,14 +200,14 @@ async def list_applications(
     capped-fetch is simpler than a two-step PostgREST join. See FETCH_CAP
     in applications_query.py for the comment on when to revisit.
     """
-    # ─ 1. Per-track fetch with DB-side filters ─────────────────────────
+    db_status = None if status_ in {"accepted", "rejected"} else status_
     tracks_to_query = [track] if track else list(stats.TRACKS)
     rows: list[dict[str, Any]] = []
     for t in tracks_to_query:
         rows.extend(
             applications_query.fetch_apps_for_track(
                 t,
-                status=status_,
+                status=db_status,
                 search=search,
                 limit=applications_query.FETCH_CAP,
             )
@@ -225,8 +226,18 @@ async def list_applications(
             if (industries.get((r["track"], r["id"])) or {}).get("id") == industry
         ]
 
-    # ─ 3. AI score join + filter ───────────────────────────────────────
     pairs = [(r["track"], r["id"]) for r in rows]
+    decisions = admin_query._fetch_latest_decisions(pairs)
+    if status_ in {"accepted", "rejected"}:
+        wanted = status_
+        rows = [
+            r for r in rows
+            if stats.effective_status(
+                r.get("status"),
+                decisions.get((r["track"], r["id"])),
+            ) == wanted
+        ]
+        pairs = [(r["track"], r["id"]) for r in rows]
     scores = applications_query.fetch_ai_scores_for(pairs)
     project_names = applications_query.fetch_project_names_for(pairs)
     review_stats = admin_query._fetch_review_stats(pairs)
@@ -291,7 +302,10 @@ async def list_applications(
             "track":            eff,
             "native_track":     track,
             "moved_to_track":   r.get("moved_to_track"),
-            "status":           r.get("status"),
+            "status":           stats.effective_status(
+                                r.get("status"),
+                                decisions.get((track, r["id"])),
+                            ),
             "project_name":     (
                                 r.get("basic_org") or r.get("basic_full_name")
                                 if track == "sip"
