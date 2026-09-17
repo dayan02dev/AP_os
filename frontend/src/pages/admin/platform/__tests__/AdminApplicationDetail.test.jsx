@@ -5,7 +5,7 @@
 
 import React from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 // ── Mock loadDetail before importing AdminDetail ─────────────────────────────
 vi.mock("../../../../hooks/useAdminData", () => ({
@@ -27,6 +27,7 @@ vi.mock("../../../../lib/leadershipApi", () => ({
 }));
 
 import { loadDetail } from "../../../../hooks/useAdminData";
+import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { AdminDetail } from "../screens/AdminDetail";
 
 const FAKE_APP = {
@@ -76,6 +77,29 @@ describe("AdminDetail — smoke test", () => {
     // After resolve — wait for the h2 heading
     const heading = await screen.findByRole("heading", { level: 2, name: /Test Startup/ });
     expect(heading).toBeTruthy();
+  });
+  it("advances the preserved sequence after recording an admin decision", async () => {
+    const onDecision = vi.fn();
+    adminPlatformApi.decide.mockResolvedValue({});
+
+    render(
+      <AdminDetail
+        startupId="test-uuid-001"
+        track="tir"
+        onBack={vi.fn()}
+        onDecision={onDecision}
+        onPrev={vi.fn()}
+        onNext={vi.fn()}
+        seqPosition={{ index: 5, total: 433 }}
+        decisionMode="reviewer"
+      />,
+    );
+
+    await screen.findByRole("heading", { level: 2, name: /Test Startup/ });
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply decision" }));
+
+    await waitFor(() => expect(onDecision).toHaveBeenCalledTimes(1));
   });
 
   it("shows error state when loadDetail rejects", async () => {

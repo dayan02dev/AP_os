@@ -1,12 +1,12 @@
 // AdminDetail — A-2 Application Detail (Task 10 faithful port).
 //
-// Receives { startupId, track, onBack, onPrev, onNext, decisionMode }.
+// Receives { startupId, track, onBack, onPrev, onNext, onDecision, decisionMode }.
 // On mount / startupId change → loadDetail(track, startupId) via useAdminData.
 //
 // Writes:
 //   • Admin decision — adminPlatformApi.decide(track, id, { decision, rationale })
 //     where decision = BUTTON_TO_DECISION[buttonLabel].
-//     After success → onBack().
+//     After success → onDecision(), which advances the preserved sequence.
 //
 // Jury panel (decisionMode === 'jury') shows real pick data from the pipeline
 // row: assigned jurors + who picked the startup (v2: jurors pick, no scoring).
@@ -127,7 +127,7 @@ function getTIRSignalOverall(st) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosition, decisionMode }) {
+export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecision, seqPosition, decisionMode }) {
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -236,7 +236,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, seqPosit
         rationale: rationale.trim() || undefined,
       });
       setBanner({ kind: 'ok', text: `Decision recorded: ${apiDecision}.` });
-      onBack();
+      (onDecision || onBack)();
     } catch (err) {
       const code = err?.details?.code || err?.code;
       if (code === 'illegal_transition') {

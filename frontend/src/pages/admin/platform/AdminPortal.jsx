@@ -401,6 +401,13 @@ function AdminApp() {
                 onBack={() => setPage(backPage)}
                 onPrev={seqIdx > 0 ? () => goSeq(-1) : null}
                 onNext={seqIdx >= 0 && seqIdx < detailSeq.length - 1 ? () => goSeq(1) : null}
+                onDecision={() => {
+                  if (seqIdx >= 0 && seqIdx < detailSeq.length - 1) {
+                    goSeq(1);
+                  } else {
+                    setPage(backPage);
+                  }
+                }}
                 seqPosition={seqIdx >= 0 ? { index: seqIdx + 1, total: detailSeq.length } : null}
               />
             )}
