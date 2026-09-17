@@ -254,6 +254,12 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content.track, content.id]);
   const removeFlag = (i) => setFlags((prev) => prev.filter((_, j) => j !== i));
+  const addFlag = () => {
+    const value = flagInput.trim();
+    if (!editable || !value || flags.length >= MAX_FLAGS) return;
+    setFlags((prev) => [...prev, value]);
+    setFlagInput("");
+  };
 
   const currentEval = { scores, recommendation: reco, notes, flags, disagreements };
 
