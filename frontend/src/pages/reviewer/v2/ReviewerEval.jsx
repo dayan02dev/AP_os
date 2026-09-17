@@ -210,6 +210,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   const [vipMemoBusy, setVipMemoBusy] = useState(false);
   const [flagInput, setFlagInput] = useState("");
   const [saveState, setSaveState] = useState("idle");
+  const [fieldErrors, setFieldErrors] = useState({ notes: false, dimensions: [] });
 
   const expired = false; // edit lock removed 2026-06-29 — reviewers edit anytime
 
