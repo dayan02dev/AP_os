@@ -236,7 +236,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
         rationale: rationale.trim() || undefined,
       });
       setBanner({ kind: 'ok', text: `Decision recorded: ${apiDecision}.` });
-      (onDecision || onBack)();
+      (onDecision || onBack)(s.id);
     } catch (err) {
       const code = err?.details?.code || err?.code;
       if (code === 'illegal_transition') {

@@ -343,10 +343,10 @@ function AdminApp() {
     setPage('detail');
   };
 
-  const seqIdx = detailSeq.findIndex(r => r.id === selectedStartupId);
-  const goSeq = (delta) => {
-    const next = seqIdx + delta;
-    if (seqIdx < 0 || next < 0 || next >= detailSeq.length) return;
+  const goSeq = (delta, fromId = selectedStartupId) => {
+    const currentIdx = detailSeq.findIndex(r => String(r.id) === String(fromId));
+    const next = currentIdx + delta;
+    if (currentIdx < 0 || next < 0 || next >= detailSeq.length) return false;
     setSelectedStartupId(detailSeq[next].id);
     setSelectedTrack(detailSeq[next].track || null);
 
@@ -362,6 +362,12 @@ function AdminApp() {
     if (backPage === 'gate1') {
       writeStickyState('admin.gate1.stack', 'appId', detailSeq[next].id);
     }
+    return true;
+  };
+
+  const advanceAfterDecision = (decidedId) => {
+    if (goSeq(1, decidedId)) return;
+    setPage(backPage);
   };
 
   const isDetail = page === 'detail';
@@ -401,13 +407,7 @@ function AdminApp() {
                 onBack={() => setPage(backPage)}
                 onPrev={seqIdx > 0 ? () => goSeq(-1) : null}
                 onNext={seqIdx >= 0 && seqIdx < detailSeq.length - 1 ? () => goSeq(1) : null}
-                onDecision={() => {
-                  if (seqIdx >= 0 && seqIdx < detailSeq.length - 1) {
-                    goSeq(1);
-                  } else {
-                    setPage(backPage);
-                  }
-                }}
+                onDecision={advanceAfterDecision}
                 seqPosition={seqIdx >= 0 ? { index: seqIdx + 1, total: detailSeq.length } : null}
               />
             )}
