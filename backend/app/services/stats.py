@@ -62,7 +62,7 @@ def effective_status(
     if isinstance(decision, dict):
         decision = decision.get("decision")
     decision = str(decision or "").strip().lower()
-    if decision in {"accepted", "approved", "selected", "shortlisted"}:
+    if decision in {"accepted", "approved", "selected", "shortlisted", "jury_review"}:
         return "accepted"
     if decision in {"rejected", "reject"}:
         return "rejected"
