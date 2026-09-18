@@ -23,7 +23,7 @@ def svc(monkeypatch):
     return s, sent
 
 
-def test_tir_selection_names_the_grant_the_mou_and_the_tir_tabs(svc):
+def test_tir_selection_names_the_grant_and_residency_benefits(svc):
     s, sent = svc
     s.send_applicant_selected(to="ada@x.com", applicant_name="Ada", track="tir")
 
@@ -32,15 +32,11 @@ def test_tir_selection_names_the_grant_the_mou_and_the_tir_tabs(svc):
     assert "Ada" in html
     # Programme facts sourced from the TIR MOU.
     assert "25,00,000" in html and "six-month" in html
-    # The MOU-first instruction and what it unlocks.
-    assert "Sign MOU" in html
-    for tab in ("Approach", "Organization", "Expense management"):
-        assert tab in html, f"TIR tab missing: {tab}"
-    # VIP-only tabs must never appear on the TIR mail.
+    # Onboarding and portal instructions are sent separately from this announcement.
+    for removed in ("What happens next", "Sign MOU", "Founder Portal", "first right of refusal"):
+        assert removed not in html
     assert "TLR evaluation" not in html and "MIS filling" not in html
-    # Credentials are explicitly unchanged.
-    assert "same password" in html
-    assert "25,00,000" in text and "Sign MOU" in text
+    assert "25,00,000" in text and "WHAT HAPPENS NEXT" not in text
 
 
 def test_vip_selection_names_the_vip_tabs_not_the_tir_ones(svc):
