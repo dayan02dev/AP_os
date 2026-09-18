@@ -3,7 +3,7 @@
 //   apiCall(path, { method, body, headers, timeoutMs, signal })
 //
 // Behaviour:
-//   - Prepends VITE_API_BASE_URL (falls back to '' so same-origin still works)
+//   - Prepends VITE_API_BASE_URL (production builds fall back to api.artpark.info)
 //   - Auto-attaches Authorization: Bearer <access_token> when a session exists
 //   - JSON bodies get stringified + Content-Type set
 //   - FormData bodies pass through (resume upload path)
@@ -26,7 +26,8 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const UPLOAD_TIMEOUT_MS = 60_000;
 
 function baseUrl() {
-  const raw = import.meta.env.VITE_API_BASE_URL || "";
+  const configured = import.meta.env.VITE_API_BASE_URL;
+  const raw = configured || (import.meta.env.PROD ? "https://api.artpark.info" : "");
   return raw.replace(/\/+$/, "");
 }
 
