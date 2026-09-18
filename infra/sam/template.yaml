@@ -185,6 +185,7 @@ Resources:
         AllowOrigins: !If
           - IsProduction
           - - "https://apply.artpark.info"
+            - "https://ap-os-git-release-sip-launch-v1-artpark.vercel.app"
           - - "https://apply.artpark.info"
             - "https://ap-os-git-staging-artpark.vercel.app"
             - "https://ap-os-git-staging-rolebaseddashboard-artpark.vercel.app"
