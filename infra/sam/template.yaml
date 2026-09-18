@@ -542,12 +542,7 @@ Resources:
       CodeUri: ../../backend/
       Handler: workers.daily_digest.handler.lambda_handler
       Timeout: 60
-      Events:
-        DailyMorning:
-          Type: Schedule
-          Properties:
-            # 02:30 UTC = 08:00 IST, every day
-            Schedule: "cron(30 2 * * ? *)"
+      # Intentionally no schedule: the admin daily digest is permanently disabled.
       Policies:
         - CloudWatchLogsFullAccess
 
