@@ -11,6 +11,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from fastapi import status as http_status
 
 from ..config import settings
@@ -134,6 +135,19 @@ async def get_mou(ctx: Annotated[dict, Depends(require_founder_access)]) -> dict
         "acknowledgements": founder_mou.ACKNOWLEDGEMENTS,
         "accepted_acknowledgements": (mou or {}).get("acknowledgements") or [],
     }
+
+@router.get("/mou/pdf")
+async def get_mou_pdf(ctx: Annotated[dict, Depends(require_founder_access)]) -> Response:
+    """Return the unsigned, reviewable MOU as a real PDF document."""
+    pdf = founder_mou.render_preview_pdf(
+        founder_name=_signer_default(ctx),
+        venture=_project_name(ctx["app"]),
+    )
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="artpark-tir-mou.pdf"'},
+    )
 
 
 def _signer_default(ctx: dict) -> str:

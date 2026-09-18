@@ -3,9 +3,9 @@ import { api } from "./api.js";
 
 export const founderApi = {
   me: () => api.get("/founder/me"),
-
   // MOU
   getMou: () => api.get("/founder/mou"),
+  mouPdf: () => api.download("/founder/mou/pdf", { method: "GET" }),
   signMou: (signerName, signaturePng, acknowledgements = []) =>
     api.post("/founder/mou/sign", {
       signer_name: signerName,

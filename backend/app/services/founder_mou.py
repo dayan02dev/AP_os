@@ -98,6 +98,32 @@ def render_body(founder_name: str, venture: str, date_str: str) -> str:
     )
 
 
+def render_preview_pdf(*, founder_name: str, venture: str) -> bytes:
+    """Render the unsigned MOU as the document the founder reviews."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    x = 20 * mm
+    y = height - 25 * mm
+    body = render_body(founder_name, venture, "")
+    for line in _wrap(body, 95):
+        if y < 42 * mm:
+            c.showPage()
+            y = height - 25 * mm
+        if line.strip().startswith("MEMORANDUM"):
+            c.setFont("Helvetica-Bold", 13)
+        else:
+            c.setFont("Helvetica", 9.5)
+        c.drawString(x, y, line)
+        y -= 5.4 * mm
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
 def decode_signature_png(data_url: str) -> bytes:
     """Accept a PNG data URL (or bare base64) and return raw PNG bytes."""
     payload = data_url

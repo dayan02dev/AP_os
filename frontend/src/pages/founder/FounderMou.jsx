@@ -5,6 +5,8 @@ import { Loading, ErrorState } from "./ui.jsx";
 export default function FounderMou({ me, onSigned }) {
   const [mou, setMou] = useState(null);
   const [error, setError] = useState(null);
+  const [pdfUrl, setPdfUrl] = useState("");
+  const [pdfError, setPdfError] = useState(null);
   const [signerName, setSignerName] = useState("");
   const [busy, setBusy] = useState(false);
   const [hasInk, setHasInk] = useState(false);
@@ -20,7 +22,25 @@ export default function FounderMou({ me, onSigned }) {
     setAcked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   useEffect(() => {
-    founderApi.getMou().then((m) => { setMou(m); setSignerName(m.signer_name || ""); }).catch(setError);
+    founderApi.getMou().then((m) => {
+      setMou(m);
+      setSignerName(m.signer_name || "");
+    }).catch(setError);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    founderApi.mouPdf().then((blob) => {
+      if (!active) return;
+      setPdfUrl(URL.createObjectURL(blob));
+    }).catch(setPdfError);
+    return () => {
+      active = false;
+      setPdfUrl((url) => {
+        if (url) URL.revokeObjectURL(url);
+        return "";
+      });
+    };
   }, []);
 
   // signature pad
@@ -74,8 +94,23 @@ export default function FounderMou({ me, onSigned }) {
     <div>
       <span className="eyebrow eyebrow-rule">Onboarding · Sign MOU</span>
       <div className="mou">
-        <div className="mou-head"><span className="ttl">Memorandum of Understanding</span><span className="meta">{mou.template_version}</span></div>
-        <div className="mou-body"><pre style={{ whiteSpace: "pre-wrap", fontFamily: "var(--font-body)", fontSize: 13.5, color: "var(--ink-soft)", lineHeight: 1.6, margin: 0 }}>{mou.body}</pre></div>
+        <div className="mou-head">
+          <span className="ttl">Memorandum of Understanding</span>
+          <span className="meta">{mou.template_version} · PDF</span>
+        </div>
+        <div className="mou-pdf-wrap">
+          {pdfUrl ? (
+            <iframe
+              className="mou-pdf"
+              src={pdfUrl}
+              title="ARTPARK TIR Memorandum of Understanding"
+            />
+          ) : (
+            <div className="mou-pdf-loading">
+              {pdfError ? "The PDF preview could not be loaded." : "Preparing the MOU PDF…"}
+            </div>
+          )}
+        </div>
       </div>
 
       {mou.signed ? (
@@ -109,9 +144,12 @@ export default function FounderMou({ me, onSigned }) {
               </div>
             )}
           </fieldset>
-
-          <label className="lbl">Full legal name</label>
-          <input className="inp" value={signerName} onChange={(e) => setSignerName(e.target.value)} placeholder="Your full name" />
+          <div className="mou-sign-details">
+            <div className="panel-h">Your signing details</div>
+            <p className="mou-ack-hint">Review the PDF above, then enter the details that should appear with your signature.</p>
+            <label className="lbl" htmlFor="mou-signer-name">Full legal name</label>
+            <input id="mou-signer-name" className="inp" value={signerName} onChange={(e) => setSignerName(e.target.value)} placeholder="Your full name" />
+          </div>
           <div className="sigpad" style={{ marginTop: 14, border: "1px solid var(--line-strong)", borderRadius: 2 }}>
             <canvas id="sigpad" ref={canvasRef} width={520} height={180} />
           </div>

@@ -668,6 +668,36 @@
 .founder-portal .mou-head .meta {font-size:12.5px;color:var(--ink-dim);}
 .founder-portal .draft-tag {font-size:10.5px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#7a5300;background:var(--accent-amber);padding:3px 9px;border-radius:2px;}
 .founder-portal .mou-body {max-height:380px;overflow:auto;padding:26px 30px;}
+
+.founder-portal .mou-pdf-wrap {
+  background: var(--paper-soft);
+  padding: 16px;
+}
+.founder-portal .mou-pdf {
+  display: block;
+  width: 100%;
+  min-height: 680px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sharp);
+  background: #fff;
+}
+.founder-portal .mou-pdf-loading {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+.founder-portal .mou-sign-details {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sharp);
+  padding: 20px;
+  margin-bottom: 22px;
+  background: var(--paper-soft);
+}
+.founder-portal .mou-sign-details .panel-h {
+  margin-bottom: 6px;
+}
 .founder-portal .mou-body h4 {font-family:var(--font-display);font-size:14px;margin:20px 0 6px;}
 .founder-portal .mou-body h4:first-child {margin-top:0;}
 .founder-portal .mou-body p {font-size:13.5px;color:var(--ink-soft);line-height:1.6;margin:0 0 6px;}
