@@ -49,7 +49,9 @@ beforeEach(() => { currentUser = null; });
 
 const CASES = [
   ["/reviewer", ["reviewer"], "REVIEWER PORTAL"],
-  ["/jury", ["jury"], "JURY PORTAL"],
+  // Jury Portal closed for the 2026 round (JURY_PORTAL_ENABLED=false): /jury
+  // renders the static closed page — still no password interruption.
+  ["/jury", ["jury"], "The jury portal is closed for this round."],
   ["/admin", ["admin"], "ADMIN PORTAL"],
   ["/leadership", ["leadership"], "LEADERSHIP DASHBOARD"],
 ];
@@ -82,10 +84,16 @@ describe("staff portals — password state never blocks access", () => {
     expect(screen.getByText("REVIEWER PORTAL")).toBeTruthy();
   });
 
-  it("does not interrupt a deep link into the jury picks screen", () => {
+  it("a deep link into the jury picks screen shows the closed page, never the Jury Portal", () => {
     currentUser = { email: "j@artpark.in", roles: ["jury"], password_set: false };
     renderAt("/jury/picks");
-    expect(screen.getByText("JURY PORTAL")).toBeTruthy();
+    expect(screen.getByText("The jury portal is closed for this round.")).toBeTruthy();
+    expect(screen.queryByText("JURY PORTAL")).toBeNull();
+  });
+
+  it("the public /jury/respond/:token invite link shows the closed page", () => {
+    renderAt("/jury/respond/some-token");
+    expect(screen.getByText("The jury portal is closed for this round.")).toBeTruthy();
   });
 
   it("still refuses a wrong-role account (the capability check is unaffected)", () => {

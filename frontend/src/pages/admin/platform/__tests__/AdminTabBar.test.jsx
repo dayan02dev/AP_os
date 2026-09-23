@@ -34,15 +34,16 @@ const base = { page: "dashboard", setPage: vi.fn(), appsBadge: null,
   rejectedBadge: null, reviewBadge: null, jurySelectedBadge: null };
 
 describe("AdminTabBar — single mode", () => {
-  it("renders the seven tabs in order", () => {
+  it("renders the six tabs in order — Final Gate is disabled this round", () => {
     render(<AdminTabBar {...base} />);
     const labels = screen
       .getAllByText(/^(Dashboard|Reviewers|Applications|Rejected|Accepted|Admin Review|Final Gate)$/)
       .map((n) => n.textContent);
     expect(labels).toEqual([
       "Dashboard", "Reviewers", "Applications", "Rejected",
-      "Accepted", "Admin Review", "Final Gate",
+      "Accepted", "Admin Review",
     ]);
+    expect(screen.queryByText("Final Gate")).toBeNull();
   });
 
   it("no longer offers the jury-mode surfaces", () => {

@@ -117,7 +117,7 @@ function ApplicationsByIndustry({ go, industries }) {
 }
 
 // ─── AdminDashboard ───────────────────────────────────────────────────────────
-export function AdminDashboard({ go, decisionMode }) {
+export function AdminDashboard({ go, selectedCount = null }) {
   const { data, loading, error } = useAdminData('stats');
   // Pipeline drives the real "Applications by industry" breakdown.
   const { data: pipelineData, loading: pipelineLoading } = useAdminData('pipeline', {});
@@ -147,113 +147,83 @@ export function AdminDashboard({ go, decisionMode }) {
   const funnel       = data?.funnel       || {};
   const decisions    = data?.decisions    || {};
 
-  // ── Reviewer-mode KPI values ──
+  // ── KPI values ──
   const totalSubmitted = totals.apps_submitted ?? 0;
   const inReview       = funnel.in_review      ?? 0;
   const shortlisted    = funnel.advanced       ?? 0;   // "advanced past review" in /stats
   const finalDecided   = funnel.decided        ?? 0;
-  const accepted       = totals.onboarded      ?? 0;
+  const onboarded      = totals.onboarded      ?? 0;
   const rejected       = decisions.rejected    ?? 0;
-
-  // ── Jury-mode KPI values (best-effort; jury backend deferred) ──
-  const juryTotal    = funnel.advanced ?? 0;           // apps that reached jury stage
-  const juryDecided  = decisions.shortlisted != null
-    ? (decisions.shortlisted ?? 0) + (decisions.rejected ?? 0)
-    : (accepted + rejected);
-  const juryPending  = Math.max(0, juryTotal - juryDecided);
-
-  const isJury = decisionMode === 'jury';
+  // Apps in the admin "Accepted" tab (status jury_review). There was no jury
+  // this round — admins shortlisted, interviewed and decided there — so the
+  // old jury-mode KPIs/funnel are gone (Jury Portal closed, see
+  // JURY_PORTAL_ENABLED in lib/landing.js).
+  // /stats runs overlay_admin_decisions, which moves every shortlisted
+  // `jury_review` app into the `accepted` bucket — so read both (same fallback
+  // as lib/adminBadges.pipelineBadges), or the tile would sit at ~0.
+  const countFor       = (id) => (data?.statusCounts || []).find(c => c.id === id)?.n ?? 0;
+  const acceptedStage  = countFor('jury_review') + countFor('accepted');
+  // Tile + funnel "ACCEPTED" = the Accepted tab badge: shortlisted apps whose
+  // IC memo is approved (green). Passed down from AdminPortal, which already
+  // computes it; falls back to the shortlist bucket if not supplied.
+  const acceptedCount  = typeof selectedCount === 'number' ? selectedCount : acceptedStage;
 
   // ── Pipeline funnel — maxCount is max across all rows so bar widths are proportional ──
-  const funnelCounts = [totalSubmitted, inReview, shortlisted, finalDecided, accepted];
+  const funnelCounts = [totalSubmitted, inReview, shortlisted, acceptedCount, onboarded];
   const maxCount = Math.max(1, ...funnelCounts);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, paddingBottom: 40 }}>
 
-      {isJury ? (
-        /* ── JURY MODE KPIs (real stats — jurors pick, no scoring) ── */
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>IN JURY EVALUATION</div>
-            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryTotal}</div>
-            <div style={{ fontSize: 11, color: 'var(--ink-dim)' }}>in the jury round</div>
-          </div>
-          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>PENDING DECISION</div>
-            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryPending}</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>awaiting final decision</div>
-          </div>
-          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>FINAL DECISIONS</div>
-            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{juryDecided}</div>
-            <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--ink-soft)' }}>
-              <span style={{ color: '#2F6F62', fontWeight: 600 }}>{accepted} accepted</span>
-              <span>·</span>
-              <span style={{ color: '#d23b40', fontWeight: 600 }}>{rejected} rejected</span>
-            </div>
+      {/* ── KPIs ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
+        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+          <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>APPLICATIONS SUBMITTED</div>
+          <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{totalSubmitted}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>total in system</div>
+        </div>
+        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+          <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>UNDER REVIEW</div>
+          <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{inReview}</div>
+        </div>
+        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+          <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>SHORTLISTED</div>
+          <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{shortlisted}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>advanced past review</div>
+        </div>
+        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+          <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>ACCEPTED</div>
+          <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{acceptedCount}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>IC memo approved</div>
+        </div>
+        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+          <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>FINAL DECISIONS</div>
+          <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{finalDecided}</div>
+          <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--ink-soft)' }}>
+            <span style={{ color: '#2F6F62', fontWeight: 600 }}>{onboarded} onboarded</span>
+            <span>·</span>
+            <span style={{ color: '#d23b40', fontWeight: 600 }}>{rejected} rejected</span>
           </div>
         </div>
-      ) : (
-        /* ── REVIEWER MODE KPIs ── */
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
-          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>APPLICATIONS SUBMITTED</div>
-            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{totalSubmitted}</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>total in system</div>
-          </div>
-          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>UNDER REVIEW</div>
-            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{inReview}</div>
-          </div>
-          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>SHORTLISTED</div>
-            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{shortlisted}</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>advanced past review</div>
-          </div>
-          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>JURY EVALUATION</div>
-            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>0</div>
-          </div>
-          <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-            <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>FINAL DECISIONS</div>
-            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{finalDecided}</div>
-            <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--ink-soft)' }}>
-              <span style={{ color: '#2F6F62', fontWeight: 600 }}>{accepted} accepted</span>
-              <span>·</span>
-              <span style={{ color: '#d23b40', fontWeight: 600 }}>{rejected} rejected</span>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
 
-      {/* Pipeline funnel — mode-aware */}
+      {/* Pipeline funnel */}
       <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: 24 }}>
         <div style={{ marginBottom: 20 }}>
-          <span style={{ fontSize: 11, color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>§ {isJury ? 'Jury' : 'Pipeline'} funnel</span>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0 0', color: 'var(--ink)' }}>{isJury ? 'Jury evaluation pipeline' : 'From submission to onboarded'}</h2>
+          <span style={{ fontSize: 11, color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>§ Pipeline funnel</span>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0 0', color: 'var(--ink)' }}>From submission to onboarded</h2>
         </div>
-        {isJury ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <FunnelRow label="IN JURY EVALUATION" sublabel="in the jury round" count={juryTotal} maxCount={juryTotal || 1} filledColor="#1f0a8a" />
-            <ArrowDown />
-            <FunnelRow label="ACCEPTED" sublabel="cohort onboarded" count={accepted} maxCount={juryTotal || 1} filledColor="#1f0a8a" />
-            <ArrowDown />
-            <FunnelRow label="REJECTED" sublabel="not selected" count={rejected} maxCount={juryTotal || 1} filledColor="#1f0a8a" />
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <FunnelRow label="SUBMITTED" sublabel="complete" count={totalSubmitted} maxCount={maxCount} filledColor="#1f0a8a" />
-            <ArrowDown />
-            <FunnelRow label="IN REVIEW" sublabel="under reviewer eval" count={inReview} maxCount={maxCount} filledColor="#1f0a8a" />
-            <ArrowDown />
-            <FunnelRow label="SHORTLISTED" sublabel="advanced past admin review" count={shortlisted} maxCount={maxCount} filledColor="#1f0a8a" />
-            <ArrowDown />
-            <FunnelRow label="JURY EVALUATION" sublabel="in final jury process" count={0} maxCount={maxCount} filledColor="#1f0a8a" />
-            <ArrowDown />
-            <FunnelRow label="ACCEPTED" sublabel="cohort onboarded" count={accepted} maxCount={maxCount} filledColor="#1f0a8a" />
-          </div>
-        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <FunnelRow label="SUBMITTED" sublabel="complete" count={totalSubmitted} maxCount={maxCount} filledColor="#1f0a8a" />
+          <ArrowDown />
+          <FunnelRow label="IN REVIEW" sublabel="under reviewer eval" count={inReview} maxCount={maxCount} filledColor="#1f0a8a" />
+          <ArrowDown />
+          <FunnelRow label="SHORTLISTED" sublabel="advanced past admin review" count={shortlisted} maxCount={maxCount} filledColor="#1f0a8a" />
+          <ArrowDown />
+          <FunnelRow label="ACCEPTED" sublabel="interviewed · final selection" count={acceptedCount} maxCount={maxCount} filledColor="#1f0a8a" />
+          <ArrowDown />
+          <FunnelRow label="ONBOARDED" sublabel="cohort onboarded" count={onboarded} maxCount={maxCount} filledColor="#1f0a8a" />
+        </div>
       </div>
 
       {/* Applications by Industry */}

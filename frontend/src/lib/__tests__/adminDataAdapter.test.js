@@ -150,7 +150,8 @@ describe("adaptPipelineRow reviewer score", () => {
 });
 
 // ── Regression: an APPROVED application ("jury_review") must render as
-//    "Jury review" everywhere in the admin portal — NEVER "Interview".
+//    "Accepted" everywhere in the admin portal — NEVER "Interview". (It was
+//    "Jury review" until the 2026 round, which had no jury.)
 //    (Bug: the prototype screens re-labelled the "JURY REVIEW" chip as
 //    "Interview" in AdminPipeline.getFriendlyStatus and AdminDetail.)
 describe("chip status labelling — jury_review never renders as 'Interview'", () => {
@@ -160,13 +161,13 @@ describe("chip status labelling — jury_review never renders as 'Interview'", (
     expect(STATUS_TO_CHIP.interview).toBe("JURY REVIEW"); // legacy status, same chip
   });
 
-  it("labels the JURY REVIEW chip 'Jury review' (both jury_review and legacy interview)", () => {
+  it("labels the JURY REVIEW chip 'Accepted' (both jury_review and legacy interview)", () => {
     const jury = adaptPipelineRow({ id: "a", status: "jury_review" });
     const legacy = adaptPipelineRow({ id: "b", status: "interview" });
     expect(jury.chip).toBe("JURY REVIEW");
     expect(legacy.chip).toBe("JURY REVIEW");
-    expect(chipLabel(jury.chip)).toBe("Jury review");
-    expect(chipLabel(legacy.chip)).toBe("Jury review");
+    expect(chipLabel(jury.chip)).toBe("Accepted");
+    expect(chipLabel(legacy.chip)).toBe("Accepted");
   });
 
   it("gives the jury chip a filter id ('jury_review') that the pipeline filter option matches", () => {

@@ -38,6 +38,10 @@ export const STATUS_LABELS = {
   under_review:     "Under review",
   evaluated:        "Evaluated",
   shortlisted:      "Shortlisted",
+  // No jury this round: jury_review is the admin "Accepted" tab (shortlisted,
+  // interviewed, final selection). Label only — transitions are unchanged.
+  jury_review:      "Accepted",
+  on_hold:          "On hold",
   interview:        "Interview",
   offered:          "Offered",
   onboarded:         "Onboarded",

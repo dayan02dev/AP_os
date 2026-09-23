@@ -44,7 +44,7 @@ import { LoadingState, ErrorState, EmptyState } from "../ui.jsx";
 // The prototype's batch/history variants store 'APPROVED' | 'HOLD' | 'REJECTED'
 // as adminDecision.  Map those to wire ids for the API.
 export const UPPER_TO_WIRE = {
-  APPROVED: "jury_review", // = "advance to jury"; the decision that emails the applicant
+  APPROVED: "jury_review", // = move to the Accepted tab (no jury this round); the decision that emails the applicant
   REJECTED: "rejected",
 };
 

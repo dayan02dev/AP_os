@@ -11,15 +11,16 @@ export const STATUS_TO_CHIP = {
 // their labels/ids/tones from here rather than keeping private per-screen maps —
 // that duplication is what once let the "JURY REVIEW" chip drift to "Interview"
 // on the pipeline table + detail header while the backend status was jury_review.
-// A jury-round application (status jury_review, or the legacy `interview`) is
-// therefore labelled "Jury review" — never "Interview".
+// An approved application (status jury_review, or the legacy `interview`) is
+// therefore labelled "Accepted" — never "Interview". (It was "Jury review"; the
+// 2026 round had no jury, so it reads as the admin Accepted tab it sits in.)
 export const CHIP_META = {
   NEW:           { label: "Submitted",    statusId: "submitted",    tone: "" },
   PROCESSING:    { label: "AI screening", statusId: "ai-screening", tone: "" },
   "IN REVIEW":   { label: "Under review", statusId: "under-review", tone: "amber" },
   EVALUATED:     { label: "Evaluated",    statusId: "evaluated",    tone: "purple" },
   SHORTLISTED:   { label: "Shortlisted",  statusId: "shortlisted",  tone: "green" },
-  "JURY REVIEW": { label: "Jury review",  statusId: "jury_review",  tone: "blue" },
+  "JURY REVIEW": { label: "Accepted",     statusId: "jury_review",  tone: "blue" },
   ACCEPTED:      { label: "Offered",      statusId: "offered",      tone: "green" },
   REJECTED:      { label: "Rejected",     statusId: "not-selected", tone: "red" },
   WAITLISTED:    { label: "Waitlisted",   statusId: "waitlisted",   tone: "" },
@@ -28,7 +29,7 @@ export const CHIP_META = {
 
 // Chip → friendly label. Unknown chips fall back to the uppercased chip itself,
 // and a missing chip reads "Submitted" — matching the prototype's original
-// getFriendlyStatus() exactly (only the JURY REVIEW label changed).
+// getFriendlyStatus() exactly (only the JURY REVIEW label changed — now "Accepted").
 export function chipLabel(chip) {
   if (!chip) return "Submitted";
   const c = String(chip).toUpperCase();

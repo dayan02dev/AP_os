@@ -16,9 +16,9 @@ const SHORTLISTED = [
     founders: ["V2"], applicationId: "SIP-2", gate2_decision: null },
 ];
 
-// Two rejected rows with DIFFERENT causes. g1 was rejected at gate 1 and never
-// reached this tab; g2 was rejected here. Only g2 may appear. A fixture
-// without g1 would let a `status === 'rejected'` implementation pass.
+// Rejected rows, gate-1 (g1) and final-round/gate-2 (g2). NEITHER may appear:
+// a final-round reject moves to the Rejected tab. Served only if the screen
+// asks for status=rejected, which it must not.
 const REJECTED = [
   { id: "g1", track: "tir", name: "Gate1 Reject", domain: "AI", ai: { overall: 4.0 },
     founders: ["F3"], applicationId: "TIR-3", gate2_decision: null },
@@ -26,8 +26,12 @@ const REJECTED = [
     founders: ["F4"], applicationId: "TIR-4", gate2_decision: "rejected" },
 ];
 
+// Every useAdminData call, so a test can assert what the screen fetched.
+const CALLS = vi.hoisted(() => []);
+
 vi.mock("../../../../../hooks/useAdminData", () => ({
   useAdminData: (kind, params) => {
+    CALLS.push([kind, params]);
     if (kind === "icDocuments") {
       return {
         data: { documents: [], byKey: {
@@ -69,95 +73,97 @@ describe("decisionStateOf", () => {
   });
 });
 
-describe("AdminSelectedApplications — rejected rows return", () => {
-  it("lists an application rejected at gate 2", async () => {
+describe("AdminSelectedApplications — final-round rejects leave this tab", () => {
+  it("lists only shortlisted (jury_review) rows — never a gate-2 reject", async () => {
     render(<AdminSelectedApplications />);
-    expect(await screen.findByText("Gate2 Reject")).toBeInTheDocument();
-  });
-
-  it("does NOT list an application rejected at gate 1", async () => {
-    render(<AdminSelectedApplications />);
-    await screen.findByText("Gate2 Reject");
+    await screen.findByText("Signed App");
+    // A final-round reject now lives in the Rejected tab (red there).
+    expect(screen.queryByText("Gate2 Reject")).toBeNull();
     expect(screen.queryByText("Gate1 Reject")).toBeNull();
   });
 
-  it("counts the merged list", async () => {
+  it("never fetches the rejected pipeline", async () => {
+    CALLS.length = 0;
     render(<AdminSelectedApplications />);
-    // 4 shortlisted (s1, s2, v1, v2) + 1 gate-2 reject (g2) = 5
-    expect(await screen.findByText("5 of 5")).toBeInTheDocument();
+    await screen.findByText("Signed App");
+    const statuses = CALLS
+      .filter(([kind]) => kind === "pipeline").map(([, p]) => p?.status);
+    expect(statuses).toContain("jury_review");
+    expect(statuses).not.toContain("rejected");
+  });
+
+  it("counts only the shortlisted list", async () => {
+    render(<AdminSelectedApplications />);
+    // 4 shortlisted (s1, s2, v1, v2)
+    expect(await screen.findByText("4 of 4")).toBeInTheDocument();
+  });
+
+  it("offers no Rejected decision filter", async () => {
+    render(<AdminSelectedApplications />);
+    await screen.findByText("Signed App");
+    expect(screen.getByRole("button", { name: "Pending" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Accepted" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Rejected" })).toBeNull();
   });
 });
 
 describe("AdminSelectedApplications — decision presentation", () => {
   it("marks each row with its decision chip", async () => {
     render(<AdminSelectedApplications />);
-    await screen.findByText("Gate2 Reject");
+    await screen.findByText("Signed App");
     expect(screen.getByTestId("decision-s1").textContent).toBe("ACCEPTED");
     expect(screen.getByTestId("decision-s2").textContent).toBe("PENDING");
-    expect(screen.getByTestId("decision-g2").textContent).toBe("REJECTED");
   });
 
   it("tints the row by decision", async () => {
     render(<AdminSelectedApplications />);
-    await screen.findByText("Gate2 Reject");
+    await screen.findByText("Signed App");
     expect(screen.getByTestId("row-s1").className).toContain("adm-row-accepted");
-    expect(screen.getByTestId("row-g2").className).toContain("adm-row-rejected");
     expect(screen.getByTestId("row-s2").className).not.toContain("adm-row-");
   });
 
   it("narrows to a single decision category", async () => {
     render(<AdminSelectedApplications />);
-    await screen.findByText("Gate2 Reject");
-    fireEvent.click(screen.getByRole("button", { name: "Rejected" }));
-    expect(screen.getByText("Gate2 Reject")).toBeInTheDocument();
+    await screen.findByText("Signed App");
+    fireEvent.click(screen.getByRole("button", { name: "Pending" }));
+    expect(screen.getByText("Pending App")).toBeInTheDocument();
     expect(screen.queryByText("Signed App")).toBeNull();
-    expect(screen.queryByText("Pending App")).toBeNull();
   });
 
   it("composes the decision filter with the track filter", async () => {
     render(<AdminSelectedApplications />);
-    await screen.findByText("Gate2 Reject");
+    await screen.findByText("Signed App");
     fireEvent.click(screen.getByRole("button", { name: "Accepted" }));
     fireEvent.click(screen.getByRole("button", { name: "VIP" }));
     // VIP Signed App is both VIP and accepted — it survives the
     // intersection of the two filters.
     expect(screen.getByText("VIP Signed App")).toBeInTheDocument();
     // VIP Pending App passes the track filter alone (it IS VIP) but must
-    // still be excluded once the decision filter is applied too. This is
-    // the half that actually proves AND-composition: a fixture where every
-    // row is TIR can't tell "the filters compose" apart from "the track
-    // filter alone emptied the result" — both look like an empty screen.
+    // still be excluded once the decision filter is applied too.
     expect(screen.queryByText("VIP Pending App")).toBeNull();
     // A TIR row is excluded by the track filter regardless of decision.
     expect(screen.queryByText("Signed App")).toBeNull();
   });
 
-  it("does not offer Reject on an already-rejected row", async () => {
+  it("offers Reject on a shortlisted row", async () => {
     render(<AdminSelectedApplications />);
-    await screen.findByText("Gate2 Reject");
-    const row = screen.getByTestId("row-g2");
-    // RULING 2: substring-matching row.textContent for "Reject" is fragile —
-    // it only passes today because the chip renders "REJECTED" in caps, which
-    // does not contain "Reject". Assert on the button itself instead.
-    expect(within(row).queryByRole("button", { name: "Reject" })).toBeNull();
-    const approveBtn = within(row).getByRole("button", { name: /approve/i });
-    const memoBtn = within(row).getByRole("button", { name: /memo/i });
-    expect(approveBtn).toBeDisabled();
-    expect(memoBtn).toBeDisabled();
+    await screen.findByText("Signed App");
+    const row = screen.getByTestId("row-s2");
+    expect(within(row).getByRole("button", { name: "Reject" })).toBeInTheDocument();
   });
 });
 
 describe("AdminSelectedApplications — shared toolbar", () => {
   it("uses the shared filter-area shell rather than a hand-rolled row", async () => {
     const { container } = render(<AdminSelectedApplications />);
-    await screen.findByText("Gate2 Reject");
+    await screen.findByText("Signed App");
     expect(container.querySelector(".lp-filter-area")).toBeTruthy();
     expect(container.querySelector(".lp-filter-row--search")).toBeTruthy();
   });
 
   it("styles its track switcher from the shared class, with no inline overrides", async () => {
     render(<AdminSelectedApplications />);
-    await screen.findByText("Gate2 Reject");
+    await screen.findByText("Signed App");
     const tir = screen.getByRole("button", { name: "TIR" });
     // An inline background/border is what made this render as a grey square
     // while AdminPipeline's identical control rendered as a blue pill.

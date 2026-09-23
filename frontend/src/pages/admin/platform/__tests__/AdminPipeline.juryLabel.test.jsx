@@ -41,11 +41,12 @@ beforeEach(() => {
 });
 
 describe("AdminPipeline jury-round status label", () => {
-  it("renders an approved application's badge as JURY REVIEW, never INTERVIEW", () => {
+  it("renders an approved application's badge as ACCEPTED, never INTERVIEW", () => {
     render(<AdminPipeline decisionMode="default" />);
     expect(screen.getByText("Electric marine propulsion")).toBeTruthy();
     // The status badge for a jury_review row.
-    expect(screen.getAllByText("JURY REVIEW").length).toBeGreaterThan(0);
+    // (Was "JURY REVIEW"; relabelled "Accepted" — the 2026 round had no jury.)
+    expect(screen.getAllByText("ACCEPTED").length).toBeGreaterThan(0);
     // The bug: it must NOT say "Interview" anywhere.
     expect(screen.queryByText(/interview/i)).toBeNull();
   });

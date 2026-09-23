@@ -49,6 +49,8 @@ const nativeOf = (s) => (s?.nativeTrack || s?.track);
 // `accepted` means the IC memo on this screen has been signed via Approve, NOT
 // that Final Gate issued an offer. `rejected` means Reject was pressed HERE,
 // which writes a gate-2 decision — a gate-1 rejection never reached this tab.
+// The list only holds `jury_review` rows now, so `rejected` is transient: the
+// row leaves on the next reload and shows (red) in the Rejected tab instead.
 export const decisionStateOf = (app, doc) => {
   if ((app?.gate2_decision || "") === "rejected") return "rejected";
   if (doc?.signed) return "accepted";
@@ -427,13 +429,14 @@ function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
 
 // No `go` prop: the portal tab strip directly above already carries a Dashboard
 // tab, so the in-page "← Dashboard" button was redundant and has been removed.
-export function AdminSelectedApplications({ goDetail } = {}) {
+// `onChanged` lets the portal refresh its tab badges after an upload, approve
+// or reject here.
+export function AdminSelectedApplications({ goDetail, onChanged } = {}) {
   const { user } = useAuth();
+  // Only shortlisted (`jury_review`) rows. A final-round Reject sets the status
+  // to `rejected`, so the application leaves this tab for the Rejected tab —
+  // it is deliberately NOT fetched back here.
   const pipeline = useAdminData("pipeline", { status: "jury_review" });
-  // Reject moves an application to `rejected`, so it drops out of the list
-  // above. Fetch it back — filtered to gate-2 rejections, because the
-  // Rejected tab's ~120 rows are overwhelmingly gate-1 and never belonged here.
-  const rejectedPipeline = useAdminData("pipeline", { status: "rejected" });
   const docs = useAdminData("icDocuments");
 
   const [search, setSearch] = useStickyState("admin.selected", "search", "");
@@ -441,7 +444,9 @@ export function AdminSelectedApplications({ goDetail } = {}) {
   // EFFECTIVE track (what the row claims to be) — the server's `track` filter
   // keys off the NATIVE track, so a moved app would land in the wrong bucket.
   const [track, setTrack] = useStickyState("admin.selected", "track", "all");
-  const [decision, setDecision] = useStickyState("admin.selected", "decision", "all");
+  const [decisionState, setDecision] = useStickyState("admin.selected", "decision", "all");
+  // "Rejected" is no longer an option; a restored sticky value falls back to All.
+  const decision = decisionState === "rejected" ? "all" : decisionState;
   const [uploadFor, setUploadFor] = useState(null);
   const [signFor, setSignFor] = useState(null);
   const [rejectFor, setRejectFor] = useState(null);
@@ -450,13 +455,7 @@ export function AdminSelectedApplications({ goDetail } = {}) {
 
   const byKey = docs.data?.byKey || {};
 
-  const all = useMemo(() => {
-    const shortlisted = pipeline.data?.startups ?? [];
-    const gate2Rejects = (rejectedPipeline.data?.startups ?? [])
-      .filter((s) => (s.gate2_decision || "") === "rejected");
-    const seen = new Set(shortlisted.map((s) => keyOf(s.track, s.id)));
-    return [...shortlisted, ...gate2Rejects.filter((s) => !seen.has(keyOf(s.track, s.id)))];
-  }, [pipeline.data, rejectedPipeline.data]);
+  const all = useMemo(() => pipeline.data?.startups ?? [], [pipeline.data]);
 
   const ORDER = { pending: 0, accepted: 1, rejected: 2 };
   const rows = useMemo(() => {
@@ -476,7 +475,7 @@ export function AdminSelectedApplications({ goDetail } = {}) {
       });
   }, [all, search, track, decision, byKey]);
 
-  const reload = () => { docs.reload(); pipeline.reload(); rejectedPipeline.reload(); };
+  const reload = () => { docs.reload(); pipeline.reload(); if (onChanged) onChanged(); };
 
   const view = async (app, variant) => {
     setLinkErr(null);
@@ -495,7 +494,7 @@ export function AdminSelectedApplications({ goDetail } = {}) {
       <PageHead
         eyebrow="SELECTED APPLICATIONS"
         title="Selected <em>applications</em>"
-        sub="Shortlisted TIR and VIP applications. Upload the Investment Committee memo and approve it."
+        sub="Shortlisted TIR and VIP applications, after interview. Upload the Investment Committee memo and approve it to accept; a rejected application moves to the Rejected tab."
       />
 
       <ListToolbar
@@ -507,7 +506,7 @@ export function AdminSelectedApplications({ goDetail } = {}) {
           { ariaLabel: "Filter by track", value: track, onChange: setTrack,
             options: [["all", "All tracks"], ["tir", "TIR"], ["sip", "VIP"]] },
           { ariaLabel: "Filter by decision", value: decision, onChange: setDecision,
-            options: [["all", "All"], ["pending", "Pending"], ["accepted", "Accepted"], ["rejected", "Rejected"]] },
+            options: [["all", "All"], ["pending", "Pending"], ["accepted", "Accepted"]] },
         ]}
         count={rows.length}
         total={pipeline.data ? all.length : null}
@@ -518,10 +517,10 @@ export function AdminSelectedApplications({ goDetail } = {}) {
         <div style={{ color: "var(--bad)", fontSize: 13, fontWeight: 600, padding: "8px 12px", background: "var(--bad-soft)", borderRadius: 4, marginBottom: 12 }}>{linkErr}</div>
       )}
 
-      {(pipeline.loading || rejectedPipeline.loading) ? (
+      {pipeline.loading ? (
         <LoadingState label="Loading selected applications…" />
-      ) : (pipeline.error || rejectedPipeline.error) ? (
-        <ErrorState error={pipeline.error || rejectedPipeline.error} onRetry={reload} />
+      ) : pipeline.error ? (
+        <ErrorState error={pipeline.error} onRetry={reload} />
       ) : rows.length === 0 ? (
         <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--ink-soft)", border: "1px dashed var(--line)", borderRadius: 4 }}>
           {track === "all"

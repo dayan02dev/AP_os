@@ -33,6 +33,7 @@ import SipAppRoute from "./pages/SipAppRoute.jsx";
 import SupportPage from "./pages/SupportPage.jsx";
 import MentorRespondForm from "./pages/MentorRespondForm.jsx";
 import JuryRespondForm from "./pages/JuryRespondForm.jsx";
+import JuryClosedPage from "./pages/JuryClosedPage.jsx";
 import ProfileCompletionPage from "./pages/ProfileCompletionPage.jsx";
 import TirAppGate from "./pages/TirAppGate.jsx";
 import VerifyPage from "./pages/VerifyPage.jsx";
@@ -47,7 +48,7 @@ import AdminPortal from "./pages/admin/platform/AdminPortal.jsx";
 import LeadershipDashboard from "./pages/leadership/LeadershipDashboard.jsx";
 import ReviewApplicationPage from "./pages/leadership/ReviewApplicationPage.jsx";
 import { useAuth } from "./hooks/useAuth.jsx";
-import { isApplyHiddenFor, landingPathFor } from "./lib/landing.js";
+import { isApplyHiddenFor, landingPathFor, JURY_PORTAL_ENABLED } from "./lib/landing.js";
 import { hasCapability } from "./lib/rbac.js";
 
 // Capability gate for /leadership. ProtectedRoute already enforces auth;
@@ -193,8 +194,12 @@ function ReviewerRoute({ tab }) {
 
 // Capability gate for /jury/*. ProtectedRoute enforces auth; this layer
 // enforces `view_assigned_jury_apps` (jury role). Mirrors ReviewerRoute.
+// While JURY_PORTAL_ENABLED is false (2026 round: no jury) every /jury route
+// renders the static JuryClosedPage instead — no JuryPortal mount, no jury
+// API calls, no redirect (so no loop for a jury-only account).
 function JuryRoute({ tab }) {
   const { user } = useAuth();
+  if (!JURY_PORTAL_ENABLED) return <JuryClosedPage />;
   const roles = user?.roles || [];
   if (!hasCapability(roles, "view_assigned_jury_apps")) {
     return (
@@ -250,7 +255,10 @@ export default function AppRoutes() {
       <Route path="/apply/verify" element={<VerifyPage />} />
       <Route path="/apply/support" element={<SupportPage />} />
       <Route path="/mentors/respond/:token" element={<MentorRespondForm />} />
-      <Route path="/jury/respond/:token" element={<JuryRespondForm />} />
+      <Route
+        path="/jury/respond/:token"
+        element={JURY_PORTAL_ENABLED ? <JuryRespondForm /> : <JuryClosedPage />}
+      />
       <Route path="/apply/profile-completion/:token" element={<ProfileCompletionPage />} />
 
       {/* /apply itself is public — unauthed users see the welcome screen.
@@ -453,7 +461,9 @@ export default function AppRoutes() {
       {/* Jury Portal v2 (pick-3, read-only). Capability-gated to
           `view_assigned_jury_apps`. Deep-linkable: My Applications
           (/jury, /jury/queue) · My Picks (/jury/picks) · read-only detail
-          (/jury/eval/:track/:appId). No scoring surface anywhere. */}
+          (/jury/eval/:track/:appId). No scoring surface anywhere.
+          CLOSED for the 2026 round — JuryRoute renders JuryClosedPage
+          while JURY_PORTAL_ENABLED is false. */}
       <Route
         path="/jury"
         element={
