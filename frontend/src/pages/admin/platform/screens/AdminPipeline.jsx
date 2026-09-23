@@ -63,7 +63,7 @@ const STATUSES = [
   { id: 'under-review', label: 'Under review', color: '#3213b7' },
   { id: 'evaluated', label: 'Evaluated', color: '#3213b7' },
   { id: 'shortlisted', label: 'Shortlisted', color: '#2a8f5a' },
-  { id: 'jury_review', label: 'Jury review', color: '#2a8f5a' },
+  { id: 'jury_review', label: 'Accepted', color: '#2a8f5a' },
   { id: 'hold', label: 'Hold', color: '#b7a06a' },
   { id: 'offered', label: 'Offered', color: '#242424' },
   { id: 'onboarded', label: 'Onboarded', color: '#242424' },
@@ -148,6 +148,13 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   const [industry, setIndustry] = useStickyState(scope, 'industry', 'all');
   const [batchFilter, setBatchFilter] = useStickyState(scope, 'batch', 'all');
   const [recoFilter, setRecoFilter] = useStickyState(scope, 'reco', null);
+  // Rejected tab only: apps rejected in the FINAL selection round (after
+  // interview, via Reject on the Accepted tab) carry gate2_decision 'rejected'.
+  // They render red with a "Final round" tag, and can be isolated.
+  const isRejectedView = baseFilter?.status === 'rejected';
+  const isFinalRoundReject = (s) => isRejectedView && (s.gate2_decision || '') === 'rejected';
+  const [finalOnlyState, setFinalOnly] = useStickyState(scope, 'finalOnly', false);
+  const finalOnly = isRejectedView && !!finalOnlyState;
   const industries = React.useMemo(() => industryCountsFor(S, track), [S, track]);
   const recoCounts = React.useMemo(() => {
     const m = { yes: 0, maybe: 0, no: 0, none: 0 };
@@ -205,7 +212,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     );
   };
 
-  const hasFilters = search !== '' || (!lockTrack && track !== 'all') || status !== 'all' || industry !== 'all' || batchFilter !== 'all' || !!recoFilter;
+  const hasFilters = search !== '' || (!lockTrack && track !== 'all') || status !== 'all' || industry !== 'all' || batchFilter !== 'all' || !!recoFilter || finalOnly;
   const clearAll = () => {
     setSearch('');
     setTrack('all');
@@ -213,6 +220,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     setIndustry('all');
     setBatchFilter('all');
     setRecoFilter(null);
+    setFinalOnly(false);
   };
 
   const filtered = React.useMemo(() => S.filter(s => {
@@ -263,8 +271,10 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
 
     if (recoFilter && (aggregateReco(s.reco) || "none") !== recoFilter) return false;
 
+    if (finalOnly && !isFinalRoundReject(s)) return false;
+
     return true;
-  }), [S, search, track, status, industry, batchFilter, recoFilter, decisionMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [S, search, track, status, industry, batchFilter, recoFilter, decisionMode, finalOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleAll = () => {
     if (selectedIds.length === filtered.length && filtered.length > 0) {
@@ -324,6 +334,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   if (industry !== 'all') activeChips.push({ label: industry, clear: () => setIndustry('all') });
   if (batchFilter !== 'all') activeChips.push({ label: 'Batch · ' + batchFilter, clear: () => setBatchFilter('all') });
   if (recoFilter) activeChips.push({ label: 'Reco · ' + (recoFilter === 'none' ? '—' : recoFilter), clear: () => setRecoFilter(null) });
+  if (finalOnly) activeChips.push({ label: 'Final round only', clear: () => setFinalOnly(false) });
   const activeCount = activeChips.length;
 
   // ── Mutations ──────────────────────────────────────────────────────────────
@@ -781,6 +792,27 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         )}
       </div>
 
+      {isRejectedView && (
+        <div
+          data-testid="final-round-legend"
+          style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '4px 0 12px', fontSize: 13, color: 'var(--ink-soft)' }}
+        >
+          <span aria-hidden="true" style={{ width: 4, height: 16, background: 'var(--bad)', borderRadius: 1, flexShrink: 0 }} />
+          <span>
+            <strong style={{ color: 'var(--bad)' }}>Red rows</strong> were rejected in the final selection round
+            (after interview, from the Accepted tab) — {S.filter(isFinalRoundReject).length} so far.
+          </span>
+          <button
+            type="button"
+            className={`lp-filter-btn${finalOnly ? ' active' : ''}`}
+            aria-pressed={finalOnly}
+            onClick={() => setFinalOnly(!finalOnly)}
+          >
+            Final round only
+          </button>
+        </div>
+      )}
+
       <table className="os-table">
         <thead>
           <tr>
@@ -810,9 +842,12 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         <tbody>
           {sortedFiltered.map(s => {
             const isHidden = s.hidden;
+            const finalRound = isFinalRoundReject(s);
             return (
               <tr
                 key={s.id}
+                data-testid={`pipeline-row-${s.id}`}
+                className={finalRound ? 'adm-row-rejected' : undefined}
                 style={{ cursor: 'pointer', opacity: isHidden ? 0.45 : 1 }}
                 onClick={() => goDetail && goDetail(s.id, s.track, scopeKey === 'rejected' ? 'rejected' : 'pipeline', detailSeq)}
               >
@@ -828,6 +863,15 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                 <td style={{ fontWeight: 600 }}>
                   {s.name}
                   {isHidden && <span className="os-chip red" style={{ fontSize: 9, padding: '1px 4px', marginLeft: 6 }}>HIDDEN</span>}
+                  {finalRound && (
+                    <span
+                      className="os-chip adm-decision adm-decision-rejected"
+                      title="Rejected in the final selection round (after interview)"
+                      style={{ marginLeft: 8, verticalAlign: 'middle' }}
+                    >
+                      FINAL ROUND
+                    </span>
+                  )}
                   {s.movedToTrack && (
                     <span
                       className="os-chip"

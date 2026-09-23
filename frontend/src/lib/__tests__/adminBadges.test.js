@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pipelineBadges } from "../adminBadges";
+import { pipelineBadges, selectedCount } from "../adminBadges";
 
 const ALL_NULL = {
   appsBadge: null, rejectedBadge: null, juryBadge: null,
@@ -76,5 +76,47 @@ describe("pipelineBadges — the merged Selected Applications badge", () => {
     };
     const b = pipelineBadges(s, false);
     expect(b).toEqual({ appsBadge: 16, rejectedBadge: 0, juryBadge: 4 });
+  });
+});
+
+describe("pipelineBadges — overlay-aware jury count", () => {
+  it("falls back to jury_review + accepted (the /stats overlay folds shortlisted apps into accepted)", () => {
+    const s = stats([{ id: "rejected", n: 10 }, { id: "jury_review", n: 0 }, { id: "accepted", n: 16 }], 200);
+    expect(pipelineBadges(s, false)).toEqual({ appsBadge: 174, rejectedBadge: 10, juryBadge: 16 });
+  });
+
+  it("prefers an exact raw jury_review count when given", () => {
+    const s = stats([{ id: "rejected", n: 10 }, { id: "accepted", n: 16 }], 200);
+    expect(pipelineBadges(s, false, 18)).toEqual({ appsBadge: 172, rejectedBadge: 10, juryBadge: 18 });
+  });
+});
+
+describe("selectedCount — the Accepted (green) badge", () => {
+  const rows = [
+    { id: "a", track: "tir", nativeTrack: "tir" },
+    { id: "b", track: "sip", nativeTrack: "tir" },          // moved; doc keyed natively
+    { id: "c", track: "sip", nativeTrack: "sip" },          // unsigned memo
+    { id: "d", track: "tir", nativeTrack: "tir" },          // no memo
+    { id: "e", track: "tir", nativeTrack: "tir", gate2_decision: "rejected" },
+  ];
+  const docs = [
+    { track: "tir", application_id: "a", signed: true },
+    { track: "tir", application_id: "b", signed: true },
+    { track: "sip", application_id: "c", signed: false },
+    { track: "tir", application_id: "e", signed: true },
+    { track: "sip", application_id: "b", signed: true },    // wrong (effective) key only
+  ];
+
+  it("counts signed + jury_review rows only, keyed by native track", () => {
+    expect(selectedCount(rows, docs)).toBe(2);
+  });
+
+  it("is null while either list is missing", () => {
+    expect(selectedCount(null, docs)).toBeNull();
+    expect(selectedCount(rows, undefined)).toBeNull();
+  });
+
+  it("is 0, not null, when nothing is signed yet", () => {
+    expect(selectedCount(rows, [])).toBe(0);
   });
 });

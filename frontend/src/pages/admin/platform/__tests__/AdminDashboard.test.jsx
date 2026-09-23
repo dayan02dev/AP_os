@@ -29,6 +29,7 @@ const SAMPLE_STATS = {
   statusCounts: [
     { id: "submitted",    label: "Submitted",    n: 12 },
     { id: "under-review", label: "Under review", n: 30 },
+    { id: "jury_review",  label: "Jury review",  n: 17 },
   ],
   aiScores: [7, 8, 9],
   decisions: {
@@ -74,12 +75,25 @@ describe("AdminDashboard screen (screens/)", () => {
     expect(screen.queryByText(/of submissions/i)).toBeNull();
   });
 
-  it("JURY EVALUATION tile shows no Preview badge in reviewer mode (removed)", () => {
+  it("shows an ACCEPTED tile (jury_review count) instead of the old JURY EVALUATION tile", () => {
     useAdminData.mockReturnValue({ data: SAMPLE_STATS, loading: false, error: null });
-    render(<AdminDashboard go={() => {}} decisionMode="reviewer" />);
-    expect(screen.getAllByText(/JURY EVALUATION/i).length).toBeGreaterThan(0);
-    // No "Preview — backend pending" badge anywhere in reviewer mode.
+    render(<AdminDashboard go={() => {}} />);
+    // No jury this round — the jury tile/funnel row are gone.
+    expect(screen.queryByText(/JURY/i)).toBeNull();
+    expect(screen.getAllByText("ACCEPTED").length).toBeGreaterThan(0);
+    // status_counts jury_review → KPI tile + funnel row.
+    expect(screen.getAllByText("17").length).toBeGreaterThan(0);
     expect(screen.queryByText(/Preview/i)).toBeNull();
+  });
+
+  it("ACCEPTED tile adds the /stats `accepted` overlay bucket (shortlisted apps land there)", () => {
+    const stats = { ...SAMPLE_STATS, statusCounts: [
+      { id: "jury_review", label: "Jury review", n: 0 },
+      { id: "accepted",    label: "Accepted",    n: 23 },
+    ] };
+    useAdminData.mockReturnValue({ data: stats, loading: false, error: null });
+    render(<AdminDashboard go={() => {}} />);
+    expect(screen.getAllByText("23").length).toBeGreaterThan(0);
   });
 
   it("renders FINAL DECISIONS from funnel.decided", () => {
@@ -109,13 +123,10 @@ describe("AdminDashboard screen (screens/)", () => {
     expect(screen.queryByText(/Where every application sits right now/i)).toBeNull();
   });
 
-  it("renders the real jury-mode KPI/funnel (no preview badge) when decisionMode=jury", () => {
+  it("ignores a stale decisionMode=jury prop — no jury KPIs/funnel (Jury Portal closed)", () => {
     useAdminData.mockReturnValue({ data: SAMPLE_STATS, loading: false, error: null });
     render(<AdminDashboard go={() => {}} decisionMode="jury" />);
-    // IN JURY EVALUATION appears in both the KPI tile and the funnel row
-    const juryLabels = screen.getAllByText(/IN JURY EVALUATION/i);
-    expect(juryLabels.length).toBeGreaterThan(0);
-    // The mock "Preview — backend pending" badge is gone in v2.
-    expect(screen.queryByText(/Preview — backend pending/i)).toBeNull();
+    expect(screen.queryByText(/JURY/i)).toBeNull();
+    expect(screen.getByText(/APPLICATIONS SUBMITTED/i)).toBeTruthy();
   });
 });

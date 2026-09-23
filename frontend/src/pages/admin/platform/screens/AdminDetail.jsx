@@ -1,6 +1,6 @@
 // AdminDetail — A-2 Application Detail (Task 10 faithful port).
 //
-// Receives { startupId, track, onBack, onPrev, onNext, onDecision, decisionMode }.
+// Receives { startupId, track, onBack, onPrev, onNext, onDecision }.
 // On mount / startupId change → loadDetail(track, startupId) via useAdminData.
 //
 // Writes:
@@ -8,8 +8,9 @@
 //     where decision = BUTTON_TO_DECISION[buttonLabel].
 //     After success → onDecision(), which advances the preserved sequence.
 //
-// Jury panel (decisionMode === 'jury') shows real pick data from the pipeline
-// row: assigned jurors + who picked the startup (v2: jurors pick, no scoring).
+// No jury panel: the 2026 round had no jury (the Jury Portal is closed — see
+// JURY_PORTAL_ENABLED in lib/landing.js). An approved application (status
+// jury_review) is shown as "Accepted", matching the admin Accepted tab.
 //
 // IMPORTANT: Do NOT read window.OS_DATA.STARTUPS. All data comes from loadDetail.
 
@@ -39,79 +40,6 @@ const PILOT_VIP_IDS = new Set([
   "0117bc80-98c1-4172-bccd-af61327ac580",
   "c8e45451-b9eb-4bed-8293-7a6782237168",
 ]);
-// ── Seeded jury helpers (read s.id only, NOT window.OS_DATA) ─────────────────
-function getJuryMetricScore(scores, key, startupId) {
-
-  let val = scores ? scores[key] : null;
-  if (val == null || val < 5) {
-    const seed = (startupId || '').charCodeAt((startupId || '').length - 1) + key.charCodeAt(0) + 12;
-    val = 5.0 + (seed % 45) * 0.1;
-  }
-  return parseFloat(val.toFixed(1));
-}
-
-function getJuryReco(scores, jId, startupId) {
-  if (scores && scores.reco) return scores.reco;
-  const seed = (startupId || '').charCodeAt((startupId || '').length - 1) + (jId || '').charCodeAt((jId || '').length - 1);
-  const recos = ['yes', 'maybe', 'interview', 'no'];
-  return recos[seed % recos.length];
-}
-
-function getJuryMetricComment(jId, metricKey, startupId) {
-  const comments = {
-    problem: [
-      "Highly lucrative market size with strong, immediate customer pain points.",
-      "Demonstrates clear expansion path and high customer lifetime value.",
-      "Massive addressable market with high growth potential in the target sector.",
-      "Addresses a critical market gap with a highly scalable business model.",
-    ],
-    solution: [
-      "Completeness of execution is top-notch; solves the user flow end-to-end.",
-      "Very thoughtful solution design with a highly intuitive user interface.",
-      "Demonstrates excellent integration capabilities and operational efficiency.",
-      "Deep understanding of technical requirements and edge cases.",
-    ],
-    tech: [
-      "Strong proprietary algorithms and technical moats to fend off copycats.",
-      "Good defensibility with early IP generation and deep tech integration.",
-      "Hard-to-replicate hardware-software stack with solid first-mover advantage.",
-      "Deep technical barriers to entry and strong patent potential.",
-    ],
-    founders: [
-      "Aligned perfectly with the core cohort strategy and technical mandates.",
-      "Excellent match for our cohort network, resources, and technical support.",
-      "Team displays high coachability and matches our program goals precisely.",
-      "Perfect incubation fit; can leverage our strategic partner ecosystem.",
-    ],
-    commit: [
-      "Full-time commitment verified; founders are completely dedicated.",
-      "High availability and willingness to pivot core competencies as needed.",
-      "Demonstrated intense dedication during the preliminary validation phases.",
-      "Strong long-term dedication to building a lasting venture.",
-    ],
-  };
-  const arr = comments[metricKey] || ["Good performance and solid metrics."];
-  const seed =
-    (startupId || '').charCodeAt((startupId || '').length - 1) +
-    (jId || '').charCodeAt((jId || '').length - 1) +
-    metricKey.charCodeAt(0);
-  return arr[seed % arr.length];
-}
-
-function getJuryAvgFromSeeds(st) {
-  // No window.OS_DATA.JURY — use 2 seeded placeholder jury members
-  const list = [{ id: 'j0', name: 'Jury A' }, { id: 'j1', name: 'Jury B' }];
-  let sum = 0;
-  list.forEach((j) => {
-    sum += getJuryMetricScore(st.jury, 'problem', st.id);
-    sum += getJuryMetricScore(st.jury, 'solution', st.id);
-    sum += getJuryMetricScore(st.jury, 'tech', st.id);
-    sum += getJuryMetricScore(st.jury, 'founders', st.id);
-    sum += getJuryMetricScore(st.jury, 'commit', st.id);
-  });
-  return sum / (list.length * 5);
-}
-
 function getTIRSignalScore(st, key) {
   if (st.tirSignals && st.tirSignals[key] != null) return st.tirSignals[key];
   const seed =
@@ -127,7 +55,7 @@ function getTIRSignalOverall(st) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecision, seqPosition, decisionMode }) {
+export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecision, seqPosition }) {
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -296,8 +224,9 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
   if (!s) return null;
 
   // An APPROVED application sits at status jury_review (chip "JURY REVIEW").
-  // It must read "Jury review" here — never "Interview" (see adminDataAdapter).
-  const isInJuryReview = s.chip === 'JURY REVIEW';
+  // It reads "Accepted" here (the admin tab it lives in) — never "Interview"
+  // (see adminDataAdapter.CHIP_META).
+  const isAccepted = s.chip === 'JURY REVIEW';
   const aiData = s.ai || {};
 
   // ── Reviewer averages — computed from the REAL submitted reviews (s.reviews).
@@ -312,10 +241,8 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
     const vals = realReviews.map(rv => rv.overall).filter(n => typeof n === 'number');
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
   })();
-  const jOverall = s.jury ? getJuryAvgFromSeeds(s) : 0;
-  const combinedOverall = revOverall > 0 && jOverall > 0
-    ? (revOverall + jOverall) / 2
-    : revOverall > 0 ? revOverall : jOverall;
+  // No jury scores this round — the combined overall is the reviewer overall.
+  const combinedOverall = revOverall;
 
   if (viewApp) {
     return (
@@ -380,7 +307,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
           <h2 className="lp-section-title">
             {s.name}
             <span className="lp-muted"> · admin review</span>
-            {isInJuryReview && (
+            {isAccepted && (
               <span style={{
                 marginLeft: 12, fontSize: 10.5, fontWeight: 700,
                 letterSpacing: '0.06em', textTransform: 'uppercase',
@@ -438,61 +365,6 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
           {/* Comparative review model — real reviewer evaluations */}
           <ComparativeReviewModel startup={s} reviewersById={reviewersById} />
 
-          {/* Jury panel — real pick data (v2: jurors PICK startups, no scoring) */}
-          {decisionMode === 'jury' && (() => {
-            const assignedNames = s.jury_assigned_names || [];
-            const pickedBy = s.picked_by || [];
-            return (
-              <div className="os-card" style={{ marginTop: 24, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {isInJuryReview && (
-                  <div className="os-banner amber" style={{ borderRadius: 2 }}>
-                    <div>
-                      <div className="os-banner-title" style={{ color: '#9a6206' }}>{chipLabel(s.chip)}</div>
-                      <div className="os-banner-text" style={{ fontSize: 13 }}>This application has advanced to the jury round.</div>
-                    </div>
-                  </div>
-                )}
-                <div>
-                  <span className="cem-kicker">&sect; Jury</span>
-                  <h3 className="cem-title">Jury panel</h3>
-                </div>
-
-                {/* Assigned jurors */}
-                <div>
-                  <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 8 }}>Assigned jurors</div>
-                  {assignedNames.length ? (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {assignedNames.map((n, i) => (
-                        <span key={i} className="os-chip" style={{ fontSize: 12, padding: '2px 8px' }}>{n}</span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="os-text-soft" style={{ fontSize: 13 }}>No jurors assigned yet.</span>
-                  )}
-                </div>
-
-                {/* Picked by */}
-                <div>
-                  <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 8 }}>Picked by</div>
-                  {pickedBy.length ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {pickedBy.map((p, i) => (
-                        <div key={p.juror_user_id || i} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>★ {p.name}</span>
-                          {p.note && <span style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--ink-soft)' }}>{p.note}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="os-text-soft" style={{ fontSize: 13 }}>No jurors have picked this startup yet.</span>
-                  )}
-                  <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 10 }}>
-                    {pickedBy.length} of {s.jury_assigned ?? 0} assigned jurors have picked
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
         </div>
 
         {/* RIGHT — Averages, Flags, Reviewer Assignment, Decision */}
@@ -523,12 +395,6 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
                   <span className="os-text-soft">Reviewer Overall</span>
                   <span className="os-mono font-bold">{revOverall > 0 ? revOverall.toFixed(2) : '—'}</span>
                 </div>
-                {decisionMode === 'jury' && (
-                  <div className="os-row between os-text-sm">
-                    <span className="os-text-soft">Jury Overall</span>
-                    <span className="os-mono font-bold">{jOverall > 0 ? jOverall.toFixed(2) : '—'}</span>
-                  </div>
-                )}
                 <hr className="os-divider" style={{ margin: '4px 0', borderStyle: 'dashed' }} />
                 <div className="os-row between">
                   <span className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 700, color: 'var(--accent)' }}>Combined Overall</span>
@@ -572,7 +438,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
             </div>
 
             <div className="os-mt-sm" style={{ fontSize: 12, color: '#6f6f78', fontStyle: 'italic' }}>
-              Approval advances the application to the jury evaluation round.
+              Approval moves the application to the Accepted tab.
             </div>
 
             <textarea

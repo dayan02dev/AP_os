@@ -11,6 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
 import { fmtRelative } from "../../../lib/timeFmt.js";
 import { bucketFor } from "./statusBuckets.js";
+import { labelFor } from "../../../lib/statusMachine.js";
 import {
   reviewerNameOf,
   reviewerStatusDot,
@@ -32,7 +33,20 @@ function fmtDate(iso) {
   }
 }
 
-function StatusInline({ statusId, label }) {
+function StatusInline({ statusId, label, selected = false }) {
+  // Selected startup (shortlisted + IC memo approved) — same green tag as the
+  // dashboard list row.
+  if (selected) {
+    return (
+      <span
+        className="lp-chip lp-selected-tag"
+        style={{ background: "#e6f4ec", border: "1px solid #2a8f5a", color: "#1d6b43", fontWeight: 600 }}
+      >
+        <span className="lp-status-dot" style={{ background: "#2a8f5a" }} />
+        <span>Selected startup</span>
+      </span>
+    );
+  }
   return (
     <span className="lp-chip">
       <span className={`lp-status-dot lp-status-${bucketFor(statusId)}`} />
@@ -70,7 +84,7 @@ function ComponentBars({ aiScreening }) {
   );
 }
 
-export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) {
+export default function AppDrawer({ row, onClose, statusLabelById, onDecided, selected = false }) {
   const navigate = useNavigate();
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -112,7 +126,11 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
   const reviews = detail?.reviews || [];
   const assignments = detail?.reviewer_assignments || [];
   const history = detail?.status_history || [];
-  const statusLabel = statusLabelById?.[row.status] || row.status;
+  // jury_review reads "Accepted" (no jury this round — it is the admin
+  // Accepted tab), overriding the backend's legacy "Jury review" stats label.
+  const statusLabel = row.status === "jury_review"
+    ? labelFor("jury_review")
+    : statusLabelById?.[row.status] || row.status;
   const fullName =
     detail?.founder?.name || application?.basic_full_name || row.founder?.name
     || row.basic_full_name || "—";
@@ -146,7 +164,7 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
             </h2>
             <div className="meta">
               <span>
-                <StatusInline statusId={row.status} label={statusLabel} />
+                <StatusInline statusId={row.status} label={statusLabel} selected={selected} />
               </span>
               <span>{fullName}</span>
               {org && <span>{org}</span>}
@@ -343,10 +361,10 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided }) 
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                       <span style={{ fontSize: 14 }}>
                         <span style={{ color: "var(--ink-dim)", textTransform: "capitalize" }}>
-                          {h.from_status || "—"}
+                          {h.from_status ? labelFor(h.from_status) : "—"}
                         </span>
                         <span style={{ margin: "0 8px", color: "var(--ink-dim)" }}>→</span>
-                        <strong style={{ textTransform: "capitalize" }}>{h.to_status}</strong>
+                        <strong style={{ textTransform: "capitalize" }}>{labelFor(h.to_status)}</strong>
                       </span>
                       <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>
                         {fmtDate(h.changed_at)}

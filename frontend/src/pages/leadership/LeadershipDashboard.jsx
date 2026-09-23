@@ -19,6 +19,12 @@ import AppDrawer from "./components/AppDrawer.jsx";
 import PortalSwitcher from "../../components/PortalSwitcher.jsx";
 import { RecoCell } from "../../components/RecoCell.jsx";
 import { bucketFor } from "./components/statusBuckets.js";
+import {
+  SELECTED_FILTER,
+  fetchSelectedApplications,
+  loadSelectedKeys,
+  rowSelectionKey,
+} from "./selectedStartups.js";
 import "../../styles/admin.css";
 import "../../styles/leadership.css";
 
@@ -46,7 +52,25 @@ function fmtDate(iso) {
   }
 }
 
-function StatusCell({ statusId, label }) {
+// Green tag for a "Selected startup" (shortlisted + IC memo approved). Inline
+// colours so it reads the same as the admin Accepted tab's green rows.
+const SELECTED_LABEL = "Selected startup";
+const SELECTED_GREEN = "#2a8f5a";
+
+function SelectedTag() {
+  return (
+    <span
+      className="lp-chip lp-selected-tag"
+      style={{ background: "#e6f4ec", border: `1px solid ${SELECTED_GREEN}`, color: "#1d6b43", fontWeight: 600 }}
+    >
+      <span className="lp-status-dot" style={{ background: SELECTED_GREEN }} />
+      <span>{SELECTED_LABEL}</span>
+    </span>
+  );
+}
+
+function StatusCell({ statusId, label, selected = false }) {
+  if (selected) return <SelectedTag />;
   return (
     <span className="lp-chip">
       <span className={`lp-status-dot lp-status-${bucketFor(statusId)}`} />
@@ -122,7 +146,7 @@ function csvCell(v) {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function buildApplicationsCsv(rows, statusLabelById) {
+function buildApplicationsCsv(rows, statusLabelById, selectedKeys = null) {
   const header = [
     "Application ID", "Track", "Project", "Founder", "Organisation",
     "Industry", "Stage", "AI score", "Status", "Submitted",
@@ -138,7 +162,9 @@ function buildApplicationsCsv(rows, statusLabelById) {
       a.industry?.label || "",
       a.stage?.label || a.stage_label || "",
       a.ai_score_overall != null ? a.ai_score_overall.toFixed(1) : "",
-      statusLabelById?.[a.status] || a.status || "",
+      selectedKeys?.has(rowSelectionKey(a))
+        ? SELECTED_LABEL
+        : (statusLabelById?.[a.status] || a.status || ""),
       a.submitted_at || a.created_at || "",
     ].map(csvCell).join(","));
   }
@@ -216,6 +242,10 @@ export default function LeadershipDashboard() {
   const [appsLoading, setAppsLoading] = useState(false);
   const [appsError, setAppsError] = useState(null);
 
+  // Keys (`${native_track}:${id}`) of every selected startup, or null while
+  // loading / if the IC-documents or shortlist fetch failed (chip + tags hidden).
+  const [selectedKeys, setSelectedKeys] = useState(null);
+
   const [openRow, setOpenRow] = useState(null);
   const [exporting, setExporting] = useState(false);
   // Bumped after a gate-1 decision (e.g. reject) to refetch stats + the list.
@@ -262,8 +292,17 @@ export default function LeadershipDashboard() {
         setIndustryCategories([]);
         setIndustryTotal(0);
       });
+    loadSelectedKeys()
+      .then((keys) => { if (!cancelled) setSelectedKeys(keys); })
+      .catch(() => { if (!cancelled) setSelectedKeys(null); });
     return () => { cancelled = true; };
   }, [refreshNonce]);
+
+  // The chip is hidden when the selection can't be computed — drop a stale
+  // "Selected startups" filter so the list never gets stuck on it.
+  useEffect(() => {
+    if (!selectedKeys && statusFilter === SELECTED_FILTER) setStatusFilter(null);
+  }, [selectedKeys, statusFilter]);
 
   // ── Search debounce — strip "TIR-"/"SIP-" prefix so pasted IDs hit
   //   the backend's display_seq.eq match.
@@ -281,16 +320,23 @@ export default function LeadershipDashboard() {
     let cancelled = false;
     setAppsLoading(true);
     setAppsError(null);
-    leadershipApi.listApplications({
+    const params = {
       industry: industry || undefined,
       status: statusFilter || undefined,
       track: trackFilter ? trackFilter.toLowerCase() : undefined,
       ai_score_bucket: scoreBucket ?? undefined,
       recommendation: recoFilter || undefined,
       search: search || undefined,
-      limit: PAGE_SIZE,
-      offset,
-    })
+    };
+    // "Selected startups" isn't a backend status: fetch the whole shortlist
+    // under the other filters, keep only the selected rows, and page locally.
+    const req = statusFilter === SELECTED_FILTER
+      ? fetchSelectedApplications(params, selectedKeys).then((rows) => ({
+          applications: rows.slice(offset, offset + PAGE_SIZE),
+          total: rows.length,
+        }))
+      : leadershipApi.listApplications({ ...params, limit: PAGE_SIZE, offset });
+    req
       .then((page) => {
         if (cancelled) return;
         setApps(page?.applications || []);
@@ -303,7 +349,10 @@ export default function LeadershipDashboard() {
         setAppsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [industry, statusFilter, trackFilter, scoreBucket, recoFilter, search, offset, refreshNonce]);
+  // selectedKeys only matters while the Selected filter is on — keep it out of
+  // the deps otherwise so its initial load doesn't refetch the list.
+  }, [industry, statusFilter, trackFilter, scoreBucket, recoFilter, search, offset, refreshNonce, // eslint-disable-line react-hooks/exhaustive-deps
+      statusFilter === SELECTED_FILTER ? selectedKeys : null]);
 
   const filterAndShow = useCallback(
     (setter) => (val) => {
@@ -404,8 +453,11 @@ export default function LeadershipDashboard() {
         search: search || undefined,
       };
       const all = [];
+      if (statusFilter === SELECTED_FILTER) {
+        all.push(...await fetchSelectedApplications(baseParams, selectedKeys));
+      }
       let pageOffset = 0;
-      let total = Infinity;
+      let total = statusFilter === SELECTED_FILTER ? 0 : Infinity;
       // Hard cap the loop (50 pages = 10k rows) as a safety net.
       for (let i = 0; i < 50 && pageOffset < total; i += 1) {
         const page = await leadershipApi.listApplications({
@@ -423,7 +475,7 @@ export default function LeadershipDashboard() {
         window.alert("No applications match the current filters.");
         return;
       }
-      const csv = buildApplicationsCsv(all, statusLabelById);
+      const csv = buildApplicationsCsv(all, statusLabelById, selectedKeys);
       const stamp = new Date().toISOString().slice(0, 10);
       triggerCsvDownload(csv, `artpark-applications-${stamp}.csv`);
     } catch (err) {
@@ -431,7 +483,7 @@ export default function LeadershipDashboard() {
     } finally {
       setExporting(false);
     }
-  }, [industry, statusFilter, trackFilter, scoreBucket, recoFilter, search, statusLabelById]);
+  }, [industry, statusFilter, trackFilter, scoreBucket, recoFilter, search, statusLabelById, selectedKeys]);
   const filtersActive = !!(
     industry || statusFilter || trackFilter || scoreBucket !== null || search || recoFilter
   );
@@ -999,8 +1051,26 @@ export default function LeadershipDashboard() {
                 >
                   All
                 </button>
+                {selectedKeys && (
+                  <button
+                    type="button"
+                    className={`chip${statusFilter === SELECTED_FILTER ? " active" : ""}`}
+                    onClick={() => {
+                      setStatusFilter(statusFilter === SELECTED_FILTER ? null : SELECTED_FILTER);
+                      setOffset(0);
+                    }}
+                    title="Shortlisted startups whose IC memo has been approved"
+                  >
+                    <span className="lp-status-dot" style={{ marginRight: 6, background: SELECTED_GREEN }} />
+                    Selected startups{" "}
+                    <span className="lp-pill-count">{selectedKeys.size}</span>
+                  </button>
+                )}
                 {(stats?.status_counts || [])
-                  .filter((s) => s.id !== "ai_screening")
+                  // `jury_review` is always ~0 here (/stats folds shortlisted
+                  // apps into `accepted`) and there was no jury this round —
+                  // hide it; "Selected startups" above covers the final pick.
+                  .filter((s) => s.id !== "ai_screening" && s.id !== "jury_review")
                   .map((s) => (
                   <button
                     key={s.id}
@@ -1195,6 +1265,7 @@ export default function LeadershipDashboard() {
                         <StatusCell
                           statusId={a.status}
                           label={statusLabelById[a.status] || a.status}
+                          selected={!!selectedKeys?.has(rowSelectionKey(a))}
                         />
                       </td>
                       <td>{fmtRelative(a.submitted_at || a.created_at)}</td>
@@ -1235,6 +1306,7 @@ export default function LeadershipDashboard() {
           <AppDrawer
             row={openRow}
             statusLabelById={statusLabelById}
+            selected={!!selectedKeys?.has(rowSelectionKey(openRow))}
             onClose={() => setOpenRow(null)}
             onDecided={() => { setOpenRow(null); setRefreshNonce((n) => n + 1); }}
           />

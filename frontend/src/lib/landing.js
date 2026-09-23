@@ -7,14 +7,23 @@
 //   leadership → /leadership      (the day-to-day dashboard)
 //   admin      → /admin           (reached via the Switch button on /leadership)
 //   reviewer   → /reviewer       (Reviewer Portal v2 dashboard)
+//   jury       → /jury           (ONLY while JURY_PORTAL_ENABLED)
 //   mentor / applicant / none → /apply
+
+// The Jury Portal is switched off for the 2026 round — there was no jury;
+// admins interviewed the shortlist and decided on the Accepted tab. While
+// false: every /jury route renders a static "closed" page (router.jsx), the
+// PortalSwitcher hides the Jury entry, and a jury-only account falls through
+// to /apply here (never /jury, so no redirect loop). Flip to true to
+// re-enable next round — the pages, juryApi and backend routes are intact.
+export const JURY_PORTAL_ENABLED = false;
 
 export function landingPathFor(roles) {
   const r = Array.isArray(roles) ? roles : [];
   if (r.includes("leadership")) return "/leadership";
   if (r.includes("admin")) return "/admin";
   if (r.includes("reviewer")) return "/reviewer";
-  if (r.includes("jury")) return "/jury";
+  if (JURY_PORTAL_ENABLED && r.includes("jury")) return "/jury";
   return "/apply";
 }
 

@@ -17,7 +17,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../hooks/useAuth.jsx";
 import { useAdminData } from "../../../hooks/useAdminData";
 import { writeStickyState } from "../../../hooks/useStickyState.js";
-import { pipelineBadges } from "../../../lib/adminBadges";
+import { pipelineBadges, selectedCount } from "../../../lib/adminBadges";
 import "../../../styles/admin-portal.css";
 import "../../../styles/vip-memo.css";
 import { AdminDashboard } from "./screens/AdminDashboard";
@@ -25,7 +25,6 @@ import { AdminPipeline } from "./screens/AdminPipeline";
 import { AdminDetail } from "./screens/AdminDetail";
 import AdminGate1 from "./screens/AdminGate1";
 import { AdminReviewers } from "./screens/AdminReviewers";
-import { AdminGate2 } from "./screens/AdminGate2";
 import { AdminSelectedApplications } from "./screens/AdminSelectedApplications";
 import { AdminPsychometry } from "./screens/AdminPsychometry";
 import { AdminAIStatus } from "./screens/AdminAIStatus";
@@ -52,7 +51,7 @@ function AdminTopbar({ page, setPage }) {
     psychometry:'PSYCHOMETRY',
     rejected:'REJECTED',
     jury_selected:'ACCEPTED',
-    gate2:'FINAL GATE', audit:'AUDIT LOG', analytics:'ANALYTICS',
+    audit:'AUDIT LOG', analytics:'ANALYTICS',
   };
   const crumb = crumbMap[page] || 'DASHBOARD';
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -263,9 +262,9 @@ export function AdminTabBar({ page, setPage, appsBadge, rejectedBadge, reviewBad
       badge: jurySelectedBadge == null ? null : String(jurySelectedBadge) },
     { id:'gate1',         label:'Admin Review', sub:'PENDING DECISIONS',
       badge: reviewBadge == null ? null : String(reviewBadge) },
-    // gate2 has its own id (it used to share `gate1`, switched by decision
-    // mode). Without a distinct id the Final Gate is unreachable.
-    { id:'gate2',         label:'Final Gate',   sub:'CONSOLIDATED DECISIONS',   badge:null },
+    // Final Gate (AdminGate2) is disabled this round: there was no jury, and
+    // final accept/reject happens on the Accepted tab. The screen stays on disk
+    // (unmounted) so it can come back for a round that has one.
   ];
 
   return (
@@ -293,8 +292,9 @@ function AdminApp() {
   // Legacy page ids from when the jury stage had a tab per track, and from
   // when the Academic Jury Roster had a tab. Anything bookmarked at one of
   // those lands somewhere real instead of a blank pane.
+  // 'gate2' is the Final Gate, disabled this round — its work is the Accepted tab.
   React.useEffect(() => {
-    if (page === 'jury_tir' || page === 'jury_vip') setPage('jury_selected');
+    if (page === 'jury_tir' || page === 'jury_vip' || page === 'gate2') setPage('jury_selected');
     if (page === 'iisc_roster') setPage('dashboard');
   }, [page]);
 
@@ -305,9 +305,25 @@ function AdminApp() {
 
   // Real tab-badge counts from /stats. While loading (or if the field is
   // absent) we pass null so NO badge shows rather than a fabricated number.
-  const { data: statsData, loading: statsLoading } = useAdminData('stats');
-  const { appsBadge, rejectedBadge, juryBadge } =
-    pipelineBadges(statsData, statsLoading);
+  const { data: statsData, loading: statsLoading, reload: reloadStats } = useAdminData('stats');
+  // Accepted badge = SELECTED (green) apps: `jury_review` + a signed IC memo.
+  // /stats can't say which memos are signed, so this reads the same two lists
+  // the Accepted tab does. The pipeline endpoint returns every row in one
+  // response (server-side FETCH_CAP 5000, no paging), so the count is whole.
+  const juryPipeline = useAdminData('pipeline', { status: 'jury_review' });
+  const icDocs = useAdminData('icDocuments');
+  const jurySelectedBadge = (juryPipeline.loading || juryPipeline.error || icDocs.loading || icDocs.error)
+    ? null
+    : selectedCount(juryPipeline.data?.startups, icDocs.data?.documents);
+  // The exact raw `jury_review` count keeps the Applications badge in step
+  // with its list (exclude_status=rejected,jury_review) — see pipelineBadges.
+  const juryReviewCount = (juryPipeline.loading || juryPipeline.error || !juryPipeline.data)
+    ? null
+    : (juryPipeline.data.startups || []).length;
+  const { appsBadge, rejectedBadge } =
+    pipelineBadges(statsData, statsLoading, juryReviewCount);
+  // Approve / Reject on the Accepted tab changes these counts.
+  const refreshBadges = () => { juryPipeline.reload(); icDocs.reload(); reloadStats(); };
   // "Admin Review" = apps evaluated by reviewers and awaiting an admin decision.
   const evaluatedEntry = (statsData?.statusCounts || []).find(s => s.id === 'evaluated');
   const reviewBadge = statsLoading ? null : (evaluatedEntry ? evaluatedEntry.n : null);
@@ -398,16 +414,16 @@ function AdminApp() {
               appsBadge={appsBadge}
               rejectedBadge={rejectedBadge}
               reviewBadge={reviewBadge}
-              jurySelectedBadge={juryBadge}
+              jurySelectedBadge={jurySelectedBadge}
             />
           )}
           <div className="lp-tab-content">
-            {page === 'dashboard'   && <AdminDashboard go={setPage} />}
+            {page === 'dashboard'   && <AdminDashboard go={setPage} selectedCount={jurySelectedBadge} />}
             {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} baseFilter={{ exclude_status: 'rejected,jury_review' }} scopeKey="applications" />}
             {page === 'rejected'    && <AdminPipeline goDetail={goDetail} baseFilter={{ status: 'rejected' }} readOnly heading="Rejected applications" scopeKey="rejected" />}
             {/* Both tracks, one list. Each row carries a TRACK chip and the
                 memo upload / approve actions. */}
-            {page === 'jury_selected' && <AdminSelectedApplications goDetail={goDetail} />}
+            {page === 'jury_selected' && <AdminSelectedApplications goDetail={goDetail} onChanged={refreshBadges} />}
             {page === 'detail'      && (
               <AdminDetail
                 startupId={selectedStartupId}
@@ -422,7 +438,6 @@ function AdminApp() {
             {page === 'reviewers'   && <AdminReviewers />}
             {page === 'roles'       && <AdminRoles />}
             {page === 'gate1'       && <AdminGate1 goDetail={goDetail} />}
-            {page === 'gate2'       && <AdminGate2 />}
             {page === 'psychometry' && <AdminPsychometry />}
             {page === 'aistatus'   && <AdminAIStatus />}
           </div>

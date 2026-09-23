@@ -10,14 +10,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth.jsx";
+import { JURY_PORTAL_ENABLED } from "../lib/landing.js";
 
-const PORTALS = [
+const ALL_PORTALS = [
   { key: "leadership", label: "Leadership", to: "/leadership" },
   { key: "reviewer", label: "Reviewer", to: "/reviewer" },
   { key: "jury", label: "Jury Member", to: "/jury" },
   { key: "admin", label: "Admin", to: "/admin" },
   { key: "founder", label: "Founder", to: "/founder" },
 ];
+// Jury entry hidden while the Jury Portal is closed for this round.
+const PORTALS = ALL_PORTALS.filter((p) => p.key !== "jury" || JURY_PORTAL_ENABLED);
 
 export default function PortalSwitcher({ current }) {
   const navigate = useNavigate();
