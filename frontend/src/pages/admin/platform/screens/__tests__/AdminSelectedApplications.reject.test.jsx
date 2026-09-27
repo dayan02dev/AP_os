@@ -116,16 +116,50 @@ describe("AdminSelectedApplications — reject", () => {
     });
   });
 
-  it("explains a 409 when the application was already decided elsewhere", async () => {
+  it("explains a 409 when the application was already rejected elsewhere", async () => {
     wire();
     adminPlatformApi.decideGate2.mockRejectedValue({
-      status: 409, details: { code: "not_in_jury_review" },
+      status: 409, details: { code: "already_rejected" },
     });
     render(<AdminSelectedApplications />);
     openReject("Helios Robotics");
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: "Not a fit" } });
     fireEvent.click(screen.getByRole("button", { name: /reject application/i }));
 
-    expect(await screen.findByText(/no longer awaiting a final decision/i)).toBeTruthy();
+    expect(await screen.findByText(/already been rejected/i)).toBeTruthy();
+  });
+
+  it("surfaces the server message when the status can't be rejected", async () => {
+    wire();
+    adminPlatformApi.decideGate2.mockRejectedValue({
+      status: 409,
+      details: { code: "not_rejectable", message: "An application in 'onboarded' can't be rejected here." },
+    });
+    render(<AdminSelectedApplications />);
+    openReject("Helios Robotics");
+    fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: "Not a fit" } });
+    fireEvent.click(screen.getByRole("button", { name: /reject application/i }));
+
+    expect(await screen.findByText(/'onboarded' can't be rejected here/i)).toBeTruthy();
+  });
+
+  it("keeps an offered candidate on the list and lets Reject withdraw the offer", async () => {
+    const OFFERED = { ...VIP_A, id: "app-9", name: "Offered Co", gate2_decision: "offered" };
+    useAdminData.mockImplementation((kind, params) => {
+      if (kind === "pipeline")
+        return { data: { startups: params?.status === "offered" ? [OFFERED] : [] },
+                 loading: false, error: null, reload: reloadPipeline };
+      if (kind === "icDocuments")
+        return { data: { documents: [], byKey: {} }, loading: false, error: null, reload: vi.fn() };
+      return { data: null, loading: false, error: null, reload: vi.fn() };
+    });
+    render(<AdminSelectedApplications />);
+    expect(screen.getByText("Offered")).toBeTruthy();
+    openReject("Offered Co");
+    expect(screen.getByText(/withdrawing the offer already made/i)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: "Changed" } });
+    fireEvent.click(screen.getByRole("button", { name: /reject application/i }));
+    await waitFor(() => expect(adminPlatformApi.decideGate2).toHaveBeenCalledWith(
+      "sip", "app-9", { decision: "rejected", rationale: "Changed" }));
   });
 });

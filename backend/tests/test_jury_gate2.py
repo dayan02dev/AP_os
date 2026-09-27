@@ -267,3 +267,64 @@ def test_gate2_records_row_and_moves_status(client, monkeypatch, _clear_override
     ]
     assert moved, f"expected status move to {decision}, got updates: {fake.updates}"
     assert fake.tables["tir_applications"][0]["status"] == decision
+
+
+# ─── Reject overturns an earlier gate-2 outcome (Accepted-tab Reject) ────
+
+
+@pytest.mark.parametrize("from_status", ["offered", "waitlisted", "on_hold"])
+def test_gate2_reject_allowed_after_earlier_gate2_outcome(
+        client, monkeypatch, _clear_overrides, from_status):
+    app_id = APP.format(6)
+    tables = _base_tables()
+    tables["tir_applications"] = [{"id": app_id, "status": from_status}]
+    fake = _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", ["admin"])
+
+    r = client.post(
+        f"/admin/platform/applications/tir/{app_id}/decision",
+        json={"decision": "rejected", "gate_stage": "gate2", "rationale": "changed our mind"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["from_status"] == from_status
+    assert fake.tables["tir_applications"][0]["status"] == "rejected"
+    inserts = [row for (tbl, row) in fake.inserts if tbl == "admin_decisions"]
+    assert inserts[-1]["decision"] == "rejected"
+    assert inserts[-1]["gate_stage"] == "gate2"
+
+
+@pytest.mark.parametrize("from_status,code", [
+    ("rejected", "already_rejected"),
+    ("onboarded", "not_rejectable"),
+    ("shortlisted", "not_rejectable"),
+])
+def test_gate2_reject_refused_from_other_statuses(
+        client, monkeypatch, _clear_overrides, from_status, code):
+    app_id = APP.format(7)
+    tables = _base_tables()
+    tables["tir_applications"] = [{"id": app_id, "status": from_status}]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", ["admin"])
+
+    r = client.post(
+        f"/admin/platform/applications/tir/{app_id}/decision",
+        json={"decision": "rejected", "gate_stage": "gate2", "rationale": "x"},
+    )
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == code
+
+
+def test_gate2_offer_still_requires_jury_review(client, monkeypatch, _clear_overrides):
+    """Only reject got the wider window — re-offering a waitlisted app is not allowed."""
+    app_id = APP.format(8)
+    tables = _base_tables()
+    tables["tir_applications"] = [{"id": app_id, "status": "waitlisted"}]
+    _install_db(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override_user("admin-1", ["admin"])
+
+    r = client.post(
+        f"/admin/platform/applications/tir/{app_id}/decision",
+        json={"decision": "offered", "gate_stage": "gate2"},
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "not_in_jury_review"

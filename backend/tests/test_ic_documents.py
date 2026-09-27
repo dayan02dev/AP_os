@@ -438,3 +438,102 @@ def test_list_degrades_to_empty_on_db_failure(monkeypatch, _clear_overrides):
     r = _client().get("/admin/platform/ic-documents?track=sip")
     assert r.status_code == 200
     assert r.json() == {"documents": []}
+
+
+# ── 7. Multiple documents per application (mig 046) ────────────────────────
+
+def _upload(c, name, mode=None):
+    q = f"?mode={mode}" if mode else ""
+    return c.post(f"/admin/platform/ic-documents/sip/{APP_ID}{q}",
+                  files={"file": (name, PDF, "application/pdf")})
+
+
+def _current(fake):
+    return [r for r in fake.tables["ic_documents"] if r.get("superseded_at") is None]
+
+
+def test_append_keeps_every_document_current(monkeypatch, _clear_overrides):
+    fake = _install(monkeypatch, _tables())
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    c = _client()
+    assert _upload(c, "a.pdf", "append").status_code == 201
+    assert _upload(c, "b.pdf", "append").status_code == 201
+
+    assert sorted(r["file_name"] for r in _current(fake)) == ["a.pdf", "b.pdf"]
+    listing = c.get("/admin/platform/ic-documents?track=sip").json()["documents"]
+    assert sorted(d["file_name"] for d in listing) == ["a.pdf", "b.pdf"]
+
+
+def test_replace_supersedes_every_current_document(monkeypatch, _clear_overrides):
+    fake = _install(monkeypatch, _tables())
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    c = _client()
+    _upload(c, "a.pdf", "append")
+    _upload(c, "b.pdf", "append")
+    assert _upload(c, "c.pdf", "replace").status_code == 201
+
+    assert [r["file_name"] for r in _current(fake)] == ["c.pdf"]
+    assert len(fake.tables["ic_documents"]) == 3, "history must be kept"
+
+
+def test_invalid_mode_is_422(monkeypatch, _clear_overrides):
+    _install(monkeypatch, _tables())
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    assert _upload(_client(), "a.pdf", "merge").status_code == 422
+
+
+def test_sign_and_view_target_a_specific_document(monkeypatch, _clear_overrides):
+    fake = _install(monkeypatch, _tables())
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    c = _client()
+    first = _upload(c, "a.pdf", "append").json()["document"]["id"]
+    _upload(c, "b.pdf", "append")
+
+    r = c.post(f"/admin/platform/ic-documents/sip/{APP_ID}/signature",
+               files={"file": ("a-signed.pdf", PDF, "application/pdf")},
+               data={"signer_name": "N", "document_id": first})
+    assert r.status_code == 200, r.text
+    assert r.json()["document"]["id"] == first
+
+    signed = {r["file_name"]: bool(r.get("signed_storage_path")) for r in _current(fake)}
+    assert signed == {"a.pdf": True, "b.pdf": False}
+
+    r = c.get(f"/admin/platform/ic-documents/sip/{APP_ID}/file"
+              f"?variant=signed&document_id={first}")
+    assert r.status_code == 200
+    assert first in r.json()["url"]
+
+
+def test_sign_unknown_document_id_404(monkeypatch, _clear_overrides):
+    _install(monkeypatch, _tables())
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    c = _client()
+    _upload(c, "a.pdf", "append")
+    r = c.post(f"/admin/platform/ic-documents/sip/{APP_ID}/signature",
+               files={"file": ("s.pdf", PDF, "application/pdf")},
+               data={"signer_name": "N", "document_id": "nope"})
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "document_not_found"
+
+
+def test_remove_supersedes_one_document_only(monkeypatch, _clear_overrides):
+    fake = _install(monkeypatch, _tables())
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    c = _client()
+    first = _upload(c, "a.pdf", "append").json()["document"]["id"]
+    _upload(c, "b.pdf", "append")
+
+    r = c.delete(f"/admin/platform/ic-documents/sip/{APP_ID}/documents/{first}")
+    assert r.status_code == 200, r.text
+    assert [r["file_name"] for r in _current(fake)] == ["b.pdf"]
+    assert len(fake.tables["ic_documents"]) == 2, "removal must not delete the row"
+
+    r = c.delete(f"/admin/platform/ic-documents/sip/{APP_ID}/documents/{first}")
+    assert r.status_code == 404
+
+
+def test_remove_requires_capability(monkeypatch, _clear_overrides):
+    _install(monkeypatch, _tables())
+    app.dependency_overrides[get_current_user] = _override_user(["jury"])
+    r = _client().delete(f"/admin/platform/ic-documents/sip/{APP_ID}/documents/x")
+    assert r.status_code == 403

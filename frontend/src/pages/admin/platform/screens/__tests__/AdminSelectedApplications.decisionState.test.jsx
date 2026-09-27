@@ -67,6 +67,12 @@ describe("decisionStateOf", () => {
   it("prefers rejected over a signed memo", () => {
     expect(decisionStateOf({ gate2_decision: "rejected" }, { signed: true })).toBe("rejected");
   });
+
+  it("is accepted only when every document in the list is signed", () => {
+    expect(decisionStateOf({}, [{ signed: true }, { signed: true }])).toBe("accepted");
+    expect(decisionStateOf({}, [{ signed: true }, { signed: false }])).toBe("pending");
+    expect(decisionStateOf({}, [])).toBe("pending");
+  });
 });
 
 describe("AdminSelectedApplications — rejected rows return", () => {

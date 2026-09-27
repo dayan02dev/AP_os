@@ -43,13 +43,21 @@ const LOADERS = {
     return { applications: (r.applications || []).map(adaptJurorApplication) };
   },
   // IC documents, keyed by "<track>:<application_id>" for O(1) row lookup.
+  // An application can hold several: `listByKey` has all of them (oldest
+  // first); `byKey` keeps the newest one for single-document readers.
   icDocuments: async ({ track } = {}) => {
     const r = await icDocumentsApi.list(track);
-    const byKey = {};
+    const listByKey = {};
     for (const d of r.documents || []) {
-      if (d && d.application_id) byKey[`${d.track}:${d.application_id}`] = d;
+      if (!d || !d.application_id) continue;
+      (listByKey[`${d.track}:${d.application_id}`] ||= []).push(d);
     }
-    return { documents: r.documents || [], byKey };
+    const byKey = {};
+    for (const [k, list] of Object.entries(listByKey)) {
+      list.sort((a, b) => String(a.uploaded_at || "").localeCompare(String(b.uploaded_at || "")));
+      byKey[k] = list[list.length - 1];
+    }
+    return { documents: r.documents || [], byKey, listByKey };
   },
 };
 

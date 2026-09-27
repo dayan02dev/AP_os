@@ -118,6 +118,12 @@ def record_decision(*, track, application_id, decision, rationale, decided_by, d
 
 
 _GATE2_VALID = frozenset({"offered", "waitlisted", "on_hold", "rejected"})
+# A gate-2 REJECT may also overturn an earlier gate-2 outcome: an admin can
+# reject a candidate after they were offered / waitlisted / held (the Accepted
+# tab's Reject button). Every other gate-2 decision still requires jury_review.
+# `onboarded` is deliberately absent — the MOU is signed by then, and the state
+# machine only allows onboarded -> withdrawn.
+_GATE2_REJECTABLE_FROM = frozenset({"jury_review", "offered", "waitlisted", "on_hold"})
 
 
 def record_gate2_decision(
@@ -127,7 +133,9 @@ def record_gate2_decision(
 
     Validates the decision value (422 invalid_gate2_decision if not in set).
     Rationale is required unless decision is ``offered``. Only allowed on apps
-    currently in ``jury_review`` (409 not_in_jury_review otherwise). Inserts an
+    currently in ``jury_review`` (409 not_in_jury_review otherwise) — except
+    ``rejected``, which is also allowed from offered / waitlisted / on_hold
+    (409 already_rejected / not_rejectable otherwise). Inserts an
     admin_decisions row with gate_stage='gate2', then moves status. Unlike
     gate-1, this path sends NO applicant email.
     """
@@ -159,8 +167,26 @@ def record_gate2_decision(
         )
     from_status = rows[0].get("status")
 
-    # Gate-2 is only allowed on apps that are currently in jury_review.
-    if from_status != "jury_review":
+    if decision == "rejected":
+        if from_status == "rejected":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "already_rejected",
+                    "message": "This application has already been rejected.",
+                },
+            )
+        if from_status not in _GATE2_REJECTABLE_FROM:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "not_rejectable",
+                    "message": f"An application in '{from_status}' can't be rejected here.",
+                    "from_status": from_status,
+                },
+            )
+    # Every other gate-2 decision is only allowed on apps in jury_review.
+    elif from_status != "jury_review":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={

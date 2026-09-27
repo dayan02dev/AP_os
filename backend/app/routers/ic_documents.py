@@ -1,11 +1,18 @@
 """Investment Committee (IC) documents — admin "Jury VIP Selected" section.
 
-    GET  /admin/platform/ic-documents?track=sip                 list current docs
-    POST /admin/platform/ic-documents/{track}/{id}              upload the IC PDF
-    POST /admin/platform/ic-documents/{track}/{id}/signature    upload the signed PDF
-    GET  /admin/platform/ic-documents/{track}/{id}/file         120s signed URL
+    GET    /admin/platform/ic-documents?track=sip                   list current docs
+    POST   /admin/platform/ic-documents/{track}/{id}?mode=          upload an IC PDF
+    POST   /admin/platform/ic-documents/{track}/{id}/signature      upload a signed PDF
+    GET    /admin/platform/ic-documents/{track}/{id}/file           120s signed URL
+    DELETE /admin/platform/ic-documents/{track}/{id}/documents/{doc} retire one doc
 
-All four are gated by ``manage_ic_documents`` (admin + leadership).
+All five are gated by ``manage_ic_documents`` (admin + leadership).
+
+An application can hold SEVERAL current documents (mig 046 dropped the
+one-current-row index). ``mode=append`` adds a document alongside the others;
+``mode=replace`` (the default, so pre-046 clients keep their semantics)
+supersedes every current document first. Signing and the signed URL take an
+optional ``document_id``; without it they act on the newest current document.
 
 The signature is drawn/typed in the browser and stamped into the PDF client-side
 (pdf-lib), so this router receives an already-stamped PDF and stores it as the
@@ -14,8 +21,8 @@ from the request body — ``signed_by``/``signer_email`` come from the caller's
 JWT, so a client cannot claim to be somebody else. ``signer_name`` is the typed
 display name that appears on the stamp.
 
-Uploading a new IC PDF supersedes the previous document (``superseded_at``)
-rather than deleting it — the old object stays in storage as the audit trail.
+Replacing or removing a document supersedes it (``superseded_at``) rather than
+deleting it — the old object stays in storage as the audit trail.
 
 There is intentionally no application-status guard: the Final Gate moves an app
 out of ``jury_review``, and the IC document may be uploaded or signed after that.
@@ -98,8 +105,8 @@ def _resolve_native_track(sb: Any, track: str, application_id: str) -> str:
                  "No such application.")
 
 
-def _fetch_current(sb: Any, track: str, application_id: str) -> dict | None:
-    """The one non-superseded IC document for this application, if any."""
+def _fetch_current_all(sb: Any, track: str, application_id: str) -> list[dict]:
+    """Every non-superseded IC document for this application, oldest first."""
     try:
         rows = (sb.table("ic_documents").select("*")
                 .eq("application_id", application_id)
@@ -109,14 +116,23 @@ def _fetch_current(sb: Any, track: str, application_id: str) -> dict | None:
     except Exception as exc:
         log.warning("ic_documents: current fetch failed",
                     extra={"application_id": application_id, "track": track, "err": str(exc)})
-        return None
+        return []
     # Re-filter in Python: the hermetic fake honors .eq/.is_ but prod is the
     # authority, and a belt-and-braces filter costs nothing.
     rows = [r for r in rows
             if r.get("application_id") == application_id
             and r.get("application_track") == track
             and r.get("superseded_at") is None]
-    return rows[0] if rows else None
+    return sorted(rows, key=lambda r: str(r.get("uploaded_at") or ""))
+
+
+def _pick_current(sb: Any, track: str, application_id: str,
+                  document_id: str | None) -> dict | None:
+    """One current document: ``document_id`` if given, else the newest."""
+    rows = _fetch_current_all(sb, track, application_id)
+    if document_id:
+        return next((r for r in rows if r.get("id") == document_id), None)
+    return rows[-1] if rows else None
 
 
 def _public_doc(row: dict | None) -> dict | None:
@@ -168,12 +184,14 @@ async def upload_ic_document(
     track: Literal["tir", "sip"],
     application_id: str,
     file: UploadFile = File(...),
+    mode: Literal["replace", "append"] = Query(default="replace"),
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Upload (or replace) the IC PDF for one application.
+    """Upload an IC PDF for one application.
 
-    Replacing supersedes the previous row — its storage object is left in place
-    as the audit artefact, and its signature travels with it into history.
+    ``append`` adds it next to the current documents. ``replace`` supersedes
+    every current row first — their storage objects are left in place as the
+    audit artefact, and their signatures travel with them into history.
     """
     sb = get_admin_client()
     track = _resolve_native_track(sb, track, application_id)
@@ -191,13 +209,12 @@ async def upload_ic_document(
                      "Storage upload failed. Try again.") from exc
 
     now = datetime.now(UTC).isoformat()
-    # Supersede the outgoing document BEFORE inserting the new one, so the
-    # partial-unique index can never see two current rows.
-    previous = _fetch_current(sb, track, application_id)
-    if previous:
+    # Replace: supersede the outgoing documents BEFORE inserting the new one.
+    previous = _fetch_current_all(sb, track, application_id) if mode == "replace" else []
+    for prev in previous:
         try:
             sb.table("ic_documents").update({"superseded_at": now, "updated_at": now}) \
-                .eq("id", previous["id"]).execute()
+                .eq("id", prev["id"]).execute()
         except Exception as exc:
             log.error("ic_documents: supersede failed",
                       extra={"application_id": application_id, "err": str(exc)})
@@ -233,7 +250,8 @@ async def upload_ic_document(
         target_id=doc_id,
         after={"application_id": application_id, "track": track,
                "file_name": row["file_name"], "size_bytes": len(data),
-               "replaced_previous": bool(previous)},
+               "mode": mode, "replaced_previous": bool(previous),
+               "replaced_ids": [p["id"] for p in previous]},
     )
     return {"document": _public_doc(row)}
 
@@ -245,9 +263,11 @@ async def sign_ic_document(
     application_id: str,
     file: UploadFile = File(...),
     signer_name: str = Form(...),
+    document_id: str | None = Form(default=None),
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Attach the signed copy of the current IC document.
+    """Attach the signed copy of one current IC document (``document_id``, or
+    the newest when omitted).
 
     ``file`` is the browser-stamped PDF. The signer's identity is taken from the
     authenticated caller — never from the payload — so the recorded signature is
@@ -263,8 +283,11 @@ async def sign_ic_document(
 
     sb = get_admin_client()
     track = _resolve_native_track(sb, track, application_id)
-    current = _fetch_current(sb, track, application_id)
+    current = _pick_current(sb, track, application_id, document_id)
     if not current:
+        if document_id:
+            raise _error(http_status.HTTP_404_NOT_FOUND, "document_not_found",
+                         "That document is no longer current. Refresh and try again.")
         raise _error(http_status.HTTP_409_CONFLICT, "no_ic_document",
                      "Upload the IC document before signing it.")
     data = await _read_pdf(file)
@@ -319,16 +342,19 @@ async def get_ic_document_url(
     track: Literal["tir", "sip"],
     application_id: str,
     variant: Literal["original", "signed"] = Query(default="original"),
+    document_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
-    """Short-lived (120s) signed URL for the original or the signed copy.
+    """Short-lived (120s) signed URL for the original or the signed copy of one
+    current document (``document_id``, or the newest when omitted).
 
     The path is read off the document row — never taken from the caller — so
     there is nothing to traverse or enumerate.
     """
     sb = get_admin_client()
-    current = (_fetch_current(sb, track, application_id)
+    current = (_pick_current(sb, track, application_id, document_id)
                # Tolerate an effective-track caller: the doc is keyed by native.
-               or _fetch_current(sb, "sip" if track == "tir" else "tir", application_id))
+               or _pick_current(sb, "sip" if track == "tir" else "tir",
+                                application_id, document_id))
     if not current:
         raise _error(http_status.HTTP_404_NOT_FOUND, "not_found", "No IC document.")
     path = current.get("signed_storage_path") if variant == "signed" else current.get("storage_path")
@@ -355,3 +381,42 @@ async def get_ic_document_url(
                     extra={"application_id": application_id, "track": track})
         raise _error(http_status.HTTP_502_BAD_GATEWAY, "signed_url_failed",
                      "Couldn't produce a download link. Try again.") from exc
+
+
+@router.delete("/{track}/{application_id}/documents/{document_id}",
+               dependencies=[Depends(require_capability("manage_ic_documents"))])
+async def remove_ic_document(
+    track: Literal["tir", "sip"],
+    application_id: str,
+    document_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Retire one current document. It is superseded, not deleted — the row and
+    its storage objects stay as the audit trail, like a replace."""
+    sb = get_admin_client()
+    track = _resolve_native_track(sb, track, application_id)
+    current = _pick_current(sb, track, application_id, document_id)
+    if not current:
+        raise _error(http_status.HTTP_404_NOT_FOUND, "document_not_found",
+                     "That document is no longer current. Refresh and try again.")
+    now = datetime.now(UTC).isoformat()
+    try:
+        sb.table("ic_documents").update({"superseded_at": now, "updated_at": now}) \
+            .eq("id", document_id).execute()
+    except Exception as exc:
+        log.error("ic_documents: remove failed",
+                  extra={"application_id": application_id, "err": str(exc)})
+        raise _error(http_status.HTTP_502_BAD_GATEWAY, "remove_failed",
+                     "Couldn't remove the document. Try again.") from exc
+
+    write_audit(
+        actor_user_id=user["user_id"],
+        actor_role=actor_role_of(user),
+        action_type="ic_document_removed",
+        target_table="ic_documents",
+        target_id=document_id,
+        after={"application_id": application_id, "track": track,
+               "file_name": current.get("file_name"),
+               "was_signed": bool(current.get("signed_storage_path"))},
+    )
+    return {"removed": document_id}

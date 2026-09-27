@@ -7,8 +7,10 @@
 //
 // Each application gets exactly two actions on the right:
 //
-//   [ Memo Upload ] upload the Investment Committee / MOM PDF
-//   [ Approve ]     draw or type a signature; it is stamped into that PDF
+//   [ Memo Upload ] upload one or more Investment Committee / MOM PDFs
+//                   ("Replace Memo" once some exist: add more, remove some)
+//   [ Approve ]     draw or type a signature; it is stamped into every PDF
+//   [ Reject ]      final gate-2 rejection — also overturns an earlier offer
 //
 // The stamp is produced in the browser (lib/pdfSign.js → pdf-lib) and uploaded
 // as the signed copy; the backend records WHO signed from the session, so the
@@ -46,14 +48,21 @@ const nativeOf = (s) => (s?.nativeTrack || s?.track);
 
 // Row decision state, derived — never stored.
 //
-// `accepted` means the IC memo on this screen has been signed via Approve, NOT
-// that Final Gate issued an offer. `rejected` means Reject was pressed HERE,
-// which writes a gate-2 decision — a gate-1 rejection never reached this tab.
-export const decisionStateOf = (app, doc) => {
+// `accepted` means every memo document on this screen has been signed via
+// Approve, NOT that Final Gate issued an offer. `rejected` means a gate-2
+// rejection (Reject here, or Final Gate) — a gate-1 rejection never reached
+// this tab. `docs` is the row's document list (a single doc is tolerated).
+export const decisionStateOf = (app, docs) => {
   if ((app?.gate2_decision || "") === "rejected") return "rejected";
-  if (doc?.signed) return "accepted";
+  const list = docListOf(docs);
+  if (list.length && list.every((d) => d?.signed)) return "accepted";
   return "pending";
 };
+
+function docListOf(docs) {
+  if (Array.isArray(docs)) return docs.filter(Boolean);
+  return docs ? [docs] : [];
+}
 
 const backdropStyle = {
   position: "fixed", inset: 0, background: "rgba(36,36,36,0.5)",
@@ -76,63 +85,128 @@ function openInNewTab(url) {
 
 // ── Memo Upload modal ─────────────────────────────────────────────────────────
 
-function IcUploadModal({ app, existing, onClose, onDone }) {
-  const [file, setFile] = useState(null);
+function IcUploadModal({ app, existing = [], onClose, onDone, onChanged }) {
+  const [files, setFiles] = useState([]);
+  const [removeIds, setRemoveIds] = useState(() => new Set());
   const [err, setErr] = useState(null);
   const [saving, setSaving] = useState(false);
+  const replacing = existing.length > 0;
 
-  const pick = (f) => {
+  // Adds to the selection (the input is reset each time), so an admin can pick
+  // files in several goes. Invalid files are dropped with one message.
+  const pick = (list) => {
     setErr(null);
-    if (!f) { setFile(null); return; }
-    const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name || "");
-    if (!isPdf) { setFile(null); setErr("Only PDF files are accepted."); return; }
-    if (f.size > MAX_MB * 1024 * 1024) {
-      setFile(null); setErr(`That file is ${(f.size / 1048576).toFixed(1)} MiB — the limit is ${MAX_MB} MiB.`);
-      return;
+    const bad = [];
+    const good = [];
+    for (const f of Array.from(list || [])) {
+      const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name || "");
+      if (!isPdf) bad.push(`${f.name}: only PDF files are accepted.`);
+      else if (f.size > MAX_MB * 1024 * 1024) {
+        bad.push(`${f.name} is ${(f.size / 1048576).toFixed(1)} MiB — the limit is ${MAX_MB} MiB.`);
+      } else good.push(f);
     }
-    setFile(f);
+    if (good.length) setFiles((prev) => [...prev, ...good]);
+    if (bad.length) setErr(bad.join(" "));
   };
 
+  const dropFile = (i) => setFiles((prev) => prev.filter((_, j) => j !== i));
+  const toggleRemove = (id) => setRemoveIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const dirty = files.length > 0 || removeIds.size > 0;
+
   const submit = async () => {
-    if (!file || saving) return;
+    if (!dirty || saving) return;
     setSaving(true); setErr(null);
+    // Uploads first: if one fails, nothing has been removed yet.
+    let done = 0;
     try {
-      await icDocumentsApi.upload(nativeOf(app), app.id, file);
+      for (const f of files) {
+        await icDocumentsApi.upload(nativeOf(app), app.id, f, { mode: "append" });
+        done += 1;
+      }
+      for (const id of removeIds) {
+        await icDocumentsApi.remove(nativeOf(app), app.id, id);
+      }
       onDone();
     } catch (e) {
-      setErr(e?.details?.message || e?.message || "Upload failed. Try again.");
+      const msg = e?.details?.message || e?.message || "Upload failed. Try again.";
+      if (done) {
+        // Keep only what still needs doing, and refresh the row behind the modal.
+        setFiles((prev) => prev.slice(done));
+        onChanged?.();
+      }
+      setErr(msg);
       setSaving(false);
     }
   };
 
   return (
     <div className="os-modal-backdrop" onClick={onClose} style={backdropStyle}>
-      <div className="os-modal" onClick={(e) => e.stopPropagation()} style={panelStyle(520)}>
+      <div className="os-modal" onClick={(e) => e.stopPropagation()} style={panelStyle(560)}>
         <div className="os-modal-head" style={headStyle}>
-          <div style={{ fontWeight: 600, fontSize: 16, color: "var(--ink)" }}>Memo Upload</div>
+          <div style={{ fontWeight: 600, fontSize: 16, color: "var(--ink)" }}>
+            {replacing ? "Replace Memo" : "Memo Upload"}
+          </div>
           <button className="os-btn sm ghost" onClick={onClose} style={{ padding: "2px 8px", fontSize: 18 }}>&times;</button>
         </div>
         <div className="os-modal-body" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
           <div className="os-text-sm os-text-soft">
-            Upload the Investment Committee memo (MOM) for <strong>{app.name}</strong>. PDF only, up to {MAX_MB} MiB.
+            Upload the Investment Committee memo documents (MOM) for <strong>{app.name}</strong>.
+            {" "}You can add several files. PDF only, up to {MAX_MB} MiB each.
           </div>
-          {existing && (
-            <div style={{ fontSize: 12.5, color: "var(--ink-soft)", background: "var(--bg-soft)", padding: "8px 12px", borderRadius: 4 }}>
-              Replacing <strong>{existing.file_name}</strong>
-              {existing.signed ? " — its signature will be archived with it." : "."}
-              {" "}The previous version is kept for audit.
+          {replacing && (
+            <div>
+              <div className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 600, marginBottom: 6 }}>
+                Current documents
+              </div>
+              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                {existing.map((d) => {
+                  const removing = removeIds.has(d.id);
+                  return (
+                    <li key={d.id} data-testid={`existing-${d.id}`}
+                      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
+                        fontSize: 12.5, background: "var(--bg-soft)", padding: "6px 10px", borderRadius: 4 }}>
+                      <span style={{ textDecoration: removing ? "line-through" : "none",
+                        color: removing ? "var(--ink-soft)" : "var(--ink)", wordBreak: "break-all" }}>
+                        {d.file_name || "Memo"}{d.signed ? " · approved" : ""}
+                      </span>
+                      <button className="os-btn ghost sm" type="button"
+                        aria-label={`${removing ? "Keep" : "Remove"} ${d.file_name || "memo"}`}
+                        onClick={() => toggleRemove(d.id)} disabled={saving}>
+                        {removing ? "Undo" : "Remove"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="os-text-xs os-text-dim" style={{ marginTop: 6 }}>
+                Removed documents{existing.some((d) => d.signed) ? " (and their signatures)" : ""} are kept for audit.
+              </div>
             </div>
           )}
           <input
             type="file"
+            multiple
             accept="application/pdf,.pdf"
             aria-label="Memo PDF"
-            onChange={(e) => pick(e.target.files?.[0] || null)}
+            disabled={saving}
+            onChange={(e) => { pick(e.target.files); e.target.value = ""; }}
           />
-          {file && (
-            <div className="os-mono os-text-sm">
-              {file.name} · {(file.size / 1048576).toFixed(2)} MiB
-            </div>
+          {files.length > 0 && (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+              {files.map((f, i) => (
+                <li key={`${f.name}-${i}`} className="os-mono os-text-sm"
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <span style={{ wordBreak: "break-all" }}>{f.name} · {(f.size / 1048576).toFixed(2)} MiB</span>
+                  <button className="os-btn ghost sm" type="button" aria-label={`Drop ${f.name}`}
+                    onClick={() => dropFile(i)} disabled={saving}>&times;</button>
+                </li>
+              ))}
+            </ul>
           )}
           {err && (
             <div style={{ color: "var(--bad)", fontSize: 13, fontWeight: 600, padding: "8px 12px", background: "var(--bad-soft)", borderRadius: 4 }}>{err}</div>
@@ -143,9 +217,9 @@ function IcUploadModal({ app, existing, onClose, onDone }) {
               className="os-btn"
               style={{ background: "#3213b7", color: "#fff" }}
               onClick={submit}
-              disabled={!file || saving}
+              disabled={!dirty || saving}
             >
-              {saving ? "Uploading…" : "Upload"}
+              {saving ? "Saving…" : (files.length > 1 ? `Upload ${files.length} files` : (files.length || !replacing ? "Upload" : "Save"))}
             </button>
           </div>
         </div>
@@ -218,9 +292,10 @@ function SignaturePad({ canvasRef, onDrawn }) {
 }
 
 // ── Reject (final-gate decision) modal ─────────────────────────────────────────────
-// Unlike Approve — which only signs the memo PDF and leaves status alone — this
-// records a real gate-2 decision: jury_review -> rejected. Hence the reason box
-// and the confirm step; the row leaves this tab once it lands.
+// Unlike Approve — which only signs the memo PDFs and leaves status alone — this
+// records a real gate-2 decision: -> rejected. It works from jury_review AND
+// after an earlier offer / waitlist / hold, so an already-selected candidate
+// can still be rejected. Hence the reason box and the confirm step.
 function RejectModal({ app, onClose, onDone }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -242,8 +317,10 @@ function RejectModal({ app, onClose, onDone }) {
       onDone();
     } catch (e) {
       const code = e?.details?.code;
-      if (code === "not_in_jury_review") {
-        setErr("This application is no longer awaiting a final decision — someone may have already decided it. Close this and refresh.");
+      if (code === "already_rejected") {
+        setErr("This application has already been rejected. Close this and refresh.");
+      } else if (code === "not_rejectable" || code === "not_in_jury_review") {
+        setErr(e?.details?.message || "This application can no longer be rejected here. Close this and refresh.");
       } else if (code === "rationale_required") {
         setErr("A reason is required to reject an application.");
       } else {
@@ -264,8 +341,9 @@ function RejectModal({ app, onClose, onDone }) {
           <div className="os-text-sm os-text-soft">
             Reject <strong>{app.name}</strong>
             {app.applicationId ? ` (${relabelDisplayId(app.applicationId)})` : ""}. This records a final
-            decision and moves the application out of this list into <strong>Rejected</strong>.
-            The applicant is not emailed.
+            decision and moves the application into <strong>Rejected</strong>
+            {app.gate2_decision === "offered" ? ", withdrawing the offer already made" : ""}.
+            The applicant is sent the standard decline email.
           </div>
           <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span className="os-text-sm" style={{ fontWeight: 600, color: "var(--ink)" }}>
@@ -302,7 +380,7 @@ function RejectModal({ app, onClose, onDone }) {
 
 // ── Approve (sign memo) modal ──────────────────────────────────────────────────────
 
-function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
+function IcSignModal({ app, docs, defaultName, signerEmail, onClose, onDone }) {
   const canvasRef = useRef(null);
   const [hasDrawing, setHasDrawing] = useState(false);
   const [name, setName] = useState(defaultName || "");
@@ -318,34 +396,46 @@ function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
   };
 
   const canSign = Boolean(name.trim()) && confirmed && !busy;
+  const anySigned = docs.some((d) => d.signed);
+  const lastSigned = docs.filter((d) => d.signed)
+    .sort((a, b) => String(a.signed_at || "").localeCompare(String(b.signed_at || "")))
+    .pop();
 
   const submit = async () => {
     if (!canSign) return;
     setBusy(true); setErr(null);
+    // One approval covers the whole memo pack: the same signature is stamped
+    // into every current document.
+    const signatureDataUrl = hasDrawing && canvasRef.current
+      ? canvasRef.current.toDataURL("image/png")
+      : null;
+    const signedAtIso = new Date().toISOString();
+    let current = null;
     try {
-      // 1. Pull the original PDF through a short-lived signed URL.
-      const { url } = await icDocumentsApi.fileUrl(nativeOf(app), app.id, "original");
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Couldn't download the IC document to sign.");
-      const original = await res.arrayBuffer();
+      for (const doc of docs) {
+        current = doc;
+        // 1. Pull the original PDF through a short-lived signed URL.
+        const { url } = await icDocumentsApi.fileUrl(nativeOf(app), app.id, "original", doc.id);
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Couldn't download ${doc.file_name || "the IC document"} to sign.`);
+        const original = await res.arrayBuffer();
 
-      // 2. Stamp it in the browser.
-      const signatureDataUrl = hasDrawing && canvasRef.current
-        ? canvasRef.current.toDataURL("image/png")
-        : null;
-      const blob = await stampSignature(original, {
-        signatureDataUrl,
-        signerName: name.trim(),
-        signerEmail,
-        signedAtIso: new Date().toISOString(),
-      });
+        // 2. Stamp it in the browser.
+        const blob = await stampSignature(original, {
+          signatureDataUrl,
+          signerName: name.trim(),
+          signerEmail,
+          signedAtIso,
+        });
 
-      // 3. Store the signed copy; the backend stamps the real signer identity.
-      const base = (doc?.file_name || "ic.pdf").replace(/\.pdf$/i, "");
-      await icDocumentsApi.sign(nativeOf(app), app.id, blob, name.trim(), `${base}-signed.pdf`);
+        // 3. Store the signed copy; the backend stamps the real signer identity.
+        const base = (doc.file_name || "ic.pdf").replace(/\.pdf$/i, "");
+        await icDocumentsApi.sign(nativeOf(app), app.id, blob, name.trim(), `${base}-signed.pdf`, doc.id);
+      }
       onDone();
     } catch (e) {
-      setErr(e?.details?.message || e?.message || "Signing failed. Try again.");
+      const msg = e?.details?.message || e?.message || "Signing failed. Try again.";
+      setErr(docs.length > 1 && current ? `${current.file_name || "A document"}: ${msg}` : msg);
       setBusy(false);
     }
   };
@@ -357,15 +447,25 @@ function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
           <div>
             <div style={{ fontWeight: 600, fontSize: 16, color: "var(--ink)" }}>Approve</div>
             <div className="os-text-xs os-text-soft" style={{ marginTop: 2 }}>
-              {app.name} · {doc?.file_name}
+              {app.name} · {docs.length === 1
+                ? docs[0].file_name
+                : `${docs.length} documents`}
             </div>
           </div>
           <button className="os-btn sm ghost" onClick={onClose} style={{ padding: "2px 8px", fontSize: 18 }}>&times;</button>
         </div>
         <div className="os-modal-body" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
-          {doc?.signed && (
+          {docs.length > 1 && (
+            <div style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>
+              Your signature is stamped into every document:
+              <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                {docs.map((d) => <li key={d.id}>{d.file_name || "Memo"}</li>)}
+              </ul>
+            </div>
+          )}
+          {anySigned && lastSigned && (
             <div style={{ fontSize: 12.5, color: "var(--ink-soft)", background: "var(--bg-soft)", padding: "8px 12px", borderRadius: 4 }}>
-              Already approved by <strong>{doc.signer_name}</strong> on {formatSignedAt(doc.signed_at)}. Approving again replaces that signature.
+              Already approved by <strong>{lastSigned.signer_name}</strong> on {formatSignedAt(lastSigned.signed_at)}. Approving again replaces that signature.
             </div>
           )}
           <div>
@@ -430,6 +530,9 @@ function IcSignModal({ app, doc, defaultName, signerEmail, onClose, onDone }) {
 export function AdminSelectedApplications({ goDetail } = {}) {
   const { user } = useAuth();
   const pipeline = useAdminData("pipeline", { status: "jury_review" });
+  // Offered by Final Gate: still selected candidates, and Reject must still be
+  // able to overturn the offer from here, so they stay on this list.
+  const offeredPipeline = useAdminData("pipeline", { status: "offered" });
   // Reject moves an application to `rejected`, so it drops out of the list
   // above. Fetch it back — filtered to gate-2 rejections, because the
   // Rejected tab's ~120 rows are overwhelmingly gate-1 and never belonged here.
@@ -449,14 +552,27 @@ export function AdminSelectedApplications({ goDetail } = {}) {
   const [linkErr, setLinkErr] = useState(null);
 
   const byKey = docs.data?.byKey || {};
+  const listByKey = docs.data?.listByKey;
+  // Every current memo document for a row, oldest first.
+  const docsFor = (s) => {
+    const k = keyOf(nativeOf(s), s.id);
+    if (listByKey) return listByKey[k] || [];
+    return byKey[k] ? [byKey[k]] : [];
+  };
 
   const all = useMemo(() => {
     const shortlisted = pipeline.data?.startups ?? [];
+    const offered = offeredPipeline.data?.startups ?? [];
     const gate2Rejects = (rejectedPipeline.data?.startups ?? [])
       .filter((s) => (s.gate2_decision || "") === "rejected");
-    const seen = new Set(shortlisted.map((s) => keyOf(s.track, s.id)));
-    return [...shortlisted, ...gate2Rejects.filter((s) => !seen.has(keyOf(s.track, s.id)))];
-  }, [pipeline.data, rejectedPipeline.data]);
+    const seen = new Set();
+    return [...shortlisted, ...offered, ...gate2Rejects].filter((s) => {
+      const k = keyOf(s.track, s.id);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }, [pipeline.data, offeredPipeline.data, rejectedPipeline.data]);
 
   const ORDER = { pending: 0, accepted: 1, rejected: 2 };
   const rows = useMemo(() => {
@@ -464,24 +580,26 @@ export function AdminSelectedApplications({ goDetail } = {}) {
     return all
       .filter((s) => track === "all" || s.track === track)
       .filter((s) => decision === "all"
-        || decisionStateOf(s, byKey[keyOf(nativeOf(s), s.id)]) === decision)
+        || decisionStateOf(s, docsFor(s)) === decision)
       .filter((s) => !q || `${s.name || ""} ${s.domain || ""} ${(s.founders || []).join(" ")}`
         .toLowerCase().includes(q))
       .slice()
       .sort((a, b) => {
-        const da = ORDER[decisionStateOf(a, byKey[keyOf(nativeOf(a), a.id)])];
-        const db = ORDER[decisionStateOf(b, byKey[keyOf(nativeOf(b), b.id)])];
+        const da = ORDER[decisionStateOf(a, docsFor(a))];
+        const db = ORDER[decisionStateOf(b, docsFor(b))];
         if (da !== db) return da - db;
         return String(b.sub || "").localeCompare(String(a.sub || ""));
       });
-  }, [all, search, track, decision, byKey]);
+  }, [all, search, track, decision, byKey, listByKey]);
 
-  const reload = () => { docs.reload(); pipeline.reload(); rejectedPipeline.reload(); };
+  const reload = () => {
+    docs.reload(); pipeline.reload(); offeredPipeline.reload(); rejectedPipeline.reload();
+  };
 
-  const view = async (app, variant) => {
+  const view = async (app, variant, doc) => {
     setLinkErr(null);
     try {
-      const { url } = await icDocumentsApi.fileUrl(nativeOf(app), app.id, variant);
+      const { url } = await icDocumentsApi.fileUrl(nativeOf(app), app.id, variant, doc?.id);
       openInNewTab(url);
     } catch (e) {
       setLinkErr(e?.details?.message || e?.message || "Couldn't open that file.");
@@ -495,7 +613,7 @@ export function AdminSelectedApplications({ goDetail } = {}) {
       <PageHead
         eyebrow="SELECTED APPLICATIONS"
         title="Selected <em>applications</em>"
-        sub="Shortlisted TIR and VIP applications. Upload the Investment Committee memo and approve it."
+        sub="Shortlisted and offered TIR and VIP applications. Upload the Investment Committee memo documents and approve them."
       />
 
       <ListToolbar
@@ -518,10 +636,10 @@ export function AdminSelectedApplications({ goDetail } = {}) {
         <div style={{ color: "var(--bad)", fontSize: 13, fontWeight: 600, padding: "8px 12px", background: "var(--bad-soft)", borderRadius: 4, marginBottom: 12 }}>{linkErr}</div>
       )}
 
-      {(pipeline.loading || rejectedPipeline.loading) ? (
+      {(pipeline.loading || offeredPipeline.loading || rejectedPipeline.loading) ? (
         <LoadingState label="Loading selected applications…" />
-      ) : (pipeline.error || rejectedPipeline.error) ? (
-        <ErrorState error={pipeline.error || rejectedPipeline.error} onRetry={reload} />
+      ) : (pipeline.error || offeredPipeline.error || rejectedPipeline.error) ? (
+        <ErrorState error={pipeline.error || offeredPipeline.error || rejectedPipeline.error} onRetry={reload} />
       ) : rows.length === 0 ? (
         <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--ink-soft)", border: "1px dashed var(--line)", borderRadius: 4 }}>
           {track === "all"
@@ -544,8 +662,14 @@ export function AdminSelectedApplications({ goDetail } = {}) {
             </thead>
             <tbody>
               {rows.map((s) => {
-                const doc = byKey[keyOf(nativeOf(s), s.id)];
-                const state = decisionStateOf(s, doc);
+                const rowDocs = docsFor(s);
+                const hasDocs = rowDocs.length > 0;
+                const allSigned = hasDocs && rowDocs.every((d) => d.signed);
+                const signedCount = rowDocs.filter((d) => d.signed).length;
+                const lastSigned = rowDocs.filter((d) => d.signed)
+                  .sort((a, b) => String(a.signed_at || "").localeCompare(String(b.signed_at || "")))
+                  .pop();
+                const state = decisionStateOf(s, rowDocs);
                 return (
                   <tr key={s.id} data-testid={`row-${s.id}`}
                     className={state === "pending" ? "" : `adm-row-${state}`}>
@@ -590,35 +714,56 @@ export function AdminSelectedApplications({ goDetail } = {}) {
                     <td>
                       {docs.loading && !docs.data ? (
                         <span className="os-text-soft os-text-sm">Loading…</span>
-                      ) : !doc ? (
+                      ) : !hasDocs ? (
                         <span className="os-text-soft os-text-sm">Not uploaded</span>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                          <a
-                            className="nm"
-                            style={{ cursor: "pointer", fontSize: 12.5 }}
-                            onClick={() => view(s, "original")}
-                          >
-                            {doc.file_name || "Memo"}
-                          </a>
-                          {doc.signed ? (
+                          {rowDocs.map((d) => (
+                            <span key={d.id || d.file_name} style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+                              <a
+                                className="nm"
+                                style={{ cursor: "pointer", fontSize: 12.5 }}
+                                onClick={() => view(s, "original", d)}
+                              >
+                                {d.file_name || "Memo"}
+                              </a>
+                              {d.signed && rowDocs.length > 1 && (
+                                <a
+                                  className="nm"
+                                  style={{ cursor: "pointer", fontSize: 11 }}
+                                  onClick={() => view(s, "signed", d)}
+                                >
+                                  view approved
+                                </a>
+                              )}
+                            </span>
+                          ))}
+                          {allSigned ? (
                             <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                               <span className="os-chip purple" style={{ fontSize: 10, padding: "1px 6px", fontWeight: 700 }}>
                                 ✓ APPROVED
                               </span>
-                              <span className="os-text-soft" style={{ fontSize: 11 }}>
-                                {doc.signer_name} · {formatSignedAt(doc.signed_at)}
-                              </span>
-                              <a
-                                className="nm"
-                                style={{ cursor: "pointer", fontSize: 11 }}
-                                onClick={() => view(s, "signed")}
-                              >
-                                view approved
-                              </a>
+                              {lastSigned && (
+                                <span className="os-text-soft" style={{ fontSize: 11 }}>
+                                  {lastSigned.signer_name} · {formatSignedAt(lastSigned.signed_at)}
+                                </span>
+                              )}
+                              {rowDocs.length === 1 && (
+                                <a
+                                  className="nm"
+                                  style={{ cursor: "pointer", fontSize: 11 }}
+                                  onClick={() => view(s, "signed", rowDocs[0])}
+                                >
+                                  view approved
+                                </a>
+                              )}
                             </span>
                           ) : (
-                            <span className="os-text-soft" style={{ fontSize: 11 }}>Not approved</span>
+                            <span className="os-text-soft" style={{ fontSize: 11 }}>
+                              {signedCount > 0
+                                ? `${signedCount} of ${rowDocs.length} approved`
+                                : "Not approved"}
+                            </span>
                           )}
                         </div>
                       )}
@@ -628,6 +773,9 @@ export function AdminSelectedApplications({ goDetail } = {}) {
                         data-testid={`decision-${s.id}`}>
                         {state.toUpperCase()}
                       </span>
+                      {s.gate2_decision === "offered" && (
+                        <div className="os-text-xs os-text-soft" style={{ marginTop: 3 }}>Offered</div>
+                      )}
                     </td>
                     <td>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -635,18 +783,18 @@ export function AdminSelectedApplications({ goDetail } = {}) {
                           disabled={state === "rejected"}
                           title={state === "rejected" ? "This application was rejected" : ""}
                           onClick={() => setUploadFor(s)}>
-                          {doc ? "Replace Memo" : "Memo Upload"}
+                          {hasDocs ? "Replace Memo" : "Memo Upload"}
                         </button>
                         <button
                           className="os-btn sm"
-                          style={doc && state !== "rejected" ? { background: "#3213b7", color: "#fff" } : undefined}
-                          disabled={!doc || state === "rejected"}
+                          style={hasDocs && state !== "rejected" ? { background: "#3213b7", color: "#fff" } : undefined}
+                          disabled={!hasDocs || state === "rejected"}
                           title={state === "rejected"
                             ? "This application was rejected"
-                            : (doc ? "" : "Upload the memo first")}
+                            : (hasDocs ? "" : "Upload the memo first")}
                           onClick={() => setSignFor(s)}
                         >
-                          {doc?.signed ? "Re-approve" : "Approve"}
+                          {allSigned ? "Re-approve" : "Approve"}
                         </button>
                         {/* Deliberately NOT gated on a memo: rejecting an
                             application should not require first uploading a
@@ -655,7 +803,9 @@ export function AdminSelectedApplications({ goDetail } = {}) {
                           <button
                             className="os-btn sm"
                             style={{ background: "#fff0f0", color: "#d23b40", borderColor: "#f8c2c4" }}
-                            title="Reject this application (final decision)"
+                            title={s.gate2_decision === "offered"
+                              ? "Reject this application — withdraws the offer (final decision)"
+                              : "Reject this application (final decision)"}
                             onClick={() => setRejectFor(s)}
                           >
                             Reject
@@ -674,20 +824,21 @@ export function AdminSelectedApplications({ goDetail } = {}) {
       {uploadFor && (
         <IcUploadModal
           app={uploadFor}
-          existing={byKey[keyOf(nativeOf(uploadFor), uploadFor.id)]}
+          existing={docsFor(uploadFor)}
           onClose={() => setUploadFor(null)}
+          onChanged={reload}
           onDone={() => {
             setUploadFor(null);
-            setNotice(`Memo uploaded for ${uploadFor.name}.`);
+            setNotice(`Memo documents updated for ${uploadFor.name}.`);
             reload();
           }}
         />
       )}
 
-      {signFor && byKey[keyOf(nativeOf(signFor), signFor.id)] && (
+      {signFor && docsFor(signFor).length > 0 && (
         <IcSignModal
           app={signFor}
-          doc={byKey[keyOf(nativeOf(signFor), signFor.id)]}
+          docs={docsFor(signFor)}
           defaultName={user?.full_name || user?.email || ""}
           signerEmail={user?.email || undefined}
           onClose={() => setSignFor(null)}
@@ -704,7 +855,7 @@ export function AdminSelectedApplications({ goDetail } = {}) {
           app={rejectFor}
           onClose={() => setRejectFor(null)}
           onDone={() => {
-            setNotice(`${rejectFor.name} rejected — moved to the Rejected tab.`);
+            setNotice(`${rejectFor.name} rejected.`);
             setRejectFor(null);
             reload();
           }}

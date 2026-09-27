@@ -25,6 +25,7 @@ vi.mock("../../../../../lib/icDocumentsApi", () => ({
     upload: vi.fn(),
     sign: vi.fn(),
     fileUrl: vi.fn(),
+    remove: vi.fn(),
   },
 }));
 
@@ -86,7 +87,11 @@ const reloadDocs = vi.fn();
 
 function wire({ startups = [VIP_A, VIP_B], docs = [], pipelineState = {}, docsState = {} } = {}) {
   const byKey = {};
-  for (const d of docs) byKey[`${d.track}:${d.application_id}`] = d;
+  const listByKey = {};
+  for (const d of docs) {
+    byKey[`${d.track}:${d.application_id}`] = d;
+    (listByKey[`${d.track}:${d.application_id}`] ||= []).push(d);
+  }
   useAdminData.mockImplementation((kind) => {
     if (kind === "pipeline") {
       return {
@@ -96,7 +101,7 @@ function wire({ startups = [VIP_A, VIP_B], docs = [], pipelineState = {}, docsSt
     }
     if (kind === "icDocuments") {
       return {
-        data: { documents: docs, byKey }, loading: false, error: null, reload: reloadDocs,
+        data: { documents: docs, byKey, listByKey }, loading: false, error: null, reload: reloadDocs,
         ...docsState,
       };
     }
@@ -110,6 +115,7 @@ beforeEach(() => {
   icDocumentsApi.upload.mockResolvedValue({ document: DOC_UNSIGNED });
   icDocumentsApi.sign.mockResolvedValue({ document: DOC_SIGNED });
   icDocumentsApi.fileUrl.mockResolvedValue({ url: "https://signed.example/ic.pdf" });
+  icDocumentsApi.remove.mockResolvedValue({ removed: "d1" });
   stampSignature.mockResolvedValue(new Blob(["%PDF"], { type: "application/pdf" }));
 });
 
@@ -214,7 +220,8 @@ describe("AdminSelectedApplications — application list", () => {
     fireEvent.change(screen.getByLabelText("Memo PDF"), { target: { files: [pdf()] } });
     fireEvent.click(screen.getByText("Upload"));
     await waitFor(() =>
-      expect(icDocumentsApi.upload).toHaveBeenCalledWith("tir", "app-5", expect.any(File)));
+      expect(icDocumentsApi.upload).toHaveBeenCalledWith(
+        "tir", "app-5", expect.any(File), { mode: "append" }));
   });
 
   it("narrows to one track with the track switcher", () => {
@@ -313,7 +320,7 @@ describe("AdminSelectedApplications — Memo Upload", () => {
     fireEvent.change(screen.getByLabelText("Memo PDF"), {
       target: { files: [new File(["x"], "notes.docx", { type: "application/msword" })] },
     });
-    expect(screen.getByText("Only PDF files are accepted.")).toBeTruthy();
+    expect(screen.getByText(/only PDF files are accepted/i)).toBeTruthy();
     expect(screen.getByText("Upload").disabled).toBe(true);
     expect(icDocumentsApi.upload).not.toHaveBeenCalled();
   });
@@ -329,11 +336,71 @@ describe("AdminSelectedApplications — Memo Upload", () => {
     expect(icDocumentsApi.upload).not.toHaveBeenCalled();
   });
 
-  it("warns that replacing archives the existing document", () => {
+  it("warns that removed documents and signatures are kept for audit", () => {
     wire({ docs: [DOC_SIGNED] });
     render(<AdminSelectedApplications />);
     fireEvent.click(screen.getByText("Replace Memo"));
-    expect(screen.getByText(/its signature will be archived with it/)).toBeTruthy();
+    expect(screen.getByText(/\(and their signatures\) are kept for audit/)).toBeTruthy();
+  });
+
+  it("uploads several PDFs in one go, each appended", async () => {
+    wire();
+    render(<AdminSelectedApplications />);
+    fireEvent.click(screen.getAllByText("Memo Upload")[0]);
+    fireEvent.change(screen.getByLabelText("Memo PDF"), {
+      target: { files: [pdf("minutes.pdf"), pdf("annexure.pdf")] },
+    });
+    // A second pick adds to the selection instead of replacing it.
+    fireEvent.change(screen.getByLabelText("Memo PDF"), {
+      target: { files: [pdf("term-sheet.pdf")] },
+    });
+    fireEvent.click(screen.getByText("Upload 3 files"));
+
+    await waitFor(() => expect(icDocumentsApi.upload).toHaveBeenCalledTimes(3));
+    expect(icDocumentsApi.upload.mock.calls.map((c) => c[2].name))
+      .toEqual(["minutes.pdf", "annexure.pdf", "term-sheet.pdf"]);
+    for (const c of icDocumentsApi.upload.mock.calls) expect(c[3]).toEqual({ mode: "append" });
+    await waitFor(() => expect(reloadDocs).toHaveBeenCalled());
+  });
+
+  it("lets a picked file be dropped before uploading", () => {
+    wire();
+    render(<AdminSelectedApplications />);
+    fireEvent.click(screen.getAllByText("Memo Upload")[0]);
+    fireEvent.change(screen.getByLabelText("Memo PDF"), {
+      target: { files: [pdf("a.pdf"), pdf("b.pdf")] },
+    });
+    fireEvent.click(screen.getByLabelText("Drop a.pdf"));
+    expect(screen.queryByText(/^a\.pdf/)).toBeNull();
+    expect(screen.getByText("Upload")).toBeTruthy();
+  });
+
+  it("removes an existing document and adds a new one from Replace Memo", async () => {
+    const second = { ...DOC_UNSIGNED, id: "d2", file_name: "annexure.pdf",
+      uploaded_at: "2026-07-30T10:00:00Z" };
+    wire({ docs: [DOC_SIGNED, second] });
+    render(<AdminSelectedApplications />);
+    fireEvent.click(screen.getByText("Replace Memo"));
+    fireEvent.click(screen.getByLabelText("Remove IC-helios.pdf"));
+    fireEvent.change(screen.getByLabelText("Memo PDF"), { target: { files: [pdf("v2.pdf")] } });
+    fireEvent.click(screen.getByText("Upload"));
+
+    await waitFor(() => expect(icDocumentsApi.remove).toHaveBeenCalledWith("sip", "app-1", "d1"));
+    expect(icDocumentsApi.upload).toHaveBeenCalledWith("sip", "app-1", expect.any(File), { mode: "append" });
+    // Upload happens before removal, so a failed upload never loses a document.
+    expect(icDocumentsApi.upload.mock.invocationCallOrder[0])
+      .toBeLessThan(icDocumentsApi.remove.mock.invocationCallOrder[0]);
+  });
+
+  it("can save a removal on its own", async () => {
+    wire({ docs: [DOC_SIGNED] });
+    render(<AdminSelectedApplications />);
+    fireEvent.click(screen.getByText("Replace Memo"));
+    expect(screen.getByText("Save").disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText("Remove IC-helios.pdf"));
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(icDocumentsApi.remove).toHaveBeenCalledWith("sip", "app-1", "d1"));
+    expect(icDocumentsApi.upload).not.toHaveBeenCalled();
   });
 
   it("uploads a moved app's IC document against its NATIVE track", async () => {
@@ -398,12 +465,42 @@ describe("AdminSelectedApplications — Approve", () => {
 
     await waitFor(() => expect(icDocumentsApi.sign).toHaveBeenCalled());
     // Original pulled through a signed URL, then stamped, then stored.
-    expect(icDocumentsApi.fileUrl).toHaveBeenCalledWith("sip", "app-1", "original");
+    expect(icDocumentsApi.fileUrl).toHaveBeenCalledWith("sip", "app-1", "original", "d1");
     expect(stampSignature).toHaveBeenCalled();
-    const [track, appId, blob, signerName, fileName] = icDocumentsApi.sign.mock.calls[0];
-    expect([track, appId, signerName]).toEqual(["sip", "app-1", "Nirav Sanghavi"]);
+    const [track, appId, blob, signerName, fileName, docId] = icDocumentsApi.sign.mock.calls[0];
+    expect([track, appId, signerName, docId]).toEqual(["sip", "app-1", "Nirav Sanghavi", "d1"]);
     expect(blob).toBeInstanceOf(Blob);
     expect(fileName).toBe("IC-helios-signed.pdf");
+  });
+
+  it("stamps and stores every document when a memo has several", async () => {
+    const second = { ...DOC_UNSIGNED, id: "d2", file_name: "annexure.pdf",
+      uploaded_at: "2026-07-30T10:00:00Z" };
+    wire({ docs: [DOC_UNSIGNED, second] });
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, arrayBuffer: async () => new ArrayBuffer(8),
+    });
+    openSign();
+    fireEvent.click(screen.getByLabelText("Confirm signature"));
+    fireEvent.click(screen.getByText("Approve & save"));
+
+    await waitFor(() => expect(icDocumentsApi.sign).toHaveBeenCalledTimes(2));
+    expect(icDocumentsApi.sign.mock.calls.map((c) => [c[4], c[5]])).toEqual([
+      ["IC-helios-signed.pdf", "d1"],
+      ["annexure-signed.pdf", "d2"],
+    ]);
+  });
+
+  it("shows every document and a partial-approval count", () => {
+    const second = { ...DOC_UNSIGNED, id: "d2", file_name: "annexure.pdf",
+      uploaded_at: "2026-07-30T10:00:00Z" };
+    wire({ docs: [DOC_SIGNED, second] });
+    render(<AdminSelectedApplications />);
+    expect(screen.getByText("IC-helios.pdf")).toBeTruthy();
+    expect(screen.getByText("annexure.pdf")).toBeTruthy();
+    expect(screen.getByText("1 of 2 approved")).toBeTruthy();
+    // Not every document is signed yet → Approve, not Re-approve.
+    expect(screen.queryByText("Re-approve")).toBeNull();
   });
 
   it("passes the typed name through as the stamp mark when nothing is drawn", async () => {
@@ -438,7 +535,7 @@ describe("AdminSelectedApplications — Approve", () => {
     fireEvent.click(screen.getByText("Approve & save"));
 
     await waitFor(() =>
-      expect(screen.getByText("Couldn't download the IC document to sign.")).toBeTruthy());
+      expect(screen.getByText("Couldn't download IC-helios.pdf to sign.")).toBeTruthy());
     expect(icDocumentsApi.sign).not.toHaveBeenCalled();
   });
 });
