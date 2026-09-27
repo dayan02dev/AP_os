@@ -143,7 +143,7 @@ describe("AdminSelectedApplications — application list", () => {
   it("shows the two IC actions and NO jury-round affordances", () => {
     wire();
     render(<AdminSelectedApplications />);
-    expect(screen.getAllByText("Memo Upload").length).toBe(2);
+    expect(screen.getAllByText("Upload Memos").length).toBe(2);
     expect(screen.getAllByText("Approve").length).toBe(2);
     // No pick / juror / final-gate surface on this screen.
     expect(screen.queryByText(/pick/i)).toBeNull();
@@ -167,7 +167,7 @@ describe("AdminSelectedApplications — application list", () => {
     expect(screen.getByText("✓ APPROVED")).toBeTruthy();
     expect(screen.getByText(/Nirav Sanghavi · 30 Jul 2026 14:12 IST/)).toBeTruthy();
     expect(screen.getByText("Re-approve")).toBeTruthy();
-    expect(screen.getByText("Replace Memo")).toBeTruthy();
+    expect(screen.getByText("Manage Memos")).toBeTruthy();
   });
 
   it("labels an undocumented application as Not uploaded", () => {
@@ -209,14 +209,14 @@ describe("AdminSelectedApplications — application list", () => {
     wire({ startups: [TIR_A] });
     render(<AdminSelectedApplications />);
     const row = screen.getByText("Anvaya Motors").closest("tr");
-    expect(within(row).getByText("Memo Upload")).toBeTruthy();
+    expect(within(row).getByText("Upload Memos")).toBeTruthy();
     expect(within(row).getByText("Approve")).toBeTruthy();
   });
 
   it("uploads a TIR memo against the TIR track", async () => {
     wire({ startups: [TIR_A] });
     render(<AdminSelectedApplications />);
-    fireEvent.click(screen.getByText("Memo Upload"));
+    fireEvent.click(screen.getByText("Upload Memos"));
     fireEvent.change(screen.getByLabelText("Memo PDF"), { target: { files: [pdf()] } });
     fireEvent.click(screen.getByText("Upload"));
     await waitFor(() =>
@@ -298,7 +298,7 @@ describe("AdminSelectedApplications — Memo Upload", () => {
   it("uploads a PDF for the chosen application and reloads", async () => {
     wire();
     render(<AdminSelectedApplications />);
-    fireEvent.click(screen.getAllByText("Memo Upload")[0]);
+    fireEvent.click(screen.getAllByText("Upload Memos")[0]);
 
     fireEvent.change(screen.getByLabelText("Memo PDF"), {
       target: { files: [pdf("minutes.pdf")] },
@@ -316,7 +316,7 @@ describe("AdminSelectedApplications — Memo Upload", () => {
   it("refuses a non-PDF before any network call", () => {
     wire();
     render(<AdminSelectedApplications />);
-    fireEvent.click(screen.getAllByText("Memo Upload")[0]);
+    fireEvent.click(screen.getAllByText("Upload Memos")[0]);
     fireEvent.change(screen.getByLabelText("Memo PDF"), {
       target: { files: [new File(["x"], "notes.docx", { type: "application/msword" })] },
     });
@@ -328,7 +328,7 @@ describe("AdminSelectedApplications — Memo Upload", () => {
   it("refuses a file over the 10 MiB cap before any network call", () => {
     wire();
     render(<AdminSelectedApplications />);
-    fireEvent.click(screen.getAllByText("Memo Upload")[0]);
+    fireEvent.click(screen.getAllByText("Upload Memos")[0]);
     const big = new File([new Uint8Array(2)], "big.pdf", { type: "application/pdf" });
     Object.defineProperty(big, "size", { value: 11 * 1024 * 1024 });
     fireEvent.change(screen.getByLabelText("Memo PDF"), { target: { files: [big] } });
@@ -339,14 +339,14 @@ describe("AdminSelectedApplications — Memo Upload", () => {
   it("warns that removed documents and signatures are kept for audit", () => {
     wire({ docs: [DOC_SIGNED] });
     render(<AdminSelectedApplications />);
-    fireEvent.click(screen.getByText("Replace Memo"));
+    fireEvent.click(screen.getByText("Manage Memos"));
     expect(screen.getByText(/\(and their signatures\) are kept for audit/)).toBeTruthy();
   });
 
   it("uploads several PDFs in one go, each appended", async () => {
     wire();
     render(<AdminSelectedApplications />);
-    fireEvent.click(screen.getAllByText("Memo Upload")[0]);
+    fireEvent.click(screen.getAllByText("Upload Memos")[0]);
     fireEvent.change(screen.getByLabelText("Memo PDF"), {
       target: { files: [pdf("minutes.pdf"), pdf("annexure.pdf")] },
     });
@@ -366,7 +366,7 @@ describe("AdminSelectedApplications — Memo Upload", () => {
   it("lets a picked file be dropped before uploading", () => {
     wire();
     render(<AdminSelectedApplications />);
-    fireEvent.click(screen.getAllByText("Memo Upload")[0]);
+    fireEvent.click(screen.getAllByText("Upload Memos")[0]);
     fireEvent.change(screen.getByLabelText("Memo PDF"), {
       target: { files: [pdf("a.pdf"), pdf("b.pdf")] },
     });
@@ -380,7 +380,7 @@ describe("AdminSelectedApplications — Memo Upload", () => {
       uploaded_at: "2026-07-30T10:00:00Z" };
     wire({ docs: [DOC_SIGNED, second] });
     render(<AdminSelectedApplications />);
-    fireEvent.click(screen.getByText("Replace Memo"));
+    fireEvent.click(screen.getByText("Manage Memos"));
     fireEvent.click(screen.getByLabelText("Remove IC-helios.pdf"));
     fireEvent.change(screen.getByLabelText("Memo PDF"), { target: { files: [pdf("v2.pdf")] } });
     fireEvent.click(screen.getByText("Upload"));
@@ -395,7 +395,7 @@ describe("AdminSelectedApplications — Memo Upload", () => {
   it("can save a removal on its own", async () => {
     wire({ docs: [DOC_SIGNED] });
     render(<AdminSelectedApplications />);
-    fireEvent.click(screen.getByText("Replace Memo"));
+    fireEvent.click(screen.getByText("Manage Memos"));
     expect(screen.getByText("Save").disabled).toBe(true);
     fireEvent.click(screen.getByLabelText("Remove IC-helios.pdf"));
     fireEvent.click(screen.getByText("Save"));
@@ -406,7 +406,7 @@ describe("AdminSelectedApplications — Memo Upload", () => {
   it("uploads a moved app's IC document against its NATIVE track", async () => {
     wire({ startups: [MOVED_TO_VIP] });
     render(<AdminSelectedApplications />);
-    fireEvent.click(screen.getByText("Memo Upload"));
+    fireEvent.click(screen.getByText("Upload Memos"));
     fireEvent.change(screen.getByLabelText("Memo PDF"), { target: { files: [pdf()] } });
     fireEvent.click(screen.getByText("Upload"));
 
@@ -420,7 +420,7 @@ describe("AdminSelectedApplications — Memo Upload", () => {
     wire();
     icDocumentsApi.upload.mockRejectedValue({ details: { message: "Storage upload failed. Try again." } });
     render(<AdminSelectedApplications />);
-    fireEvent.click(screen.getAllByText("Memo Upload")[0]);
+    fireEvent.click(screen.getAllByText("Upload Memos")[0]);
     fireEvent.change(screen.getByLabelText("Memo PDF"), { target: { files: [pdf()] } });
     fireEvent.click(screen.getByText("Upload"));
     await waitFor(() =>
@@ -537,5 +537,22 @@ describe("AdminSelectedApplications — Approve", () => {
     await waitFor(() =>
       expect(screen.getByText("Couldn't download IC-helios.pdf to sign.")).toBeTruthy());
     expect(icDocumentsApi.sign).not.toHaveBeenCalled();
+  });
+});
+
+describe("AdminSelectedApplications — + Add document", () => {
+  it("opens the manage window from the memo cell, ready to add more files", async () => {
+    wire({ docs: [DOC_SIGNED] });
+    render(<AdminSelectedApplications />);
+    fireEvent.click(screen.getByText("+ Add document"));
+    expect(screen.getByText("Manage memo documents")).toBeTruthy();
+    expect(screen.getByLabelText("Memo PDF").multiple).toBe(true);
+    fireEvent.change(screen.getByLabelText("Memo PDF"), {
+      target: { files: [pdf("annexure.pdf"), pdf("term-sheet.pdf")] },
+    });
+    fireEvent.click(screen.getByText("Upload 2 files"));
+    await waitFor(() => expect(icDocumentsApi.upload).toHaveBeenCalledTimes(2));
+    // Adding never touches the existing document.
+    expect(icDocumentsApi.remove).not.toHaveBeenCalled();
   });
 });

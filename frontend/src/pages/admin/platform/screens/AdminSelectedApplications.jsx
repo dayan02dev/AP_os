@@ -7,8 +7,9 @@
 //
 // Each application gets exactly two actions on the right:
 //
-//   [ Memo Upload ] upload one or more Investment Committee / MOM PDFs
-//                   ("Replace Memo" once some exist: add more, remove some)
+//   [ Upload Memos ] upload one or more Investment Committee / MOM PDFs
+//                    ("Manage Memos" once some exist: add more, remove some;
+//                    the "+ Add document" link under the list opens the same)
 //   [ Approve ]     draw or type a signature; it is stamped into every PDF
 //   [ Reject ]      final gate-2 rejection — also overturns an earlier offer
 //
@@ -149,7 +150,7 @@ function IcUploadModal({ app, existing = [], onClose, onDone, onChanged }) {
       <div className="os-modal" onClick={(e) => e.stopPropagation()} style={panelStyle(560)}>
         <div className="os-modal-head" style={headStyle}>
           <div style={{ fontWeight: 600, fontSize: 16, color: "var(--ink)" }}>
-            {replacing ? "Replace Memo" : "Memo Upload"}
+            {replacing ? "Manage memo documents" : "Upload memo documents"}
           </div>
           <button className="os-btn sm ghost" onClick={onClose} style={{ padding: "2px 8px", fontSize: 18 }}>&times;</button>
         </div>
@@ -196,6 +197,9 @@ function IcUploadModal({ app, existing = [], onClose, onDone, onChanged }) {
             disabled={saving}
             onChange={(e) => { pick(e.target.files); e.target.value = ""; }}
           />
+          <div className="os-text-xs os-text-dim" style={{ marginTop: -8 }}>
+            Tip: select several PDFs at once (⌘/Ctrl-click), or choose again to add more.
+          </div>
           {files.length > 0 && (
             <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
               {files.map((f, i) => (
@@ -738,6 +742,15 @@ export function AdminSelectedApplications({ goDetail } = {}) {
                               )}
                             </span>
                           ))}
+                          {state !== "rejected" && (
+                            <a
+                              className="nm"
+                              style={{ cursor: "pointer", fontSize: 11, fontWeight: 600 }}
+                              onClick={() => setUploadFor(s)}
+                            >
+                              + Add document
+                            </a>
+                          )}
                           {allSigned ? (
                             <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                               <span className="os-chip purple" style={{ fontSize: 10, padding: "1px 6px", fontWeight: 700 }}>
@@ -783,7 +796,7 @@ export function AdminSelectedApplications({ goDetail } = {}) {
                           disabled={state === "rejected"}
                           title={state === "rejected" ? "This application was rejected" : ""}
                           onClick={() => setUploadFor(s)}>
-                          {hasDocs ? "Replace Memo" : "Memo Upload"}
+                          {hasDocs ? "Manage Memos" : "Upload Memos"}
                         </button>
                         <button
                           className="os-btn sm"
