@@ -52,10 +52,10 @@ describe("AdminPipeline reco column + filter", () => {
     expect(screen.getByText("AppA")).toBeTruthy();
   });
 
-  it("the — panel bucket filters apps with no reviews", () => {
+  it("the 'No reviews' panel bucket filters apps with no reviews", () => {
     render(<AdminPipeline goDetail={() => {}} decisionMode="reviewer" />);
     fireEvent.click(screen.getByRole("button", { name: /^Filters/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^—/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^No reviews/ }));
     // Neither mock row lacks reviews -> empty table
     expect(screen.queryByText("AppA")).not.toBeInTheDocument();
     expect(screen.queryByText("AppB")).not.toBeInTheDocument();

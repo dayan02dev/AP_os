@@ -52,7 +52,9 @@ export function industryCountsFor(rows, track) {
 // drifted to "Interview" precisely because this screen kept its own copy.
 
 const getFriendlyStatus = (s) => chipLabel(s.chip);
-const getStatusId = (s) => chipStatusId(s.chip);
+// AI screening is a transient sub-step of Submitted (no filter option of its
+// own), so it filters and counts as Submitted.
+const getStatusId = (s) => { const id = chipStatusId(s.chip); return id === 'ai-screening' ? 'submitted' : id; };
 const getChipTone = (s) => chipTone(s.chip);
 
 // ─── Filter data ────────────────────────────────────────────────────────────
@@ -72,6 +74,31 @@ const STATUSES = [
   { id: 'withdrawn', label: 'Withdrawn', color: '#242424' },
 ];
 
+// Rows with no industry are filterable as "Unspecified" (the dashboard's
+// industry breakdown uses the same name), so the chips add up to the list.
+const UNSPECIFIED = 'Unspecified';
+const industryOf = (s) => (s.domain && s.domain !== '—') ? s.domain : UNSPECIFIED;
+
+// Reco bucket: the aggregate verdict, else split the old "—" into apps with a
+// single review (verdict needs 2) and apps with none. review_count (contract
+// C2) when the backend sends it, else the vote tally.
+const reviewCountOf = (s) => {
+  if (typeof s.reviewCount === 'number') return s.reviewCount;
+  const t = s.reco || {};
+  return Number(t.yes || 0) + Number(t.maybe || 0) + Number(t.no || 0);
+};
+export const recoBucket = (s) => aggregateReco(s.reco) || (reviewCountOf(s) === 1 ? 'one' : 'none');
+const RECO_BUCKETS = [['yes', 'Yes'], ['maybe', 'Maybe'], ['no', 'No'], ['one', '1 review'], ['none', 'No reviews']];
+const RECO_RANK = { yes: 0, maybe: 1, no: 2, one: 3, none: 4 };
+
+// Display-ID sort key: track prefix, then the numeric sequence (so TIR-1001
+// sorts before TIR-26580), never the row UUID.
+const idSortKey = (s) => {
+  const disp = relabelDisplayId(s.applicationId) || '';
+  const m = /^([A-Za-z]+)-?(\d+)/.exec(disp);
+  return m ? [m[1].toUpperCase(), Number(m[2])] : [disp || String(s.id || ''), 0];
+};
+
 // ─── CSV download using the exported pure helper ────────────────────────────
 
 function downloadCsv(rows) {
@@ -88,7 +115,7 @@ function downloadCsv(rows) {
       const inv = {
         'NEW': 'submitted', 'PROCESSING': 'ai_screening', 'IN REVIEW': 'under_review',
         'EVALUATED': 'evaluated', 'SHORTLISTED': 'shortlisted', 'JURY REVIEW': 'jury_review',
-        'ACCEPTED': 'offered', 'REJECTED': 'rejected', 'WAITLISTED': 'waitlisted',
+        'ACCEPTED': 'offered', 'ONBOARDED': 'onboarded', 'REJECTED': 'rejected', 'WAITLISTED': 'waitlisted',
         'HOLD': 'on_hold', 'WITHDRAWN': 'withdrawn',
       };
       return inv[c] || 'submitted';
@@ -156,9 +183,29 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   const [finalOnlyState, setFinalOnly] = useStickyState(scope, 'finalOnly', false);
   const finalOnly = isRejectedView && !!finalOnlyState;
   const industries = React.useMemo(() => industryCountsFor(S, track), [S, track]);
+  const unspecifiedCount = React.useMemo(() => S.filter(s => !s.hidden && !s.archived
+    && (track === 'all' || s.track === track) && industryOf(s) === UNSPECIFIED).length, [S, track]);
   const recoCounts = React.useMemo(() => {
-    const m = { yes: 0, maybe: 0, no: 0, none: 0 };
-    S.forEach((s) => { m[aggregateReco(s.reco) || "none"] += 1; });
+    const m = { yes: 0, maybe: 0, no: 0, one: 0, none: 0 };
+    S.forEach((s) => { m[recoBucket(s)] += 1; });
+    return m;
+  }, [S]);
+  // Status options = the statuses actually on this tab, with counts (a static
+  // list offered chips that could never match here).
+  const statusCounts = React.useMemo(() => {
+    const m = {};
+    S.forEach((s) => { if (!s.hidden && !s.archived) { const id = getStatusId(s); m[id] = (m[id] || 0) + 1; } });
+    return m;
+  }, [S]);
+  // Batch membership counts — an app can sit in several batches.
+  const batchCounts = React.useMemo(() => {
+    const m = { Unassigned: 0 };
+    S.forEach((s) => {
+      if (s.hidden || s.archived) return;
+      const names = (s.batches || []).map(b => b.name).filter(Boolean);
+      if (names.length === 0) m.Unassigned += 1;
+      names.forEach((nm) => { m[nm] = (m[nm] || 0) + 1; });
+    });
     return m;
   }, [S]);
   const [filtersOpen, setFiltersOpen] = useStickyState(scope, 'filtersOpen', false);
@@ -202,6 +249,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     const set = new Set(batches.map(b => b.name).filter(Boolean));
     S.forEach(s => {
       if (s.batch && s.batch !== 'Unassigned') set.add(s.batch);
+      (s.batches || []).forEach(b => { if (b && b.name) set.add(b.name); });
     });
     return Array.from(set).sort();
   };
@@ -229,7 +277,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
 
     if (decisionMode === 'jury') {
       const c = (s.chip || '').toUpperCase();
-      if (c !== 'SHORTLISTED' && c !== 'JURY REVIEW' && c !== 'ACCEPTED' && c !== 'REJECTED' && c !== 'WAITLISTED') {
+      if (c !== 'SHORTLISTED' && c !== 'JURY REVIEW' && c !== 'ACCEPTED' && c !== 'ONBOARDED' && c !== 'REJECTED' && c !== 'WAITLISTED') {
         return false;
       }
     }
@@ -257,19 +305,14 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     }
 
     if (status !== 'all') {
-      const currentStatusId = getStatusId(s);
-      if (status === 'offered' || status === 'onboarded') {
-        if (currentStatusId !== 'offered') return false;
-      } else {
-        if (currentStatusId !== status) return false;
-      }
+      if (getStatusId(s) !== status) return false;
     }
 
     if (industry !== 'all') {
-      if ((s.domain || '') !== industry) return false;
+      if (industryOf(s) !== industry) return false;
     }
 
-    if (recoFilter && (aggregateReco(s.reco) || "none") !== recoFilter) return false;
+    if (recoFilter && recoBucket(s) !== recoFilter) return false;
 
     if (finalOnly && !isFinalRoundReject(s)) return false;
 
@@ -292,8 +335,10 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         valA = a.name || '';
         valB = b.name || '';
       } else if (sortCol === 'founder') {
-        valA = (a.founders && a.founders[0]) || '';
-        valB = (b.founders && b.founders[0]) || '';
+        const fa = ((a.founders && a.founders[0]) || '').trim();
+        const fb = ((b.founders && b.founders[0]) || '').trim();
+        const c = fa.localeCompare(fb, undefined, { sensitivity: 'base' });
+        return sortAsc ? c : -c;
       } else if (sortCol === 'domain') {
         valA = a.domain || '';
         valB = b.domain || '';
@@ -319,8 +364,12 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         valA = a.sub || '';
         valB = b.sub || '';
       } else if (sortCol === 'id') {
-        valA = a.id || '';
-        valB = b.id || '';
+        [valA, valB] = [idSortKey(a), idSortKey(b)];
+        const c = valA[0] < valB[0] ? -1 : valA[0] > valB[0] ? 1 : valA[1] - valB[1];
+        return sortAsc ? c : -c;
+      } else if (sortCol === 'reco') {
+        valA = RECO_RANK[recoBucket(a)];
+        valB = RECO_RANK[recoBucket(b)];
       }
       if (valA < valB) return sortAsc ? -1 : 1;
       if (valA > valB) return sortAsc ? 1 : -1;
@@ -331,9 +380,9 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   // Active (applied) filters shown as removable pills
   const activeChips = [];
   if (status !== 'all') activeChips.push({ label: 'Status · ' + ((STATUSES.find(x => x.id === status) || {}).label || status), clear: () => setStatus('all') });
-  if (industry !== 'all') activeChips.push({ label: industry, clear: () => setIndustry('all') });
+  if (industry !== 'all') activeChips.push({ label: industry === UNSPECIFIED ? '— Unspecified' : industry, clear: () => setIndustry('all') });
   if (batchFilter !== 'all') activeChips.push({ label: 'Batch · ' + batchFilter, clear: () => setBatchFilter('all') });
-  if (recoFilter) activeChips.push({ label: 'Reco · ' + (recoFilter === 'none' ? '—' : recoFilter), clear: () => setRecoFilter(null) });
+  if (recoFilter) activeChips.push({ label: 'Reco · ' + ((RECO_BUCKETS.find(([v]) => v === recoFilter) || [])[1] || recoFilter).toLowerCase(), clear: () => setRecoFilter(null) });
   if (finalOnly) activeChips.push({ label: 'Final round only', clear: () => setFinalOnly(false) });
   const activeCount = activeChips.length;
 
@@ -676,14 +725,15 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
             <div className="lp-filter-section">
               <span className="lp-filter-label">STATUS</span>
               <div className="lp-filter-btns">
-                {STATUSES.map(st => (
+                {STATUSES.filter(st => st.id === 'all' || st.id === status || statusCounts[st.id] > 0).map(st => (
                   <button
                     key={st.id}
                     className={`lp-filter-btn${status === st.id ? ' active' : ''}`}
                     onClick={() => setStatus(st.id)}
                   >
                     {st.color && <span className="sdot" style={{ background: st.color }} />}
-                    {st.label}
+                    <span>{st.label}</span>
+                    {st.id !== 'all' && <span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{statusCounts[st.id] || 0}</span>}
                   </button>
                 ))}
               </div>
@@ -708,6 +758,14 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                     {name} {count}
                   </button>
                 ))}
+                {unspecifiedCount > 0 && (
+                  <button
+                    className={`lp-filter-btn${industry === UNSPECIFIED ? ' active' : ''}`}
+                    onClick={() => setIndustry(UNSPECIFIED)}
+                  >
+                    — Unspecified {unspecifiedCount}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -716,7 +774,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
               <span className="lp-filter-label">RECOMMENDATION</span>
               <div className="lp-filter-btns">
                 <button className={`lp-filter-btn${!recoFilter ? " active" : ""}`} onClick={() => setRecoFilter(null)}>All</button>
-                {[["yes", "Yes"], ["maybe", "Maybe"], ["no", "No"], ["none", "—"]].map(([v, label]) => (
+                {RECO_BUCKETS.map(([v, label]) => (
                   <button key={v} className={`lp-filter-btn${recoFilter === v ? " active" : ""}`}
                     onClick={() => setRecoFilter(recoFilter === v ? null : v)}>
                     {label}<span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{recoCounts[v]}</span>
@@ -740,7 +798,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                     className={`lp-filter-btn${batchFilter === 'Unassigned' ? ' active' : ''}`}
                     onClick={() => setBatchFilter('Unassigned')}
                   >
-                    Unassigned
+                    Unassigned<span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{batchCounts.Unassigned}</span>
                   </button>
                   {getAvailableBatches().map(b => (
                     <div key={b} className={`lp-filter-btn-group${batchFilter === b ? ' active' : ''}`}>
@@ -748,7 +806,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                         className={`lp-filter-btn${batchFilter === b ? ' active' : ''}`}
                         onClick={() => setBatchFilter(b)}
                       >
-                        {b}
+                        {b}<span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{batchCounts[b] || 0}</span>
                       </button>
                       <button
                         className="lp-filter-btn-dots"
@@ -832,7 +890,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
             {renderHeader('AI score', 'ai', true)}
             {renderHeader('Reviewer score', 'rev', true)}
             {renderHeader('Reviewers', 'reviewers', true)}
-            <th>Reco</th>
+            {renderHeader('Reco', 'reco')}
             {renderHeader('STATUS', 'status')}
             {renderHeader(decisionMode === 'jury' ? 'ASSIGNED JURY' : 'BATCH', 'batch')}
             {renderHeader('SUBMITTED', 'sub')}
@@ -906,12 +964,18 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                 </td>
                 <td className="num">
                   {s.reviewers && (s.reviewers.assigned > 0 || s.reviewers.submitted > 0)
-                    ? <span className="os-mono">{s.reviewers.submitted} / {s.reviewers.assigned}</span>
+                    ? (s.reviewers.submitted > s.reviewers.assigned
+                      // Reviews from reviewers no longer assigned (unassigned
+                      // batch / rejected app) — never render "3 / 0".
+                      ? <span className="os-mono" title={`${s.reviewers.submitted - s.reviewers.assigned} from reviewers no longer assigned`}>
+                          {s.reviewers.submitted} reviews
+                        </span>
+                      : <span className="os-mono">{s.reviewers.submitted} / {s.reviewers.assigned}</span>)
                     : <span className="os-text-soft">—</span>}
                 </td>
                 <td onClick={e => e.stopPropagation()}>
                   <RecoCell reco={s.reco}
-                    onSelect={(v) => setRecoFilter((prev) => (prev === v ? null : v))} />
+                    onSelect={(v) => { const b = v === 'none' ? recoBucket(s) : v; setRecoFilter((prev) => (prev === b ? null : b)); }} />
                 </td>
                 <td>
                   <Chip tone={getChipTone(s)}>{getFriendlyStatus(s).toUpperCase()}</Chip>

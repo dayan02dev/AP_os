@@ -186,8 +186,9 @@ describe("AdminPipeline screen (smoke)", () => {
     // Open the collapsible Filters panel.
     fireEvent.click(screen.getByRole("button", { name: /Filters/i }));
     expect(screen.queryByText("AI screening")).toBeNull();
-    // Sanity: a sibling status option is still present.
-    expect(screen.getByText("Under review")).toBeTruthy();
+    // Sanity: status options are derived from the loaded rows (ADM-15) — the
+    // mocked row is shortlisted, so that option is present.
+    expect(screen.getByText("Shortlisted")).toBeTruthy();
   });
 });
 

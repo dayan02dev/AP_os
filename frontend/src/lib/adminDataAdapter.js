@@ -1,7 +1,7 @@
 export const STATUS_TO_CHIP = {
   submitted: "NEW", ai_screening: "PROCESSING", under_review: "IN REVIEW",
   evaluated: "EVALUATED", shortlisted: "SHORTLISTED", jury_review: "JURY REVIEW", interview: "JURY REVIEW",
-  on_hold: "HOLD", offered: "ACCEPTED", onboarded: "ACCEPTED",
+  on_hold: "HOLD", offered: "ACCEPTED", onboarded: "ONBOARDED",
   rejected: "REJECTED", waitlisted: "WAITLISTED", withdrawn: "WITHDRAWN",
 };
 
@@ -22,6 +22,7 @@ export const CHIP_META = {
   SHORTLISTED:   { label: "Shortlisted",  statusId: "shortlisted",  tone: "green" },
   "JURY REVIEW": { label: "Accepted",     statusId: "jury_review",  tone: "blue" },
   ACCEPTED:      { label: "Offered",      statusId: "offered",      tone: "green" },
+  ONBOARDED:     { label: "Onboarded",    statusId: "onboarded",    tone: "green" },
   REJECTED:      { label: "Rejected",     statusId: "not-selected", tone: "red" },
   WAITLISTED:    { label: "Waitlisted",   statusId: "waitlisted",   tone: "" },
   HOLD:          { label: "Hold",         statusId: "hold",         tone: "amber" },
@@ -96,6 +97,10 @@ export function adaptPipelineRow(row) {
     recommendation: row.recommendation || null,
     reviewers: row.reviewers || null,
     reco: row.reco || null,
+    // Contract C2 — absent on older backends (callers fall back to the tally).
+    reviewCount: row.review_count ?? null,
+    gate1_decision: row.gate1_decision ?? null,
+    decidedAt: row.decided_at || null,
   };
 }
 

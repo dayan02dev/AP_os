@@ -11,6 +11,14 @@
 
 import React from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
+import { writeStickyState } from "../../../../hooks/useStickyState.js";
+
+// The Applications tab (AdminPipeline scopeKey="applications") reads its
+// industry filter from this sticky key — write it, then switch tabs.
+const presetIndustry = (go, name) => {
+  writeStickyState('admin.pipeline.applications', 'industry', name);
+  go('pipeline');
+};
 
 // ─── FunnelRow ────────────────────────────────────────────────────────────────
 function FunnelRow({ label, sublabel, count, maxCount, filledColor = '#1f0a8a' }) {
@@ -57,11 +65,7 @@ const ArrowDown = () => (
 // Real industry breakdown: derived from the pipeline (grouped on `domain`).
 // `industries` is [{ name, count, pct }] sorted desc, computed by the caller.
 function ApplicationsByIndustry({ go, industries }) {
-  const handleIndustryClick = (indName) => {
-    if (!window.OS_FILTERS) window.OS_FILTERS = {};
-    window.OS_FILTERS.industry = indName;
-    go('pipeline');
-  };
+  const handleIndustryClick = (indName) => presetIndustry(go, indName);
 
   const maxCount = Math.max(1, ...industries.map(i => i.count));
 
@@ -94,11 +98,7 @@ function ApplicationsByIndustry({ go, industries }) {
         <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--ink-dim)', textTransform: 'uppercase', marginRight: 8 }}>FILTER:</span>
         <button
           style={{ padding: '4px 12px', borderRadius: '16px', background: '#242424', color: '#fff', border: 'none', fontSize: 12, fontWeight: '500', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}
-          onClick={() => {
-            if (!window.OS_FILTERS) window.OS_FILTERS = {};
-            window.OS_FILTERS.industry = 'all';
-            go('pipeline');
-          }}
+          onClick={() => presetIndustry(go, 'all')}
         >
           All
         </button>
@@ -318,7 +318,8 @@ export function AdminDashboard({ go, selectedCount = null }) {
             Where the cohort is concentrated
           </h2>
           <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4, fontFamily: 'var(--font-sans)' }}>
-            Click an industry to jump into the Applications tab pre-filtered.
+            All {(pipelineData?.startups || []).length} applications, every stage (including rejected and accepted).
+            Click an industry to jump into the Applications tab pre-filtered — that tab holds only apps still in review.
           </div>
         </div>
         {pipelineLoading && industries.length === 0

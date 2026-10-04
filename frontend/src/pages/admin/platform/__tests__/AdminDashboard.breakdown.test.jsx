@@ -75,3 +75,29 @@ describe("AdminDashboard — pipeline_breakdown", () => {
     expect(within(funnel).queryByText("603")).toBeNull();
   });
 });
+
+describe("ADM-13 industry click pre-filters the Applications tab", () => {
+  it("writes the Applications tab's sticky industry key and navigates", async () => {
+    const { fireEvent } = await import("@testing-library/react");
+    const { stickyKey } = await import("../../../../hooks/useStickyState.js");
+    useAdminData.mockImplementation((resource) =>
+      resource === "stats"
+        ? { data: STATS, loading: false, error: null }
+        : { data: { startups: [{ domain: "Healthcare" }, { domain: "—" }] }, loading: false, error: null });
+    const go = vi.fn();
+    render(<AdminDashboard go={go} />);
+    fireEvent.click(screen.getAllByText("Healthcare")[0]);
+    expect(go).toHaveBeenCalledWith("pipeline");
+    expect(JSON.parse(sessionStorage.getItem(stickyKey("admin.pipeline.applications", "industry")))).toBe("Healthcare");
+    expect(window.OS_FILTERS?.industry).toBeUndefined();
+  });
+
+  it("labels the industry scope as every stage", () => {
+    useAdminData.mockImplementation((resource) =>
+      resource === "stats"
+        ? { data: STATS, loading: false, error: null }
+        : { data: { startups: [{ domain: "Healthcare" }] }, loading: false, error: null });
+    render(<AdminDashboard go={() => {}} />);
+    expect(screen.getByText(/All 1 applications, every stage/i)).toBeTruthy();
+  });
+});
