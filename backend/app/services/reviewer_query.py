@@ -184,13 +184,56 @@ def fetch_inbox(reviewer_user_id: str) -> list[dict]:
     return out
 
 
+# Statuses where the admin has already decided the app: the reviewer's form is
+# read-only and review writes are refused (409 application_decided).
+DECIDED_STATUSES = frozenset({"rejected", "jury_review", "offered", "onboarded"})
+
+
+def _is_active_assignment(a: dict) -> bool:
+    return a.get("declined_at") is None and a.get("reassigned_to") is None
+
+
+def has_live_assignment(sb, reviewer_user_id: str, track: str, application_id: str) -> bool:
+    """True iff the reviewer still holds an active assignment for (app, track).
+    Raises on a DB error so write paths fail closed."""
+    rows = (
+        sb.table("reviewer_assignments")
+        .select("*")
+        .eq("application_id", application_id)
+        .eq("application_track", track)
+        .eq("reviewer_user_id", reviewer_user_id)
+        .execute()
+        .data
+    ) or []
+    return any(
+        r.get("reviewer_user_id") == reviewer_user_id
+        and r.get("application_id") == application_id
+        and r.get("application_track") == track
+        and _is_active_assignment(r)
+        for r in rows
+    )
+
+
+def fetch_app_status(sb, track: str, application_id: str) -> str | None:
+    """Current status of one application (None when the row is missing)."""
+    table = "tir_applications" if track == "tir" else "sip_applications"
+    rows = (sb.table(table).select("status").eq("id", application_id)
+            .limit(1).execute().data) or []
+    return rows[0].get("status") if rows else None
+
+
 def fetch_application_for_reviewer(
     reviewer_user_id: str, track: str, application_id: str,
 ) -> dict | None:
     """Return the app payload visible to a reviewer.
 
-    Returns None if the reviewer has no active assignment for this app
-    (the router converts None → 403).
+    Access: an active assignment, OR (read-only) the reviewer's own SUBMITTED
+    review for this app — unassign / Gate-1 cleanup hard-delete assignment rows
+    but keep reviews, and the reviewer must still be able to open their past
+    review. Returns None otherwise (the router converts None → 404/403).
+
+    ``read_only`` is True when there is no live assignment ("unassigned") or the
+    app is already decided ("decided"); ``read_only_reason`` says which.
 
     The `ai_screening` key is always present in the response dict.
     Per the 2026-06-12 spec §1 decision, the reviewer prototypes are the
@@ -217,26 +260,8 @@ def fetch_application_for_reviewer(
                     extra={"application_id": application_id, "track": track,
                            "err": str(exc)})
         return None
-    active = [
-        a for a in assignment_rows
-        if a.get("declined_at") is None and a.get("reassigned_to") is None
-    ]
-    if not active:
-        return None
-    assignment = active[0]
-
-    # Application body
-    table = "tir_applications" if track == "tir" else "sip_applications"
-    try:
-        app_rows = sb.table(table).select("*").eq("id", application_id).limit(1).execute().data
-    except Exception as exc:
-        log.warning("app_detail: app fetch failed",
-                    extra={"application_id": application_id, "track": track,
-                           "err": str(exc)})
-        return None
-    if not app_rows:
-        return None
-    application = app_rows[0]
+    active = [a for a in assignment_rows if _is_active_assignment(a)]
+    assignment = active[0] if active else None
 
     # My review (if any)
     try:
@@ -255,6 +280,22 @@ def fetch_application_for_reviewer(
                            "reviewer": reviewer_user_id, "err": str(exc)})
         review_rows = []
     my_review = review_rows[0] if review_rows else None
+
+    if assignment is None and not (my_review and my_review.get("submitted_at")):
+        return None
+
+    # Application body
+    table = "tir_applications" if track == "tir" else "sip_applications"
+    try:
+        app_rows = sb.table(table).select("*").eq("id", application_id).limit(1).execute().data
+    except Exception as exc:
+        log.warning("app_detail: app fetch failed",
+                    extra={"application_id": application_id, "track": track,
+                           "err": str(exc)})
+        return None
+    if not app_rows:
+        return None
+    application = app_rows[0]
 
     # ── AI screening ──────────────────────────────────────────────
     # Spec 2026-06-12 §1 decision: the reviewer prototypes are the source of
@@ -280,14 +321,25 @@ def fetch_application_for_reviewer(
         if ai_rows:
             ai_screening = ai_rows[0]
 
+    app_status = application.get("status")
+    read_only_reason = None
+    if app_status in DECIDED_STATUSES:
+        read_only_reason = "decided"
+    elif assignment is None:
+        read_only_reason = "unassigned"
+
     return {
         "application": application,
-        "assignment": {
-            "assignment_id": assignment["id"],
-            "assigned_at": assignment["assigned_at"],
-        },
+        "assignment": (
+            {"assignment_id": assignment["id"],
+             "assigned_at": assignment.get("assigned_at")}
+            if assignment else None
+        ),
         "my_review": my_review,
         "ai_screening": ai_screening,
+        "app_status": app_status,
+        "read_only": read_only_reason is not None,
+        "read_only_reason": read_only_reason,
     }
 
 
@@ -443,9 +495,36 @@ def _review_status(my_review: dict | None) -> str:
     return "draft"
 
 
+def _fetch_apps_by_key(sb, ids_by_track: dict[str, list[str]], log_ctx: str) -> dict:
+    """{(id, track): app_row} — one bulk read per *_applications table."""
+    apps_by_key: dict[tuple[str, str], dict] = {}
+    for track, ids in ids_by_track.items():
+        if not ids:
+            continue
+        table = "tir_applications" if track == "tir" else "sip_applications"
+        try:
+            app_rows = (sb.table(table).select("*").in_("id", ids).execute().data) or []
+        except Exception as exc:
+            log.warning(f"{log_ctx}: app fetch failed",
+                        extra={"track": track, "err": str(exc)})
+            app_rows = []
+        for row in app_rows:
+            rid = row.get("id")
+            if rid is not None:
+                apps_by_key[(rid, track)] = row
+    return apps_by_key
+
+
 def fetch_queue(reviewer_user_id: str) -> list[dict]:
     """Spec §4.2 — one canonical record per active assignment. SUBMITTED reviews
-    stay in the queue (status chip); AI scores included pre-submit."""
+    stay in the queue (status chip); AI scores included pre-submit.
+
+    Contract C5: the reviewer's SUBMITTED reviews whose assignment row was
+    deleted (batch-unassign / Gate-1 cleanup hard-delete assignments but keep
+    reviews) are appended with ``detached=True`` / ``assignmentId=None``, so the
+    dashboard's SUBMITTED tile matches History. Rejected apps are kept only when
+    the reviewer submitted a review, flagged ``closed=True`` (the queue hides
+    them by default)."""
     from . import stats  # local import avoids any circular-import risk
 
     sb = get_admin_client()
@@ -457,39 +536,52 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
                     extra={"reviewer": reviewer_user_id, "err": str(exc)})
         return []
     assignments = [a for a in assignments
-                   if a.get("declined_at") is None and a.get("reassigned_to") is None]
-    if not assignments:
+                   if a.get("reviewer_user_id") == reviewer_user_id
+                   and _is_active_assignment(a)]
+
+    # This reviewer's reviews (ALL of them — not narrowed to the assignment ids,
+    # so detached submitted reviews are found): {(app_id, track): row}
+    rv_by_key: dict[tuple[str, str], dict] = {}
+    try:
+        rv_rows = (sb.table("reviews").select("*")
+                   .eq("reviewer_user_id", reviewer_user_id).execute().data) or []
+    except Exception as exc:
+        log.warning(
+            "queue: reviews fetch failed",
+            extra={"reviewer": reviewer_user_id, "err": str(exc)},
+        )
+        rv_rows = []
+    for row in rv_rows:
+        if row.get("reviewer_user_id") != reviewer_user_id:
+            continue  # fake .in_/.eq don't filter; enforce ownership here
+        rv_by_key.setdefault(
+            (row.get("application_id"), row.get("application_track")), row)
+
+    # (assignment | None, app_id, track) — live assignments first, then the
+    # detached submitted reviews.
+    live_keys = {(a["application_id"], a["application_track"]) for a in assignments}
+    entries: list[tuple[dict | None, str, str]] = [
+        (a, a["application_id"], a["application_track"]) for a in assignments
+    ]
+    for (aid, track), rv in rv_by_key.items():
+        if aid and rv.get("submitted_at") and (aid, track) not in live_keys:
+            entries.append((None, aid, track))
+    if not entries:
         return []
 
     # ── Bulk-fetch every table once instead of 3 queries per assignment. ──
     # Partition the application ids by track so each *_applications table is
-    # read at most once via .in_("id", ids). Then look up ai_screening /
-    # reviews with a single .in_("application_id", all_ids) each, keying by
+    # read at most once via .in_("id", ids). Then look up ai_screening with a
+    # single .in_("application_id", all_ids), keying by
     # (application_id, application_track) in Python (the fake client's .in_()
     # is a no-op, and production may return cross-track rows, so we always
     # filter/assemble here rather than trusting server-side narrowing).
-    all_ids = [a["application_id"] for a in assignments]
+    all_ids = list(dict.fromkeys(aid for _, aid, _ in entries))
     ids_by_track: dict[str, list[str]] = {}
-    for a in assignments:
-        ids_by_track.setdefault(a["application_track"], []).append(a["application_id"])
+    for _, aid, track in entries:
+        ids_by_track.setdefault(track, []).append(aid)
 
-    # Application rows: {(id, track): row}
-    apps_by_key: dict[tuple[str, str], dict] = {}
-    for track, ids in ids_by_track.items():
-        if not ids:
-            continue
-        table = "tir_applications" if track == "tir" else "sip_applications"
-        try:
-            app_rows = (sb.table(table).select("*").in_("id", ids).execute().data) or []
-        except Exception as exc:
-            log.warning("queue: app fetch failed",
-                        extra={"reviewer": reviewer_user_id, "track": track,
-                               "err": str(exc)})
-            app_rows = []
-        for row in app_rows:
-            rid = row.get("id")
-            if rid is not None:
-                apps_by_key[(rid, track)] = row
+    apps_by_key = _fetch_apps_by_key(sb, ids_by_track, "queue")
 
     # AI screening rows: {(application_id, application_track): row}
     ai_by_key: dict[tuple[str, str], dict] = {}
@@ -506,24 +598,6 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
         ai_by_key.setdefault(
             (row.get("application_id"), row.get("application_track")), row)
 
-    # This reviewer's reviews: {(application_id, application_track): row}
-    rv_by_key: dict[tuple[str, str], dict] = {}
-    try:
-        rv_rows = (sb.table("reviews").select("*")
-                   .eq("reviewer_user_id", reviewer_user_id)
-                   .in_("application_id", all_ids).execute().data) or []
-    except Exception as exc:
-        log.warning(
-            "queue: reviews fetch failed",
-            extra={"reviewer": reviewer_user_id, "err": str(exc)},
-        )
-        rv_rows = []
-    for row in rv_rows:
-        if row.get("reviewer_user_id") != reviewer_user_id:
-            continue  # fake .in_/.eq don't filter; enforce ownership here
-        rv_by_key.setdefault(
-            (row.get("application_id"), row.get("application_track")), row)
-
     try:
         cats = (sb.table("industry_categories").select("*").execute().data) or []
     except Exception as exc:
@@ -535,16 +609,17 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
     cat_label = {c["id"]: c.get("label") for c in cats}
 
     out: list[dict] = []
-    for a in assignments:
-        track = a["application_track"]
-        app_row = apps_by_key.get((a["application_id"], track))
+    for a, app_id, track in entries:
+        app_row = apps_by_key.get((app_id, track))
         if not app_row:
             continue
-        if app_row.get("status") == "rejected":
+        my_review = rv_by_key.get((app_id, track))
+        submitted = bool(my_review and my_review.get("submitted_at"))
+        closed = app_row.get("status") == "rejected"
+        if closed and not submitted:
             continue
 
-        ai_row = ai_by_key.get((a["application_id"], track))
-        my_review = rv_by_key.get((a["application_id"], track))
+        ai_row = ai_by_key.get((app_id, track))
 
         industry = None
         if ai_row and ai_row.get("industry_category_id"):
@@ -553,15 +628,12 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
         stage_info = stats.derive_stage_label({**app_row, "track": track})
         stage = stage_info.get("label") if stage_info else None
 
-        # Reviewer queue stays on the NATIVE track: a reviewer's assignment is
-        # intrinsically the track it was created on, and the review/content
-        # write-paths key off it. The existing "MOVED · TIR → VIP" badge
-        # (driven by movedToTrack) conveys the reclassification. The admin &
-        # leadership portals — which have track FILTERS — honour the effective
-        # track; see applications_query.fetch_apps_for_track.
+        # `track` stays NATIVE: the review/content write-paths key off it and
+        # the eval route uses it. Display/filter/count use the EFFECTIVE track
+        # (movedToTrack or track) on the client, like admin & leadership.
         out.append({
-            "id":            a["application_id"],
-            "assignmentId":  a["id"],
+            "id":            app_id,
+            "assignmentId":  a["id"] if a else None,
             "applicationId": _display_id(track, app_row),
             "track":         track,
             "movedToTrack":  app_row.get("moved_to_track"),
@@ -571,30 +643,94 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
             "founders":      _founder_names(track, app_row),
             "industry":      industry or "—",
             "stage":         stage or "—",
-            "due":           a.get("due_at"),
+            "due":           a.get("due_at") if a else None,
             "ai":            _ai_block(ai_row),
             "reviewStatus":  _review_status(my_review),
             "myScore":       _weighted_overall(my_review) if my_review else None,
-            "myReco":        (my_review or {}).get("recommendation"),
+            # Only a SUBMITTED recommendation counts; a draft's is separate.
+            "myReco":        (my_review or {}).get("recommendation") if submitted else None,
+            "myDraftReco":   (None if submitted
+                              else (my_review or {}).get("recommendation")),
             "editWindowExpiresAt": (my_review or {}).get("locked_at"),
+            "detached":      a is None,
+            "closed":        closed,
         })
     out.sort(key=lambda x: x.get("due") or "9999")
     return out
 
 
-_APPROVED_STATUSES = {"shortlisted", "interview", "offered", "onboarded", "accepted"}
+# Legacy statuses that meant "passed the 1st gate" before jury_review existed.
+_LEGACY_GATE1_SELECTED = {"shortlisted", "interview", "accepted"}
 
 
-def _admin_decision(app_status: str | None) -> str:
-    if app_status in _APPROVED_STATUSES:
-        return "approved"
+def _fetch_gate_context(sb, ids_by_track: dict[str, list[str]]) -> tuple[dict, dict]:
+    """Bulk-read the latest gate-2 admin decision and the CURRENT ic_documents
+    per (app_id, track). Returns (gate2_latest, current_docs)."""
+    gate2: dict[tuple[str, str], dict] = {}
+    docs: dict[tuple[str, str], list[dict]] = {}
+    for track, ids in ids_by_track.items():
+        if not ids:
+            continue
+        idset = set(ids)
+        try:
+            rows = (sb.table("admin_decisions").select("*")
+                    .eq("application_track", track).in_("application_id", ids)
+                    .execute().data) or []
+        except Exception as exc:
+            log.warning("gate ctx: admin_decisions fetch failed",
+                        extra={"track": track, "err": str(exc)})
+            rows = []
+        for r in rows:
+            if (r.get("application_track") != track or r.get("application_id") not in idset
+                    or r.get("gate_stage") != "gate2"):
+                continue
+            key = (r["application_id"], track)
+            cur = gate2.get(key)
+            if cur is None or (r.get("decided_at") or "") >= (cur.get("decided_at") or ""):
+                gate2[key] = r
+        try:
+            rows = (sb.table("ic_documents").select("*")
+                    .eq("application_track", track).in_("application_id", ids)
+                    .is_("superseded_at", None).execute().data) or []
+        except Exception as exc:
+            log.warning("gate ctx: ic_documents fetch failed",
+                        extra={"track": track, "err": str(exc)})
+            rows = []
+        for r in rows:
+            if (r.get("application_track") != track or r.get("application_id") not in idset
+                    or r.get("superseded_at") is not None):
+                continue
+            docs.setdefault((r["application_id"], track), []).append(r)
+    return gate2, docs
+
+
+def _admin_decision(app_status: str | None, gate2_row: dict | None,
+                    current_docs: list[dict] | None) -> str:
+    """Contract C5 bucket for one app: pending | gate1_selected | gate1_rejected
+    | final_selected | final_rejected | offered | onboarded. Same rule as the
+    portal-wide pipeline breakdown (C1): final_selected = jury_review with >=1
+    current IC document and every current one signed."""
     if app_status == "rejected":
-        return "rejected"
+        if (gate2_row or {}).get("decision") == "rejected":
+            return "final_rejected"
+        return "gate1_rejected"
+    if app_status == "jury_review":
+        if current_docs and all(d.get("signed_storage_path") for d in current_docs):
+            return "final_selected"
+        return "gate1_selected"
+    if app_status in ("offered", "onboarded"):
+        return app_status
+    if app_status in _LEGACY_GATE1_SELECTED:
+        return "gate1_selected"
     return "pending"
 
 
 def fetch_history(reviewer_user_id: str) -> dict:
     """Spec §4.5 — every SUBMITTED review by this reviewer, newest first.
+
+    Each row carries ``adminDecision`` (contract C5 bucket, see
+    _admin_decision), ``canEdit`` (live assignment AND app not decided), the
+    display ``applicationId`` and ``org``.
 
     Bulk-fetches app rows (per track) and ai_screening once, instead of two
     queries per review (the old N+1 could exceed the Lambda/API-Gateway 29 s
@@ -630,20 +766,22 @@ def fetch_history(reviewer_user_id: str) -> dict:
             ids_by_track.setdefault(track, []).append(aid)
             all_ids.append(aid)
 
-        apps_by_key: dict[tuple, dict] = {}
-        for track, ids in ids_by_track.items():
-            if not ids:
-                continue
-            table = "tir_applications" if track == "tir" else "sip_applications"
-            try:
-                app_rows = (sb.table(table).select("*").in_("id", ids).execute().data) or []
-            except Exception as exc:
-                log.warning("history: app bulk fetch failed",
-                            extra={"track": track, "err": str(exc)})
-                app_rows = []
-            for a in app_rows:
-                if a.get("id") is not None:
-                    apps_by_key[(a["id"], track)] = a
+        apps_by_key = _fetch_apps_by_key(sb, ids_by_track, "history")
+        gate2_by_key, docs_by_key = _fetch_gate_context(sb, ids_by_track)
+
+        # Live assignments → canEdit (a reviewer may edit only while still
+        # assigned and before the admin decides).
+        try:
+            asg_rows = (sb.table("reviewer_assignments").select("*")
+                        .eq("reviewer_user_id", reviewer_user_id).execute().data) or []
+        except Exception as exc:
+            log.warning("history: assignments fetch failed",
+                        extra={"reviewer": reviewer_user_id, "err": str(exc)})
+            asg_rows = []
+        live_keys = {(a.get("application_id"), a.get("application_track"))
+                     for a in asg_rows
+                     if a.get("reviewer_user_id") == reviewer_user_id
+                     and _is_active_assignment(a)}
 
         ai_by_key: dict[tuple, dict] = {}
         try:
@@ -661,8 +799,9 @@ def fetch_history(reviewer_user_id: str) -> dict:
         variances: list[float] = []
         for r in submitted:
             track = r.get("application_track")
-            app_row = apps_by_key.get((r.get("application_id"), track)) or {}
-            ai_row = ai_by_key.get((r.get("application_id"), track))
+            key = (r.get("application_id"), track)
+            app_row = apps_by_key.get(key) or {}
+            ai_row = ai_by_key.get(key)
 
             my_score = _weighted_overall(r)
             ai_score = (ai_row or {}).get("score_overall")
@@ -683,7 +822,13 @@ def fetch_history(reviewer_user_id: str) -> dict:
                 "aiScore":       ai_score,
                 "variance":      variance,
                 "reco":          r.get("recommendation"),
-                "adminDecision": _admin_decision(app_row.get("status")),
+                "adminDecision": _admin_decision(
+                    app_row.get("status"), gate2_by_key.get(key), docs_by_key.get(key)),
+                "canEdit":       (key in live_keys
+                                  and app_row.get("status") not in DECIDED_STATUSES),
+                "applicationId": _display_id(track, {"id": r.get("application_id"),
+                                                     **app_row}),
+                "org":           app_row.get("basic_org"),
                 "editWindowExpiresAt": r.get("locked_at"),
             })
 

@@ -113,6 +113,11 @@ async def get_application_content(
         "attachments": attachments,
         "evaluation": payload.get("my_review"),
         "assignment": payload.get("assignment"),
+        # Read-only when the assignment was removed or the app is decided
+        # (contract C5 / REV-03 / REV-11); review writes 409 in those cases.
+        "read_only": payload.get("read_only", False),
+        "read_only_reason": payload.get("read_only_reason"),
+        "app_status": payload.get("app_status"),
     }
 
 @router.post(
@@ -393,6 +398,27 @@ def _fetch_ai_screening_row(sb, application_id: str, application_track: str) -> 
         return None
 
 
+def _reject_if_decided(sb, track: str, application_id: str) -> None:
+    """409 application_decided once the admin has decided the app (REV-11)."""
+    try:
+        app_status = reviewer_query.fetch_app_status(sb, track, application_id)
+    except Exception as exc:
+        log.warning("review write: app status fetch failed",
+                    extra={"application_id": application_id, "err": str(exc)})
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "application_lookup_failed"},
+        ) from exc
+    if app_status in reviewer_query.DECIDED_STATUSES:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail={"code": "application_decided",
+                    "message": f"A decision has already been made on this application ({app_status}); "
+                               "reviews can no longer be changed.",
+                    "status": app_status},
+        )
+
+
 @router.post(
     "/reviews",
     status_code=http_status.HTTP_201_CREATED,
@@ -439,11 +465,23 @@ async def submit_review(
             detail={"code": "assignment_lookup_failed"},
         ) from exc
 
-    if not asg_rows or asg_rows[0].get("reviewer_user_id") != user["user_id"]:
+    # The assignment must also be for THIS application/track and still active —
+    # otherwise owning any one assignment would let a reviewer review any app.
+    asg = asg_rows[0] if asg_rows else {}
+    if (
+        not asg_rows
+        or asg.get("reviewer_user_id") != user["user_id"]
+        or asg.get("application_id") != body.application_id
+        or asg.get("application_track") != body.application_track
+        or asg.get("declined_at") is not None
+        or asg.get("reassigned_to") is not None
+    ):
         raise HTTPException(
             status_code=http_status.HTTP_403_FORBIDDEN,
             detail={"code": "not_your_assignment"},
         )
+
+    _reject_if_decided(sb, body.application_track, body.application_id)
 
     # Reject duplicate (UNIQUE constraint guard with a clean 409 instead
     # of a 502 from the DB). Pulls only one row; cheap.
@@ -627,6 +665,27 @@ async def patch_review(
 
     # Edit lock removed (2026-06-29): reviewers may edit a submitted review at
     # any time. `locked_at` is still stamped on submit (used only for display).
+    # ...but only while still assigned (REV-03: unassign hard-deletes the
+    # assignment row and keeps the review) and before the admin decides (REV-11).
+    _reject_if_decided(sb, existing["application_track"], existing["application_id"])
+    try:
+        still_assigned = reviewer_query.has_live_assignment(
+            sb, user["user_id"], existing["application_track"], existing["application_id"],
+        )
+    except Exception as exc:
+        log.warning("patch_review: assignment lookup failed",
+                    extra={"review_id": review_id, "err": str(exc)})
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "assignment_lookup_failed"},
+        ) from exc
+    if not still_assigned:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail={"code": "assignment_removed",
+                    "message": "You are no longer assigned to this application; "
+                               "your submitted review is kept but can't be edited."},
+        )
 
     # Build the patch — only fields the body actually sent (drop `draft`,
     # which controls the submit-transition rather than being persisted).
