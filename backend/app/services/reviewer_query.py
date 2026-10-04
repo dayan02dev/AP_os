@@ -535,9 +535,7 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
         log.warning("queue: assignments fetch failed",
                     extra={"reviewer": reviewer_user_id, "err": str(exc)})
         return []
-    assignments = [a for a in assignments
-                   if a.get("reviewer_user_id") == reviewer_user_id
-                   and _is_active_assignment(a)]
+    assignments = [a for a in assignments if _is_active_assignment(a)]
 
     # This reviewer's reviews (ALL of them — not narrowed to the assignment ids,
     # so detached submitted reviews are found): {(app_id, track): row}
