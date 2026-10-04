@@ -443,6 +443,24 @@ async def list_applications(
 # ─── Application detail (Task 18) ───────────────────────────────────────
 
 
+def _with_actor_names(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach ``changed_by_name`` (profiles.full_name, else email) to each
+    status-log row so History shows a person, not a uuid. Best-effort: a
+    lookup failure leaves the name None."""
+    ids = sorted({h["changed_by"] for h in history if h.get("changed_by")})
+    names: dict[str, str] = {}
+    if ids:
+        try:
+            rows = (get_admin_client().table("profiles").select("id,full_name,email")
+                    .in_("id", ids).execute().data) or []
+            names = {r["id"]: r.get("full_name") or r.get("email") for r in rows if r.get("id")}
+        except Exception as exc:
+            log.warning("leadership: status-history actor lookup failed", extra={"err": str(exc)})
+    for h in history:
+        h["changed_by_name"] = names.get(h.get("changed_by")) if h.get("changed_by") else None
+    return history
+
+
 @router.get(
     "/applications/{application_id}",
     dependencies=[Depends(require_capability("view_app_detail"))],
@@ -476,9 +494,9 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
     reviewer_assignments, reviews = applications_query.enrich_reviewers(
         reviewer_assignments, reviews,
     )
-    status_history = applications_query.fetch_status_history_for(
+    status_history = _with_actor_names(applications_query.fetch_status_history_for(
         application_id, track,
-    )
+    ))
 
     # Compute derived fields so the AppDrawer can render the new header
     # without re-implementing the helpers in the frontend.

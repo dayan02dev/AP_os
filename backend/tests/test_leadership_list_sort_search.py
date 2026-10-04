@@ -157,3 +157,22 @@ def test_industry_categories_reports_unclassified(client, _clear_overrides, monk
     body = res.json()
     assert body["unclassified"] == {"id": "unclassified", "label": "Unclassified", "count": 2}
     assert body["apps_total"] == 3
+
+
+def test_detail_history_carries_actor_names(client, _clear_overrides, monkeypatch):
+    tables = _prod_mix()
+    aid = tables["tir_applications"][0]["id"]
+    tables["application_status_log"] = [
+        {"application_id": aid, "application_track": "tir", "from_status": "submitted",
+         "to_status": "under_review", "changed_by": "admin-9", "changed_at": "2026-09-01"},
+        {"application_id": aid, "application_track": "tir", "from_status": None,
+         "to_status": "submitted", "changed_by": None, "changed_at": "2026-08-01"},
+    ]
+    tables["profiles"] = [{"id": "admin-9", "full_name": "Asha Admin", "email": "a@x.com"}]
+    _patch_all(monkeypatch, tables)
+    app.dependency_overrides[get_current_user] = _override(["leadership"])
+    res = client.get(f"/leadership/applications/{aid}", headers={"Authorization": "Bearer t"})
+    assert res.status_code == 200, res.text
+    hist = res.json()["status_history"]
+    names = {h.get("changed_by"): h.get("changed_by_name") for h in hist}
+    assert names == {"admin-9": "Asha Admin", None: None}
