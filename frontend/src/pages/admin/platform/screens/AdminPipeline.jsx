@@ -374,8 +374,10 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         valA = a.batch || 'Unassigned';
         valB = b.batch || 'Unassigned';
       } else if (sortCol === 'sub') {
-        valA = a.sub || '';
-        valB = b.sub || '';
+        // Undated rows (no submitted_at) sort last in both directions.
+        if (!a.sub || !b.sub) return (!a.sub) - (!b.sub);
+        valA = a.sub;
+        valB = b.sub;
       } else if (sortCol === 'id') {
         [valA, valB] = [idSortKey(a), idSortKey(b)];
         const c = valA[0] < valB[0] ? -1 : valA[0] > valB[0] ? 1 : valA[1] - valB[1];
@@ -1070,7 +1072,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                     </div>
                   )}
                 </td>
-                <td>{s.sub}</td>
+                <td>{s.sub || '—'}</td>
                 <td className="os-mono os-text-xs">{relabelDisplayId(s.applicationId) || s.id}</td>
               </tr>
             );

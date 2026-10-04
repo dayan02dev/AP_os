@@ -689,7 +689,10 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
     return [...startups].sort((a, b) => {
       let valA, valB;
       if (sortCol === "name")          { valA = a.name || ""; valB = b.name || ""; }
-      else if (sortCol === "sub")      { valA = dateOf(a); valB = dateOf(b); }
+      else if (sortCol === "sub")      {
+        valA = dateOf(a); valB = dateOf(b);
+        if (!valA || !valB) return (!valA) - (!valB);   // undated rows last, both directions
+      }
       else if (sortCol === "batch")    { valA = a.batch || "Unassigned"; valB = b.batch || "Unassigned"; }
       else if (sortCol === "score")    { valA = reviewerScoreOf(a) ?? -1; valB = reviewerScoreOf(b) ?? -1; }
       else if (sortCol === "ai")       { valA = aiScoreOf(a) ?? -1; valB = aiScoreOf(b) ?? -1; }
