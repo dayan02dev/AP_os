@@ -18,6 +18,9 @@ function buildQuery(params) {
 
 export const leadershipApi = {
   getStats: () => api.get("/leadership/stats"),
+  // params: track, status (raw), industry, ai_score_bucket, recommendation,
+  // search, sort (id|project|founder|ai_score|status|submitted_at|industry|
+  // reco) + order (asc|desc) — sorted server-side before paging — limit, offset.
   listApplications: (params = {}) =>
     api.get(`/leadership/applications${buildQuery(params)}`),
   getApplication: (id) => api.get(`/leadership/applications/${id}`),

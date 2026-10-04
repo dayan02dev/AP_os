@@ -1011,7 +1011,7 @@ export default function LeadershipDashboard() {
               <input
                 className="field filter-search"
                 type="search"
-                placeholder="Search by name, email, org, or project"
+                placeholder="Search by name, email, org, project or ID"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 aria-label="Search applications"
