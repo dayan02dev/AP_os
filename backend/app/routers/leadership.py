@@ -146,15 +146,15 @@ async def get_stats() -> dict:
 def _submitted_at_sort_key(row: dict[str, Any]) -> tuple[int, str]:
     """Sort helper: submitted_at desc, NULLs last.
 
-    Returns `(0, iso_string)` for populated submissions and `(1, "")` for
+    Returns `(1, iso_string)` for populated submissions and `(0, "")` for
     NULLs so a plain `reverse=True` pushes NULLs to the bottom. We compare
     ISO-8601 strings directly — they're lexicographically sortable when
     they share the same zone-offset (Supabase returns Zulu).
     """
     s = row.get("submitted_at")
     if not s:
-        return (1, "")
-    return (0, s)
+        return (0, "")
+    return (1, s)
 
 
 # Display-ID prefixes leadership pastes into search ("TIR-26013", "VIP-26701").
@@ -201,7 +201,7 @@ def _latest_overall(decision_rows: list[dict]) -> dict[tuple[str, str], dict]:
 
 
 def _lower(v: Any) -> str | None:
-    return v.lower() if isinstance(v, str) and v.strip() else None
+    return v.strip().casefold() if isinstance(v, str) and v.strip() else None
 
 
 @router.get(
@@ -219,7 +219,7 @@ async def list_applications(
     recommendation: str | None = Query(default=None, pattern="^(yes|maybe|no|none|single)$"),
     sort: str | None = Query(
         default=None,
-        pattern="^(id|project|founder|ai_score|status|submitted_at|industry|reco)$",
+        pattern="^(id|project|founder|ai_score|status|submitted_at|industry|reco|stage|reviewer_score|reviewers)$",
     ),
     order: str = Query(default="asc", pattern="^(asc|desc)$"),
     limit: int = Query(default=50, ge=1, le=200),
@@ -378,6 +378,13 @@ async def list_applications(
             if sort == "reco":
                 return _RECO_RANK.get(
                     admin_query.reco_verdict((review_stats.get(key) or {}).get("reco")))
+            if sort == "stage":
+                return _lower((stats.derive_stage_label(r) or {}).get("label"))
+            if sort == "reviewer_score":
+                return (review_stats.get(key) or {}).get("score")
+            if sort == "reviewers":
+                rs = review_stats.get(key)
+                return (rs.get("submitted", 0), rs.get("assigned", 0)) if rs else None
             return r.get("submitted_at") or None
 
         valued = [(_sort_value(r), r) for r in rows]
@@ -493,6 +500,11 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
     # Attach reviewer display names + a timestamp-derived status (not the
     # vestigial `state` column) so the AppDrawer / review-page Reviewers panel
     # show "Manish S Shetty · Evaluated" instead of "6fd9bcf5 · pending".
+    # Reviewers whose assignment row was deleted after they submitted still
+    # count as assigned (detached) — the list's rule (_fetch_review_stats).
+    reviewer_assignments = applications_query.with_detached_reviewers(
+        reviewer_assignments, reviews,
+    )
     reviewer_assignments, reviews = applications_query.enrich_reviewers(
         reviewer_assignments, reviews,
     )
@@ -704,7 +716,9 @@ async def get_application_file_signed_url(
     "/industry-categories",
     dependencies=[Depends(require_capability("view_stats"))],
 )
-async def get_industry_categories() -> dict[str, Any]:
+async def get_industry_categories(
+    track: str | None = Query(default=None, pattern="^(tir|sip)$"),
+) -> dict[str, Any]:
     """Filter-pill + dashboard-tab data source for industry classification.
 
     Returns categories with counts (sorted desc by count, then is_seed
@@ -715,9 +729,28 @@ async def get_industry_categories() -> dict[str, Any]:
     `unclassified` counts non-draft apps with no industry (no ai_screening
     row or a NULL category) so the bars sum to `apps_total`; it is selected
     in the list with industry=unclassified.
+
+    `track` (effective track) recounts every category over that track's
+    non-draft apps — the same rows and industry lookup the list's
+    track + industry filters use — so the Applications chips match the list.
     """
     out = industry_categories.categories_with_counts()
-    apps_total = sum(stats.count_apps_total(t) for t in stats.TRACKS)
+    if track:
+        rows = applications_query.fetch_apps_for_track(
+            track, limit=applications_query.FETCH_CAP)
+        inds = applications_query.fetch_industry_for_pairs(
+            [(r["track"], r["id"]) for r in rows])
+        counts: dict[str, int] = {}
+        for ind in inds.values():
+            if ind and ind.get("id"):
+                counts[ind["id"]] = counts.get(ind["id"], 0) + 1
+        out["categories"] = [
+            {**c, "count": counts.get(c["id"], 0)} for c in out.get("categories") or []
+        ]
+        out["total"] = sum(c["count"] for c in out["categories"])
+        apps_total = len(rows)
+    else:
+        apps_total = sum(stats.count_apps_total(t) for t in stats.TRACKS)
     out["apps_total"] = apps_total
     out["unclassified"] = {
         "id": "unclassified",

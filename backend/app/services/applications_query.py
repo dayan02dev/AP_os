@@ -755,6 +755,32 @@ def fetch_status_history_for(
         return []
 
 
+def with_detached_reviewers(
+    reviewer_assignments: list[dict[str, Any]] | None,
+    reviews: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Append a ``detached`` entry for each reviewer with a submitted review
+    but no assignment row (deleted on unassign / Gate-1 reject while the
+    review was kept). Same "assigned = active ∪ submitted" rule as
+    admin_query._fetch_review_stats, so detail counts match the list."""
+    out = list(reviewer_assignments or [])
+    have = {a.get("reviewer_user_id") for a in out}
+    for r in reviews or []:
+        uid = r.get("reviewer_user_id")
+        if uid and r.get("submitted_at") and uid not in have:
+            have.add(uid)
+            out.append({
+                "id": None,
+                "application_id": r.get("application_id"),
+                "application_track": r.get("application_track"),
+                "reviewer_user_id": uid,
+                "assigned_at": None,
+                "completed_at": r.get("submitted_at"),
+                "detached": True,
+            })
+    return out
+
+
 def enrich_reviewers(
     reviewer_assignments: list[dict[str, Any]] | None,
     reviews: list[dict[str, Any]] | None,
