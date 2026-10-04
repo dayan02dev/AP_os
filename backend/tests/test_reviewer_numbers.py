@@ -207,6 +207,7 @@ def test_history_rows_carry_display_id_org_and_can_edit(client, monkeypatch, _cl
     by_id = {x["appId"]: x for x in client.get("/reviewer/history").json()["rows"]}
     assert by_id["p"]["applicationId"] == "TIR-1"
     assert by_id["p"]["org"] == "Org p"
+    assert "movedToTrack" in by_id["p"]  # effective track for display/CSV
     # Live assignment + undecided → editable.
     assert by_id["p"]["canEdit"] is True
     # Live assignment but decided (jury_review) → not editable.

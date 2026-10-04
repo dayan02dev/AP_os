@@ -30,7 +30,7 @@ import ReviewerDashboard from "../ReviewerDashboard.jsx";
 import ReviewerQueue from "../ReviewerQueue.jsx";
 import ReviewerHistory from "../ReviewerHistory.jsx";
 import ReviewerEval from "../ReviewerEval.jsx";
-import { historyCsvRows } from "../ReviewerPortal.jsx";
+import { historyCsvRows, queueBadgeCount } from "../ReviewerPortal.jsx";
 
 const mk = (data) => ({ data, loading: false, error: null, reload: vi.fn() });
 
@@ -177,6 +177,19 @@ describe("history CSV export", () => {
       "Variance", "My reco", "Admin decision"]);
     expect(out[2][1]).toBe("VIP-26623");
     expect(out[2][8]).toBe("1st-gate rejected");
+  });
+
+  it("uses the effective track for a moved app", () => {
+    const out = historyCsvRows([{ ...historyRows[0], track: "tir", movedToTrack: "sip" }]);
+    expect(out[1][3]).toBe("VIP");
+  });
+});
+
+describe("My Queue badge", () => {
+  it("does not count closed rows hidden by default", () => {
+    expect(queueBadgeCount([row({ id: "1" }), row({ id: "2", detached: true }),
+      row({ id: "3", closed: true })])).toBe(2);
+    expect(queueBadgeCount(null)).toBe(null);
   });
 });
 

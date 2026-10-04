@@ -116,6 +116,12 @@ async function exportReviewerQueueCsv() {
   downloadCsv([headers, ...rows], "reviewer-queue-TIR-VIP-2026.csv");
 }
 
+// My Queue badge: rows the queue shows by default — closed (rejected) rows are
+// hidden behind "Show closed", so they don't count.
+export function queueBadgeCount(rows) {
+  return Array.isArray(rows) ? rows.filter((s) => !s.closed).length : null;
+}
+
 // Header + one row per submitted review (GET /reviewer/history rows).
 export function historyCsvRows(rows) {
   const headers = ["Date", "ID", "Startup", "Track", "My score", "AI score",
@@ -124,7 +130,7 @@ export function historyCsvRows(rows) {
     (h.date || "").slice(0, 10),
     relabelDisplayId(h.applicationId),
     h.name,
-    trackName(h.track),
+    trackName(h.movedToTrack || h.track),
     num1(h.myScore),
     num1(h.aiScore),
     num1(h.variance),
@@ -231,7 +237,7 @@ export default function ReviewerPortal({ tab = "dashboard" }) {
     () => (needsQueue ? reviewerApi.getQueue() : Promise.resolve(null)),
     [needsQueue],
   );
-  const queueCount = queueAsync.data ? queueAsync.data.length : null;
+  const queueCount = queueBadgeCount(queueAsync.data);
 
   return (
     <div className="rv-portal os-shell">
