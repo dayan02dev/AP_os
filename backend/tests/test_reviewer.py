@@ -692,6 +692,13 @@ def test_draft_save_skips_notes_and_disagreement_validation(
 # ─── PATCH /reviewer/reviews/{id} ──────────────────────────────────────
 
 
+# PATCH requires the reviewer to still hold a live assignment for the app
+# (2026-10-05, REV-03); the PATCH tests below seed this one for rev-a/app1.
+_PATCH_LIVE_ASG = {"id": "a1", "reviewer_user_id": "rev-a", "application_id": "app1",
+                   "application_track": "tir", "declined_at": None,
+                   "reassigned_to": None, "completed_at": None}
+
+
 def _freeze_datetime(monkeypatch, iso_utc: str):
     """Patch datetime.now in the reviewer router to a fixed UTC instant.
 
@@ -723,7 +730,7 @@ def test_patch_review_within_window_succeeds(
     me = "rev-a"
     _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
     fake = _install_db(monkeypatch, {
-        "reviewer_assignments": [],
+        "reviewer_assignments": [dict(_PATCH_LIVE_ASG)],
         "tir_applications": [],
         "sip_applications": [],
         "reviews": [
@@ -752,7 +759,7 @@ def test_patch_review_after_lock_succeeds(
     me = "rev-a"
     _freeze_datetime(monkeypatch, "2026-05-18T11:01:00Z")
     _install_db(monkeypatch, {
-        "reviewer_assignments": [],
+        "reviewer_assignments": [dict(_PATCH_LIVE_ASG)],
         "tir_applications": [],
         "sip_applications": [],
         "reviews": [
@@ -778,7 +785,7 @@ def test_patch_review_does_not_extend_lock(
     me = "rev-a"
     _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
     fake = _install_db(monkeypatch, {
-        "reviewer_assignments": [],
+        "reviewer_assignments": [dict(_PATCH_LIVE_ASG)],
         "tir_applications": [],
         "sip_applications": [],
         "reviews": [
@@ -830,7 +837,7 @@ def test_patch_draft_review_no_lock_check(client, monkeypatch, _clear_overrides)
     me = "rev-a"
     _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
     fake = _install_db(monkeypatch, {
-        "reviewer_assignments": [],
+        "reviewer_assignments": [dict(_PATCH_LIVE_ASG)],
         "tir_applications": [],
         "sip_applications": [],
         "reviews": [
@@ -909,7 +916,7 @@ def test_patch_flip_draft_to_submitted_rejects_incomplete(
     me = "rev-a"
     _freeze_datetime(monkeypatch, "2026-05-18T10:00:00Z")
     _install_db(monkeypatch, {
-        "reviewer_assignments": [],
+        "reviewer_assignments": [dict(_PATCH_LIVE_ASG)],
         "tir_applications": [],
         "sip_applications": [],
         "reviews": [
@@ -1215,7 +1222,7 @@ def test_patch_rejects_invalid_flags(client, monkeypatch, _clear_overrides):
     me = "rev-a"
     _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
     _install_db(monkeypatch, {
-        "reviewer_assignments": [],
+        "reviewer_assignments": [dict(_PATCH_LIVE_ASG)],
         "tir_applications": [],
         "sip_applications": [],
         "reviews": [
@@ -1244,7 +1251,7 @@ def test_patch_submitted_review_no_disagreement_gate(
     me = "rev-a"
     _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
     _install_db(monkeypatch, {
-        "reviewer_assignments": [],
+        "reviewer_assignments": [dict(_PATCH_LIVE_ASG)],
         "tir_applications": [],
         "sip_applications": [],
         "reviews": [
@@ -1281,7 +1288,7 @@ def test_patch_draft_review_skips_submit_gates(
     me = "rev-a"
     _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
     _install_db(monkeypatch, {
-        "reviewer_assignments": [],
+        "reviewer_assignments": [dict(_PATCH_LIVE_ASG)],
         "tir_applications": [],
         "sip_applications": [],
         "reviews": [
@@ -1384,7 +1391,7 @@ def test_patch_text_only_edit_on_submitted_review_skips_ai_fetch(
     me = "rev-a"
     _freeze_datetime(monkeypatch, "2026-05-18T10:30:00Z")
     _install_db(monkeypatch, {
-        "reviewer_assignments": [],
+        "reviewer_assignments": [dict(_PATCH_LIVE_ASG)],
         "tir_applications": [],
         "sip_applications": [],
         "reviews": [
@@ -1678,9 +1685,9 @@ def test_history_rows_variance_and_admin_decision(
     client, monkeypatch, _clear_overrides,
 ):
     """Spec §4.5 — submitted reviews, AI variance, admin-decision mapping.
-    Three submitted reviews exercise the three decision branches:
-      app-1 shortlisted → approved, app-2 rejected → rejected,
-      app-3 under_review → pending."""
+    Three submitted reviews exercise three decision branches (contract C5):
+      app-1 shortlisted (legacy) → gate1_selected, app-2 rejected with no
+      gate-2 decision → gate1_rejected, app-3 under_review → pending."""
     me = "rev-1"
     _install_db(monkeypatch, {
         "reviews": [
@@ -1741,12 +1748,12 @@ def test_history_rows_variance_and_admin_decision(
     assert a1["myScore"] == 8.0          # weighted mean of all-8s
     assert a1["aiScore"] == 8.5
     assert a1["variance"] == 0.5
-    assert a1["adminDecision"] == "approved"   # shortlisted → approved
+    assert a1["adminDecision"] == "gate1_selected"   # legacy shortlisted
     assert a1["reco"] == "yes"
     assert a1["name"] == "Karkhana Robotics"   # AI project_name wins
 
     a2 = by_id["app-2"]
-    assert a2["adminDecision"] == "rejected"   # rejected → rejected
+    assert a2["adminDecision"] == "gate1_rejected"   # no gate-2 reject row
     assert a2["aiScore"] is None               # no AI row
     assert a2["variance"] is None
     assert a2["name"] == "Saathi"              # falls back to basic_org
@@ -1791,7 +1798,7 @@ def test_history_returns_submitted_reviews_bulk(client, monkeypatch, _clear_over
     assert row["myScore"] == 8.0
     assert row["aiScore"] == 7.0
     assert row["variance"] == 1.0
-    assert row["adminDecision"] == "approved"        # shortlisted → approved
+    assert row["adminDecision"] == "gate1_selected"  # legacy shortlisted
 
 
 def test_history_does_not_500_on_missing_app(client, monkeypatch, _clear_overrides):

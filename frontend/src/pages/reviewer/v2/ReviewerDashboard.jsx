@@ -3,6 +3,10 @@
 // shape uses `industry` (no `domain`), `due` is an ISO timestamp (or null), AI
 // scores may be null, and there is no "in-progress" review status (only
 // not-started | draft | submitted). The COMPS weights stay display constants.
+//
+// The queue also carries the reviewer's SUBMITTED reviews whose assignment was
+// removed (`detached`) and reviewed apps that were rejected (`closed`), so the
+// SUBMITTED tile matches My History. TIR/VIP split uses the EFFECTIVE track.
 
 import { LoadingState, ErrorState, EmptyState } from "./ui.jsx";
 
@@ -19,12 +23,13 @@ export default function ReviewerDashboard({ onPickIndustry, queueAsync }) {
   const withAI = queue.filter((s) => s.ai && s.ai.overall != null);
   const avgAI = withAI.length ? withAI.reduce((a, s) => a + s.ai.overall, 0) / withAI.length : 0;
 
-  const tirN = queue.filter((s) => s.track === "tir").length;
-  const sipN = queue.filter((s) => s.track === "sip").length;
+  const effTrack = (s) => s.movedToTrack || s.track;
+  const tirN = queue.filter((s) => effTrack(s) === "tir").length;
+  const sipN = queue.filter((s) => effTrack(s) === "sip").length;
+  const inactiveN = queue.filter((s) => s.detached || s.closed).length;
 
-  // Reviewer-side status counts (production has no "in-progress" — kept at 0
-  // so the pipeline layout matches the prototype's four-row shape).
-  const cnt = { submitted: 0, "in-progress": 0, draft: 0, "not-started": 0 };
+  // Reviewer-side status counts (the backend emits only these three).
+  const cnt = { submitted: 0, draft: 0, "not-started": 0 };
   queue.forEach((s) => {
     if (cnt[s.reviewStatus] === undefined) cnt[s.reviewStatus] = 0;
     cnt[s.reviewStatus]++;
@@ -33,7 +38,6 @@ export default function ReviewerDashboard({ onPickIndustry, queueAsync }) {
   const STATUS_ROWS = [
     { key: "not-started", name: "NOT STARTED", sub: "awaiting your review" },
     { key: "draft", name: "DRAFT", sub: "saved · not submitted" },
-    { key: "in-progress", name: "IN PROGRESS", sub: "scoring underway" },
     { key: "submitted", name: "SUBMITTED", sub: "evaluation sent" },
   ].map((r) => ({ ...r, count: cnt[r.key] || 0 }));
   const maxStatus = Math.max(...STATUS_ROWS.map((r) => r.count), 1);
@@ -72,7 +76,9 @@ export default function ReviewerDashboard({ onPickIndustry, queueAsync }) {
         <div className="dash-stat-tile">
           <div className="dash-stat-label">APPLICATIONS ASSIGNED</div>
           <div className="dash-stat-num">{n}</div>
-          <div className="dash-stat-sub">in your queue</div>
+          <div className="dash-stat-sub">
+            {inactiveN > 0 ? `incl. ${inactiveN} unassigned or closed` : "in your queue"}
+          </div>
           <div className="dash-track-bars">
             {[["TIR", tirN, "#3213b7"], ["VIP", sipN, "#ff5a5f"]].map(([label, count, color]) => (
               <div key={label} className="dash-track-row">
@@ -93,9 +99,9 @@ export default function ReviewerDashboard({ onPickIndustry, queueAsync }) {
         </div>
 
         <div className="dash-stat-tile">
-          <div className="dash-stat-label">IN PROGRESS</div>
-          <div className="dash-stat-num">{(cnt["in-progress"] || 0) + cnt["draft"]}</div>
-          <div className="dash-stat-sub">draft + scoring</div>
+          <div className="dash-stat-label">DRAFT</div>
+          <div className="dash-stat-num">{cnt["draft"]}</div>
+          <div className="dash-stat-sub">saved · not submitted</div>
         </div>
 
         <div className="dash-stat-tile">
@@ -210,7 +216,7 @@ export default function ReviewerDashboard({ onPickIndustry, queueAsync }) {
         <div className="dash-ind-filter">
           <span className="lp-filter-label">FILTER</span>
           <div className="lp-filter-btns">
-            <button className="lp-filter-btn active" onClick={() => onPickIndustry && onPickIndustry("all")}>All</button>
+            <button className="lp-filter-btn" onClick={() => onPickIndustry && onPickIndustry("all")}>All</button>
             {domainRows.map(([domain]) => (
               <button key={domain} className="lp-filter-btn" onClick={() => onPickIndustry && onPickIndustry(domain)}>
                 {domain}
