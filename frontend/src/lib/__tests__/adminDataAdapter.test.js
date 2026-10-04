@@ -48,6 +48,15 @@ describe("adaptStats", () => {
     expect(d.totals.apps_submitted).toBe(250);
     expect(d.aiScores).toEqual([8.4, 7.2, 9.0]);
     expect(d.decisions.shortlisted).toBe(12);
+    expect(d.pipelineBreakdown).toBeNull();   // older backend → fallback
+  });
+
+  it("passes pipeline_breakdown + ai_component_means through (contract C1)", () => {
+    const pb = { total: 5, stages: { submitted: 5 }, gate1_selected: 0, rejected_total: 0 };
+    const d = adaptStats({ pipeline_breakdown: pb, ai_component_means: { tech: 7 }, ai_scored_count: 4 });
+    expect(d.pipelineBreakdown).toBe(pb);
+    expect(d.aiComponentMeans).toEqual({ tech: 7 });
+    expect(d.aiScoredCount).toBe(4);
   });
 });
 

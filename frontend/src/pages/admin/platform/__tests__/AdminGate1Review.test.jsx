@@ -60,7 +60,7 @@ describe("AdminGate1 smoke", () => {
     render(<AdminGate1 goDetail={() => {}} />);
     expect(screen.getByText(/A · Status/i)).toBeTruthy();
     expect(screen.getByText(/B · Batch decision/i)).toBeTruthy();
-    expect(screen.getByText(/C · My history/i)).toBeTruthy();
+    expect(screen.getByText(/C · Decision history/i)).toBeTruthy();
   });
 
   it("shows empty state when no evaluated apps", () => {

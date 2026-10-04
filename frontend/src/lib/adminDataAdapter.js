@@ -1,7 +1,7 @@
 export const STATUS_TO_CHIP = {
   submitted: "NEW", ai_screening: "PROCESSING", under_review: "IN REVIEW",
   evaluated: "EVALUATED", shortlisted: "SHORTLISTED", jury_review: "JURY REVIEW", interview: "JURY REVIEW",
-  on_hold: "HOLD", offered: "ACCEPTED", onboarded: "ACCEPTED",
+  on_hold: "HOLD", offered: "ACCEPTED", onboarded: "ONBOARDED",
   rejected: "REJECTED", waitlisted: "WAITLISTED", withdrawn: "WITHDRAWN",
 };
 
@@ -22,6 +22,7 @@ export const CHIP_META = {
   SHORTLISTED:   { label: "Shortlisted",  statusId: "shortlisted",  tone: "green" },
   "JURY REVIEW": { label: "Accepted",     statusId: "jury_review",  tone: "blue" },
   ACCEPTED:      { label: "Offered",      statusId: "offered",      tone: "green" },
+  ONBOARDED:     { label: "Onboarded",    statusId: "onboarded",    tone: "green" },
   REJECTED:      { label: "Rejected",     statusId: "not-selected", tone: "red" },
   WAITLISTED:    { label: "Waitlisted",   statusId: "waitlisted",   tone: "" },
   HOLD:          { label: "Hold",         statusId: "hold",         tone: "amber" },
@@ -96,6 +97,10 @@ export function adaptPipelineRow(row) {
     recommendation: row.recommendation || null,
     reviewers: row.reviewers || null,
     reco: row.reco || null,
+    // Contract C2 — absent on older backends (callers fall back to the tally).
+    reviewCount: row.review_count ?? null,
+    gate1_decision: row.gate1_decision,   // undefined = backend predates C2
+    decidedAt: row.decided_at || null,
   };
 }
 
@@ -109,6 +114,11 @@ export function adaptStats(api) {
     statusCountsByTrack: api.status_counts_by_track || [],
     aiScores: api.ai_score_overalls || [],
     decisions: api.decisions || {},
+    // Contract C1: mutually exclusive stage counts (SUM(stages) == total).
+    // null on older backends — callers fall back to totals/funnel.
+    pipelineBreakdown: api.pipeline_breakdown || null,
+    aiComponentMeans: api.ai_component_means || null,
+    aiScoredCount: api.ai_scored_count ?? null,
   };
 }
 
@@ -216,6 +226,8 @@ export function adaptDetail(d) {
     aiSections: d.aiSections || null,
     rev: reviews.length ? adaptOneReview(reviews[0]) : undefined,
     reviews: reviews.map(adaptOneReview),
+    // Backend reviewer score (weighted like the pipeline list) when sent.
+    reviewerScore: d.reviewer_score ?? null,
     flags: reviews.flatMap((r) => (Array.isArray(r.flags) ? r.flags : [])),
     variance: null,
     adminDecision: d.decision?.decision ? DECISION_TO_ADMIN[d.decision.decision] : undefined,

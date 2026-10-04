@@ -65,6 +65,8 @@ function getRoleColor(role) {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
+const USERS_PAGE = 200;
+
 export function AdminRoles() {
   // Force-re-render hook (mirrors prototype pattern)
   const [, forceUpdate] = useReducer(x => x + 1, 0);
@@ -74,6 +76,10 @@ export function AdminRoles() {
   const [loading, setLoading] = useState(true);
   const [fetchErr, setFetchErr] = useState(null);
   const [refetchTick, setRefetchTick] = useState(0);
+  // Paging (contract C4: GET /admin/users takes limit/offset and returns the
+  // exact `total`). An older backend ignores offset and reports total = rows.
+  const [offset, setOffset] = useState(0);
+  const [serverTotal, setServerTotal] = useState(null);
 
   const refetch = () => setRefetchTick(t => t + 1);
 
@@ -83,10 +89,11 @@ export function AdminRoles() {
       try {
         setLoading(true);
         setFetchErr(null);
-        const data = await adminApi.listUsers();
+        const data = await adminApi.listUsers({ limit: USERS_PAGE, offset });
         if (!cancelled) {
           const raw = data?.users ?? (Array.isArray(data) ? data : []);
           setUsers(raw.map(normaliseUser));
+          setServerTotal(typeof data?.total === 'number' ? data.total : null);
         }
       } catch (err) {
         if (!cancelled) setFetchErr(err?.message || "Couldn't load users.");
@@ -95,7 +102,7 @@ export function AdminRoles() {
       }
     })();
     return () => { cancelled = true; };
-  }, [refetchTick]);
+  }, [refetchTick, offset]);
 
   // ── Sort ─────────────────────────────────────────────────────────────────
   const [sortCol, setSortCol] = useStickyState("admin.roles", "sortCol", null);
@@ -144,7 +151,11 @@ export function AdminRoles() {
   }, [filteredUsers, sortCol, sortAsc]);
 
   // ── Stats ─────────────────────────────────────────────────────────────────
-  const totalUsers = users.length;
+  // Real account count from the backend; the role tiles below count the
+  // loaded page only (labelled so when the page is partial).
+  const totalUsers = Math.max(serverTotal ?? 0, offset + users.length);
+  const partialPage = totalUsers > users.length;
+  const hasNext = offset + users.length < totalUsers && users.length > 0;
   const roleCounts = { Reviewer: 0, Jury: 0, Leadership: 0, Founder: 0 };
   let multiRoleCount = 0;
   users.forEach(u => {
@@ -265,10 +276,10 @@ export function AdminRoles() {
           { key: 'leadership', label: 'Leadership',    val: roleCounts.Leadership,color:'var(--brand-violet)','sub': 'Admins & Managers'  },
           { key: 'founder',    label: 'Founders',      val: roleCounts.Founder,  color: 'var(--brand-amber)', sub: 'Startup applicants'  },
         ].map(({ key, label, val, color, sub }) => (
-          <div key={key} className="os-card soft" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div key={key} data-testid={`roles-kpi-${key}`} className="os-card soft" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
             <span style={{ fontSize: 30, fontWeight: 400, fontFamily: 'var(--font-serif)', color }}>{val}</span>
-            <span style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{sub}</span>
+            <span style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{key !== 'total' && partialPage ? `${sub} · on this page` : sub}</span>
           </div>
         ))}
       </div>
@@ -364,6 +375,20 @@ export function AdminRoles() {
                 )}
               </tbody>
             </table>
+            {users.length > 0 && (
+              <div className="os-row between os-mt" style={{ alignItems: 'center', fontSize: 12, color: 'var(--ink-soft)' }}>
+                <span>Showing {offset + 1}–{offset + users.length} of {totalUsers}{search ? ' (search covers this page)' : ''}</span>
+                {(offset > 0 || hasNext) && (
+                  <span className="os-row gap-sm">
+                    <button className="os-btn ghost sm" disabled={offset === 0}
+                      onClick={() => setOffset(o => Math.max(0, o - USERS_PAGE))}>← Prev</button>
+                    {hasNext && (
+                      <button className="os-btn ghost sm" onClick={() => setOffset(o => o + USERS_PAGE)}>Next →</button>
+                    )}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Right: role distribution + access logs */}

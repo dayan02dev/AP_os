@@ -55,6 +55,33 @@ function getTIRSignalOverall(st) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
+// Same reviewer score as the pipeline list (backend admin_query): each review's
+// overall is its category-weighted score (reviewer_query._SCORE_WEIGHTS, needs
+// all five), then the reviews are averaged weighted by reviewer weight
+// (reviewer_profiles.weight, default 1). Prefer the backend's own number.
+const REVIEW_SCORE_WEIGHTS = { problem: 22, solution: 30, tech: 22, founders: 14, commit: 12 };
+export function weightedReviewerScore(reviews, weightById = {}, backendScore = null) {
+  if (typeof backendScore === 'number') return backendScore;
+  let num = 0, den = 0;
+  for (const rv of reviews || []) {
+    let total = 0, complete = true;
+    for (const [k, w] of Object.entries(REVIEW_SCORE_WEIGHTS)) {
+      if (typeof rv[k] !== 'number') { complete = false; break; }
+      total += rv[k] * w;
+    }
+    if (!complete) continue;
+    const w = typeof weightById[rv.reviewerId] === 'number' ? weightById[rv.reviewerId] : 1;
+    num += w * Math.round(total) / 100;
+    den += w;
+  }
+  return den ? Math.round((num / den) * 10) / 10 : null;
+}
+
+// Chips still at (or before) the 1st gate — only these get the Admin Review
+// decide panel. Past it (accepted, offered, onboarded, rejected, withdrawn) the
+// detail shows a read-only decision summary instead.
+const GATE1_OPEN_CHIPS = new Set(['NEW', 'PROCESSING', 'IN REVIEW', 'EVALUATED', 'HOLD', 'WAITLISTED', 'SHORTLISTED']);
+
 export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecision, seqPosition }) {
   const [s, setS] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -78,6 +105,10 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
   const reviewersById = useMemo(() => {
     const list = reviewerData?.reviewers ?? [];
     return Object.fromEntries(list.map(r => [r.id, r.name]));
+  }, [reviewerData]);
+  const weightById = useMemo(() => {
+    const list = reviewerData?.reviewers ?? [];
+    return Object.fromEntries(list.filter(r => typeof r.weight === 'number').map(r => [r.id, r.weight]));
   }, [reviewerData]);
 
   const doLoad = useCallback(async () => {
@@ -227,6 +258,8 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
   // It reads "Accepted" here (the admin tab it lives in) — never "Interview"
   // (see adminDataAdapter.CHIP_META).
   const isAccepted = s.chip === 'JURY REVIEW';
+  const isRejected = s.chip === 'REJECTED';
+  const gate1Open = GATE1_OPEN_CHIPS.has(s.chip || 'NEW');
   const aiData = s.ai || {};
 
   // ── Reviewer averages — computed from the REAL submitted reviews (s.reviews).
@@ -237,10 +270,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
     const vals = realReviews.map(rv => rv[key]).filter(n => typeof n === 'number');
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
   };
-  const revOverall = (() => {
-    const vals = realReviews.map(rv => rv.overall).filter(n => typeof n === 'number');
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-  })();
+  const revOverall = weightedReviewerScore(realReviews, weightById, s.reviewerScore) ?? 0;
   // No jury scores this round — the combined overall is the reviewer overall.
   const combinedOverall = revOverall;
 
@@ -306,19 +336,24 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
           <span className="lp-section-eyebrow" style={{ marginTop: 12 }}>APPLICATION DETAIL</span>
           <h2 className="lp-section-title">
             {s.name}
-            <span className="lp-muted"> · admin review</span>
-            {isAccepted && (
-              <span style={{
-                marginLeft: 12, fontSize: 10.5, fontWeight: 700,
-                letterSpacing: '0.06em', textTransform: 'uppercase',
-                background: '#fff8e6', border: '1px solid #f6d98a', color: '#9a6206',
-                borderRadius: 999, padding: '3px 11px',
-                display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle',
-              }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#9a6206', flexShrink: 0 }} />
-                {chipLabel(s.chip)}
-              </span>
-            )}
+            {/* Status chip — always, so the stage (incl. Rejected) is visible. */}
+            {(() => {
+              const c = isRejected ? { bg: '#fdecec', bd: '#f3c2c4', fg: '#b3262b' }
+                : isAccepted ? { bg: '#fff8e6', bd: '#f6d98a', fg: '#9a6206' }
+                : { bg: '#f3f0fd', bd: '#cfc4f5', fg: '#3213b7' };
+              return (
+                <span data-testid="detail-status-chip" style={{
+                  marginLeft: 12, fontSize: 10.5, fontWeight: 700,
+                  letterSpacing: '0.06em', textTransform: 'uppercase',
+                  background: c.bg, border: `1px solid ${c.bd}`, color: c.fg,
+                  borderRadius: 999, padding: '3px 11px',
+                  display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle',
+                }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: c.fg, flexShrink: 0 }} />
+                  {chipLabel(s.chip)}
+                </span>
+              );
+            })()}
             {moveBadgeText(s.nativeTrack || track, s.movedToTrack) && (
               <span style={{
                 marginLeft: 12, fontSize: 10.5, fontWeight: 700,
@@ -392,14 +427,16 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
               <hr className="os-divider" style={{ margin: '8px 0' }} />
               <div className="os-stack gap-xs">
                 <div className="os-row between os-text-sm">
-                  <span className="os-text-soft">Reviewer Overall</span>
-                  <span className="os-mono font-bold">{revOverall > 0 ? revOverall.toFixed(2) : '—'}</span>
+                  <span className="os-text-soft" title="Each review's category-weighted overall, averaged by reviewer weight — the same score as the Applications list">
+                    Reviewer Overall <span className="os-text-xs os-text-dim">(weighted by reviewer)</span>
+                  </span>
+                  <span className="os-mono font-bold">{revOverall > 0 ? revOverall.toFixed(1) : '—'}</span>
                 </div>
                 <hr className="os-divider" style={{ margin: '4px 0', borderStyle: 'dashed' }} />
                 <div className="os-row between">
                   <span className="os-text-xs os-text-dim os-uppercase" style={{ fontWeight: 700, color: 'var(--accent)' }}>Combined Overall</span>
                   <span className="os-num-big" style={{ fontSize: 26, fontFamily: 'var(--font-sans)', fontWeight: 800, color: 'var(--accent)' }}>
-                    {combinedOverall > 0 ? combinedOverall.toFixed(2) : '—'}
+                    {combinedOverall > 0 ? combinedOverall.toFixed(1) : '—'}
                   </span>
                 </div>
               </div>
@@ -417,8 +454,25 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
             )) : <div className="os-text-dim os-text-sm">No flags raised on this application.</div>}
           </div>
 
-          {/* Admin Decision Card */}
+          {/* Admin Decision Card — the 1st-gate panel only while the app is
+              still at (or before) Admin Review; past it, a read-only summary. */}
           <div className="os-card">
+            {!gate1Open ? (
+              <div data-testid="decision-summary">
+                <div className="os-text-xs os-text-dim os-uppercase os-mb-sm">DECISION</div>
+                <div className="os-text-sm" style={{ fontWeight: 600 }}>
+                  {chipLabel(s.chip)}{s.adminDecision ? ` · last admin decision: ${s.adminDecision.toLowerCase()}` : ''}
+                </div>
+                {s.adminRationale && (
+                  <div className="os-text-sm os-text-soft" style={{ marginTop: 6 }}>{s.adminRationale}</div>
+                )}
+                <div className="os-mt-sm" style={{ fontSize: 12, color: '#6f6f78', fontStyle: 'italic' }}>
+                  {isAccepted
+                    ? 'Final accept / reject happens on the Accepted tab.'
+                    : 'This application is past Admin Review.'}
+                </div>
+              </div>
+            ) : (<>
             <div className="os-text-xs os-text-dim os-uppercase os-mb-sm">DECIDE</div>
             <div className="os-reco-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
               {[
@@ -468,6 +522,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
             >
               {decisionBusy ? 'Recording…' : 'Apply decision'}
             </button>
+            </>)}
 
             <button
               className="os-btn os-w-100 os-mt"

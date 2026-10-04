@@ -16,6 +16,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api.js";
 import { collapseFromRow, expandForPatch } from "../lib/fieldMap.js";
+import { useInRouterContext, useLocation } from "react-router-dom";
 import { useAuth } from "./useAuth.jsx";
 
 const ApplicationContext = createContext(null);
@@ -23,8 +24,22 @@ const ApplicationContext = createContext(null);
 const DEBOUNCE_MS = 800;
 const RETRY_BACKOFF_MS = [1000, 2000, 4000];
 
+// Staff portals never need the applicant draft — /applications/me 403s for
+// staff-only accounts (and would auto-create a draft while intake is open).
+const STAFF_SURFACE = /^\/(admin|leadership|reviewer|jury)(\/|$)/;
+
+// Router-aware pathname; falls back to window.location outside a router (unit
+// tests mount the provider bare). The branch is fixed for a mount's lifetime.
+function usePathname() {
+  const inRouter = useInRouterContext();
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  if (inRouter) return useLocation().pathname;
+  return typeof window !== "undefined" ? window.location.pathname : "/";
+}
+
 export function ApplicationProvider({ children }) {
   const { isAuthed } = useAuth();
+  const onStaffSurface = STAFF_SURFACE.test(usePathname());
 
   // `row` is the raw DB shape (keys like basic_full_name).
   // `answers` is the UI shape (keys like fullName) — derived via fieldMap.
@@ -66,6 +81,7 @@ export function ApplicationProvider({ children }) {
       setCompletion({ completion_pct: 0, missing_required_fields: [], current_section: null });
       return undefined;
     }
+    if (onStaffSurface) return undefined;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -107,7 +123,7 @@ export function ApplicationProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [isAuthed]);
+  }, [isAuthed, onStaffSurface]);
 
   // Flushes the pending patch buffer to the backend with retry.
   const flush = useCallback(async () => {

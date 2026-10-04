@@ -33,7 +33,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useAdminData, loadDetail } from "../../../../hooks/useAdminData";
 import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { adminPlatformApi }  from "../../../../lib/adminPlatformApi";
-import { BUTTON_TO_DECISION } from "../../../../lib/adminDataAdapter";
+import { BUTTON_TO_DECISION, DECISION_TO_ADMIN } from "../../../../lib/adminDataAdapter";
 import { moveButtonLabel } from "../../../../lib/trackMove";
 import { PageHead, Chip, FlagDot } from "../shell/osAtoms";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
@@ -443,6 +443,25 @@ function GateReviewStack({ items, reload, goDetail }) {
   );
 }
 
+// Every batch an app belongs to (an app can sit in several); "Unassigned" when none.
+const batchNamesOf = (s) => {
+  const names = (s.batches || []).map(b => b && b.name).filter(Boolean);
+  if (names.length) return names;
+  return [s.batch && s.batch !== "Unassigned" ? s.batch : "Unassigned"];
+};
+
+// The 1st-gate (Admin Review) decision, as an adminDecision-style value.
+// `adminDecision` is the latest decision of ANY gate, so a final-round reject
+// overwrites the gate-1 approve. Prefer gate1_decision (contract C2); on an
+// older backend, a gate-2 decision implies the app was approved at gate 1.
+export function gate1DecisionOf(s) {
+  if (s.gate1_decision !== undefined) {
+    return s.gate1_decision ? (DECISION_TO_ADMIN[s.gate1_decision] || String(s.gate1_decision).toUpperCase()) : null;
+  }
+  if (s.gate2_decision) return "APPROVED";
+  return s.adminDecision || null;
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // VARIANT C · Batch decision room (prototype: GateReviewBatchDecision)
 // ══════════════════════════════════════════════════════════════════════════
@@ -453,12 +472,12 @@ function GateReviewBatchDecision({ items, reload, goDetail }) {
   const [note, setNote]                       = useState(null);
 
   const allBatches = useMemo(
-    () => Array.from(new Set(items.map(s => s.batch || "Unassigned"))).sort(),
+    () => Array.from(new Set(items.flatMap(batchNamesOf))).sort(),
     [items]
   );
 
   const filtered = useMemo(
-    () => selectedBatch === "All" ? items : items.filter(s => (s.batch || "Unassigned") === selectedBatch),
+    () => selectedBatch === "All" ? items : items.filter(s => batchNamesOf(s).includes(selectedBatch)),
     [items, selectedBatch]
   );
 
@@ -528,7 +547,7 @@ function GateReviewBatchDecision({ items, reload, goDetail }) {
             All Batches ({items.length})
           </button>
           {allBatches.map(b => {
-            const count = items.filter(s => (s.batch || "Unassigned") === b).length;
+            const count = items.filter(s => batchNamesOf(s).includes(b)).length;
             return (
               <button key={b} className={"os-btn sm " + (selectedBatch === b ? "primary" : "secondary")} onClick={() => setSelectedBatch(b)}>
                 {b} ({count})
@@ -581,7 +600,7 @@ function GateReviewBatchDecision({ items, reload, goDetail }) {
                     <b style={{ fontSize: 14 }}>{s.name}</b>
                     <div style={{ color: "var(--ink-dim)", fontSize: 11, marginTop: 2 }}>{s.domain}</div>
                   </td>
-                  <td className="os-mono os-text-sm">{s.batch || "Unassigned"}</td>
+                  <td className="os-mono os-text-sm">{batchNamesOf(s).join(", ")}</td>
                   <td className="num"><b>{score != null ? score.toFixed(1) : "—"}</b></td>
                   <td>
                     {s.flags && s.flags.length > 0 ? (
@@ -619,11 +638,18 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
   const [sortCol, setSortCol]       = useStickyState("admin.gate1.history", "sortCol", null);
   const [sortAsc, setSortAsc]       = useStickyState("admin.gate1.history", "sortAsc", true);
 
-  // Apps with a non-null adminDecision
+  // Apps decided at Admin Review (1st gate). `g1` is that gate's decision —
+  // never the final-round one that may have overwritten adminDecision.
   const startups = useMemo(
-    () => (allStartups || []).filter(s => s.adminDecision),
+    () => (allStartups || [])
+      .map(s => ({ ...s, g1: gate1DecisionOf(s) }))
+      .filter(s => s.g1),
     [allStartups]
   );
+  // Date column = when the decision was made (decided_at, contract C2); an
+  // older backend has no decided_at, so it falls back to the submitted date.
+  const hasDecidedAt = startups.some(s => s.decidedAt);
+  const dateOf = (s) => hasDecidedAt ? (s.decidedAt ? String(s.decidedAt).slice(0, 10) : "") : (s.sub || "");
 
   const handleSort = (col) => {
     setSortCol(prev => { if (prev === col) { setSortAsc(a => !a); return col; } setSortAsc(true); return col; });
@@ -645,20 +671,20 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
     return [...startups].sort((a, b) => {
       let valA, valB;
       if (sortCol === "name")          { valA = a.name || ""; valB = b.name || ""; }
-      else if (sortCol === "sub")      { valA = a.sub || ""; valB = b.sub || ""; }
+      else if (sortCol === "sub")      { valA = dateOf(a); valB = dateOf(b); }
       else if (sortCol === "batch")    { valA = a.batch || "Unassigned"; valB = b.batch || "Unassigned"; }
       else if (sortCol === "score")    { valA = revScore(a) ?? -1; valB = revScore(b) ?? -1; }
       else if (sortCol === "flags")    { valA = a.flags ? a.flags.length : 0; valB = b.flags ? b.flags.length : 0; }
-      else if (sortCol === "adminDecision") { valA = a.adminDecision || ""; valB = b.adminDecision || ""; }
+      else if (sortCol === "adminDecision") { valA = a.g1 || ""; valB = b.g1 || ""; }
       if (valA < valB) return sortAsc ? -1 : 1;
       if (valA > valB) return sortAsc ? 1 : -1;
       return 0;
     });
-  }, [startups, sortCol, sortAsc]);
+  }, [startups, sortCol, sortAsc]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Stats
+  // Stats — 1st-gate decisions only.
   const total        = startups.length;
-  const approvedCount = startups.filter(s => s.adminDecision === "APPROVED").length;
+  const approvedCount = startups.filter(s => s.g1 === "APPROVED").length;
   const selectionRate = total > 0 ? ((approvedCount / total) * 100).toFixed(0) : 0;
   const avgFlags      = total > 0 ? (startups.reduce((sum, s) => sum + (s.flags?.length || 0), 0) / total).toFixed(1) : "0.0";
 
@@ -689,7 +715,7 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
         <div>
           <span className="lp-section-eyebrow">HISTORY</span>
           <h2 className="lp-section-title">Admin decision history</h2>
-          <div className="lp-section-sub">All applications decided on at Admin Review, key metrics, and alignment with human reviews. Click on a row to view the full application review page.</div>
+          <div className="lp-section-sub">Every 1st-gate (Admin Review) decision, by any admin. A later final-round outcome is noted under the decision. Click on a row to view the full application review page.</div>
         </div>
       </div>
 
@@ -715,7 +741,7 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
         <thead>
           <tr>
             {renderHeader("Startup", "name")}
-            {renderHeader("Date", "sub")}
+            {renderHeader(hasDecidedAt ? "Decided" : "Submitted", "sub")}
             {renderHeader("Batch", "batch")}
             {renderHeader("Score", "score")}
             {renderHeader("Flags", "flags")}
@@ -744,8 +770,8 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
                     <b style={{ fontSize: 14 }}>{s.name}</b>
                     <div style={{ color: "var(--ink-dim)", fontSize: 11, marginTop: 2 }}>{s.domain}</div>
                   </td>
-                  <td className="os-mono os-text-sm">{s.sub || "—"}</td>
-                  <td className="os-mono os-text-sm">{s.batch || "Unassigned"}</td>
+                  <td className="os-mono os-text-sm">{dateOf(s) || "—"}</td>
+                  <td className="os-mono os-text-sm">{batchNamesOf(s).join(", ")}</td>
                   <td className="num"><b>{score != null ? score.toFixed(1) : "—"}</b></td>
                   <td>
                     {s.flags && s.flags.length > 0 ? (
@@ -762,7 +788,14 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
                         <button className="os-btn sm red"    disabled={busy} onClick={() => handleSaveDecision(s.id, "REJECTED")}   style={{ padding: "3px 8px", fontSize: 11 }}>Reject</button>
                       </div>
                     ) : (
-                      <Chip tone={decisionTone(s.adminDecision)}>{(s.adminDecision || "").toUpperCase()}</Chip>
+                      <>
+                        <Chip tone={decisionTone(s.g1)}>{(s.g1 || "").toUpperCase()}</Chip>
+                        {s.gate2_decision && (
+                          <div className="os-text-xs os-text-dim" style={{ marginTop: 3 }}>
+                            Final round: {String(s.gate2_decision).replace(/_/g, " ")}
+                          </div>
+                        )}
+                      </>
                     )}
                   </td>
                   <td>
@@ -806,22 +839,25 @@ export default function AdminGate1({ goDetail }) {
   const loading = variant === "history" ? allLoading  : evalLoading;
   const error   = variant === "history" ? allError    : evalError;
   const count   = variant === "history"
-    ? (allRows.filter(s => s.adminDecision).length)
+    ? (allRows.filter(s => gate1DecisionOf(s)).length)
     : evalRows.length;
+  const title = variant === "history"
+    ? `<em>${count} decision${count !== 1 ? "s" : ""}</em> at Admin Review`
+    : `Decide on <em>${count} application${count !== 1 ? "s" : ""}</em>`;
 
   return (
     <div className="dash-scroll">
       <style>{GATE1_CSS}</style>
       <PageHead
         eyebrow="A-4 · ADMIN REVIEW"
-        title={`Decide on <em>${count} application${count !== 1 ? "s" : ""}</em>`}
+        title={title}
         sub={loading ? "Loading…" : "Each one is reviewer-evaluated. Choose a workflow that matches your decision style."}
       />
 
       <div className="os-row gap-sm os-mb-lg">
         <div className={"os-tab " + (variant === "stack"   ? "active" : "")} onClick={() => setVariant("stack")}>A · Status</div>
         <div className={"os-tab " + (variant === "batch"   ? "active" : "")} onClick={() => setVariant("batch")}>B · Batch decision</div>
-        <div className={"os-tab " + (variant === "history" ? "active" : "")} onClick={() => setVariant("history")}>C · My history</div>
+        <div className={"os-tab " + (variant === "history" ? "active" : "")} onClick={() => setVariant("history")}>C · Decision history</div>
       </div>
 
       {loading ? (

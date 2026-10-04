@@ -107,9 +107,17 @@ describe("AdminSelectedApplications — final-round rejects leave this tab", () 
   it("offers no Rejected decision filter", async () => {
     render(<AdminSelectedApplications />);
     await screen.findByText("Signed App");
-    expect(screen.getByRole("button", { name: "Pending" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Accepted" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Pending/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Accepted/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Rejected" })).toBeNull();
+  });
+
+  it("shows a count on each decision chip (ADM-05)", async () => {
+    render(<AdminSelectedApplications />);
+    await screen.findByText("Signed App");
+    expect(screen.getByRole("button", { name: "All 4" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pending 2" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Accepted 2" })).toBeInTheDocument();
   });
 });
 
@@ -131,7 +139,7 @@ describe("AdminSelectedApplications — decision presentation", () => {
   it("narrows to a single decision category", async () => {
     render(<AdminSelectedApplications />);
     await screen.findByText("Signed App");
-    fireEvent.click(screen.getByRole("button", { name: "Pending" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Pending/ }));
     expect(screen.getByText("Pending App")).toBeInTheDocument();
     expect(screen.queryByText("Signed App")).toBeNull();
   });
@@ -139,7 +147,7 @@ describe("AdminSelectedApplications — decision presentation", () => {
   it("composes the decision filter with the track filter", async () => {
     render(<AdminSelectedApplications />);
     await screen.findByText("Signed App");
-    fireEvent.click(screen.getByRole("button", { name: "Accepted" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Accepted/ }));
     fireEvent.click(screen.getByRole("button", { name: "VIP" }));
     // VIP Signed App is both VIP and accepted — it survives the
     // intersection of the two filters.

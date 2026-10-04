@@ -598,6 +598,17 @@ export function AdminSelectedApplications({ goDetail, onChanged } = {}) {
       });
   }, [all, search, track, decision, byKey, listByKey]);
 
+  // Per-decision counts for the filter chips (within the current track).
+  const decisionCounts = useMemo(() => {
+    const m = { all: 0, pending: 0, accepted: 0 };
+    all.filter((s) => track === "all" || s.track === track).forEach((s) => {
+      m.all += 1;
+      const st = decisionStateOf(s, docsFor(s));
+      if (st in m) m[st] += 1;
+    });
+    return m;
+  }, [all, track, byKey, listByKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const reload = () => {
     docs.reload(); pipeline.reload(); offeredPipeline.reload();
     if (onChanged) onChanged();
@@ -632,7 +643,8 @@ export function AdminSelectedApplications({ goDetail, onChanged } = {}) {
           { ariaLabel: "Filter by track", value: track, onChange: setTrack,
             options: [["all", "All tracks"], ["tir", "TIR"], ["sip", "VIP"]] },
           { ariaLabel: "Filter by decision", value: decision, onChange: setDecision,
-            options: [["all", "All"], ["pending", "Pending"], ["accepted", "Accepted"]] },
+            options: [["all", "All"], ["pending", "Pending"], ["accepted", "Accepted"]]
+              .map(([v, label]) => [v, docs.data ? `${label} ${decisionCounts[v]}` : label]) },
         ]}
         count={rows.length}
         total={pipeline.data ? all.length : null}
