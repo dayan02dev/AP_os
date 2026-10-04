@@ -26,6 +26,7 @@ import FullApplication from "../../../../components/FullApplication";
 import ApplicationSummaryCard from "./ApplicationSummaryCard";
 import { trackLabel } from "../../../../lib/trackLabel";
 import { moveButtonLabel, moveBadgeText } from "../../../../lib/trackMove";
+import { isSelected, signedDocKeys } from "../../../../lib/selection";
 
 // ── Criteria metadata (mirrors prototype CRIT_LABELS / METRICS) ─────────────
 const METRICS = [
@@ -106,6 +107,11 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
     const list = reviewerData?.reviewers ?? [];
     return Object.fromEntries(list.map(r => [r.id, r.name]));
   }, [reviewerData]);
+  // IC documents → the same "selected" rule as the Accepted tab (lib/selection):
+  // a final-round app is Accepted only once every current memo is signed.
+  const { data: icDocData } = useAdminData('icDocuments');
+  const signedKeys = useMemo(
+    () => (icDocData ? signedDocKeys(icDocData.documents) : null), [icDocData]);
   const weightById = useMemo(() => {
     const list = reviewerData?.reviewers ?? [];
     return Object.fromEntries(list.filter(r => typeof r.weight === 'number').map(r => [r.id, r.weight]));
@@ -254,10 +260,15 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
   }
   if (!s) return null;
 
-  // An APPROVED application sits at status jury_review (chip "JURY REVIEW").
-  // It reads "Accepted" here (the admin tab it lives in) — never "Interview"
-  // (see adminDataAdapter.CHIP_META).
-  const isAccepted = s.chip === 'JURY REVIEW';
+  // An APPROVED application sits at status jury_review (chip "JURY REVIEW") —
+  // the final round. Like the Accepted tab it reads "Accepted" only when every
+  // current IC memo is signed (final_selected); otherwise "Final pending".
+  const isFinalRound = s.chip === 'JURY REVIEW';
+  const isAccepted = isFinalRound && isSelected(
+    { status: 'jury_review', nativeTrack: s.nativeTrack || track, id: s.id }, signedKeys);
+  const stageLabel = !isFinalRound ? chipLabel(s.chip)
+    : isAccepted ? chipLabel(s.chip)
+    : signedKeys ? 'Final pending' : 'Final round';
   const isRejected = s.chip === 'REJECTED';
   const gate1Open = GATE1_OPEN_CHIPS.has(s.chip || 'NEW');
   const aiData = s.ai || {};
@@ -339,7 +350,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
             {/* Status chip — always, so the stage (incl. Rejected) is visible. */}
             {(() => {
               const c = isRejected ? { bg: '#fdecec', bd: '#f3c2c4', fg: '#b3262b' }
-                : isAccepted ? { bg: '#fff8e6', bd: '#f6d98a', fg: '#9a6206' }
+                : isFinalRound ? { bg: '#fff8e6', bd: '#f6d98a', fg: '#9a6206' }
                 : { bg: '#f3f0fd', bd: '#cfc4f5', fg: '#3213b7' };
               return (
                 <span data-testid="detail-status-chip" style={{
@@ -350,7 +361,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
                   display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle',
                 }}>
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: c.fg, flexShrink: 0 }} />
-                  {chipLabel(s.chip)}
+                  {stageLabel}
                 </span>
               );
             })()}
@@ -461,13 +472,13 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
               <div data-testid="decision-summary">
                 <div className="os-text-xs os-text-dim os-uppercase os-mb-sm">DECISION</div>
                 <div className="os-text-sm" style={{ fontWeight: 600 }}>
-                  {chipLabel(s.chip)}{s.adminDecision ? ` · last admin decision: ${s.adminDecision.toLowerCase()}` : ''}
+                  {stageLabel}{isFinalRound && !isAccepted && signedKeys ? ' · IC memo not yet approved' : ''}{s.adminDecision ? ` · last admin decision: ${s.adminDecision.toLowerCase()}` : ''}
                 </div>
                 {s.adminRationale && (
                   <div className="os-text-sm os-text-soft" style={{ marginTop: 6 }}>{s.adminRationale}</div>
                 )}
                 <div className="os-mt-sm" style={{ fontSize: 12, color: '#6f6f78', fontStyle: 'italic' }}>
-                  {isAccepted
+                  {isFinalRound
                     ? 'Final accept / reject happens on the Accepted tab.'
                     : 'This application is past Admin Review.'}
                 </div>

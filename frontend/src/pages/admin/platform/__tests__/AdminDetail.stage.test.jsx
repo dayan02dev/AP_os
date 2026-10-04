@@ -4,11 +4,15 @@ import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
+// IC documents served to the detail (ADM-20: Accepted needs every memo signed).
+let IC_DOCS = [];
 vi.mock("../../../../hooks/useAdminData", () => ({
   loadDetail: vi.fn(),
-  useAdminData: () => ({ data: { reviewers: [
-    { id: "r1", name: "R1", weight: 2 }, { id: "r2", name: "R2", weight: 1 },
-  ] }, loading: false, error: null, reload: vi.fn() }),
+  useAdminData: (resource) => (resource === "icDocuments"
+    ? { data: { documents: IC_DOCS }, loading: false, error: null, reload: vi.fn() }
+    : { data: { reviewers: [
+      { id: "r1", name: "R1", weight: 2 }, { id: "r2", name: "R2", weight: 1 },
+    ] }, loading: false, error: null, reload: vi.fn() }),
 }));
 vi.mock("../../../../lib/adminPlatformApi", () => ({ adminPlatformApi: { decide: vi.fn() } }));
 vi.mock("../../../../lib/leadershipApi", () => ({ leadershipApi: {} }));
@@ -65,5 +69,30 @@ describe("ADM-20 stage-aware header + decide panel", () => {
     mount({ chip: "JURY REVIEW", adminDecision: "APPROVED" });
     await screen.findByRole("heading", { level: 2, name: /Stage App/ });
     expect(screen.queryByRole("button", { name: "Apply decision" })).toBeNull();
+  });
+});
+
+describe("ADM-20 final-round chip follows IC sign-off (lib/selection)", () => {
+  const doc = (signed) => ({ application_id: "a1", track: "tir", signed, superseded_at: null });
+  it("jury_review with an unsigned memo reads Final pending, not Accepted", async () => {
+    IC_DOCS = [doc(true), doc(false)];
+    mount({ chip: "JURY REVIEW", adminDecision: "APPROVED" });
+    await screen.findByRole("heading", { level: 2, name: /Stage App/ });
+    const chip = screen.getByTestId("detail-status-chip");
+    expect(chip.textContent).toMatch(/Final pending/i);
+    expect(chip.textContent).not.toMatch(/Accepted/i);
+    expect(screen.getByTestId("decision-summary").textContent).not.toMatch(/^Accepted/);
+  });
+  it("jury_review with no memo is Final pending too", async () => {
+    IC_DOCS = [];
+    mount({ chip: "JURY REVIEW", adminDecision: "APPROVED" });
+    await screen.findByRole("heading", { level: 2, name: /Stage App/ });
+    expect(screen.getByTestId("detail-status-chip").textContent).toMatch(/Final pending/i);
+  });
+  it("jury_review with every current memo signed reads Accepted", async () => {
+    IC_DOCS = [doc(true), doc(true)];
+    mount({ chip: "JURY REVIEW", adminDecision: "APPROVED" });
+    await screen.findByRole("heading", { level: 2, name: /Stage App/ });
+    expect(screen.getByTestId("detail-status-chip").textContent).toMatch(/Accepted/i);
   });
 });
