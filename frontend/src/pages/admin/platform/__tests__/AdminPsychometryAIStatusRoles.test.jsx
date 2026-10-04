@@ -129,11 +129,10 @@ describe("AdminRoles screen", () => {
     expect(email).toBeTruthy();
   });
 
-  it("renders a PreviewBadge on the Invite Member action", async () => {
+  it("renders the live Invite Member action without a stale Preview badge", async () => {
     render(<AdminRoles />);
-    // PreviewBadge next to the Invite Member button
-    const previews = await screen.findAllByText(/Preview/i);
-    expect(previews.length).toBeGreaterThan(0);
+    expect(await screen.findByText(/Invite Member/)).toBeTruthy();
+    expect(screen.queryByText(/backend pending/i)).toBeNull();
   });
 
   it("renders the User List table heading", async () => {
