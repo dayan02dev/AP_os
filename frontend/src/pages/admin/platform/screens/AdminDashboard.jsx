@@ -116,6 +116,166 @@ function ApplicationsByIndustry({ go, industries }) {
   );
 }
 
+// ─── Kpi tile ─────────────────────────────────────────────────────────────────
+function Kpi({ id, label, value, sub }) {
+  return (
+    <div data-testid={id ? `kpi-${id}` : undefined} style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+      <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>{label}</div>
+      <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{value}</div>
+      {sub != null && <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>{sub}</div>}
+    </div>
+  );
+}
+
+const FUNNEL_CARD = { background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: 24 };
+
+// ─── BreakdownOverview ────────────────────────────────────────────────────────
+// /stats `pipeline_breakdown` (contract C1): every non-draft app sits in exactly
+// one stage, so the tiles and funnel rows add up to `total`. Raw status — no
+// accepted-overlay — so shortlisted (`jury_review`) apps are not hidden.
+function BreakdownOverview({ breakdown }) {
+  const st = breakdown.stages || {};
+  const n = (k) => st[k] ?? 0;
+  const total = breakdown.total ?? 0;
+  const finalSelected = n('final_selected');
+  const gate1Selected = breakdown.gate1_selected
+    ?? (n('final_pending') + n('final_rejected') + finalSelected + n('offered') + n('onboarded'));
+  const rejectedTotal = breakdown.rejected_total ?? (n('gate1_rejected') + n('final_rejected'));
+  const held = n('on_hold') + n('waitlisted');
+
+  // Mutually exclusive parts of `total` — the reconciliation line below.
+  const parts = [
+    ['awaiting assignment', n('submitted')],
+    ['under review', n('under_review')],
+    ['reviewed', n('reviewed')],
+    ['1st-gate rejected', n('gate1_rejected')],
+    ['1st-gate selected', gate1Selected],
+    ['on hold / waitlisted', held],
+    ['withdrawn', n('withdrawn')],
+  ].filter(([label, v]) => v > 0 || label !== 'withdrawn');
+
+  const finalSub = [
+    `${finalSelected} selected`,
+    `${n('final_rejected')} rejected`,
+    `${n('final_pending')} pending`,
+    n('offered') ? `${n('offered')} offered` : null,
+    n('onboarded') ? `${n('onboarded')} onboarded` : null,
+  ].filter(Boolean).join(' · ');
+
+  const maxCount = Math.max(1, total);
+  const rows = [
+    ['TOTAL', 'non-draft applications', total],
+    ['AWAITING ASSIGNMENT', 'submitted, no reviewer yet', n('submitted')],
+    ['UNDER REVIEW', 'with reviewers', n('under_review')],
+    ['REVIEWED', 'awaiting admin decision', n('reviewed')],
+    ['1ST-GATE REJECTED', 'rejected at admin review', n('gate1_rejected')],
+    ['1ST-GATE SELECTED', 'shortlisted for the final round', gate1Selected],
+    ['FINAL SELECTED', 'every IC memo approved', finalSelected, true],
+    ['FINAL REJECTED', 'rejected in the final round', n('final_rejected'), true],
+    ['FINAL PENDING', 'IC memo not yet approved', n('final_pending'), true],
+    ['OFFERED / ONBOARDED', 'offer issued or onboarded', n('offered') + n('onboarded'), true],
+    ['ON HOLD / WAITLISTED', 'parked', held],
+  ];
+
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 16 }}>
+        <Kpi id="total" label="Total applications" value={total}
+          sub={`${finalSelected} accepted · ${rejectedTotal} rejected`} />
+        <Kpi id="under_review" label="Under review" value={n('under_review')}
+          sub={n('submitted') ? `+ ${n('submitted')} awaiting assignment` : 'with reviewers'} />
+        <Kpi id="reviewed" label="Reviewed" value={n('reviewed')} sub="awaiting admin decision" />
+        <Kpi id="gate1_rejected" label="1st-gate rejected" value={n('gate1_rejected')} sub="at admin review" />
+        <Kpi id="gate1_selected" label="1st-gate selected" value={gate1Selected} sub={`Final: ${finalSub}`} />
+        <Kpi id="held" label="On hold / waitlisted" value={held}
+          sub={n('withdrawn') ? `${n('withdrawn')} withdrawn` : `${n('on_hold')} on hold · ${n('waitlisted')} waitlisted`} />
+      </div>
+      <div data-testid="breakdown-reconcile" style={{ fontSize: 12, color: 'var(--ink-dim)', marginTop: -12 }}>
+        {parts.map(([label, v]) => `${v} ${label}`).join(' + ')} = {total}
+      </div>
+
+      <div data-testid="pipeline-funnel" style={FUNNEL_CARD}>
+        <div style={{ marginBottom: 20 }}>
+          <span style={{ fontSize: 11, color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>§ Pipeline</span>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0 0', color: 'var(--ink)' }}>Where every application sits</h2>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {rows.map(([label, sub, count, nested]) => (
+            <div key={label} style={{ paddingLeft: nested ? 32 : 0 }}>
+              <FunnelRow label={label} sublabel={sub} count={count} maxCount={maxCount}
+                filledColor={nested ? '#5a45c8' : '#1f0a8a'} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── LegacyOverview ───────────────────────────────────────────────────────────
+// Older /stats without `pipeline_breakdown`: the previous tiles + funnel.
+function LegacyOverview({ data, selectedCount }) {
+  const totals       = data?.totals       || {};
+  const funnel       = data?.funnel       || {};
+  const decisions    = data?.decisions    || {};
+
+  // ── KPI values ──
+  const totalSubmitted = totals.apps_submitted ?? 0;
+  const inReview       = funnel.in_review      ?? 0;
+  const shortlisted    = funnel.advanced       ?? 0;   // "advanced past review" in /stats
+  const finalDecided   = funnel.decided        ?? 0;
+  const onboarded      = totals.onboarded      ?? 0;
+  const rejected       = decisions.rejected    ?? 0;
+  // /stats runs overlay_admin_decisions, which moves every shortlisted
+  // `jury_review` app into the `accepted` bucket — so read both (same fallback
+  // as lib/adminBadges.pipelineBadges), or the tile would sit at ~0.
+  const countFor       = (id) => (data?.statusCounts || []).find(c => c.id === id)?.n ?? 0;
+  const acceptedStage  = countFor('jury_review') + countFor('accepted');
+  // Tile + funnel "ACCEPTED" = the Accepted tab badge: shortlisted apps whose
+  // IC memo is approved (green). Passed down from AdminPortal, which already
+  // computes it; falls back to the shortlist bucket if not supplied.
+  const acceptedCount  = typeof selectedCount === 'number' ? selectedCount : acceptedStage;
+
+  const funnelCounts = [totalSubmitted, inReview, shortlisted, acceptedCount, onboarded];
+  const maxCount = Math.max(1, ...funnelCounts);
+
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
+        <Kpi label="APPLICATIONS SUBMITTED" value={totalSubmitted} sub="total in system" />
+        <Kpi label="UNDER REVIEW" value={inReview} />
+        <Kpi label="SHORTLISTED" value={shortlisted} sub="advanced past review" />
+        <Kpi label="ACCEPTED" value={acceptedCount} sub="IC memo approved" />
+        <Kpi label="FINAL DECISIONS" value={finalDecided} sub={(
+          <span style={{ display: 'flex', gap: 10, fontSize: 10 }}>
+            <span style={{ color: '#2F6F62', fontWeight: 600 }}>{onboarded} onboarded</span>
+            <span>·</span>
+            <span style={{ color: '#d23b40', fontWeight: 600 }}>{rejected} rejected</span>
+          </span>
+        )} />
+      </div>
+
+      <div data-testid="pipeline-funnel" style={FUNNEL_CARD}>
+        <div style={{ marginBottom: 20 }}>
+          <span style={{ fontSize: 11, color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>§ Pipeline funnel</span>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0 0', color: 'var(--ink)' }}>From submission to onboarded</h2>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <FunnelRow label="SUBMITTED" sublabel="complete" count={totalSubmitted} maxCount={maxCount} filledColor="#1f0a8a" />
+          <ArrowDown />
+          <FunnelRow label="IN REVIEW" sublabel="under reviewer eval" count={inReview} maxCount={maxCount} filledColor="#1f0a8a" />
+          <ArrowDown />
+          <FunnelRow label="SHORTLISTED" sublabel="advanced past admin review" count={shortlisted} maxCount={maxCount} filledColor="#1f0a8a" />
+          <ArrowDown />
+          <FunnelRow label="ACCEPTED" sublabel="interviewed · final selection" count={acceptedCount} maxCount={maxCount} filledColor="#1f0a8a" />
+          <ArrowDown />
+          <FunnelRow label="ONBOARDED" sublabel="cohort onboarded" count={onboarded} maxCount={maxCount} filledColor="#1f0a8a" />
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── AdminDashboard ───────────────────────────────────────────────────────────
 export function AdminDashboard({ go, selectedCount = null }) {
   const { data, loading, error } = useAdminData('stats');
@@ -143,88 +303,12 @@ export function AdminDashboard({ go, selectedCount = null }) {
   if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
   if (error) return <div style={{ padding: 24 }} className="os-banner red">Failed to load dashboard.</div>;
 
-  const totals       = data?.totals       || {};
-  const funnel       = data?.funnel       || {};
-  const decisions    = data?.decisions    || {};
-
-  // ── KPI values ──
-  const totalSubmitted = totals.apps_submitted ?? 0;
-  const inReview       = funnel.in_review      ?? 0;
-  const shortlisted    = funnel.advanced       ?? 0;   // "advanced past review" in /stats
-  const finalDecided   = funnel.decided        ?? 0;
-  const onboarded      = totals.onboarded      ?? 0;
-  const rejected       = decisions.rejected    ?? 0;
-  // Apps in the admin "Accepted" tab (status jury_review). There was no jury
-  // this round — admins shortlisted, interviewed and decided there — so the
-  // old jury-mode KPIs/funnel are gone (Jury Portal closed, see
-  // JURY_PORTAL_ENABLED in lib/landing.js).
-  // /stats runs overlay_admin_decisions, which moves every shortlisted
-  // `jury_review` app into the `accepted` bucket — so read both (same fallback
-  // as lib/adminBadges.pipelineBadges), or the tile would sit at ~0.
-  const countFor       = (id) => (data?.statusCounts || []).find(c => c.id === id)?.n ?? 0;
-  const acceptedStage  = countFor('jury_review') + countFor('accepted');
-  // Tile + funnel "ACCEPTED" = the Accepted tab badge: shortlisted apps whose
-  // IC memo is approved (green). Passed down from AdminPortal, which already
-  // computes it; falls back to the shortlist bucket if not supplied.
-  const acceptedCount  = typeof selectedCount === 'number' ? selectedCount : acceptedStage;
-
-  // ── Pipeline funnel — maxCount is max across all rows so bar widths are proportional ──
-  const funnelCounts = [totalSubmitted, inReview, shortlisted, acceptedCount, onboarded];
-  const maxCount = Math.max(1, ...funnelCounts);
-
+  const breakdown = data?.pipelineBreakdown;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, paddingBottom: 40 }}>
-
-      {/* ── KPIs ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
-        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-          <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>APPLICATIONS SUBMITTED</div>
-          <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{totalSubmitted}</div>
-          <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>total in system</div>
-        </div>
-        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-          <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>UNDER REVIEW</div>
-          <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{inReview}</div>
-        </div>
-        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-          <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>SHORTLISTED</div>
-          <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{shortlisted}</div>
-          <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>advanced past review</div>
-        </div>
-        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-          <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>ACCEPTED</div>
-          <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{acceptedCount}</div>
-          <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>IC memo approved</div>
-        </div>
-        <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-          <div style={{ fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>FINAL DECISIONS</div>
-          <div style={{ fontFamily: 'var(--font-sans)', fontSize: 32, fontWeight: 700, color: 'var(--ink)', margin: '8px 0 4px 0' }}>{finalDecided}</div>
-          <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--ink-soft)' }}>
-            <span style={{ color: '#2F6F62', fontWeight: 600 }}>{onboarded} onboarded</span>
-            <span>·</span>
-            <span style={{ color: '#d23b40', fontWeight: 600 }}>{rejected} rejected</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Pipeline funnel */}
-      <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: 24 }}>
-        <div style={{ marginBottom: 20 }}>
-          <span style={{ fontSize: 11, color: 'var(--ink-dim)', letterSpacing: '0.08em', fontWeight: 600 }}>§ Pipeline funnel</span>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0 0', color: 'var(--ink)' }}>From submission to onboarded</h2>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <FunnelRow label="SUBMITTED" sublabel="complete" count={totalSubmitted} maxCount={maxCount} filledColor="#1f0a8a" />
-          <ArrowDown />
-          <FunnelRow label="IN REVIEW" sublabel="under reviewer eval" count={inReview} maxCount={maxCount} filledColor="#1f0a8a" />
-          <ArrowDown />
-          <FunnelRow label="SHORTLISTED" sublabel="advanced past admin review" count={shortlisted} maxCount={maxCount} filledColor="#1f0a8a" />
-          <ArrowDown />
-          <FunnelRow label="ACCEPTED" sublabel="interviewed · final selection" count={acceptedCount} maxCount={maxCount} filledColor="#1f0a8a" />
-          <ArrowDown />
-          <FunnelRow label="ONBOARDED" sublabel="cohort onboarded" count={onboarded} maxCount={maxCount} filledColor="#1f0a8a" />
-        </div>
-      </div>
+      {breakdown && breakdown.stages
+        ? <BreakdownOverview breakdown={breakdown} />
+        : <LegacyOverview data={data} selectedCount={selectedCount} />}
 
       {/* Applications by Industry */}
       <div style={{ background: 'var(--bg-paper)', border: '1px solid var(--line)', borderRadius: 2, padding: 24 }}>

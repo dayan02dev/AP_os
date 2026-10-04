@@ -109,6 +109,11 @@ export function adaptStats(api) {
     statusCountsByTrack: api.status_counts_by_track || [],
     aiScores: api.ai_score_overalls || [],
     decisions: api.decisions || {},
+    // Contract C1: mutually exclusive stage counts (SUM(stages) == total).
+    // null on older backends — callers fall back to totals/funnel.
+    pipelineBreakdown: api.pipeline_breakdown || null,
+    aiComponentMeans: api.ai_component_means || null,
+    aiScoredCount: api.ai_scored_count ?? null,
   };
 }
 
