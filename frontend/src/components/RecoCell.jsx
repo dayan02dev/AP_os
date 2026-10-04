@@ -1,7 +1,9 @@
 // Concise reviewer-recommendation cell for the staff pipeline tables (leadership,
 // admin) plus a single-value badge for the reviewer queue's "My Reco".
 //   RecoCell  — a {yes,maybe,no} tally → ONE aggregate verdict chip (majority wins;
-//               "—" when no reviews); optional onSelect turns it into a filter button.
+//               "—" below 2 reviews); optional onSelect turns it into a filter button.
+//               `splitSingle` (opt-in) tells "no reviews" ("—", filter "none") apart
+//               from "1 review — needs 2" (chip, filter "single").
 //   RecoBadge — a single "yes"|"maybe"|"no" value → one chip, or "—" when null.
 import React from "react";
 
@@ -44,18 +46,36 @@ export function RecoBadge({ value }) {
   return <span style={chipStyle(RECO_COLOR[value])}>{RECO_LABEL[value]}</span>;
 }
 
-export function RecoCell({ reco, onSelect }) {
+const PENDING_COLOR = "#6b6b6b";
+
+export function RecoCell({ reco, onSelect, splitSingle = false, reviewCount }) {
   const verdict = aggregateReco(reco);
   const title = recoTitle(reco) || undefined;
-  const content = verdict
-    ? <span title={title} style={chipStyle(RECO_COLOR[verdict])}>{RECO_LABEL[verdict]}</span>
-    : <Dash />;
+  const t = reco || {};
+  const count = typeof reviewCount === "number"
+    ? reviewCount
+    : Number(t.yes || 0) + Number(t.maybe || 0) + Number(t.no || 0);
+  // Below the 2-review threshold: "single" (exactly one review) or "none".
+  const bucket = verdict || (splitSingle && count === 1 ? "single" : "none");
+  let content;
+  if (verdict) {
+    content = <span title={title} style={chipStyle(RECO_COLOR[verdict])}>{RECO_LABEL[verdict]}</span>;
+  } else if (bucket === "single") {
+    content = (
+      <span title={`${title ? `${title} · ` : ""}needs 2 reviews for a verdict`}
+        style={{ ...chipStyle(PENDING_COLOR), fontWeight: 600 }}>1 review</span>
+    );
+  } else {
+    content = splitSingle
+      ? <span title="No reviews" style={{ color: "var(--ink-dim)" }}>—</span>
+      : <Dash />;
+  }
   if (!onSelect) return content;
   return (
     <button
       type="button"
-      aria-label={`Filter by reco: ${verdict || "none"}`}
-      onClick={(e) => { e.stopPropagation(); onSelect(verdict || "none"); }}
+      aria-label={`Filter by reco: ${bucket}`}
+      onClick={(e) => { e.stopPropagation(); onSelect(bucket); }}
       style={{ background: "none", border: 0, padding: 0, cursor: "pointer", font: "inherit" }}
     >
       {content}
