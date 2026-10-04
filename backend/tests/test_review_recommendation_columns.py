@@ -67,8 +67,10 @@ def test_review_stats_counts_and_reco(monkeypatch):
     assert b["reco"] == {"yes": 0, "maybe": 1, "no": 0}
 
 
-def test_review_stats_submitted_can_exceed_assigned(monkeypatch):
-    # A reviewer submitted, then their assignment was removed (unassign keeps reviews).
+def test_review_stats_assigned_counts_detached_reviewer(monkeypatch):
+    # A reviewer submitted, then their assignment was removed (unassign keeps
+    # reviews). `assigned` is the engaged set (active ∪ submitted) so the UI
+    # never shows "1 / 0"; the removed assignment shows up as `detached`.
     sb = FakeSupabase({
         "reviewer_profiles": [{"reviewer_user_id": "rv1", "weight": 1.0}],
         "reviews": [
@@ -82,7 +84,9 @@ def test_review_stats_submitted_can_exceed_assigned(monkeypatch):
     monkeypatch.setattr(admin_query, "get_admin_client", lambda: sb)
     out = admin_query._fetch_review_stats([("tir", "A")])
     assert out[("tir", "A")]["submitted"] == 1
-    assert out[("tir", "A")]["assigned"] == 0
+    assert out[("tir", "A")]["assigned"] == 1
+    assert out[("tir", "A")]["active"] == 0
+    assert out[("tir", "A")]["detached"] == 1
 
 
 def test_review_stats_null_recommendation_counts_submitted_not_bucketed(monkeypatch):

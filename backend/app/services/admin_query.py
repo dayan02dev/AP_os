@@ -55,41 +55,59 @@ def _by_track(pairs: list[tuple[str, str]]) -> dict[str, list[str]]:
 def _fetch_latest_decisions(
     pairs: list[tuple[str, str]],
 ) -> dict[tuple[str, str], dict[str, Any]]:
-    """Latest `admin_decisions` row per `(track, application_id)`.
+    """Latest `admin_decisions` row per `(track, application_id)`, ANY gate.
 
     `decided_at desc` ordering is requested from PostgREST; we also reduce in
     Python (keep the max decided_at) so a fake/non-ordering backend still
     yields the latest. One query per track.
     """
+    return _fetch_latest_decisions_by_gate(pairs)[0]
+
+
+def _fetch_latest_decisions_by_gate(
+    pairs: list[tuple[str, str]],
+) -> tuple[dict[tuple[str, str], dict[str, Any]],
+           dict[tuple[str, str, str], dict[str, Any]]]:
+    """``(latest_any, latest_per_gate)`` from one paginated read per track.
+
+    ``latest_per_gate`` is keyed ``(track, application_id, gate_stage)`` so the
+    pipeline can show the 1st-gate decision even after a gate-2 row
+    superseded it as the overall latest (ADM-05).
+    """
     out: dict[tuple[str, str], dict[str, Any]] = {}
+    by_gate: dict[tuple[str, str, str], dict[str, Any]] = {}
     if not pairs:
-        return out
+        return out, by_gate
     for track, ids in _by_track(pairs).items():
         if not ids:
             continue
         try:
-            res = (
-                get_admin_client()
+            rows = _fetch_all(
+                lambda t=track, i=ids: get_admin_client()
                 .table("admin_decisions")
                 .select("*")
-                .eq("application_track", track)
-                .in_("application_id", ids)
+                .eq("application_track", t)
+                .in_("application_id", i)
                 .order("decided_at", desc=True)
-                .execute()
             )
         except Exception as exc:
             log.warning("admin_query._fetch_latest_decisions failed",
                         extra={"track": track, "err": str(exc)})
             continue
-        for row in res.data or []:
+        for row in rows:
             aid = row.get("application_id")
             if aid is None:
                 continue
+            at = row.get("decided_at") or ""
             key = (track, aid)
             cur = out.get(key)
-            if cur is None or (row.get("decided_at") or "") >= (cur.get("decided_at") or ""):
+            if cur is None or at >= (cur.get("decided_at") or ""):
                 out[key] = row
-    return out
+            gkey = (track, aid, row.get("gate_stage"))
+            cur = by_gate.get(gkey)
+            if cur is None or at >= (cur.get("decided_at") or ""):
+                by_gate[gkey] = row
+    return out, by_gate
 
 
 def _fetch_admin_meta(
@@ -194,7 +212,16 @@ def _fetch_review_stats(
     Returns, per key that has ANY submitted review or active assignment:
         {"score":     weighted mean of submitted, fully-scored reviews (or None),
          "submitted": distinct reviewers with a submitted review,
-         "assigned":  distinct active assignments (declined_at/reassigned_to NULL),
+         "assigned":  distinct reviewers ENGAGED on the app = active assignees
+                      ∪ submitted reviewers. Assignment rows are hard-deleted on
+                      unassign / Gate-1 reject while the review is kept, so the
+                      active set alone gave impossible "3 / 0" ratios (ADM-08 /
+                      LEAD-11). Always >= submitted.
+         "active":    distinct active assignments (declined_at/reassigned_to NULL),
+         "detached":  submitted reviewers with no active assignment any more,
+         "review_count": submitted reviews carrying a recommendation — the
+                      number reco_verdict counts (0 → "no reviews", 1 →
+                      "needs a 2nd review"),
          "reco":      {"yes": n, "maybe": n, "no": n} over submitted reviews}
 
     `score` reuses the old weight-adjusted mean (drafts + any-missing-dimension
@@ -268,16 +295,20 @@ def _fetch_review_stats(
 
     out: dict[tuple[str, str], dict[str, Any]] = {}
     for key in want:
-        sub = len(submitted.get(key, ()))
-        asg = len(assigned.get(key, ()))
-        if sub == 0 and asg == 0:
+        sub_set = submitted.get(key, set())
+        act_set = assigned.get(key, set())
+        if not sub_set and not act_set:
             continue
         score = round(num[key] / den[key], 1) if den.get(key) else None
+        tally = reco.get(key, {"yes": 0, "maybe": 0, "no": 0})
         out[key] = {
-            "score":     score,
-            "submitted": sub,
-            "assigned":  asg,
-            "reco":      reco.get(key, {"yes": 0, "maybe": 0, "no": 0}),
+            "score":        score,
+            "submitted":    len(sub_set),
+            "assigned":     len(sub_set | act_set),
+            "active":       len(act_set),
+            "detached":     len(sub_set - act_set),
+            "review_count": sum(tally.values()),
+            "reco":         tally,
         }
     return out
 
@@ -361,7 +392,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     scores = applications_query.fetch_ai_scores_for(pairs)
     project_names = applications_query.fetch_project_names_for(pairs)
     industries = applications_query.fetch_industry_for_pairs(pairs)
-    decisions = _fetch_latest_decisions(pairs)
+    decisions, decisions_by_gate = _fetch_latest_decisions_by_gate(pairs)
     meta = _fetch_admin_meta(pairs)
     batches = _fetch_batches(pairs)
     review_stats = _fetch_review_stats(pairs)
@@ -406,6 +437,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     want_batch = filters.get("batch_id")
     want_industry = filters.get("industry")
     needle = (search or "").strip().lower()
+    needle_seq = applications_query.search_seq_digits(needle)
 
     # Jury recommendation filter: when set, keep only apps recommended for that
     # juror and attach the {score, reason}; the result is later sorted by score
@@ -458,20 +490,6 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
         if want_industry and (ind or {}).get("id") != want_industry:
             continue
 
-        # search is already pushed to PostgREST per-track for real Supabase,
-        # but the fake/no-op backend ignores it — keep a Python pass so the
-        # filter is honoured regardless of backend.
-        if needle:
-            hay = " ".join([
-                str(r.get("basic_full_name") or ""),
-                str(r.get("basic_email") or ""),
-                str(r.get("basic_org") or ""),
-                str(r.get("display_seq") or ""),
-                stats.compose_display_id(r.get("track"), r.get("display_seq")),
-            ]).lower()
-            if needle not in hay:
-                continue
-
         if r.get("track") == "sip":
             name = r.get("basic_org") or r.get("basic_full_name")
         else:
@@ -482,10 +500,35 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
                 or r.get("basic_full_name")
             )
 
+        # search is already pushed to PostgREST per-track for real Supabase,
+        # but the fake/no-op backend ignores it — keep a Python pass so the
+        # filter is honoured regardless of backend. A display-ID search
+        # ("27326", "TIR-27326", "VIP-26255" — the UI shows SIP as VIP)
+        # matches the seq; anything else is a substring over name / email /
+        # org / project name (the DB pass also matches project_name, so the
+        # Python pass must not drop those rows).
+        if needle:
+            if needle_seq and str(r.get("display_seq") or "") == needle_seq:
+                pass
+            else:
+                hay = " ".join([
+                    str(r.get("basic_full_name") or ""),
+                    str(r.get("basic_email") or ""),
+                    str(r.get("basic_org") or ""),
+                    str(name or ""),
+                    str(project_names.get(key) or ""),
+                    str(r.get("display_seq") or ""),
+                    stats.compose_display_id(r.get("track"), r.get("display_seq")),
+                ]).lower()
+                if needle not in hay:
+                    continue
+
         # `r["track"]` is the NATIVE track (used for every child-table key
         # above); `eff` is the effective/display track under the track-move
         # overlay (moved_to_track wins).
         eff = applications_query.effective_track(r)
+        g1 = decisions_by_gate.get((r["track"], r["id"], "gate1"))
+        rs = review_stats.get(key) or {}
         item = {
             "id":               r["id"],
             "applicationId":    stats.compose_display_id(eff, r.get("display_seq")),
@@ -498,6 +541,13 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
             "ai_score_overall": scores.get(key),
             "status":           r.get("status"),
             "decision":         decision,
+            "decided_at":       (dec_row or {}).get("decided_at"),
+            "decided_by":       (dec_row or {}).get("decided_by"),
+            # Latest 1st-gate decision on its own: a later gate-2 row replaces
+            # `decision`, which hid the gate-1 approval (ADM-05).
+            "gate1_decision":   (g1 or {}).get("decision"),
+            "gate1_decided_at": (g1 or {}).get("decided_at"),
+            "gate1_decided_by": (g1 or {}).get("decided_by"),
             "isHidden":         is_hidden,
             "isArchived":       is_archived,
             "batch":            (batch_list[0]["name"] if batch_list else None),
@@ -507,7 +557,16 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
                                     "submitted": (review_stats.get(key) or {}).get("submitted", 0),
                                     "assigned":  (review_stats.get(key) or {}).get("assigned", 0),
                                 } if review_stats.get(key) else None,
+            # Flat counts (contract C2): reviewers_assigned is the engaged set
+            # (active ∪ submitted) so it never drops below reviews_submitted;
+            # reviewers_detached = reviews whose assignment was removed;
+            # review_count splits the reco "—" bucket (0 vs 1 review).
+            "reviews_submitted":  rs.get("submitted", 0),
+            "reviewers_assigned": rs.get("assigned", 0),
+            "reviewers_detached": rs.get("detached", 0),
+            "review_count":       rs.get("review_count", 0),
             "reco":             (review_stats.get(key) or {}).get("reco"),
+            "email":            r.get("basic_email"),
             "submitted_at":     r.get("submitted_at"),
             "flags":            flags_by_key.get(key, []),
             "moved_to_track":   r.get("moved_to_track"),

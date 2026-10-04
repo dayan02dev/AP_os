@@ -205,20 +205,22 @@ def _query_track_table(
         )
         if status:
             q = q.eq("status", status)
+        search = (search or "").strip()
         if search:
             # Case-insensitive substring across the three free-text identity
-            # fields. PostgREST `.or_()` takes a comma-joined filter string.
-            # If the search input is purely digits, we ALSO match against
-            # `display_seq` so leadership can paste "26013" (or "TIR-26013"
-            # after the frontend strips the prefix) and find the row.
-            needle = f"%{search}%"
+            # fields. PostgREST `.or_()` takes a comma-joined filter string, so
+            # the value is double-quoted (or_ilike_value) — a comma or paren in
+            # the search must not split the filter.
+            # A display-ID search ("26013", "TIR-26013", "VIP-26013") ALSO
+            # matches `display_seq` exactly.
+            needle = or_ilike_value(search)
             or_parts = [
                 f"basic_full_name.ilike.{needle}",
                 f"basic_email.ilike.{needle}",
                 f"basic_org.ilike.{needle}",
             ]
-            digits = search.strip().lstrip("-+")
-            if digits.isdigit():
+            digits = search_seq_digits(search)
+            if digits:
                 or_parts.append(f"display_seq.eq.{digits}")
             # Also match the AI-derived project name (the "Project" column the
             # user actually sees and searches by). project_name lives on the
