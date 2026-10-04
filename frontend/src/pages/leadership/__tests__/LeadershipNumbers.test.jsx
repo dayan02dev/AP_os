@@ -202,6 +202,19 @@ describe("Applications — navigation", () => {
   });
 });
 
+describe("Applications — open review", () => {
+  it("opens a moved app on its NATIVE track and stores the filtered list for Prev/Next", async () => {
+    await openApps({ filters: false });
+    fireEvent.click(screen.getByText("Moved"));
+    fireEvent.click(await screen.findByRole("button", { name: /Review application/ }));
+    expect(screen.getByTestId("where").textContent).toBe("/leadership/applications/tir/M1/review");
+    const list = JSON.parse(sessionStorage.getItem("review_app_id_list"));
+    expect(list.map((e) => e.id)).toEqual(ALL.map((r) => r.id));
+    expect(list.find((e) => e.id === "M1").track).toBe("tir");
+    expect(list.find((e) => e.id === "R2").label).toBe("Final rejected");
+  });
+});
+
 describe("buildApplicationsCsv", () => {
   it("includes the reviewer columns and the shared stage label", () => {
     const csv = buildApplicationsCsv([
