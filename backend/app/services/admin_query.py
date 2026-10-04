@@ -235,18 +235,7 @@ def _fetch_review_stats(
     sb = get_admin_client()
     want = set(pairs)  # {(track, id)}
 
-    try:
-        rp_rows = _fetch_all(lambda: sb.table("reviewer_profiles").select("*"))
-    except Exception as exc:
-        log.warning("admin_query._fetch_review_stats profiles failed",
-                    extra={"err": str(exc)})
-        rp_rows = []
-    weight_of: dict[str, float] = {}
-    for rp in rp_rows:
-        rid = rp.get("reviewer_user_id")
-        if rid:
-            w = rp.get("weight")
-            weight_of[rid] = float(w) if w is not None else 1.0
+    weight_of = _reviewer_weights()
 
     try:
         reviews = _fetch_all(lambda: sb.table("reviews").select("*"))
@@ -263,8 +252,7 @@ def _fetch_review_stats(
 
     submitted: dict[tuple[str, str], set] = {}
     reco: dict[tuple[str, str], dict[str, int]] = {}
-    num: dict[tuple[str, str], float] = {}
-    den: dict[tuple[str, str], float] = {}
+    sub_reviews: dict[tuple[str, str], list[dict]] = {}
     for r in reviews:
         if not r.get("submitted_at"):
             continue
@@ -273,16 +261,11 @@ def _fetch_review_stats(
             continue
         rid = r.get("reviewer_user_id")
         submitted.setdefault(key, set()).add(rid)
+        sub_reviews.setdefault(key, []).append(r)
         rec = r.get("recommendation")
         bucket = reco.setdefault(key, {"yes": 0, "maybe": 0, "no": 0})
         if rec in bucket:
             bucket[rec] += 1
-        wo = reviewer_query._weighted_overall(r)
-        if wo is None:
-            continue
-        w = weight_of.get(rid, 1.0)
-        num[key] = num.get(key, 0.0) + w * wo
-        den[key] = den.get(key, 0.0) + w
 
     assigned: dict[tuple[str, str], set] = {}
     for a in assigns:
@@ -299,7 +282,7 @@ def _fetch_review_stats(
         act_set = assigned.get(key, set())
         if not sub_set and not act_set:
             continue
-        score = round(num[key] / den[key], 1) if den.get(key) else None
+        score = reviewer_score(sub_reviews.get(key, []), weight_of)
         tally = reco.get(key, {"yes": 0, "maybe": 0, "no": 0})
         out[key] = {
             "score":        score,
@@ -310,6 +293,50 @@ def _fetch_review_stats(
             "review_count": sum(tally.values()),
             "reco":         tally,
         }
+    return out
+
+
+def reviewer_score(
+    reviews: list[dict], weight_of: dict[str, float],
+) -> float | None:
+    """THE reviewer score shown on both the pipeline list and the detail page
+    (ADM-09): each submitted, fully-scored review's dimension-weighted overall
+    (reviewer_query._weighted_overall), averaged with each reviewer's
+    reviewer_profiles.weight (default 1.0), rounded to 1 dp. Drafts and
+    reviews missing a dimension are skipped; None when nothing is scorable."""
+    num = den = 0.0
+    for r in reviews:
+        if not r.get("submitted_at"):
+            continue
+        wo = reviewer_query._weighted_overall(r)
+        if wo is None:
+            continue
+        w = weight_of.get(r.get("reviewer_user_id"), 1.0)
+        num += w * wo
+        den += w
+    return round(num / den, 1) if den else None
+
+
+def _reviewer_weights(reviewer_ids: list[str] | None = None) -> dict[str, float]:
+    """reviewer_profiles.weight per reviewer (all, or just these ids)."""
+    if reviewer_ids is not None and not reviewer_ids:
+        return {}
+    try:
+        sb = get_admin_client()
+        if reviewer_ids is None:
+            rows = _fetch_all(lambda: sb.table("reviewer_profiles").select("*"))
+        else:
+            rows = _fetch_all(lambda: sb.table("reviewer_profiles").select("*")
+                              .in_("reviewer_user_id", reviewer_ids))
+    except Exception as exc:
+        log.warning("admin_query._reviewer_weights failed", extra={"err": str(exc)})
+        rows = []
+    out: dict[str, float] = {}
+    for rp in rows:
+        rid = rp.get("reviewer_user_id")
+        if rid:
+            w = rp.get("weight")
+            out[rid] = float(w) if w is not None else 1.0
     return out
 
 
@@ -677,6 +704,11 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
                                     (ai_screening or {}).get("sections"),
                                     (ai_screening or {}).get("founder_check")),
         "reviews":              reviews,
+        # Same definition as the pipeline list's reviewer_score (ADM-09).
+        "reviewer_score":       reviewer_score(reviews, _reviewer_weights(
+                                    sorted({r.get("reviewer_user_id") for r in reviews
+                                            if r.get("reviewer_user_id")}))),
+        "reviewer_score_basis": "weighted_by_reviewer",
         "reviewer_assignments": reviewer_assignments,
         "status_history":       status_history,
         # Admin-portal additions.

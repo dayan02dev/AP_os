@@ -204,3 +204,29 @@ def test_db_search_blank_is_no_filter(monkeypatch):
     monkeypatch.setattr(applications_query, "get_admin_client", lambda: rec)
     applications_query._query_track_table("tir", search="   ")
     assert not [c for c in rec.log if c[1] == "or_"]
+
+
+# ─── Reviewer score: list == detail (ADM-09) ───────────────────────────
+
+
+def test_detail_reviewer_score_matches_list_weighted_score(monkeypatch):
+    sb = FakeSupabase({
+        "tir_applications": [
+            {"id": "W", "status": "evaluated", "display_seq": 26100,
+             "basic_full_name": "W", "basic_email": "w@x.io",
+             "submitted_at": "2026-07-01T00:00:00Z"},
+        ],
+        "reviewer_profiles": [{"reviewer_user_id": "heavy", "weight": 3.0},
+                              {"reviewer_user_id": "light", "weight": 1.0}],
+        "reviews": [_rv("W", "heavy", "yes", 8), _rv("W", "light", "no", 4),
+                    # draft — never scored
+                    _rv("W", "draft", "yes", 1, submitted=None)],
+        "reviewer_assignments": [],
+    })
+    monkeypatch.setattr(admin_query, "get_admin_client", lambda: sb)
+    monkeypatch.setattr(applications_query, "get_admin_client", lambda: sb)
+    list_score = admin_query.fetch_pipeline({})["applications"][0]["reviewer_score"]
+    detail = admin_query.fetch_detail("tir", "W")
+    assert list_score == 7.0                     # (3*8 + 1*4) / 4
+    assert detail["reviewer_score"] == list_score
+    assert detail["reviewer_score_basis"] == "weighted_by_reviewer"
