@@ -72,6 +72,7 @@ export function adaptPipelineRow(row) {
     nativeTrack: row.native_track || row.track,
     name: row.name,
     founders: row.founder ? [row.founder] : [],
+    email: row.email || null,
     domain: row.industry || "—",
     stage: row.stage || "—",
     ai: { overall: row.ai_score_overall ?? null },

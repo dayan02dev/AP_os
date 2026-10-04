@@ -87,9 +87,15 @@ const reviewCountOf = (s) => {
   const t = s.reco || {};
   return Number(t.yes || 0) + Number(t.maybe || 0) + Number(t.no || 0);
 };
-export const recoBucket = (s) => aggregateReco(s.reco) || (reviewCountOf(s) === 1 ? 'one' : 'none');
-const RECO_BUCKETS = [['yes', 'Yes'], ['maybe', 'Maybe'], ['no', 'No'], ['one', '1 review'], ['none', 'No reviews']];
-const RECO_RANK = { yes: 0, maybe: 1, no: 2, one: 3, none: 4 };
+// Bucket keys match RecoCell's onSelect and the leadership API (single/none).
+export const recoBucket = (s) => aggregateReco(s.reco) || (reviewCountOf(s) === 1 ? 'single' : 'none');
+const RECO_BUCKETS = [['yes', 'Yes'], ['maybe', 'Maybe'], ['no', 'No'], ['single', '1 review'], ['none', 'No reviews']];
+const RECO_RANK = { yes: 0, maybe: 1, no: 2, single: 3, none: 4 };
+
+// Display-ID search: "TIR-27326", "vip-26255", "SIP-26255" or bare "27326"
+// all reduce to the digits (the UI shows SIP as VIP, so any prefix matches).
+const ID_QUERY = /^(?:(?:tir|vip|sip)-?)?(\d+)$/;
+const idDigits = (id) => String(id || '').replace(/^\D+/, '');
 
 // Display-ID sort key: track prefix, then the numeric sequence (so TIR-1001
 // sorts before TIR-26580), never the row UUID.
@@ -188,7 +194,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   const unspecifiedCount = React.useMemo(() => S.filter(s => !s.hidden && !s.archived
     && (track === 'all' || s.track === track) && industryOf(s) === UNSPECIFIED).length, [S, track]);
   const recoCounts = React.useMemo(() => {
-    const m = { yes: 0, maybe: 0, no: 0, one: 0, none: 0 };
+    const m = { yes: 0, maybe: 0, no: 0, single: 0, none: 0 };
     S.forEach((s) => { m[recoBucket(s)] += 1; });
     return m;
   }, [S]);
@@ -291,12 +297,15 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       if (!match) return false;
     }
 
-    if (search) {
-      const q = search.toLowerCase();
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      const idq = q.match(ID_QUERY);
+      const matchId = idq ? idDigits(s.applicationId) === idq[1] : false;
       const matchName = (s.name || '').toLowerCase().includes(q);
       const matchFounder = (s.founders || []).some(f => (f || '').toLowerCase().includes(q));
       const matchDomain = (s.domain || '').toLowerCase().includes(q);
-      if (!matchName && !matchFounder && !matchDomain) return false;
+      const matchEmail = (s.email || '').toLowerCase().includes(q);
+      if (!matchId && !matchName && !matchFounder && !matchDomain && !matchEmail) return false;
     }
 
     // Track filter: prototype used hardcoded id lists; we use s.track field instead
@@ -987,8 +996,9 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                     : <span className="os-text-soft">—</span>}
                 </td>
                 <td onClick={e => e.stopPropagation()}>
-                  <RecoCell reco={s.reco}
-                    onSelect={(v) => { const b = v === 'none' ? recoBucket(s) : v; setRecoFilter((prev) => (prev === b ? null : b)); }} />
+                  <RecoCell reco={s.reco} splitSingle
+                    reviewCount={typeof s.reviewCount === 'number' ? s.reviewCount : undefined}
+                    onSelect={(v) => setRecoFilter((prev) => (prev === v ? null : v))} />
                 </td>
                 <td>
                   <Chip tone={getChipTone(s)}>{getFriendlyStatus(s).toUpperCase()}</Chip>
