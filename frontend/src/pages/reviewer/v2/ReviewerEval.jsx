@@ -18,6 +18,11 @@
 //                   (or submitReview({...payload, draft:false}) if no draft yet)
 //   * rubric      → reviewerApi.getRubric(track)
 //
+// Read-only (contract C5 / REV-03 / REV-11): content.read_only is true when the
+// reviewer is no longer assigned (read_only_reason "unassigned") or the admin
+// has already decided the app ("decided"); the form is locked with a banner and
+// the backend 409s any write. Track chip + rubric use the EFFECTIVE track.
+//
 // Countdown (rule 3): derived from editWindowExpiresAt (server locked_at) vs
 // Date.now(), ticking locally. Expired → fields locked, Submit disabled,
 // Re-open hidden. No review yet / draft → no lock, fields open.
@@ -53,6 +58,15 @@ const PILOT_VIP_IDS = new Set([
 ]);
 
 const MAX_FLAGS = 8;
+
+// Server codes meaning "this review can no longer be written" (reviewer.py).
+const LOCK_CODES = { application_decided: "decided", assignment_removed: "unassigned" };
+
+function readOnlyBanner(reason, appStatus) {
+  if (reason === "decided")
+    return `Decision already made (${appStatus || "decided"}) — this evaluation is read-only.`;
+  return "You are no longer assigned to this application — your submitted review is kept and shown read-only.";
+}
 
 // ── Loader ─────────────────────────────────────────────────────────────
 export default function ReviewerEval({ track, appId, onBack, onOpen }) {
@@ -211,11 +225,17 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   const [flagInput, setFlagInput] = useState("");
   const [saveState, setSaveState] = useState("idle");
   const [fieldErrors, setFieldErrors] = useState({ notes: false, dimensions: [] });
+  // Set when a write comes back 409 application_decided / assignment_removed.
+  const [serverLock, setServerLock] = useState(null);
 
   const expired = false; // edit lock removed 2026-06-29 — reviewers edit anytime
 
+  const readOnlyReason = serverLock || (content.read_only ? content.read_only_reason || "decided" : null);
+  const readOnly = Boolean(readOnlyReason);
+  const effTrack = content.moved_to_track || content.track;
+
   const lockedSubmitted = submitted && !reopened;
-  const editable = !lockedSubmitted && !expired;
+  const editable = !lockedSubmitted && !expired && !readOnly;
 
   const setScore = (k) => (v) => setScores((prev) => ({ ...prev, [k]: v }));
   const overall = weightedOverall(scores);
@@ -297,6 +317,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
       } catch (err) {
         // A draft already exists (e.g. created in another tab) — recover its id
         // from the 409 body and switch to PATCH on the next save.
+        if (LOCK_CODES[err?.code]) setServerLock(LOCK_CODES[err.code]);
         if (err?.status === 409 && err?.details?.review_id) {
           setReviewId(err.details.review_id);
         }
@@ -332,6 +353,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
       }
       setSaveState("saved");
     } catch (err) {
+      if (LOCK_CODES[err?.code]) setServerLock(LOCK_CODES[err.code]);
       if (err?.status === 409 && err?.details?.review_id) {
         setReviewId(err.details.review_id);
       }
@@ -350,7 +372,9 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   };
 
   const applyServerError = (err) => {
-    if (err?.code === "notes_required") {
+    if (LOCK_CODES[err?.code]) {
+      setServerLock(LOCK_CODES[err.code]);
+    } else if (err?.code === "notes_required") {
       setFieldErrors((p) => ({ ...p, notes: true }));
     } else if (err?.status === 423 || err?.code === "review_locked") {
       // Edit window closed server-side — lock the UI.
@@ -467,6 +491,15 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
           <div className="lp-section-sub">
             Read the application, then score each dimension 0–10. Notes are required to submit.
           </div>
+          {readOnly && (
+            <div
+              role="status"
+              style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, fontSize: 13,
+                background: "#fff4d6", border: "1px solid #e6c34d", color: "#5c4800" }}
+            >
+              {readOnlyBanner(readOnlyReason, content.app_status)}
+            </div>
+          )}
         </div>
         <div className="lp-section-actions">
           {/* Top line — navigate between applications in the queue. Hidden on
@@ -492,7 +525,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
             {lockedSubmitted ? (
               <>
                 <Chip tone="green">Submitted ✓</Chip>
-                <button className="os-btn" onClick={reopenForEdit}>Re-open to edit</button>
+                {!readOnly && <button className="os-btn" onClick={reopenForEdit}>Re-open to edit</button>}
               </>
             ) : (
               <>
@@ -532,7 +565,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
                     window.open(url, "_blank", "noopener,noreferrer");
                   }}
                 />
-                <Chip>{application.track === "tir" ? "TIR" : "VIP"}</Chip>
+                <Chip>{trackLabel(effTrack)}</Chip>
               </div>
             </div>
             <div className="os-stack">
@@ -724,7 +757,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
         </div>
       </div>
 
-      {showRubric && <RubricModal onClose={() => setShowRubric(false)} track={application.track} />}
+      {showRubric && <RubricModal onClose={() => setShowRubric(false)} track={effTrack} />}
     </div>
   );
 }
