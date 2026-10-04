@@ -22,7 +22,7 @@ import AccountSettingsButton from "../../../components/AccountSettingsButton.jsx
 import ReviewerDashboard from "./ReviewerDashboard.jsx";
 import ReviewerQueue from "./ReviewerQueue.jsx";
 import ReviewerEval from "./ReviewerEval.jsx";
-import ReviewerHistory from "./ReviewerHistory.jsx";
+import ReviewerHistory, { decisionLabel } from "./ReviewerHistory.jsx";
 
 // ── Topbar (LP-style) ──────────────────────────────────────────────────
 function ReviewerTopbar({ tab }) {
@@ -78,18 +78,29 @@ function ReviewerTopbar({ tab }) {
   );
 }
 
-// ── CSV export (reads the live queue) ──────────────────────────────────
-async function exportReviewerQueueCsv() {
-  const STATUS_LABEL = {
-    submitted: "Submitted",
-    "in-progress": "In Progress",
-    draft: "Draft",
-    "not-started": "Not Started",
-  };
+// ── CSV export (queue on Dashboard/My Queue, history on My History) ─────
+const trackName = (t) => (t === "tir" ? "TIR" : "VIP");
+const num1 = (v) => (typeof v === "number" ? v.toFixed(1) : "");
+
+function downloadCsv(table, filename) {
   const cell = (v) => {
     const str = v == null ? "" : String(v);
     return /[",\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
   };
+  const csv = table.map((r) => r.map(cell).join(",")).join("\r\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function exportReviewerQueueCsv() {
+  const STATUS_LABEL = { submitted: "Submitted", draft: "Draft", "not-started": "Not Started" };
   const queue = await reviewerApi.getQueue();
   const headers = ["ID", "Project", "Founders", "Industry", "Stage", "Track", "AI Score", "Status"];
   const rows = queue.map((s) => [
@@ -98,24 +109,36 @@ async function exportReviewerQueueCsv() {
     (s.founders || []).join("; "),
     s.industry,
     s.stage,
-    s.track === "tir" ? "TIR" : "VIP",
+    trackName(s.movedToTrack || s.track),
     s.ai && s.ai.overall != null ? Number(s.ai.overall).toFixed(1) : "",
     STATUS_LABEL[s.reviewStatus] || "",
   ]);
-  const csv = [headers, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
-  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "reviewer-queue-TIR-VIP-2026.csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadCsv([headers, ...rows], "reviewer-queue-TIR-VIP-2026.csv");
 }
 
+// Header + one row per submitted review (GET /reviewer/history rows).
+export function historyCsvRows(rows) {
+  const headers = ["Date", "ID", "Startup", "Track", "My score", "AI score",
+    "Variance", "My reco", "Admin decision"];
+  return [headers, ...(rows || []).map((h) => [
+    (h.date || "").slice(0, 10),
+    relabelDisplayId(h.applicationId),
+    h.name,
+    trackName(h.track),
+    num1(h.myScore),
+    num1(h.aiScore),
+    num1(h.variance),
+    (h.reco || "").toUpperCase(),
+    decisionLabel(h.adminDecision),
+  ])];
+}
+
+async function exportReviewerHistoryCsv() {
+  const data = await reviewerApi.getHistory();
+  downloadCsv(historyCsvRows(data && data.rows), "reviewer-history-TIR-VIP-2026.csv");
+}
 // ── Cohort page header ─────────────────────────────────────────────────
-function ReviewerCohortHeader() {
+function ReviewerCohortHeader({ tab }) {
   const [exporting, setExporting] = useState(false);
   // Human-readable snapshot timestamp, rendered at page load (IST). Matches the
   // prototype's "live snapshot · 28 May 2026 · 15:04 IST" format.
@@ -136,7 +159,7 @@ function ReviewerCohortHeader() {
     if (exporting) return;
     setExporting(true);
     try {
-      await exportReviewerQueueCsv();
+      await (tab === "history" ? exportReviewerHistoryCsv() : exportReviewerQueueCsv());
     } catch (err) {
       alert("Export failed — please try again.");
     } finally {
@@ -154,7 +177,7 @@ function ReviewerCohortHeader() {
         </div>
         <div style={{ marginTop: 4 }}>
           <button className="os-btn ghost" onClick={onExport} disabled={exporting}>
-            {exporting ? "Exporting…" : "Export CSV ↓"}
+            {exporting ? "Exporting…" : tab === "history" ? "Export history CSV ↓" : "Export queue CSV ↓"}
           </button>
         </div>
       </div>
@@ -192,18 +215,18 @@ export default function ReviewerPortal({ tab = "dashboard" }) {
   const navigate = useNavigate();
   const params = useParams();
   const location = useLocation();
-  // Dashboard → My Queue pre-filter (industry) passed via navigation state.
-  const initialDomain = location.state?.domain || "all";
+  // Dashboard → My Queue pre-filter (industry, or an explicit "all") passed via
+  // navigation state; undefined when the queue was opened any other way.
+  const initialDomain = location.state?.domain;
 
   const openEval = (track, appId) => navigate(`/reviewer/eval/${track}/${appId}`);
   const pickIndustry = (domain) => navigate("/reviewer/queue", { state: { domain } });
 
-  // Single getQueue fetch per page view, lifted into the shell. Only the
-  // dashboard and queue surfaces (and the tab badge) need it — the eval and
-  // history tabs read their own data — so we skip the request entirely on
-  // those tabs. The async result is passed down to both children so neither
-  // refetches the queue itself.
-  const needsQueue = tab === "dashboard" || tab === "queue";
+  // Single getQueue fetch per page view, lifted into the shell. The dashboard,
+  // queue and the tab badge (shown on every tab with a tab bar, History
+  // included) need it; the eval screen has no tab bar and reads its own data.
+  // The async result is passed down so no child refetches the queue itself.
+  const needsQueue = tab !== "eval";
   const queueAsync = useAsync(
     () => (needsQueue ? reviewerApi.getQueue() : Promise.resolve(null)),
     [needsQueue],
@@ -214,14 +237,19 @@ export default function ReviewerPortal({ tab = "dashboard" }) {
     <div className="rv-portal os-shell">
       <ReviewerTopbar tab={tab} />
       <div className="lp-layout">
-        {tab !== "eval" && <ReviewerCohortHeader />}
+        {tab !== "eval" && <ReviewerCohortHeader tab={tab} />}
         {tab !== "eval" && <ReviewerTabBar tab={tab} queueCount={queueCount} />}
 
         {tab === "dashboard" && (
           <ReviewerDashboard onPickIndustry={pickIndustry} queueAsync={queueAsync} />
         )}
         {tab === "queue" && (
-          <ReviewerQueue onOpen={openEval} initialDomain={initialDomain} queueAsync={queueAsync} />
+          <ReviewerQueue
+            onOpen={openEval}
+            initialDomain={initialDomain}
+            navKey={location.key}
+            queueAsync={queueAsync}
+          />
         )}
         {tab === "eval" && (
           <div className="lp-tab-content lp-tab-content--full">
