@@ -53,9 +53,11 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
   const { data, loading, error, reload } = queueAsync;
   const allQueue = data || [];
   const closedCount = allQueue.filter((s) => s.closed).length;
+  // Rows the reviewer can actually see: closed ones only when "Show closed" is
+  // on. Every count (chips, "N of total") is taken over this set.
+  const visible = showClosed ? allQueue : allQueue.filter((s) => !s.closed);
 
-  const filtered = allQueue.filter((s) => {
-    if (s.closed && !showClosed) return false;
+  const filtered = visible.filter((s) => {
     if (track !== "all" && effTrack(s) !== track) return false;
     const q = (search || "").trim().toLowerCase();
     if (q) {
@@ -154,7 +156,7 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
 
   const countBy = (key) => {
     const m = {};
-    allQueue.forEach((s) => {
+    visible.forEach((s) => {
       const v = s[key] || "—";
       m[v] = (m[v] || 0) + 1;
     });
@@ -162,18 +164,19 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
   };
   const industryRows = countBy("industry");
   const stageRows = countBy("stage");
-  const statusCounts = allQueue.reduce((m, s) => {
+  const statusCounts = visible.reduce((m, s) => {
     m[s.reviewStatus] = (m[s.reviewStatus] || 0) + 1;
     return m;
   }, {});
-  const recoCounts = allQueue.reduce((m, s) => {
+  const recoCounts = visible.reduce((m, s) => {
     const k = s.myReco || "none";
     m[k] = (m[k] || 0) + 1;
     return m;
   }, {});
 
   const hasFilters =
-    search || track !== "all" || statusFilter !== "all" || stageFilter !== "all" || domainFilter !== "all" || recoFilter !== "all";
+    search || track !== "all" || statusFilter !== "all" || stageFilter !== "all" || domainFilter !== "all" || recoFilter !== "all" ||
+    showClosed;
   const activeFilterCount =
     (track !== "all" ? 1 : 0) +
     (statusFilter !== "all" ? 1 : 0) +
@@ -187,6 +190,7 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
     setStageFilter("all");
     setDomainFilter("all");
     setRecoFilter("all");
+    setShowClosed(false);
   };
 
   return (
@@ -228,7 +232,7 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
             </button>
           )}
           <span className="lp-count">
-            {filtered.length} of {allQueue.length}
+            {filtered.length} of {visible.length}
           </span>
         </div>
 
