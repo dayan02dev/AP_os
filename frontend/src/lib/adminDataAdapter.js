@@ -99,7 +99,7 @@ export function adaptPipelineRow(row) {
     reco: row.reco || null,
     // Contract C2 — absent on older backends (callers fall back to the tally).
     reviewCount: row.review_count ?? null,
-    gate1_decision: row.gate1_decision ?? null,
+    gate1_decision: row.gate1_decision,   // undefined = backend predates C2
     decidedAt: row.decided_at || null,
   };
 }
