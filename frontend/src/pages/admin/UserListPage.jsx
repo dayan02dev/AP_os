@@ -108,7 +108,8 @@ export default function UserListPage() {
   const filtersActive = search !== "" || roleFilter !== "";
   const countLabel = (() => {
     if (total === null) return null;
-    if (!filtersActive) return `${total} user${total !== 1 ? "s" : ""}`;
+    // `total` is the exact match count; the page holds at most `limit` rows.
+    if (!filtersActive && users.length >= total) return `${total} user${total !== 1 ? "s" : ""}`;
     return `${users.length} of ${total}`;
   })();
 
