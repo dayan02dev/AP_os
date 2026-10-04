@@ -6,6 +6,10 @@
 //   * `industry` replaces `domain` (alias used throughout filters/search)
 //   * `reviewStatus` is only not-started | draft | submitted (no in-progress)
 //   * `due` is an ISO timestamp (or null) → rendered as a short date
+//   * `detached` rows are submitted reviews whose assignment was removed;
+//     `closed` rows are reviewed apps that were rejected (hidden by default)
+//   * the track filter uses the EFFECTIVE track (movedToTrack || track); the
+//     native `track` is kept for the eval route
 
 import { useMemo, useRef } from "react";
 import { LoadingState, ErrorState, Chip } from "./ui.jsx";
@@ -18,7 +22,10 @@ const SCOPE = "reviewer.queue";
 // The queue is fetched once at the ReviewerPortal shell level and passed down
 // via `queueAsync` ({ data, loading, error, reload }) so the queue table and
 // the tab badge share a single getQueue request per page view.
-export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsync }) {
+const effTrack = (s) => s.movedToTrack || s.track;
+const cmpText = (a, b) => String(a || "").localeCompare(String(b || ""), undefined, { sensitivity: "base", numeric: true });
+
+export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsync }) {
   const [search, setSearch] = useStickyState(SCOPE, "search", "");
   const [track, setTrack] = useStickyState(SCOPE, "track", "all");
   const [statusFilter, setStatusFilter] = useStickyState(SCOPE, "status", "all");
@@ -26,34 +33,36 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
   const [domainFilter, setDomainFilter] = useStickyState(SCOPE, "domain", "all");
   const [recoFilter, setRecoFilter] = useStickyState(SCOPE, "reco", "all");
   const [showFilters, setShowFilters] = useStickyState(SCOPE, "showFilters", false);
+  const [showClosed, setShowClosed] = useStickyState(SCOPE, "showClosed", false);
 
   const [sortCol, setSortCol] = useStickyState(SCOPE, "sortCol", null);
   const [sortAsc, setSortAsc] = useStickyState(SCOPE, "sortAsc", true);
 
   // Arriving from the dashboard's "pick an industry" tile carries a domain in
-  // router state. That is a deliberate act, so it overrides — and replaces —
-  // whatever domain was remembered. Adjusting during render (rather than in an
-  // effect) keeps the remembered filter from flashing on screen first.
+  // router state (including an explicit "all"). That is a deliberate act, so it
+  // overrides — and replaces — whatever domain was remembered. `navKey` (the
+  // router location key) makes each pick apply once. Adjusting during render
+  // (rather than in an effect) keeps the remembered filter from flashing first.
   const appliedDomainRef = useRef(null);
-  if (initialDomain !== "all" && appliedDomainRef.current !== initialDomain) {
-    appliedDomainRef.current = initialDomain;
+  const pickKey = navKey ?? initialDomain;
+  if (initialDomain !== undefined && appliedDomainRef.current !== pickKey) {
+    appliedDomainRef.current = pickKey;
     if (domainFilter !== initialDomain) setDomainFilter(initialDomain);
   }
 
   const { data, loading, error, reload } = queueAsync;
   const allQueue = data || [];
+  const closedCount = allQueue.filter((s) => s.closed).length;
 
   const filtered = allQueue.filter((s) => {
-    if (track !== "all" && s.track !== track) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      const foundersMatch = (s.founders || []).some((f) => (f || "").toLowerCase().includes(q));
-      if (
-        !(s.name || "").toLowerCase().includes(q) &&
-        !foundersMatch &&
-        !(s.industry || "").toLowerCase().includes(q)
-      )
-        return false;
+    if (s.closed && !showClosed) return false;
+    if (track !== "all" && effTrack(s) !== track) return false;
+    const q = (search || "").trim().toLowerCase();
+    if (q) {
+      const hay = [
+        s.name, s.industry, s.applicationId, relabelDisplayId(s.applicationId), ...(s.founders || []),
+      ].map((v) => (v || "").toLowerCase());
+      if (!hay.some((v) => v.includes(q))) return false;
     }
     if (statusFilter !== "all" && s.reviewStatus !== statusFilter) return false;
     if (stageFilter !== "all" && s.stage !== stageFilter) return false;
@@ -125,14 +134,14 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
         valA = a.reviewStatus || "";
         valB = b.reviewStatus || "";
       } else if (sortCol === "id") {
-        valA = a.applicationId || "";
-        valB = b.applicationId || "";
+        valA = relabelDisplayId(a.applicationId);
+        valB = relabelDisplayId(b.applicationId);
       } else {
         return 0;
       }
-      if (valA < valB) return sortAsc ? -1 : 1;
-      if (valA > valB) return sortAsc ? 1 : -1;
-      return 0;
+      // Text columns: case-insensitive, numeric-aware ("TIR-2" < "TIR-10").
+      const c = cmpText(valA, valB);
+      return sortAsc ? c : -c;
     });
   }, [filtered, sortCol, sortAsc]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -187,7 +196,7 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
           <div className="os-search-wrap" style={{ flexShrink: 0 }}>
             <input
               className="os-input search"
-              placeholder="Search by name, founder, or industry"
+              placeholder="Search by name, ID, founder, or industry"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -208,6 +217,15 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
           </button>
           {hasFilters && (
             <button className="lp-filter-btn lp-clear-btn" onClick={clearAll}>Clear filters</button>
+          )}
+          {closedCount > 0 && (
+            <button
+              className={`lp-filter-btn${showClosed ? " active" : ""}`}
+              title="Reviewed applications that have since been rejected"
+              onClick={() => setShowClosed((v) => !v)}
+            >
+              {showClosed ? "Hide" : "Show"} closed ({closedCount})
+            </button>
           )}
           <span className="lp-count">
             {filtered.length} of {allQueue.length}
@@ -376,6 +394,12 @@ export default function ReviewerQueue({ onOpen, initialDomain = "all", queueAsyn
                   {s.reviewStatus === "submitted" && <Chip tone="green">Submitted</Chip>}
                   {s.reviewStatus === "draft" && <Chip tone="amber">Draft</Chip>}
                   {s.reviewStatus === "not-started" && <Chip tone="slate">Not started</Chip>}
+                  {s.closed && <Chip tone="red">Closed</Chip>}
+                  {s.detached && !s.closed && (
+                    <span title="An admin removed this assignment; your submitted review is kept">
+                      <Chip tone="slate">Unassigned</Chip>
+                    </span>
+                  )}
                 </td>
                 <td style={{ fontFamily: "var(--font-code)", fontSize: 11, color: "var(--ink-dim)" }}>{relabelDisplayId(s.applicationId)}</td>
               </tr>
