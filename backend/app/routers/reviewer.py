@@ -118,6 +118,7 @@ async def get_application_content(
         "read_only": payload.get("read_only", False),
         "read_only_reason": payload.get("read_only_reason"),
         "app_status": payload.get("app_status"),
+        "admin_decision": payload.get("admin_decision"),
     }
 
 @router.post(
