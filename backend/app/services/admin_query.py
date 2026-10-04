@@ -198,6 +198,46 @@ def _fetch_batches(
     return out
 
 
+def _assignment_batch_name(
+    app_batches: list[dict[str, Any]], reviewer_batch_ids: set[str],
+) -> str | None:
+    """The ONE batch a reviewer's work on an app is filed under — shared by the
+    roster row's per-batch split and the Manage drawer (ADM-10).
+
+    An app may sit in many batches (migration 034). Prefer the app's batches the
+    reviewer belongs to (application_batches ∩ batch_reviewers); otherwise any
+    of the app's batches. Ties break by name so the pick never depends on row
+    order. None when the app is in no batch (UI: "Unbatched" / "Random
+    allotment").
+    """
+    named = [b for b in app_batches or [] if b.get("name")]
+    mine = [b for b in named if b.get("id") in reviewer_batch_ids]
+    pool = mine or named
+    if not pool:
+        return None
+    return min(b["name"] for b in pool)
+
+
+def _reviewer_batch_ids(sb: Any, user_ids: list[str]) -> dict[str, set[str]]:
+    """reviewer_user_id → batch ids they belong to (batch_reviewers)."""
+    out: dict[str, set[str]] = {u: set() for u in user_ids}
+    if not user_ids:
+        return out
+    try:
+        rows = _fetch_all(
+            lambda: sb.table("batch_reviewers").select("batch_id,reviewer_user_id")
+            .in_("reviewer_user_id", user_ids)
+        )
+    except Exception as exc:
+        log.warning("admin_query: batch_reviewers fetch failed", extra={"err": str(exc)})
+        return out
+    for r in rows:
+        rid, bid = r.get("reviewer_user_id"), r.get("batch_id")
+        if rid in out and bid:
+            out[rid].add(bid)
+    return out
+
+
 # ─── Pipeline list ──────────────────────────────────────────────────────
 
 
@@ -854,20 +894,22 @@ def fetch_roster() -> dict[str, Any]:
         if key in reviewed_keys:
             ai_by_key.setdefault(key, row)
 
-    # Batch membership: (application_id, application_track) → batch name. Built
-    # once via application_batches → batches, used to group each reviewer's
-    # assigned apps by the batch they belong to (apps with no batch are omitted
-    # from the per-reviewer `batches` list).
+    # Batch membership: (application_id, application_track) → every batch the
+    # app is in. Each reviewer's work is filed under ONE of them via
+    # _assignment_batch_name (the reviewer's own batches first) — the same rule
+    # the Manage drawer uses, so the row split and the drawer agree.
     batch_names: dict[str, str | None] = {
         b["id"]: b.get("name") for b in _fetch("batches") if b.get("id")
     }
-    app_batch_name: dict[tuple[str, str], str | None] = {}
+    app_batches: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for link in _fetch("application_batches"):
         aid = link.get("application_id")
         track = link.get("application_track")
         bid = link.get("batch_id")
         if aid and track and bid in batch_names:
-            app_batch_name[(aid, track)] = batch_names.get(bid)
+            app_batches.setdefault((aid, track), []).append(
+                {"id": bid, "name": batch_names.get(bid)})
+    rev_batch_ids = _reviewer_batch_ids(sb, id_list)
 
     # App statuses: rejected apps are excluded from every reviewer's work so a
     # Gate-1 rejection (which detaches the app — see decisions.record_decision
@@ -909,7 +951,7 @@ def fetch_roster() -> dict[str, Any]:
         batch_counts: dict[str, int] = {}
         unbatched = 0
         for key in done_keys | pending_keys:
-            name = app_batch_name.get(key)
+            name = _assignment_batch_name(app_batches.get(key), rev_batch_ids[rid])
             if name is None:
                 unbatched += 1
             else:
@@ -1041,6 +1083,7 @@ def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
     project_names = applications_query.fetch_project_names_for(keys)
     industries = applications_query.fetch_industry_for_pairs(keys)
     batches = _fetch_batches(keys)
+    my_batch_ids = _reviewer_batch_ids(sb, [user_id])[user_id]
 
     out: list[dict[str, Any]] = []
     for key in keys:
@@ -1062,7 +1105,7 @@ def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
             "project":       project,
             "industry":      (industries.get(key) or {}).get("label"),
             "status":        r.get("status"),
-            "batch":         next((b["name"] for b in (batches.get(key) or [])), None),
+            "batch":         _assignment_batch_name(batches.get(key), my_batch_ids),
             "reviewStatus":  "submitted" if key in done else "pending",
             "assignment_id": (a or {}).get("id"),
             "detached":      a is None,

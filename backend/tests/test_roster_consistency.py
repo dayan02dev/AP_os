@@ -92,3 +92,67 @@ def test_drawer_lists_the_same_set_as_roster(sb):
     assert by_id["DET"]["detached"] is True
     assert by_id["DET"]["assignment_id"] is None
     assert by_id["DONE"]["detached"] is False
+
+
+# ─── ADM-10 remainder: one batch per (reviewer, app) for row and drawer ──
+
+
+def _multi_backend():
+    """Apps in several batches. The reviewer belongs to batch "B" and "C" only
+    (batch_reviewers); an app's batch for this reviewer is the app's batches ∩
+    the reviewer's batches — the same on the roster row and the drawer."""
+    apps = ["M1", "M2", "M3", "M4", "M5"]
+    return FakeSupabase({
+        "user_roles": [{"user_id": R, "role": "reviewer"}],
+        "profiles": [{"id": R, "full_name": "Akshay", "email": "a@x.io"}],
+        "reviewer_profiles": [{"reviewer_user_id": R, "weight": 1.0}],
+        "tir_applications": [
+            {"id": a, "status": "under_review", "display_seq": 27000 + i,
+             "basic_full_name": a, "basic_org": a,
+             "submitted_at": "2026-07-01T00:00:00Z"}
+            for i, a in enumerate(apps)
+        ],
+        "sip_applications": [],
+        "reviewer_assignments": [_asg(a) for a in apps],
+        "reviews": [],
+        "batches": [{"id": "bA", "name": "A"}, {"id": "bB", "name": "B"},
+                    {"id": "bC", "name": "C"}, {"id": "bM", "name": "Maybe"}],
+        "batch_reviewers": [{"batch_id": "bB", "reviewer_user_id": R},
+                            {"batch_id": "bC", "reviewer_user_id": R}],
+        "application_batches": [
+            # M1: Maybe + B → B (reviewer is in B, not Maybe), listed Maybe last
+            {"application_id": "M1", "application_track": "tir", "batch_id": "bM"},
+            {"application_id": "M1", "application_track": "tir", "batch_id": "bB"},
+            # M2: B + Maybe, listed the other way round → still B
+            {"application_id": "M2", "application_track": "tir", "batch_id": "bB"},
+            {"application_id": "M2", "application_track": "tir", "batch_id": "bM"},
+            # M3: C only
+            {"application_id": "M3", "application_track": "tir", "batch_id": "bC"},
+            # M4: A + Maybe, reviewer in neither → first by name (A)
+            {"application_id": "M4", "application_track": "tir", "batch_id": "bM"},
+            {"application_id": "M4", "application_track": "tir", "batch_id": "bA"},
+            # M5: no batch → Unbatched / Random allotment
+        ],
+        "ai_screening": [],
+    })
+
+
+@pytest.fixture
+def multi(monkeypatch):
+    sb = _multi_backend()
+    monkeypatch.setattr(admin_query, "get_admin_client", lambda: sb)
+    monkeypatch.setattr(applications_query, "get_admin_client", lambda: sb)
+    return sb
+
+
+def test_roster_and_drawer_agree_per_batch_for_multi_batch_apps(multi):
+    r = _roster_row()
+    row_split = {b["name"]: b["count"] for b in r["batches"]}
+    apps = admin_query.fetch_reviewer_applications(R)["applications"]
+    drawer_split: dict = {}
+    for a in apps:
+        name = a["batch"] or "Unbatched"
+        drawer_split[name] = drawer_split.get(name, 0) + 1
+    assert row_split == {"A": 1, "B": 2, "C": 1, "Unbatched": 1}
+    assert drawer_split == row_split
+    assert sum(row_split.values()) == r["assigned"] == len(apps)
