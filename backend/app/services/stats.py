@@ -39,8 +39,10 @@ log = logging.getLogger(__name__)
 PHASE_1_STATUSES: list[tuple[str, str]] = [
     ("submitted",    "Submitted"),
     ("ai_screening", "AI screening"),
+    ("screening_failed", "Screening failed"),
     ("under_review", "Under review"),
     ("evaluated",    "Evaluated"),
+    ("on_hold",      "On hold"),
     ("shortlisted",  "Shortlisted"),
     ("jury_review",  "Jury review"),
     ("interview",    "Interview"),
@@ -57,67 +59,31 @@ def effective_status(
     application_status: str | None,
     admin_decision: str | dict | None = None,
 ) -> str | None:
-    """Map the admin portal's final decision to the shared display status."""
+    """Map the admin portal's latest decision to the shared display status.
+
+    A shortlist (gate-1 `jury_review`) decision is the final round, NOT an
+    acceptance — it used to be relabelled 'accepted', which hid every
+    final-round app behind a label nothing on prod had earned. Only a real
+    acceptance maps to 'accepted'. A raw status that is already past the
+    decision (offered/onboarded/...) is never rolled back by an older decision.
+    """
+    if application_status in _POST_DECISION_STATUSES:
+        return application_status
     decision = admin_decision
     if isinstance(decision, dict):
         decision = decision.get("decision")
     decision = str(decision or "").strip().lower()
-    if decision in {"accepted", "approved", "selected", "shortlisted", "jury_review"}:
+    if decision in {"accepted", "approved", "selected"}:
         return "accepted"
+    if decision in {"shortlisted", "jury_review"}:
+        return "jury_review"
     if decision in {"rejected", "reject"}:
         return "rejected"
     return application_status
 
 
-def overlay_admin_decisions(
-    per_status_per_track: dict[str, dict[str, int]],
-    per_status_total: dict[str, int],
-) -> None:
-    """Move legacy status counts into Accepted/Rejected for final decisions."""
-    try:
-        decisions = (get_admin_client().table("admin_decisions").select(
-            "application_id,application_track,decision,decided_at"
-        ).execute().data) or []
-    except Exception as exc:
-        log.warning("stats: admin decision overlay failed", extra={"err": str(exc)})
-        return
+_POST_DECISION_STATUSES = frozenset({"offered", "onboarded", "waitlisted", "withdrawn", "on_hold"})
 
-    latest: dict[tuple[str, str], dict] = {}
-    for row in decisions:
-        key = (row.get("application_track"), row.get("application_id"))
-        if not key[0] or not key[1]:
-            continue
-        old = latest.get(key)
-        if old is None or (row.get("decided_at") or "") >= (old.get("decided_at") or ""):
-            latest[key] = row
-
-    for track in ("tir", "sip"):
-        ids = [aid for (tr, aid), row in latest.items()
-               if tr == track and effective_status(None, row) in {"accepted", "rejected"}]
-        if not ids:
-            continue
-        try:
-            rows = (get_admin_client().table(f"{track}_applications")
-                    .select("id,status").in_("id", ids).execute().data) or []
-        except Exception as exc:
-            log.warning("stats: application status overlay failed",
-                        extra={"track": track, "err": str(exc)})
-            continue
-        for app in rows:
-            key = (track, app.get("id"))
-            decision = latest.get(key)
-            new = effective_status(app.get("status"), decision)
-            old_status = app.get("status")
-            if not old_status or new == old_status:
-                continue
-            per_status_per_track.setdefault(old_status, {}).setdefault(track, 0)
-            per_status_per_track[old_status][track] = max(
-                0, per_status_per_track[old_status][track] - 1
-            )
-            per_status_total[old_status] = max(0, per_status_total.get(old_status, 0) - 1)
-            per_status_per_track.setdefault(new, {}).setdefault(track, 0)
-            per_status_per_track[new][track] += 1
-            per_status_total[new] = per_status_total.get(new, 0) + 1
 
 # Statuses that count as "submitted" for the totals.apps_submitted figure —
 # everything except 'draft'.
@@ -137,6 +103,208 @@ FUNNEL_BUCKETS: dict[str, list[str]] = {
 ADVANCED_PAST_REVIEW: list[str] = ["shortlisted", "interview", "jury_review", "offered", "onboarded"]
 
 TRACKS: list[str] = ["tir", "sip"]
+
+
+# ─── Gate-aware pipeline breakdown (contract C1) ────────────────────────
+#
+# Every non-draft application lands in exactly ONE stage, so the stages sum
+# to the non-draft total. Built from the RAW status (no decision overlay),
+# the latest admin_decisions row per (app, gate_stage), and the current
+# (non-superseded) ic_documents:
+#   final_rejected = rejected AND latest gate2 decision is 'rejected'
+#   gate1_rejected = any other rejected (incl. rejected with no decision row)
+#   final_selected = jury_review AND >=1 current IC doc AND all of them signed
+#   final_pending  = any other jury_review
+PIPELINE_STAGES: list[str] = [
+    "submitted", "under_review", "reviewed", "gate1_rejected", "final_pending",
+    "final_rejected", "final_selected", "offered", "onboarded", "on_hold",
+    "waitlisted", "withdrawn",
+]
+
+# Stages that have passed the first gate.
+GATE1_SELECTED_STAGES: tuple[str, ...] = (
+    "final_pending", "final_rejected", "final_selected", "offered", "onboarded",
+)
+
+_STAGE_OF_STATUS: dict[str, str] = {
+    "submitted": "submitted", "ai_screening": "submitted", "screening_failed": "submitted",
+    "under_review": "under_review",
+    "evaluated": "reviewed",
+    # Legacy pre-jury statuses (0 rows on prod): past gate 1, outcome pending.
+    "shortlisted": "final_pending", "interview": "final_pending",
+    "accepted": "final_selected",
+    "offered": "offered", "onboarded": "onboarded", "on_hold": "on_hold",
+    "waitlisted": "waitlisted", "withdrawn": "withdrawn",
+}
+
+_PAGE = 1000
+
+
+def _fetch_all(make_query) -> list[dict]:
+    """Read every row of a query, paging past PostgREST's ~1000-row cap."""
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        chunk = (make_query().range(offset, offset + _PAGE - 1).execute().data) or []
+        rows.extend(chunk)
+        if len(chunk) < _PAGE:
+            return rows
+        offset += _PAGE
+
+
+def pipeline_stage(status: str | None, gate2_decision: str | None,
+                   ic_all_signed: bool) -> str | None:
+    """Stage key for one app (None for drafts). Unknown statuses fall into
+    'submitted' so the stages always sum to the total."""
+    if not status or status == "draft":
+        return None
+    if status == "rejected":
+        return "final_rejected" if gate2_decision == "rejected" else "gate1_rejected"
+    if status == "jury_review":
+        return "final_selected" if ic_all_signed else "final_pending"
+    return _STAGE_OF_STATUS.get(status, "submitted")
+
+
+def latest_decisions_by_gate(rows: list[dict]) -> dict[tuple[str, str, str], str]:
+    """{(native track, application_id, gate_stage): latest decision}."""
+    latest: dict[tuple[str, str, str], dict] = {}
+    for row in rows:
+        key = (row.get("application_track"), row.get("application_id"),
+               row.get("gate_stage") or "gate1")
+        if not key[0] or not key[1]:
+            continue
+        old = latest.get(key)
+        if old is None or (row.get("decided_at") or "") >= (old.get("decided_at") or ""):
+            latest[key] = row
+    return {k: v.get("decision") for k, v in latest.items()}
+
+
+def ic_all_signed_keys(rows: list[dict]) -> set[tuple[str, str]]:
+    """(native track, id) of apps whose current IC documents exist and are ALL signed."""
+    current: dict[tuple[str, str], list[bool]] = {}
+    for r in rows:
+        if r.get("superseded_at"):
+            continue
+        current.setdefault((r.get("application_track"), r.get("application_id")), []).append(
+            bool(r.get("signed_at")))
+    return {k for k, v in current.items() if v and all(v)}
+
+
+def _empty_bucket() -> dict:
+    return {"total": 0, "stages": {s: 0 for s in PIPELINE_STAGES}}
+
+
+def _finish_bucket(b: dict) -> dict:
+    st = b["stages"]
+    b["gate1_selected"] = sum(st[s] for s in GATE1_SELECTED_STAGES)
+    b["rejected_total"] = st["gate1_rejected"] + st["final_rejected"]
+    return b
+
+
+def stage_for_app(app: dict, decisions: dict, signed: set) -> str | None:
+    """Stage of one app row (``track`` = native) given the outputs of
+    ``latest_decisions_by_gate`` and ``ic_all_signed_keys``."""
+    key = (app.get("track"), app.get("id"))
+    return pipeline_stage(app.get("status"),
+                          decisions.get((key[0], key[1], "gate2")),
+                          key in signed)
+
+
+def build_pipeline_breakdown(apps: list[dict], decision_rows: list[dict],
+                             ic_rows: list[dict]) -> dict:
+    """Pure: the C1 ``pipeline_breakdown`` block. `apps` rows carry
+    ``track`` (native), ``id``, ``status``, ``moved_to_track``; by_track uses
+    the EFFECTIVE track."""
+    decisions = latest_decisions_by_gate(decision_rows)
+    signed = ic_all_signed_keys(ic_rows)
+    out = _empty_bucket()
+    by_track = {t: _empty_bucket() for t in TRACKS}
+    for a in apps:
+        stage = stage_for_app(a, decisions, signed)
+        if stage is None:
+            continue
+        out["total"] += 1
+        out["stages"][stage] += 1
+        eff = by_track.get(a.get("moved_to_track") or a.get("track"))
+        if eff is not None:
+            eff["total"] += 1
+            eff["stages"][stage] += 1
+    _finish_bucket(out)
+    out["by_track"] = {t: _finish_bucket(b) for t, b in by_track.items()}
+    return out
+
+
+def fetch_app_status_rows() -> list[dict]:
+    """Every application row (drafts included) on both tables, projected to
+    id/user_id/status/moved_to_track and stamped with its NATIVE ``track``."""
+    out: list[dict] = []
+    for track in TRACKS:
+        try:
+            sb = get_admin_client()
+            rows = _fetch_all(lambda: sb.table(_track_table(track))
+                              .select("id,user_id,status,moved_to_track").order("id"))
+        except Exception as exc:
+            log.warning("stats.fetch_app_status_rows failed",
+                        extra={"track": track, "err": str(exc)})
+            continue
+        out.extend({**r, "track": track} for r in rows)
+    return out
+
+
+def fetch_decision_rows() -> list[dict]:
+    """All admin_decisions rows (paginated)."""
+    try:
+        sb = get_admin_client()
+        return _fetch_all(lambda: sb.table("admin_decisions").select(
+            "application_id,application_track,gate_stage,decision,decided_at").order("id"))
+    except Exception as exc:
+        log.warning("stats.fetch_decision_rows failed", extra={"err": str(exc)})
+        return []
+
+
+def fetch_ic_rows() -> list[dict]:
+    """All ic_documents rows' signing state (paginated; superseded filtered later)."""
+    try:
+        sb = get_admin_client()
+        return _fetch_all(lambda: sb.table("ic_documents").select(
+            "application_id,application_track,signed_at,superseded_at").order("id"))
+    except Exception as exc:
+        log.warning("stats.fetch_ic_rows failed", extra={"err": str(exc)})
+        return []
+
+
+# ai_screening column per dashboard component (score_completeness = "solution").
+AI_COMPONENT_COLUMNS: dict[str, str] = {
+    "problem":    "score_problem",
+    "solution":   "score_completeness",
+    "tech":       "score_tech",
+    "founders":   "score_founders",
+    "commitment": "score_commitment",
+}
+
+
+def fetch_ai_component_stats(non_draft: set[tuple[str, str]]) -> dict:
+    """Real per-component AI means over non-draft apps + how many are scored.
+
+    Returns ``{"ai_component_means": {component: mean | None},
+    "ai_scored_count": n}`` where n = non-draft apps with a score_overall.
+    """
+    cols = ",".join(["application_id", "application_track", "score_overall",
+                     *AI_COMPONENT_COLUMNS.values()])
+    try:
+        sb = get_admin_client()
+        rows = _fetch_all(lambda: sb.table("ai_screening").select(cols).order("application_id"))
+    except Exception as exc:
+        log.warning("stats.fetch_ai_component_stats failed", extra={"err": str(exc)})
+        rows = []
+    rows = [r for r in rows
+            if (r.get("application_track"), r.get("application_id")) in non_draft]
+    means: dict[str, float | None] = {}
+    for key, col in AI_COMPONENT_COLUMNS.items():
+        vals = [float(r[col]) for r in rows if r.get(col) is not None]
+        means[key] = round(sum(vals) / len(vals), 2) if vals else None
+    scored = sum(1 for r in rows if r.get("score_overall") is not None)
+    return {"ai_component_means": means, "ai_scored_count": scored}
 
 
 # ─── Industry classifier ────────────────────────────────────────────────
