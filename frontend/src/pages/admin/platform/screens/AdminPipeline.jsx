@@ -69,7 +69,8 @@ const STATUSES = [
   { id: 'hold', label: 'Hold', color: '#b7a06a' },
   { id: 'offered', label: 'Offered', color: '#242424' },
   { id: 'onboarded', label: 'Onboarded', color: '#242424' },
-  { id: 'not-selected', label: 'Not selected', color: '#242424' },
+  // Same label as the REJECTED status chip in the rows (CHIP_META).
+  { id: 'not-selected', label: 'Rejected', color: '#242424' },
   { id: 'waitlisted', label: 'Waitlisted', color: '#242424' },
   { id: 'withdrawn', label: 'Withdrawn', color: '#242424' },
 ];
@@ -807,13 +808,20 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                   >
                     All
                   </button>
+                  {(!readOnly || batchCounts.Unassigned > 0 || batchFilter === 'Unassigned') && (
                   <button
                     className={`lp-filter-btn${batchFilter === 'Unassigned' ? ' active' : ''}`}
                     onClick={() => setBatchFilter('Unassigned')}
                   >
                     Unassigned<span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{batchCounts.Unassigned}</span>
                   </button>
-                  {getAvailableBatches().map(b => (
+                  )}
+                  {/* Read-only tabs (Rejected) offer only batches that have rows
+                      here; the Applications tab keeps empty batches so they can
+                      still be renamed / deleted. */}
+                  {getAvailableBatches()
+                    .filter(b => !readOnly || batchCounts[b] > 0 || batchFilter === b)
+                    .map(b => (
                     <div key={b} className={`lp-filter-btn-group${batchFilter === b ? ' active' : ''}`}>
                       <button
                         className={`lp-filter-btn${batchFilter === b ? ' active' : ''}`}
