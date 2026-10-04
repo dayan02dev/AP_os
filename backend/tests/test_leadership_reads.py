@@ -843,10 +843,11 @@ def test_list_applications_industry_filter_matches_category_id(
 # ─── Fix 1: VIP (sip) list row uses basic_org as project_name ────────────
 
 
-def test_list_applications_sip_row_uses_basic_org_as_project_name(
+def test_list_applications_sip_row_uses_ai_project_name_like_drawer(
     client, _clear_overrides, monkeypatch,
 ):
-    """A sip-track row must use basic_org as project_name, not ai project_name."""
+    """A sip-track row uses the AI project_name the drawer shows (LEAD-18),
+    not basic_org."""
     fake_rows = [
         {
             "id": "sip-app-1",
@@ -889,7 +890,7 @@ def test_list_applications_sip_row_uses_basic_org_as_project_name(
     )
     assert res.status_code == 200, res.text
     a = res.json()["applications"][0]
-    assert a["project_name"] == "Acme Pvt Ltd"
+    assert a["project_name"] == "AI Project Name"
 
 
 # ─── Fix 3: leadership list row includes reviewer_score ──────────────────

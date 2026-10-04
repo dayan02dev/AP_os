@@ -21,6 +21,7 @@ not dashboard analytics; if an admin needs the dashboard, grant them the
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -156,6 +157,53 @@ def _submitted_at_sort_key(row: dict[str, Any]) -> tuple[int, str]:
     return (0, s)
 
 
+# Display-ID prefixes leadership pastes into search ("TIR-26013", "VIP-26701").
+_DISPLAY_PREFIX_RE = re.compile(r"^(?:tir|vip|sip)\s*-\s*", re.IGNORECASE)
+# Characters that are structural inside PostgREST's or=(...) filter. Each is
+# swapped for `_` (ilike's single-char wildcard), so "Acme, Inc" still matches
+# itself without splitting the or() into a bogus extra clause.
+_SEARCH_UNSAFE_RE = re.compile(r'[,()"\\]')
+
+
+def _normalize_search(search: str | None) -> str | None:
+    """Trim, drop a TIR-/VIP-/SIP- display-ID prefix, and neutralise or()
+    syntax characters. Returns None for an empty search."""
+    if search is None:
+        return None
+    s = _DISPLAY_PREFIX_RE.sub("", search.strip())
+    s = _SEARCH_UNSAFE_RE.sub("_", s).strip()
+    return s or None
+
+
+# Pipeline-stage status filters (contract C1 stage keys) → the raw status the
+# DB pre-filter can use; the stage itself is resolved per row.
+_STAGE_FILTERS: dict[str, str] = {
+    "reviewed":       "evaluated",
+    "gate1_rejected": "rejected",
+    "final_rejected": "rejected",
+    "final_pending":  "jury_review",
+    "final_selected": "jury_review",
+}
+
+_RECO_RANK = {"yes": 3, "maybe": 2, "no": 1}
+_STATUS_RANK = {s: i for i, (s, _label) in enumerate(stats.PHASE_1_STATUSES)}
+
+
+def _latest_overall(decision_rows: list[dict]) -> dict[tuple[str, str], dict]:
+    """Latest admin_decisions row per (native track, id), across gates."""
+    out: dict[tuple[str, str], dict] = {}
+    for row in decision_rows:
+        key = (row.get("application_track"), row.get("application_id"))
+        cur = out.get(key)
+        if cur is None or (row.get("decided_at") or "") >= (cur.get("decided_at") or ""):
+            out[key] = row
+    return out
+
+
+def _lower(v: Any) -> str | None:
+    return v.lower() if isinstance(v, str) and v.strip() else None
+
+
 @router.get(
     "/applications",
     dependencies=[Depends(require_capability("view_all_apps"))],
@@ -169,6 +217,11 @@ async def list_applications(
     ai_score_bucket: int | None = Query(default=None, ge=0, le=9),
     search: str | None = Query(default=None),
     recommendation: str | None = Query(default=None, pattern="^(yes|maybe|no|none)$"),
+    sort: str | None = Query(
+        default=None,
+        pattern="^(id|project|founder|ai_score|status|submitted_at|industry|reco)$",
+    ),
+    order: str = Query(default="asc", pattern="^(asc|desc)$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
@@ -176,18 +229,27 @@ async def list_applications(
 
     Filter strategy:
       - status / track / search → pushed to PostgREST per-track
-      - industry → keyword-classified post-fetch (no stored column yet)
+      - status may also be a pipeline-stage key (reviewed, gate1_rejected,
+        final_rejected, final_pending, final_selected) — same rules as
+        /leadership/stats pipeline_breakdown
+      - industry → ai_screening.industry_category_id; "unclassified" = none
       - ai_score_min/max → joined per-row from ai_screening, then filtered
       - ai_score_bucket → integer 0..9, matches the dashboard histogram's
         floor()-bucketing exactly (bucket i = [i, i+1), bucket 9 = [9, 10]).
         Lets the histogram click-through filter the list with semantics
         that line up with the bar the user clicked.
+      - sort/order → applied to the whole filtered set BEFORE pagination,
+        nulls last in both directions (default: submitted_at desc).
 
     Phase 1 scale (~hundreds of apps) means a Python-side filter pass on a
     capped-fetch is simpler than a two-step PostgREST join. See FETCH_CAP
     in applications_query.py for the comment on when to revisit.
     """
-    db_status = None if status_ in {"accepted", "rejected"} else status_
+    search = _normalize_search(search)
+    if status_ in {"accepted", "rejected"}:
+        db_status = None
+    else:
+        db_status = _STAGE_FILTERS.get(status_, status_)
     tracks_to_query = [track] if track else list(stats.TRACKS)
     rows: list[dict[str, Any]] = []
     for t in tracks_to_query:
@@ -202,7 +264,8 @@ async def list_applications(
 
     # ─ 2. Industry source: LLM-classified ai_screening.industry_category_id ─
     # Replaces the old keyword classifier. Apps without an ai_screening row
-    # (or whose industry_category_id is NULL) map to None → frontend "—".
+    # (or whose industry_category_id is NULL) map to None → frontend "—",
+    # and are what industry=unclassified selects.
     pairs_for_industry = [(r["track"], r["id"]) for r in rows]
     industries = applications_query.fetch_industry_for_pairs(pairs_for_industry)
 
@@ -210,11 +273,20 @@ async def list_applications(
         rows = [
             r
             for r in rows
-            if (industries.get((r["track"], r["id"])) or {}).get("id") == industry
+            if (
+                industries.get((r["track"], r["id"])) is None
+                if industry == "unclassified"
+                else (industries.get((r["track"], r["id"])) or {}).get("id") == industry
+            )
         ]
 
-    pairs = [(r["track"], r["id"]) for r in rows]
-    decisions = admin_query._fetch_latest_decisions(pairs)
+    # Gate decisions + IC signing state → effective status and pipeline stage.
+    decision_rows = stats.fetch_decision_rows()
+    decisions = _latest_overall(decision_rows)
+    by_gate = stats.latest_decisions_by_gate(decision_rows)
+    signed = stats.ic_all_signed_keys(stats.fetch_ic_rows())
+    stage_of = {(r["track"], r["id"]): stats.stage_for_app(r, by_gate, signed) for r in rows}
+
     if status_ in {"accepted", "rejected"}:
         wanted = status_
         rows = [
@@ -224,7 +296,9 @@ async def list_applications(
                 decisions.get((r["track"], r["id"])),
             ) == wanted
         ]
-        pairs = [(r["track"], r["id"]) for r in rows]
+    elif status_ in _STAGE_FILTERS:
+        rows = [r for r in rows if stage_of.get((r["track"], r["id"])) == status_]
+    pairs = [(r["track"], r["id"]) for r in rows]
     scores = applications_query.fetch_ai_scores_for(pairs)
     project_names = applications_query.fetch_project_names_for(pairs)
     review_stats = admin_query._fetch_review_stats(pairs)
@@ -269,8 +343,45 @@ async def list_applications(
     # ─ 4. Total = post-filter, pre-pagination count ─────────────────────
     total = len(rows)
 
-    # ─ 5. Sort → paginate → shape response ─────────────────────────────
-    rows.sort(key=_submitted_at_sort_key, reverse=True)
+    def _project_name(r: dict[str, Any]) -> str | None:
+        # Same name the drawer shows (ai_screening.project_name first) for
+        # both tracks; VIP rows fall back to org / founder name.
+        name = project_names.get((r["track"], r["id"])) or stats.derive_project_name(r)
+        if r["track"] == "sip":
+            name = name or r.get("basic_org") or r.get("basic_full_name")
+        return name
+
+    def _status(r: dict[str, Any]) -> str | None:
+        return stats.effective_status(r.get("status"), decisions.get((r["track"], r["id"])))
+
+    # ─ 5. Sort (whole filtered set, nulls last) → paginate → shape ─────
+    if sort is None:
+        rows.sort(key=_submitted_at_sort_key, reverse=True)
+    else:
+        def _sort_value(r: dict[str, Any]) -> Any:
+            key = (r["track"], r["id"])
+            if sort == "id":
+                seq = r.get("display_seq")
+                return int(seq) if isinstance(seq, (int, str)) and str(seq).isdigit() else None
+            if sort == "project":
+                return _lower(_project_name(r))
+            if sort == "founder":
+                return _lower(r.get("basic_full_name"))
+            if sort == "ai_score":
+                return scores.get(key)
+            if sort == "status":
+                return _STATUS_RANK.get(_status(r))
+            if sort == "industry":
+                return _lower((industries.get(key) or {}).get("label"))
+            if sort == "reco":
+                return _RECO_RANK.get(
+                    admin_query.reco_verdict((review_stats.get(key) or {}).get("reco")))
+            return r.get("submitted_at") or None
+
+        valued = [(_sort_value(r), r) for r in rows]
+        present = [vr for vr in valued if vr[0] is not None]
+        present.sort(key=lambda vr: vr[0], reverse=(order == "desc"))
+        rows = [r for _v, r in present] + [r for v, r in valued if v is None]
     page = rows[offset : offset + limit]
 
     applications = []
@@ -282,6 +393,7 @@ async def list_applications(
         # track label + display_id the portal shows.
         track = r["track"]
         eff = applications_query.effective_track(r)
+        rs = review_stats.get((track, r["id"])) or {}
         applications.append({
             "id":               r["id"],
             "display_seq":      r.get("display_seq"),
@@ -289,18 +401,13 @@ async def list_applications(
             "track":            eff,
             "native_track":     track,
             "moved_to_track":   r.get("moved_to_track"),
-            "status":           stats.effective_status(
-                                r.get("status"),
-                                decisions.get((track, r["id"])),
-                            ),
-            "project_name":     (
-                                r.get("basic_org") or r.get("basic_full_name")
-                                if track == "sip"
-                                else (
-                                    project_names.get((track, r["id"]))
-                                    or stats.derive_project_name(r)
-                                )
-                            ),
+            "status":           _status(r),
+            # Gate-aware stage (same rules as /stats pipeline_breakdown) and
+            # the latest decision per gate.
+            "pipeline_stage":   stage_of.get((track, r["id"])),
+            "gate1_decision":   by_gate.get((track, r["id"], "gate1")),
+            "gate2_decision":   by_gate.get((track, r["id"], "gate2")),
+            "project_name":     _project_name(r),
             "founder": {
                 "name":         r.get("basic_full_name"),
                 "affiliation":  r.get("basic_org"),
@@ -308,12 +415,15 @@ async def list_applications(
             "industry":         industries.get((track, r["id"])),
             "stage":            stats.derive_stage_label(r),
             "ai_score_overall": scores.get((track, r["id"])),
-            "reviewer_score":   (review_stats.get((track, r["id"])) or {}).get("score"),
+            "reviewer_score":   rs.get("score"),
             "reviewers":        {
-                                    "submitted": (review_stats.get((track, r["id"])) or {}).get("submitted", 0),
-                                    "assigned":  (review_stats.get((track, r["id"])) or {}).get("assigned", 0),
-                                } if review_stats.get((track, r["id"])) else None,
-            "reco":             (review_stats.get((track, r["id"])) or {}).get("reco"),
+                                    "submitted": rs.get("submitted", 0),
+                                    "assigned":  rs.get("assigned", 0),
+                                } if rs else None,
+            # Submitted-review count, so a "—" reco can read "no reviews" vs
+            # "1 review (needs 2)".
+            "review_count":     rs.get("submitted", 0),
+            "reco":             rs.get("reco"),
             "submitted_at":     r.get("submitted_at"),
             "created_at":       r.get("created_at"),
             # Legacy fields the AppDrawer + existing tests still reference.
@@ -581,5 +691,17 @@ async def get_industry_categories() -> dict[str, Any]:
     desc as tiebreak; empty categories hidden), the 12-cap, and how many
     slots remain. The frontend reads this to render the filter pills and
     the dashboard tab's industry bar chart.
+
+    `unclassified` counts non-draft apps with no industry (no ai_screening
+    row or a NULL category) so the bars sum to `apps_total`; it is selected
+    in the list with industry=unclassified.
     """
-    return industry_categories.categories_with_counts()
+    out = industry_categories.categories_with_counts()
+    apps_total = sum(stats.count_apps_total(t) for t in stats.TRACKS)
+    out["apps_total"] = apps_total
+    out["unclassified"] = {
+        "id": "unclassified",
+        "label": "Unclassified",
+        "count": max(0, apps_total - int(out.get("total") or 0)),
+    }
+    return out
