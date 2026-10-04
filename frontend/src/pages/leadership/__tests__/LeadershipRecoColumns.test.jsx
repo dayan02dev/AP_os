@@ -52,12 +52,13 @@ describe("Leadership Reviewers + Reco columns", () => {
     });
   });
 
-  it("offers a — bucket in the Recommendation filter chips", async () => {
+  it("splits the old — bucket into No reviews / 1 review filter chips", async () => {
     render(<MemoryRouter><LeadershipDashboard /></MemoryRouter>);
     fireEvent.click(screen.getByRole("button", { name: /Applications/i }));
     await waitFor(() => expect(screen.getByText("YES")).toBeTruthy());
     // The Recommendation chip row lives inside the collapsible Filters panel.
     fireEvent.click(screen.getByRole("button", { name: /Filters/i }));
-    expect(screen.getAllByRole("button", { name: "—" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "No reviews" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "1 review" })).toBeTruthy();
   });
 });

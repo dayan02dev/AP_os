@@ -10,8 +10,8 @@ import { trackLabel, relabelDisplayId } from "../../../lib/trackLabel.js";
 import { useNavigate } from "react-router-dom";
 import { leadershipApi } from "../../../lib/leadershipApi.js";
 import { fmtRelative } from "../../../lib/timeFmt.js";
-import { bucketFor } from "./statusBuckets.js";
-import { labelFor } from "../../../lib/statusMachine.js";
+import { rowStage, statusLabel } from "../pipelineStages.js";
+import { rowNativeTrack } from "../selectedStartups.js";
 import {
   reviewerNameOf,
   reviewerStatusDot,
@@ -33,24 +33,18 @@ function fmtDate(iso) {
   }
 }
 
-function StatusInline({ statusId, label, selected = false }) {
-  // Selected startup (shortlisted + IC memo approved) — same green tag as the
-  // dashboard list row.
-  if (selected) {
-    return (
-      <span
-        className="lp-chip lp-selected-tag"
-        style={{ background: "#e6f4ec", border: "1px solid #2a8f5a", color: "#1d6b43", fontWeight: 600 }}
-      >
-        <span className="lp-status-dot" style={{ background: "#2a8f5a" }} />
-        <span>Selected startup</span>
-      </span>
-    );
-  }
+// Same stage chip as the dashboard list row (pipelineStages.js labels).
+function StatusInline({ stage }) {
+  const selected = stage?.id === "final_selected";
   return (
-    <span className="lp-chip">
-      <span className={`lp-status-dot lp-status-${bucketFor(statusId)}`} />
-      <span style={{ textTransform: "capitalize" }}>{label || statusId}</span>
+    <span
+      className={`lp-chip${selected ? " lp-selected-tag" : ""}`}
+      style={selected ? { background: "#e6f4ec", border: `1px solid ${stage.color}`, color: "#1d6b43", fontWeight: 600 } : undefined}
+    >
+      {stage?.color
+        ? <span className="lp-status-dot" style={{ background: stage.color }} />
+        : <span className={`lp-status-dot lp-status-${stage?.dot || "open"}`} />}
+      <span>{stage?.label || "—"}</span>
     </span>
   );
 }
@@ -84,7 +78,10 @@ function ComponentBars({ aiScreening }) {
   );
 }
 
-export default function AppDrawer({ row, onClose, statusLabelById, onDecided, selected = false }) {
+// `stage` is the row's pipeline stage from the dashboard (gate + IC-memo
+// aware); `onReview(row)` opens the review page with the dashboard's Prev/Next
+// list. Both fall back for standalone use.
+export default function AppDrawer({ row, onClose, stage, onReview }) {
   const navigate = useNavigate();
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -126,11 +123,7 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided, se
   const reviews = detail?.reviews || [];
   const assignments = detail?.reviewer_assignments || [];
   const history = detail?.status_history || [];
-  // jury_review reads "Accepted" (no jury this round — it is the admin
-  // Accepted tab), overriding the backend's legacy "Jury review" stats label.
-  const statusLabel = row.status === "jury_review"
-    ? labelFor("jury_review")
-    : statusLabelById?.[row.status] || row.status;
+  const rowStageInfo = stage || rowStage(row);
   const fullName =
     detail?.founder?.name || application?.basic_full_name || row.founder?.name
     || row.basic_full_name || "—";
@@ -164,7 +157,7 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided, se
             </h2>
             <div className="meta">
               <span>
-                <StatusInline statusId={row.status} label={statusLabel} selected={selected} />
+                <StatusInline stage={rowStageInfo} />
               </span>
               <span>{fullName}</span>
               {org && <span>{org}</span>}
@@ -360,11 +353,11 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided, se
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                       <span style={{ fontSize: 14 }}>
-                        <span style={{ color: "var(--ink-dim)", textTransform: "capitalize" }}>
-                          {h.from_status ? labelFor(h.from_status) : "—"}
+                        <span style={{ color: "var(--ink-dim)" }}>
+                          {h.from_status ? statusLabel(h.from_status) : "—"}
                         </span>
                         <span style={{ margin: "0 8px", color: "var(--ink-dim)" }}>→</span>
-                        <strong style={{ textTransform: "capitalize" }}>{labelFor(h.to_status)}</strong>
+                        <strong>{statusLabel(h.to_status)}</strong>
                       </span>
                       <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>
                         {fmtDate(h.changed_at)}
@@ -387,7 +380,10 @@ export default function AppDrawer({ row, onClose, statusLabelById, onDecided, se
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => navigate(`/leadership/applications/${row.track}/${row.id}/review`)}
+            onClick={() => (onReview
+              ? onReview(row)
+              // The URL carries the NATIVE track: it picks the question schema.
+              : navigate(`/leadership/applications/${rowNativeTrack(row)}/${row.id}/review`))}
           >
             Review application <span className="arrow">→</span>
           </button>
