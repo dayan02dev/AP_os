@@ -55,41 +55,59 @@ def _by_track(pairs: list[tuple[str, str]]) -> dict[str, list[str]]:
 def _fetch_latest_decisions(
     pairs: list[tuple[str, str]],
 ) -> dict[tuple[str, str], dict[str, Any]]:
-    """Latest `admin_decisions` row per `(track, application_id)`.
+    """Latest `admin_decisions` row per `(track, application_id)`, ANY gate.
 
     `decided_at desc` ordering is requested from PostgREST; we also reduce in
     Python (keep the max decided_at) so a fake/non-ordering backend still
     yields the latest. One query per track.
     """
+    return _fetch_latest_decisions_by_gate(pairs)[0]
+
+
+def _fetch_latest_decisions_by_gate(
+    pairs: list[tuple[str, str]],
+) -> tuple[dict[tuple[str, str], dict[str, Any]],
+           dict[tuple[str, str, str], dict[str, Any]]]:
+    """``(latest_any, latest_per_gate)`` from one paginated read per track.
+
+    ``latest_per_gate`` is keyed ``(track, application_id, gate_stage)`` so the
+    pipeline can show the 1st-gate decision even after a gate-2 row
+    superseded it as the overall latest (ADM-05).
+    """
     out: dict[tuple[str, str], dict[str, Any]] = {}
+    by_gate: dict[tuple[str, str, str], dict[str, Any]] = {}
     if not pairs:
-        return out
+        return out, by_gate
     for track, ids in _by_track(pairs).items():
         if not ids:
             continue
         try:
-            res = (
-                get_admin_client()
+            rows = _fetch_all(
+                lambda t=track, i=ids: get_admin_client()
                 .table("admin_decisions")
                 .select("*")
-                .eq("application_track", track)
-                .in_("application_id", ids)
+                .eq("application_track", t)
+                .in_("application_id", i)
                 .order("decided_at", desc=True)
-                .execute()
             )
         except Exception as exc:
             log.warning("admin_query._fetch_latest_decisions failed",
                         extra={"track": track, "err": str(exc)})
             continue
-        for row in res.data or []:
+        for row in rows:
             aid = row.get("application_id")
             if aid is None:
                 continue
+            at = row.get("decided_at") or ""
             key = (track, aid)
             cur = out.get(key)
-            if cur is None or (row.get("decided_at") or "") >= (cur.get("decided_at") or ""):
+            if cur is None or at >= (cur.get("decided_at") or ""):
                 out[key] = row
-    return out
+            gkey = (track, aid, row.get("gate_stage"))
+            cur = by_gate.get(gkey)
+            if cur is None or at >= (cur.get("decided_at") or ""):
+                by_gate[gkey] = row
+    return out, by_gate
 
 
 def _fetch_admin_meta(
@@ -194,7 +212,16 @@ def _fetch_review_stats(
     Returns, per key that has ANY submitted review or active assignment:
         {"score":     weighted mean of submitted, fully-scored reviews (or None),
          "submitted": distinct reviewers with a submitted review,
-         "assigned":  distinct active assignments (declined_at/reassigned_to NULL),
+         "assigned":  distinct reviewers ENGAGED on the app = active assignees
+                      ∪ submitted reviewers. Assignment rows are hard-deleted on
+                      unassign / Gate-1 reject while the review is kept, so the
+                      active set alone gave impossible "3 / 0" ratios (ADM-08 /
+                      LEAD-11). Always >= submitted.
+         "active":    distinct active assignments (declined_at/reassigned_to NULL),
+         "detached":  submitted reviewers with no active assignment any more,
+         "review_count": submitted reviews carrying a recommendation — the
+                      number reco_verdict counts (0 → "no reviews", 1 →
+                      "needs a 2nd review"),
          "reco":      {"yes": n, "maybe": n, "no": n} over submitted reviews}
 
     `score` reuses the old weight-adjusted mean (drafts + any-missing-dimension
@@ -208,18 +235,7 @@ def _fetch_review_stats(
     sb = get_admin_client()
     want = set(pairs)  # {(track, id)}
 
-    try:
-        rp_rows = _fetch_all(lambda: sb.table("reviewer_profiles").select("*"))
-    except Exception as exc:
-        log.warning("admin_query._fetch_review_stats profiles failed",
-                    extra={"err": str(exc)})
-        rp_rows = []
-    weight_of: dict[str, float] = {}
-    for rp in rp_rows:
-        rid = rp.get("reviewer_user_id")
-        if rid:
-            w = rp.get("weight")
-            weight_of[rid] = float(w) if w is not None else 1.0
+    weight_of = _reviewer_weights()
 
     try:
         reviews = _fetch_all(lambda: sb.table("reviews").select("*"))
@@ -236,8 +252,7 @@ def _fetch_review_stats(
 
     submitted: dict[tuple[str, str], set] = {}
     reco: dict[tuple[str, str], dict[str, int]] = {}
-    num: dict[tuple[str, str], float] = {}
-    den: dict[tuple[str, str], float] = {}
+    sub_reviews: dict[tuple[str, str], list[dict]] = {}
     for r in reviews:
         if not r.get("submitted_at"):
             continue
@@ -246,16 +261,11 @@ def _fetch_review_stats(
             continue
         rid = r.get("reviewer_user_id")
         submitted.setdefault(key, set()).add(rid)
+        sub_reviews.setdefault(key, []).append(r)
         rec = r.get("recommendation")
         bucket = reco.setdefault(key, {"yes": 0, "maybe": 0, "no": 0})
         if rec in bucket:
             bucket[rec] += 1
-        wo = reviewer_query._weighted_overall(r)
-        if wo is None:
-            continue
-        w = weight_of.get(rid, 1.0)
-        num[key] = num.get(key, 0.0) + w * wo
-        den[key] = den.get(key, 0.0) + w
 
     assigned: dict[tuple[str, str], set] = {}
     for a in assigns:
@@ -268,17 +278,65 @@ def _fetch_review_stats(
 
     out: dict[tuple[str, str], dict[str, Any]] = {}
     for key in want:
-        sub = len(submitted.get(key, ()))
-        asg = len(assigned.get(key, ()))
-        if sub == 0 and asg == 0:
+        sub_set = submitted.get(key, set())
+        act_set = assigned.get(key, set())
+        if not sub_set and not act_set:
             continue
-        score = round(num[key] / den[key], 1) if den.get(key) else None
+        score = reviewer_score(sub_reviews.get(key, []), weight_of)
+        tally = reco.get(key, {"yes": 0, "maybe": 0, "no": 0})
         out[key] = {
-            "score":     score,
-            "submitted": sub,
-            "assigned":  asg,
-            "reco":      reco.get(key, {"yes": 0, "maybe": 0, "no": 0}),
+            "score":        score,
+            "submitted":    len(sub_set),
+            "assigned":     len(sub_set | act_set),
+            "active":       len(act_set),
+            "detached":     len(sub_set - act_set),
+            "review_count": sum(tally.values()),
+            "reco":         tally,
         }
+    return out
+
+
+def reviewer_score(
+    reviews: list[dict], weight_of: dict[str, float],
+) -> float | None:
+    """THE reviewer score shown on both the pipeline list and the detail page
+    (ADM-09): each submitted, fully-scored review's dimension-weighted overall
+    (reviewer_query._weighted_overall), averaged with each reviewer's
+    reviewer_profiles.weight (default 1.0), rounded to 1 dp. Drafts and
+    reviews missing a dimension are skipped; None when nothing is scorable."""
+    num = den = 0.0
+    for r in reviews:
+        if not r.get("submitted_at"):
+            continue
+        wo = reviewer_query._weighted_overall(r)
+        if wo is None:
+            continue
+        w = weight_of.get(r.get("reviewer_user_id"), 1.0)
+        num += w * wo
+        den += w
+    return round(num / den, 1) if den else None
+
+
+def _reviewer_weights(reviewer_ids: list[str] | None = None) -> dict[str, float]:
+    """reviewer_profiles.weight per reviewer (all, or just these ids)."""
+    if reviewer_ids is not None and not reviewer_ids:
+        return {}
+    try:
+        sb = get_admin_client()
+        if reviewer_ids is None:
+            rows = _fetch_all(lambda: sb.table("reviewer_profiles").select("*"))
+        else:
+            rows = _fetch_all(lambda: sb.table("reviewer_profiles").select("*")
+                              .in_("reviewer_user_id", reviewer_ids))
+    except Exception as exc:
+        log.warning("admin_query._reviewer_weights failed", extra={"err": str(exc)})
+        rows = []
+    out: dict[str, float] = {}
+    for rp in rows:
+        rid = rp.get("reviewer_user_id")
+        if rid:
+            w = rp.get("weight")
+            out[rid] = float(w) if w is not None else 1.0
     return out
 
 
@@ -361,7 +419,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     scores = applications_query.fetch_ai_scores_for(pairs)
     project_names = applications_query.fetch_project_names_for(pairs)
     industries = applications_query.fetch_industry_for_pairs(pairs)
-    decisions = _fetch_latest_decisions(pairs)
+    decisions, decisions_by_gate = _fetch_latest_decisions_by_gate(pairs)
     meta = _fetch_admin_meta(pairs)
     batches = _fetch_batches(pairs)
     review_stats = _fetch_review_stats(pairs)
@@ -406,6 +464,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     want_batch = filters.get("batch_id")
     want_industry = filters.get("industry")
     needle = (search or "").strip().lower()
+    needle_seq = applications_query.search_seq_digits(needle)
 
     # Jury recommendation filter: when set, keep only apps recommended for that
     # juror and attach the {score, reason}; the result is later sorted by score
@@ -458,20 +517,6 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
         if want_industry and (ind or {}).get("id") != want_industry:
             continue
 
-        # search is already pushed to PostgREST per-track for real Supabase,
-        # but the fake/no-op backend ignores it — keep a Python pass so the
-        # filter is honoured regardless of backend.
-        if needle:
-            hay = " ".join([
-                str(r.get("basic_full_name") or ""),
-                str(r.get("basic_email") or ""),
-                str(r.get("basic_org") or ""),
-                str(r.get("display_seq") or ""),
-                stats.compose_display_id(r.get("track"), r.get("display_seq")),
-            ]).lower()
-            if needle not in hay:
-                continue
-
         if r.get("track") == "sip":
             name = r.get("basic_org") or r.get("basic_full_name")
         else:
@@ -482,10 +527,35 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
                 or r.get("basic_full_name")
             )
 
+        # search is already pushed to PostgREST per-track for real Supabase,
+        # but the fake/no-op backend ignores it — keep a Python pass so the
+        # filter is honoured regardless of backend. A display-ID search
+        # ("27326", "TIR-27326", "VIP-26255" — the UI shows SIP as VIP)
+        # matches the seq; anything else is a substring over name / email /
+        # org / project name (the DB pass also matches project_name, so the
+        # Python pass must not drop those rows).
+        if needle:
+            if needle_seq and str(r.get("display_seq") or "") == needle_seq:
+                pass
+            else:
+                hay = " ".join([
+                    str(r.get("basic_full_name") or ""),
+                    str(r.get("basic_email") or ""),
+                    str(r.get("basic_org") or ""),
+                    str(name or ""),
+                    str(project_names.get(key) or ""),
+                    str(r.get("display_seq") or ""),
+                    stats.compose_display_id(r.get("track"), r.get("display_seq")),
+                ]).lower()
+                if needle not in hay:
+                    continue
+
         # `r["track"]` is the NATIVE track (used for every child-table key
         # above); `eff` is the effective/display track under the track-move
         # overlay (moved_to_track wins).
         eff = applications_query.effective_track(r)
+        g1 = decisions_by_gate.get((r["track"], r["id"], "gate1"))
+        rs = review_stats.get(key) or {}
         item = {
             "id":               r["id"],
             "applicationId":    stats.compose_display_id(eff, r.get("display_seq")),
@@ -498,6 +568,13 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
             "ai_score_overall": scores.get(key),
             "status":           r.get("status"),
             "decision":         decision,
+            "decided_at":       (dec_row or {}).get("decided_at"),
+            "decided_by":       (dec_row or {}).get("decided_by"),
+            # Latest 1st-gate decision on its own: a later gate-2 row replaces
+            # `decision`, which hid the gate-1 approval (ADM-05).
+            "gate1_decision":   (g1 or {}).get("decision"),
+            "gate1_decided_at": (g1 or {}).get("decided_at"),
+            "gate1_decided_by": (g1 or {}).get("decided_by"),
             "isHidden":         is_hidden,
             "isArchived":       is_archived,
             "batch":            (batch_list[0]["name"] if batch_list else None),
@@ -507,7 +584,16 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
                                     "submitted": (review_stats.get(key) or {}).get("submitted", 0),
                                     "assigned":  (review_stats.get(key) or {}).get("assigned", 0),
                                 } if review_stats.get(key) else None,
+            # Flat counts (contract C2): reviewers_assigned is the engaged set
+            # (active ∪ submitted) so it never drops below reviews_submitted;
+            # reviewers_detached = reviews whose assignment was removed;
+            # review_count splits the reco "—" bucket (0 vs 1 review).
+            "reviews_submitted":  rs.get("submitted", 0),
+            "reviewers_assigned": rs.get("assigned", 0),
+            "reviewers_detached": rs.get("detached", 0),
+            "review_count":       rs.get("review_count", 0),
             "reco":             (review_stats.get(key) or {}).get("reco"),
+            "email":            r.get("basic_email"),
             "submitted_at":     r.get("submitted_at"),
             "flags":            flags_by_key.get(key, []),
             "moved_to_track":   r.get("moved_to_track"),
@@ -618,6 +704,11 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
                                     (ai_screening or {}).get("sections"),
                                     (ai_screening or {}).get("founder_check")),
         "reviews":              reviews,
+        # Same definition as the pipeline list's reviewer_score (ADM-09).
+        "reviewer_score":       reviewer_score(reviews, _reviewer_weights(
+                                    sorted({r.get("reviewer_user_id") for r in reviews
+                                            if r.get("reviewer_user_id")}))),
+        "reviewer_score_basis": "weighted_by_reviewer",
         "reviewer_assignments": reviewer_assignments,
         "status_history":       status_history,
         # Admin-portal additions.
@@ -669,6 +760,31 @@ def _fetch_all(make_query, *, page: int = _ROSTER_PAGE) -> list[dict]:
             break
         offset += page
     return rows
+
+
+# App statuses in which an unreviewed assignment is still real work. An
+# assignment left on an app that already moved on (evaluated / jury_review /
+# decided) is stale — it is not "pending" and not counted as assigned (ADM-10).
+_OPEN_REVIEW_STATUSES = frozenset({"submitted", "under_review"})
+
+
+def _reviewer_work(active_keys: set, submitted_keys: set, status_of) -> tuple[set, set]:
+    """THE reviewer-workload definition shared by the roster progress column,
+    its batch breakdown and the Manage-applications drawer.
+
+    Returns ``(completed, pending)``: completed = apps the reviewer submitted a
+    review for (whether or not the assignment row survived); pending = active
+    unreviewed assignments on apps still in review (an app whose row could
+    not be read — status None — is given the benefit of the doubt). Rejected
+    apps are excluded from both. ``assigned`` = completed ∪ pending (disjoint).
+    """
+    completed = {k for k in submitted_keys if status_of(k) != "rejected"}
+    pending = set()
+    for k in active_keys - submitted_keys:
+        st = status_of(k)
+        if st is None or st in _OPEN_REVIEW_STATUSES:
+            pending.add(k)
+    return completed, pending
 
 
 def fetch_roster() -> dict[str, Any]:
@@ -753,56 +869,51 @@ def fetch_roster() -> dict[str, Any]:
         if aid and track and bid in batch_names:
             app_batch_name[(aid, track)] = batch_names.get(bid)
 
-    # Rejected apps: excluded from every reviewer's active/assigned/batches so
-    # a Gate-1 rejection (which detaches the app — see decisions.record_decision
+    # App statuses: rejected apps are excluded from every reviewer's work so a
+    # Gate-1 rejection (which detaches the app — see decisions.record_decision
     # / applications_query.detach_application_from_review) can never re-appear
-    # in the roster via a not-yet-cleaned-up row.
-    rejected_keys: set[tuple[str, str]] = set()
+    # in the roster via a not-yet-cleaned-up row; non-open statuses mark an
+    # unreviewed assignment as stale (_reviewer_work).
+    app_status: dict[tuple[str, str], str | None] = {}
     for tbl, trk in (("tir_applications", "tir"), ("sip_applications", "sip")):
         for row in _fetch_all(lambda t=tbl: sb.table(t).select("id,status")):
-            if row.get("status") == "rejected" and row.get("id"):
-                rejected_keys.add((row["id"], trk))
+            if row.get("id"):
+                app_status[(row["id"], trk)] = row.get("status")
 
     out: list[dict[str, Any]] = []
     for rid in reviewer_ids:
         prof = profiles.get(rid) or {}
         rp = rp_rows.get(rid) or {}
 
-        active = [
-            a for a in assignments_by_rev[rid]
+        active_keys = {
+            (a.get("application_id"), a.get("application_track"))
+            for a in assignments_by_rev[rid]
             if a.get("declined_at") is None and a.get("reassigned_to") is None
-            and (a.get("application_id"), a.get("application_track")) not in rejected_keys
-        ]
-        # Progress = WORK DONE. `completed` = distinct apps this reviewer has
-        # submitted a review for; `assigned` = |active assignments ∪ reviewed|.
-        # Counts reviews even for apps the reviewer was later unassigned from
-        # (the reassignment churn), and never exceeds 100%. Independent of the
-        # unreliable reviewer_assignments.completed_at.
+        }
         submitted_keys = {
             (r.get("application_id"), r.get("application_track"))
-            for r in reviews_by_rev[rid]
-            if r.get("submitted_at")
-            and (r.get("application_id"), r.get("application_track")) not in rejected_keys
+            for r in reviews_by_rev[rid] if r.get("submitted_at")
         }
-        active_keys = {
-            (a.get("application_id"), a.get("application_track")) for a in active
-        }
-        completed = len(submitted_keys)
-        assigned = len(active_keys | submitted_keys)
+        # Progress = WORK DONE / WORK OWED, one definition (_reviewer_work)
+        # shared with the batch breakdown below and the Manage drawer.
+        # Counts reviews even for apps the reviewer was later unassigned from
+        # (the reassignment churn), never exceeds 100%, and ignores stale
+        # unreviewed assignments on apps that already left review.
+        done_keys, pending_keys = _reviewer_work(
+            active_keys, submitted_keys, app_status.get)
+        completed = len(done_keys)
+        assigned = completed + len(pending_keys)
 
-        # Group this reviewer's active assignments by batch name. Apps with no
-        # batch membership are omitted (they still count in `assigned`).
+        # Group the same work set by batch name; apps with no batch membership
+        # go under "Unbatched" so the breakdown sums to `assigned`.
         batch_counts: dict[str, int] = {}
-        for a in active:
-            key = (a.get("application_id"), a.get("application_track"))
+        unbatched = 0
+        for key in done_keys | pending_keys:
             name = app_batch_name.get(key)
             if name is None:
-                continue
-            batch_counts[name] = batch_counts.get(name, 0) + 1
-        unbatched = sum(
-            1 for a in active
-            if app_batch_name.get((a.get("application_id"), a.get("application_track"))) is None
-        )
+                unbatched += 1
+            else:
+                batch_counts[name] = batch_counts.get(name, 0) + 1
         batches = [
             {"name": name, "count": count}
             for name, count in sorted(batch_counts.items())
@@ -855,6 +966,7 @@ def fetch_roster() -> dict[str, Any]:
             "batch":        rp.get("batch_id"),
             "assigned":     assigned,
             "completed":    completed,
+            "pending":      len(pending_keys),
             "progress":     f"{completed} / {assigned}",
             "consistency":  consistency,
             "lastActivity": last_activity,
@@ -865,38 +977,43 @@ def fetch_roster() -> dict[str, Any]:
 
 
 def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
-    """Applications actively assigned to one reviewer, enriched for the admin
-    "Manage Applications" drawer. Active = declined_at IS NULL AND
-    reassigned_to IS NULL. Returns ``{"applications": [...]}`` with each row:
-    ``{id, track, project, industry, status, batch, reviewStatus, assignment_id}``.
-    ``batch`` is None when the app belongs to no batch (UI → "Random allotment").
+    """One reviewer's work for the admin "Manage Applications" drawer — the
+    SAME set the roster counts as ``assigned`` (_reviewer_work): apps they
+    reviewed (even if the assignment row was since deleted) plus active
+    unreviewed assignments on apps still in review. Returns
+    ``{"applications": [...]}`` with each row:
+    ``{id, track, project, industry, status, batch, reviewStatus,
+    assignment_id, detached}``. ``detached`` = reviewed but no live assignment
+    (``assignment_id`` is then None). ``batch`` is None when the app belongs to
+    no batch (UI → "Random allotment").
     """
     sb = get_admin_client()
     try:
-        rows = (
-            sb.table("reviewer_assignments")
-            .select("*")
+        rows = _fetch_all(
+            lambda: sb.table("reviewer_assignments").select("*")
             .eq("reviewer_user_id", user_id)
-            .execute()
-            .data
-        ) or []
+        )
+        reviews = _fetch_all(
+            lambda: sb.table("reviews").select("*").eq("reviewer_user_id", user_id)
+        )
     except Exception as exc:
         log.warning("reviewer apps: assignments fetch failed", extra={"err": str(exc)})
         return {"applications": []}
 
-    active = [
-        a for a in rows
-        if a.get("reviewer_user_id") == user_id
-        and a.get("declined_at") is None
-        and a.get("reassigned_to") is None
-    ]
-    pairs = [(a["application_track"], a["application_id"]) for a in active]
+    active_by_key: dict[tuple[str, str], dict] = {}
+    for a in rows:
+        if (a.get("reviewer_user_id") == user_id
+                and a.get("declined_at") is None and a.get("reassigned_to") is None):
+            active_by_key.setdefault((a["application_track"], a["application_id"]), a)
+    submitted: set[tuple[str, str]] = {
+        (r.get("application_track"), r.get("application_id"))
+        for r in reviews
+        if r.get("reviewer_user_id") == user_id and r.get("submitted_at")
+    }
+
+    pairs = sorted(set(active_by_key) | submitted)
     if not pairs:
         return {"applications": []}
-
-    project_names = applications_query.fetch_project_names_for(pairs)
-    industries = applications_query.fetch_industry_for_pairs(pairs)
-    batches = _fetch_batches(pairs)
 
     # App rows (status + project fallback), one query per track.
     app_rows: dict[tuple[str, str], dict] = {}
@@ -913,22 +1030,24 @@ def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
         for r in data:
             app_rows[(track, r["id"])] = r
 
-    # Which of these apps has this reviewer already SUBMITTED a review for?
-    submitted: set[tuple[str, str]] = set()
-    try:
-        for r in (
-            sb.table("reviews").select("*").eq("reviewer_user_id", user_id).execute().data
-        ) or []:
-            if r.get("reviewer_user_id") == user_id and r.get("submitted_at"):
-                submitted.add((r.get("application_track"), r.get("application_id")))
-    except Exception:
-        pass
+    done, pending = _reviewer_work(
+        set(active_by_key), submitted,
+        lambda k: (app_rows.get(k) or {}).get("status"),
+    )
+    keys = sorted(done | pending)
+    if not keys:
+        return {"applications": []}
+
+    project_names = applications_query.fetch_project_names_for(keys)
+    industries = applications_query.fetch_industry_for_pairs(keys)
+    batches = _fetch_batches(keys)
 
     out: list[dict[str, Any]] = []
-    for a in active:
-        key = (a["application_track"], a["application_id"])
+    for key in keys:
+        track, app_id = key
         r = app_rows.get(key) or {}
-        if a["application_track"] == "sip":
+        a = active_by_key.get(key)
+        if track == "sip":
             project = r.get("basic_org") or r.get("basic_full_name")
         else:
             project = (
@@ -938,14 +1057,15 @@ def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
                 or r.get("basic_full_name")
             )
         out.append({
-            "id":            a["application_id"],
-            "track":         a["application_track"],
+            "id":            app_id,
+            "track":         track,
             "project":       project,
             "industry":      (industries.get(key) or {}).get("label"),
             "status":        r.get("status"),
             "batch":         next((b["name"] for b in (batches.get(key) or [])), None),
-            "reviewStatus":  "submitted" if key in submitted else "pending",
-            "assignment_id": a.get("id"),
+            "reviewStatus":  "submitted" if key in done else "pending",
+            "assignment_id": (a or {}).get("id"),
+            "detached":      a is None,
         })
     out.sort(key=lambda i: (i.get("project") or "").lower())
     return {"applications": out}

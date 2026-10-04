@@ -31,6 +31,7 @@ revisit and push the AI score filter to PostgREST via a two-step query
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from ..supabase_client import get_admin_client
@@ -155,6 +156,31 @@ def fetch_app_ids_by_project_name(track: str, needle: str, *, cap: int = 1000) -
         return []
 
 
+def or_ilike_value(needle: str) -> str:
+    """A `%needle%` ilike value safe to embed in a PostgREST ``or=(...)`` string.
+
+    Commas and parentheses are or()-syntax delimiters, so a raw search like
+    ``Acme (Pvt), Ltd`` split the filter and 400'd (→ silently empty list).
+    PostgREST accepts a double-quoted value; backslash and quote are escaped.
+    """
+    esc = needle.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"%{esc}%"'
+
+
+_DISPLAY_ID_RE = re.compile(r"^(?:tir|vip|sip)\s*-?\s*(\d+)$", re.IGNORECASE)
+
+
+def search_seq_digits(search: str | None) -> str | None:
+    """Digits of a display-ID search (``27326``, ``TIR-27326``, ``vip-26255``,
+    ``SIP 26080``), else None."""
+    s = (search or "").strip()
+    m = _DISPLAY_ID_RE.match(s)
+    if m:
+        return m.group(1)
+    digits = s.lstrip("-+")
+    return digits if digits.isdigit() else None
+
+
 def _other_track(track: str) -> str:
     return "sip" if track == "tir" else "tir"
 
@@ -179,20 +205,22 @@ def _query_track_table(
         )
         if status:
             q = q.eq("status", status)
+        search = (search or "").strip()
         if search:
             # Case-insensitive substring across the three free-text identity
-            # fields. PostgREST `.or_()` takes a comma-joined filter string.
-            # If the search input is purely digits, we ALSO match against
-            # `display_seq` so leadership can paste "26013" (or "TIR-26013"
-            # after the frontend strips the prefix) and find the row.
-            needle = f"%{search}%"
+            # fields. PostgREST `.or_()` takes a comma-joined filter string, so
+            # the value is double-quoted (or_ilike_value) — a comma or paren in
+            # the search must not split the filter.
+            # A display-ID search ("26013", "TIR-26013", "VIP-26013") ALSO
+            # matches `display_seq` exactly.
+            needle = or_ilike_value(search)
             or_parts = [
                 f"basic_full_name.ilike.{needle}",
                 f"basic_email.ilike.{needle}",
                 f"basic_org.ilike.{needle}",
             ]
-            digits = search.strip().lstrip("-+")
-            if digits.isdigit():
+            digits = search_seq_digits(search)
+            if digits:
                 or_parts.append(f"display_seq.eq.{digits}")
             # Also match the AI-derived project name (the "Project" column the
             # user actually sees and searches by). project_name lives on the

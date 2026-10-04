@@ -16,12 +16,12 @@ import logging
 import re
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr, Field
 
 from ..deps import get_current_user
 from ..rbac import ROLE_CAPABILITIES, require_capability
-from ..services import admin_query
+from ..services import admin_query, applications_query
 from ..services.audit import write_audit
 from ..services.email_service import (
     EmailDeliveryError,
@@ -312,7 +312,8 @@ async def create_user(
 async def list_users(
     role: str | None = None,
     search: str | None = None,
-    limit: int = 200,
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
 ):
     """List users with optional filters. Joins profiles + user_roles.
 
@@ -322,39 +323,57 @@ async def list_users(
     profiles on staging this manifested as the oldest reviewers (e.g. the
     first admin/leadership account) disappearing from the assign-reviewer
     modal even though they had the role granted.
+
+    Every user_roles read is paginated and scoped to the listed ids: an
+    unscoped read was capped at PostgREST's 1000 rows (of ~1250 — one
+    `applicant` row per account), so staff roles granted later never arrived
+    and the User Roles page showed "No role assigned" for everyone.
+    `total` is the exact matching-profile count (not the page length);
+    page with limit/offset.
     """
     client = get_admin_client()
+    cols = "id, email, full_name, phone, location_city, active_role, created_at"
+    needle = (search or "").strip()
+    or_search = None
+    if needle:
+        v = applications_query.or_ilike_value(needle)
+        or_search = f"email.ilike.{v},full_name.ilike.{v}"
 
-    role_user_ids: list[str] | None = None
     if role:
-        rls_for_role = (
-            client.table("user_roles")
-            .select("user_id")
-            .eq("role", role)
-            .execute()
-        ).data or []
-        role_user_ids = [r["user_id"] for r in rls_for_role]
+        role_user_ids = sorted({
+            r["user_id"] for r in admin_query._fetch_all(
+                lambda: client.table("user_roles").select("user_id, role").eq("role", role))
+            if r.get("role", role) == role and r.get("user_id")
+        })
         if not role_user_ids:
             return {"users": [], "total": 0}
+        id_set = set(role_user_ids)
+        seen: dict[str, dict] = {}
+        for i in range(0, len(role_user_ids), _ID_CHUNK):
+            chunk = role_user_ids[i:i + _ID_CHUNK]
 
-    q = client.table("profiles").select(
-        "id, email, full_name, phone, location_city, active_role, created_at"
-    )
-    if role_user_ids is not None:
-        q = q.in_("id", role_user_ids)
-    if search:
-        q = q.or_(f"email.ilike.%{search}%,full_name.ilike.%{search}%")
-    q = q.order("created_at", desc=True).limit(limit)
-    profs = (q.execute()).data or []
+            def _q(c=chunk):
+                q = client.table("profiles").select(cols).in_("id", c)
+                if or_search:
+                    q = q.or_(or_search)
+                return q.order("created_at", desc=True)
 
-    rls = (
-        client.table("user_roles")
-        .select("user_id, role, granted_at")
-        .execute()
-    ).data or []
-    roles_by_user: dict[str, list[str]] = {}
-    for r in rls:
-        roles_by_user.setdefault(r["user_id"], []).append(r["role"])
+            for p in admin_query._fetch_all(_q):
+                if p.get("id") in id_set:
+                    seen.setdefault(p["id"], p)
+        all_profs = sorted(seen.values(),
+                           key=lambda p: p.get("created_at") or "", reverse=True)
+        total = len(all_profs)
+        profs = all_profs[offset:offset + limit]
+    else:
+        q = client.table("profiles").select(cols, count="exact")
+        if or_search:
+            q = q.or_(or_search)
+        res = q.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+        profs = (res.data or [])[:limit]
+        total = res.count if res.count is not None else len(profs)
+
+    roles_by_user = _roles_for(client, [p["id"] for p in profs])
 
     rows = []
     for p in profs:
@@ -362,7 +381,27 @@ async def list_users(
         if role and role not in user_roles:
             continue
         rows.append({**p, "roles": user_roles})
-    return {"users": rows, "total": len(rows)}
+    return {"users": rows, "total": total}
+
+
+_ID_CHUNK = 200
+
+
+def _roles_for(client, user_ids: list[str]) -> dict[str, list[str]]:
+    """Roles per user for just these ids — chunked `in_` + paginated reads so
+    neither the URL length nor the 1000-row cap can drop a grant."""
+    out: dict[str, list[str]] = {}
+    want = set(user_ids)
+    for i in range(0, len(user_ids), _ID_CHUNK):
+        chunk = user_ids[i:i + _ID_CHUNK]
+        for r in admin_query._fetch_all(
+            lambda c=chunk: client.table("user_roles")
+            .select("user_id, role, granted_at").in_("user_id", c)
+        ):
+            uid = r.get("user_id")
+            if uid in want and r.get("role") not in out.setdefault(uid, []):
+                out[uid].append(r["role"])
+    return out
 
 
 class PatchUserRequest(BaseModel):
