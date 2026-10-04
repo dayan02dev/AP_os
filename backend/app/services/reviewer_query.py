@@ -328,6 +328,14 @@ def fetch_application_for_reviewer(
     elif assignment is None:
         read_only_reason = "unassigned"
 
+    # Contract C5 bucket so the read-only banner shows a human label (only
+    # for decided apps — nothing to label otherwise, and it saves 2 reads).
+    admin_decision = None
+    if app_status in DECIDED_STATUSES:
+        gate2, docs = _fetch_gate_context(sb, {track: [application_id]})
+        key = (application_id, track)
+        admin_decision = _admin_decision(app_status, gate2.get(key), docs.get(key))
+
     return {
         "application": application,
         "assignment": (
@@ -340,6 +348,7 @@ def fetch_application_for_reviewer(
         "app_status": app_status,
         "read_only": read_only_reason is not None,
         "read_only_reason": read_only_reason,
+        "admin_decision": admin_decision,
     }
 
 
@@ -495,15 +504,48 @@ def _review_status(my_review: dict | None) -> str:
     return "draft"
 
 
-def _fetch_apps_by_key(sb, ids_by_track: dict[str, list[str]], log_ctx: str) -> dict:
-    """{(id, track): app_row} — one bulk read per *_applications table."""
+# PostgREST caps a response at ~1000 rows, and a long ``in_()`` list makes a
+# long request URL — page the open-ended reads and chunk the id lists.
+_PAGE = 1000
+_IN_CHUNK = 150
+
+
+def _fetch_all(make_query) -> list[dict]:
+    """Every row of ``make_query()`` (a thunk returning a FRESH builder), paged."""
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        chunk = (make_query().range(offset, offset + _PAGE - 1).execute().data) or []
+        rows.extend(chunk)
+        if len(chunk) < _PAGE:
+            return rows
+        offset += _PAGE
+
+
+def _chunks(ids: list[str]):
+    ids = list(dict.fromkeys(ids))
+    for i in range(0, len(ids), _IN_CHUNK):
+        yield ids[i:i + _IN_CHUNK]
+
+
+# Only what the History screen renders — app rows carry every long-text answer.
+_HISTORY_APP_COLS = "id,status,moved_to_track,basic_org,basic_full_name,display_seq,submitted_at"
+_HISTORY_AI_COLS = "application_id,application_track,project_name,score_overall"
+
+
+def _fetch_apps_by_key(sb, ids_by_track: dict[str, list[str]], log_ctx: str,
+                       columns: str = "*") -> dict:
+    """{(id, track): app_row} — chunked bulk reads per *_applications table."""
     apps_by_key: dict[tuple[str, str], dict] = {}
     for track, ids in ids_by_track.items():
         if not ids:
             continue
         table = "tir_applications" if track == "tir" else "sip_applications"
+        app_rows: list[dict] = []
         try:
-            app_rows = (sb.table(table).select("*").in_("id", ids).execute().data) or []
+            for chunk in _chunks(ids):
+                app_rows += (sb.table(table).select(columns).in_("id", chunk)
+                             .execute().data) or []
         except Exception as exc:
             log.warning(f"{log_ctx}: app fetch failed",
                         extra={"track": track, "err": str(exc)})
@@ -671,9 +713,11 @@ def _fetch_gate_context(sb, ids_by_track: dict[str, list[str]]) -> tuple[dict, d
             continue
         idset = set(ids)
         try:
-            rows = (sb.table("admin_decisions").select("*")
-                    .eq("application_track", track).in_("application_id", ids)
-                    .execute().data) or []
+            rows = []
+            for chunk in _chunks(ids):
+                rows += (sb.table("admin_decisions").select("*")
+                         .eq("application_track", track).in_("application_id", chunk)
+                         .execute().data) or []
         except Exception as exc:
             log.warning("gate ctx: admin_decisions fetch failed",
                         extra={"track": track, "err": str(exc)})
@@ -687,9 +731,11 @@ def _fetch_gate_context(sb, ids_by_track: dict[str, list[str]]) -> tuple[dict, d
             if cur is None or (r.get("decided_at") or "") >= (cur.get("decided_at") or ""):
                 gate2[key] = r
         try:
-            rows = (sb.table("ic_documents").select("*")
-                    .eq("application_track", track).in_("application_id", ids)
-                    .is_("superseded_at", None).execute().data) or []
+            rows = []
+            for chunk in _chunks(ids):
+                rows += (sb.table("ic_documents").select("*")
+                         .eq("application_track", track).in_("application_id", chunk)
+                         .is_("superseded_at", None).execute().data) or []
         except Exception as exc:
             log.warning("gate ctx: ic_documents fetch failed",
                         extra={"track": track, "err": str(exc)})
@@ -741,8 +787,8 @@ def fetch_history(reviewer_user_id: str) -> dict:
              "rows": [], "degraded": False}
     sb = get_admin_client()
     try:
-        rows = (sb.table("reviews").select("*")
-                .eq("reviewer_user_id", reviewer_user_id).execute().data) or []
+        rows = _fetch_all(lambda: sb.table("reviews").select("*")
+                          .eq("reviewer_user_id", reviewer_user_id))
     except Exception as exc:
         log.warning("history: reviews fetch failed",
                     extra={"reviewer": reviewer_user_id, "err": str(exc)})
@@ -764,14 +810,15 @@ def fetch_history(reviewer_user_id: str) -> dict:
             ids_by_track.setdefault(track, []).append(aid)
             all_ids.append(aid)
 
-        apps_by_key = _fetch_apps_by_key(sb, ids_by_track, "history")
+        apps_by_key = _fetch_apps_by_key(sb, ids_by_track, "history",
+                                         columns=_HISTORY_APP_COLS)
         gate2_by_key, docs_by_key = _fetch_gate_context(sb, ids_by_track)
 
         # Live assignments → canEdit (a reviewer may edit only while still
         # assigned and before the admin decides).
         try:
-            asg_rows = (sb.table("reviewer_assignments").select("*")
-                        .eq("reviewer_user_id", reviewer_user_id).execute().data) or []
+            asg_rows = _fetch_all(lambda: sb.table("reviewer_assignments").select("*")
+                                  .eq("reviewer_user_id", reviewer_user_id))
         except Exception as exc:
             log.warning("history: assignments fetch failed",
                         extra={"reviewer": reviewer_user_id, "err": str(exc)})
@@ -783,8 +830,10 @@ def fetch_history(reviewer_user_id: str) -> dict:
 
         ai_by_key: dict[tuple, dict] = {}
         try:
-            ai_rows = (sb.table("ai_screening").select("*")
-                       .in_("application_id", all_ids).execute().data) or []
+            ai_rows = []
+            for chunk in _chunks(all_ids):
+                ai_rows += (sb.table("ai_screening").select(_HISTORY_AI_COLS)
+                            .in_("application_id", chunk).execute().data) or []
         except Exception as exc:
             log.warning("history: ai bulk fetch failed",
                         extra={"reviewer": reviewer_user_id, "err": str(exc)})

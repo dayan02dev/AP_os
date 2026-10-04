@@ -35,7 +35,7 @@ import VipMemoPreview from "../../../components/VipMemoPreview.jsx";
 import ProfilePills from "../../../components/ProfilePills.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
-import { trackLabel } from "../../../lib/trackLabel.js";
+import { relabelDisplayId, trackLabel } from "../../../lib/trackLabel.js";
 import { readVipMemo, writeVipMemo } from "../../../lib/vipMemoCache.js";
 import { moveBadgeText } from "../../../lib/trackMove";
 import {
@@ -51,6 +51,7 @@ import {
   evaluationToPayload,
   evaluationToPatch,
 } from "./ui.jsx";
+import { DECISION_LABEL } from "./ReviewerHistory.jsx";
 
 const PILOT_VIP_IDS = new Set([
   "0117bc80-98c1-4172-bccd-af61327ac580",
@@ -62,9 +63,20 @@ const MAX_FLAGS = 8;
 // Server codes meaning "this review can no longer be written" (reviewer.py).
 const LOCK_CODES = { application_decided: "decided", assignment_removed: "unassigned" };
 
-function readOnlyBanner(reason, appStatus) {
-  if (reason === "decided")
-    return `Decision already made (${appStatus || "decided"}) — this evaluation is read-only.`;
+// Fallback labels when the server sends no admin_decision bucket (e.g. a 409
+// lock discovered mid-session). Never show a raw DB status to the reviewer.
+const STATUS_LABEL = {
+  rejected: "Rejected",
+  jury_review: "Final round",
+  offered: "Offered",
+  onboarded: "Onboarded",
+};
+
+function readOnlyBanner(reason, appStatus, adminDecision) {
+  if (reason === "decided") {
+    const label = DECISION_LABEL[adminDecision] || STATUS_LABEL[appStatus] || "decided";
+    return `Decision already made (${label}) — this evaluation is read-only.`;
+  }
   return "You are no longer assigned to this application — your submitted review is kept and shown read-only.";
 }
 
@@ -237,7 +249,14 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   const lockedSubmitted = submitted && !reopened;
   const editable = !lockedSubmitted && !expired && !readOnly;
 
-  const setScore = (k) => (v) => setScores((prev) => ({ ...prev, [k]: v }));
+  // Autosave runs only after a real user edit. Hydrating state from the loaded
+  // review (or StrictMode re-running effects) must never write.
+  const dirtyRef = useRef(false);
+  const edit = (setter) => (v) => {
+    dirtyRef.current = true;
+    setter(v);
+  };
+  const setScore = (k) => edit((v) => setScores((prev) => ({ ...prev, [k]: v })));
   const overall = weightedOverall(scores);
 
   const downloadVipMemo = async (format) => {
@@ -273,32 +292,28 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     // Memo generation is intentionally automatic only for the two pilot apps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content.track, content.id]);
-  const removeFlag = (i) => setFlags((prev) => prev.filter((_, j) => j !== i));
+  const removeFlag = (i) => edit(setFlags)((prev) => prev.filter((_, j) => j !== i));
   const addFlag = () => {
     const value = flagInput.trim();
     if (!editable || !value || flags.length >= MAX_FLAGS) return;
-    setFlags((prev) => [...prev, value]);
+    edit(setFlags)((prev) => [...prev, value]);
     setFlagInput("");
   };
 
   const currentEval = { scores, recommendation: reco, notes, flags, disagreements };
 
   // ── Autosave (debounced 800 ms) ──────────────────────────────────────
-  const firstRun = useRef(true);
   const reviewIdRef = useRef(reviewId);
   reviewIdRef.current = reviewId;
   const savingRef = useRef(false);
 
   useEffect(() => {
-    if (firstRun.current) {
-      firstRun.current = false;
-      return undefined;
-    }
-    if (!editable) return undefined;
+    if (!dirtyRef.current || !editable) return undefined;
     setSaveState("saving");
     const t = setTimeout(async () => {
       if (savingRef.current) return;
       savingRef.current = true;
+      dirtyRef.current = false;
       try {
         if (!reviewIdRef.current) {
           // No draft yet → POST a draft and capture the new review id.
@@ -399,6 +414,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
         if (res?.review?.id) setReviewId(res.review.id);
         if (res?.editWindowExpiresAt) setExpiresAt(res.editWindowExpiresAt);
       }
+      dirtyRef.current = false;
       setSubmitted(true);
       setReopened(false);
       setSaveState("saved");
@@ -481,6 +497,11 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
           <h2 className="lp-section-title">
             {application.name} <span className="lp-muted">· scoring</span>
           </h2>
+          {content.applicationId && (
+            <div className="os-text-xs os-text-dim" style={{ marginTop: 4, fontFamily: "var(--font-code)" }}>
+              {relabelDisplayId(content.applicationId)}
+            </div>
+          )}
           {moveBadgeText(content.track, content.moved_to_track) && (
             <span style={{ marginLeft: 10, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
               background: '#fff4d6', border: '1px solid #e6c34d', color: '#8a6d00',
@@ -497,7 +518,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, fontSize: 13,
                 background: "#fff4d6", border: "1px solid #e6c34d", color: "#5c4800" }}
             >
-              {readOnlyBanner(readOnlyReason, content.app_status)}
+              {readOnlyBanner(readOnlyReason, content.app_status, content.admin_decision)}
             </div>
           )}
         </div>
@@ -667,13 +688,13 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
           <div className="os-card">
             <div className="os-card-title os-mb-sm">Recommendation</div>
             <div className="os-reco-group">
-              <button className={"os-reco-btn yes " + (reco === "yes" ? "active" : "")} disabled={!editable} onClick={() => setReco("yes")}>
+              <button className={"os-reco-btn yes " + (reco === "yes" ? "active" : "")} disabled={!editable} onClick={() => edit(setReco)("yes")}>
                 YES
               </button>
-              <button className={"os-reco-btn maybe " + (reco === "maybe" ? "active" : "")} disabled={!editable} onClick={() => setReco("maybe")}>
+              <button className={"os-reco-btn maybe " + (reco === "maybe" ? "active" : "")} disabled={!editable} onClick={() => edit(setReco)("maybe")}>
                 MAYBE
               </button>
-              <button className={"os-reco-btn no " + (reco === "no" ? "active" : "")} disabled={!editable} onClick={() => setReco("no")}>
+              <button className={"os-reco-btn no " + (reco === "no" ? "active" : "")} disabled={!editable} onClick={() => edit(setReco)("no")}>
                 NO
               </button>
             </div>
@@ -692,7 +713,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               className="notes-area"
               placeholder="What stood out in your assessment? Key strengths, concerns, or context behind your scores."
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(e) => edit(setNotes)(e.target.value)}
               disabled={!editable}
               style={fieldErrors.notes ? { borderColor: "var(--bad)" } : undefined}
             />
