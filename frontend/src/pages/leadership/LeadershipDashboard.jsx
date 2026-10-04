@@ -215,6 +215,7 @@ export async function queryApplications({
 const SORT_PARAM = {
   id: "id", project: "project", founder: "founder", industry: "industry",
   ai_score: "ai_score", reco: "reco", status: "status", submitted: "submitted_at",
+  stage: "stage", reviewer_score: "reviewer_score", reviewers: "reviewers",
 };
 
 const STICKY = "leadership";
@@ -272,6 +273,9 @@ export default function LeadershipDashboard() {
   // Apps with no industry; null until the backend reports it (then clickable).
   const [industryUnclassified, setIndustryUnclassified] = useState(null);
   const [industryCap, setIndustryCap] = useState({ cap: 12, remaining_slots: 12 });
+  // Per-industry counts within the active track filter ({id: n}), or null
+  // (no track filter / fetch failed → the all-tracks counts).
+  const [trackIndustryCounts, setTrackIndustryCounts] = useState(null);
 
   const [industry, setIndustry] = useStickyState(STICKY, "industry", null);
   // A pipeline stage id (pipelineStages.STAGES), not a raw status.
@@ -354,6 +358,23 @@ export default function LeadershipDashboard() {
       .catch(() => { if (!cancelled) setSelectedKeys(null); });
     return () => { cancelled = true; };
   }, [refreshNonce]);
+
+  // ── Industry chip counts scoped to the track filter ──
+  useEffect(() => {
+    if (!trackFilter) { setTrackIndustryCounts(null); return undefined; }
+    let cancelled = false;
+    leadershipApi.getIndustryCategories({ track: trackFilter.toLowerCase() })
+      .then((data) => {
+        if (cancelled) return;
+        const out = {};
+        for (const c of data?.categories || []) out[c.id] = c.count ?? 0;
+        const unc = data?.unclassified;
+        out.unclassified = (typeof unc === "number" ? unc : unc?.count) ?? 0;
+        setTrackIndustryCounts(out);
+      })
+      .catch(() => { if (!cancelled) setTrackIndustryCounts(null); });
+    return () => { cancelled = true; };
+  }, [trackFilter, refreshNonce]);
 
   // ── Search debounce — trimmed, prefix-stripped (normSearch). Only a real
   //   change resets the page, so a remount keeps the sticky offset.
@@ -462,16 +483,17 @@ export default function LeadershipDashboard() {
   const scoredCount = stats?.ai_scored_count ?? (stats?.ai_score_overalls || []).length;
   const onboarded = totals.onboarded ?? 0;
 
-  // Six-step funnel. Backend may not yet expose `drafted` — it will render as 0
-  // if missing, leaving the row visible but empty (better than silently dropping).
+  // Six-step funnel. `started` = distinct applicants with any application
+  // (draft or submitted), so it narrows from profiles; `drafted` counts rows
+  // (one user can hold a TIR and a VIP draft) and would widen the funnel.
   const funnel = stats?.funnel || {};
   const funnelOrder = [
     { id: "profiles",  label: "Profiles",  sub: "signed up" },
-    { id: "drafted",   label: "Drafted",   sub: "started" },
+    { id: "started",   label: "Started",   sub: "began an application" },
     { id: "submitted", label: "Submitted", sub: "complete" },
     { id: "in_review", label: "In review", sub: "with reviewers" },
     { id: "advanced",  label: "Advanced",  sub: "1st-gate selected" },
-    { id: "decided",   label: "Decided",   sub: "offered + onboarded" },
+    { id: "decided",   label: "Decided",   sub: "final selected + onboarded" },
   ];
   const funnelMax = Math.max(1, ...funnelOrder.map((f) => funnel[f.id] ?? 0));
 
@@ -1134,7 +1156,9 @@ export default function LeadershipDashboard() {
                   >
                     All
                   </button>
-                  {industries.filter((c) => c.clickable !== false).map((c) => (
+                  {industries.filter((c) => c.clickable !== false)
+                    .map((c) => (trackIndustryCounts ? { ...c, n: trackIndustryCounts[c.id] ?? 0 } : c))
+                    .map((c) => (
                     <button
                       key={c.id}
                       type="button"

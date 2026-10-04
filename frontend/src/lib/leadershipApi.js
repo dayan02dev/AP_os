@@ -20,7 +20,8 @@ export const leadershipApi = {
   getStats: () => api.get("/leadership/stats"),
   // params: track, status (raw), industry, ai_score_bucket, recommendation,
   // search, sort (id|project|founder|ai_score|status|submitted_at|industry|
-  // reco) + order (asc|desc) — sorted server-side before paging — limit, offset.
+  // reco|stage|reviewer_score|reviewers) + order (asc|desc) — sorted
+  // server-side before paging — limit, offset.
   listApplications: (params = {}) =>
     api.get(`/leadership/applications${buildQuery(params)}`),
   getApplication: (id) => api.get(`/leadership/applications/${id}`),
@@ -31,7 +32,9 @@ export const leadershipApi = {
   // Filter-pill + dashboard-tab data source. Replaces the legacy
   // stats.industry block — returns categories with counts, cap (12), and
   // remaining_slots metadata.
-  getIndustryCategories: () => api.get("/leadership/industry-categories"),
+  // Optional { track } recounts within that (effective) track.
+  getIndustryCategories: (params = {}) =>
+    api.get(`/leadership/industry-categories${buildQuery(params)}`),
 
   // Short-lived signed download URL for one of an application's file
   // attachments. The backend allow-lists the path against the application's

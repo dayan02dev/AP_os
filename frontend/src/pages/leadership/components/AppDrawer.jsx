@@ -260,7 +260,7 @@ export default function AppDrawer({ row, onClose, stage, onReview }) {
                           {reviewerNameOf(a)}
                         </strong>
                         <div style={{ color: "var(--ink-soft)", fontSize: 12, marginTop: 2 }}>
-                          Assigned {fmtDate(a.assigned_at)}
+                          {a.detached ? "Unassigned after review" : `Assigned ${fmtDate(a.assigned_at)}`}
                         </div>
                       </div>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
