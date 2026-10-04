@@ -698,6 +698,12 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
     decision = _fetch_latest_decisions([key]).get(key)
     meta = _fetch_admin_meta([key]).get(key)
     batch_list = _fetch_batches([key]).get(key) or []
+    # Reviewer weights behind reviewer_score — also sent so the detail's
+    # per-category means use the same weighting as the overall.
+    review_author_ids = sorted({r.get("reviewer_user_id") for r in reviews
+                                if r.get("reviewer_user_id")})
+    stored_weights = _reviewer_weights(review_author_ids)
+    reviewer_weights = {rid: stored_weights.get(rid, 1.0) for rid in review_author_ids}
 
     # Industry label (single lookup) — mirrors the leadership detail shape.
     industry_obj = None
@@ -745,10 +751,9 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
                                     (ai_screening or {}).get("founder_check")),
         "reviews":              reviews,
         # Same definition as the pipeline list's reviewer_score (ADM-09).
-        "reviewer_score":       reviewer_score(reviews, _reviewer_weights(
-                                    sorted({r.get("reviewer_user_id") for r in reviews
-                                            if r.get("reviewer_user_id")}))),
+        "reviewer_score":       reviewer_score(reviews, reviewer_weights),
         "reviewer_score_basis": "weighted_by_reviewer",
+        "reviewer_weights":     reviewer_weights,
         "reviewer_assignments": reviewer_assignments,
         "status_history":       status_history,
         # Admin-portal additions.

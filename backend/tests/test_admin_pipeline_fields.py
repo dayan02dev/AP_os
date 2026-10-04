@@ -230,3 +230,6 @@ def test_detail_reviewer_score_matches_list_weighted_score(monkeypatch):
     assert list_score == 7.0                     # (3*8 + 1*4) / 4
     assert detail["reviewer_score"] == list_score
     assert detail["reviewer_score_basis"] == "weighted_by_reviewer"
+    # The weights behind reviewer_score are sent so the detail's category means
+    # can use the same weighting (default 1.0 for a reviewer with no profile).
+    assert detail["reviewer_weights"] == {"heavy": 3.0, "light": 1.0, "draft": 1.0}

@@ -229,6 +229,8 @@ export function adaptDetail(d) {
     reviews: reviews.map(adaptOneReview),
     // Backend reviewer score (weighted like the pipeline list) when sent.
     reviewerScore: d.reviewer_score ?? null,
+    // Reviewer weights behind reviewerScore (same weighting for category means).
+    reviewerWeights: d.reviewer_weights || null,
     flags: reviews.flatMap((r) => (Array.isArray(r.flags) ? r.flags : [])),
     variance: null,
     adminDecision: d.decision?.decision ? DECISION_TO_ADMIN[d.decision.decision] : undefined,

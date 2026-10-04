@@ -70,12 +70,26 @@ export function weightedReviewerScore(reviews, weightById = {}, backendScore = n
       if (typeof rv[k] !== 'number') { complete = false; break; }
       total += rv[k] * w;
     }
-    if (!complete) continue;
+    if (!complete || rv.submittedAt === null) continue;
     const w = typeof weightById[rv.reviewerId] === 'number' ? weightById[rv.reviewerId] : 1;
     num += w * Math.round(total) / 100;
     den += w;
   }
   return den ? Math.round((num / den) * 10) / 10 : null;
+}
+
+// One category's mean across submitted reviews, weighted by the same reviewer
+// weights as weightedReviewerScore — so the overall can never sit outside the
+// category range. Drafts (submittedAt null) don't count. null = no data.
+export function weightedCategoryMean(reviews, key, weightById = {}) {
+  let num = 0, den = 0;
+  for (const rv of reviews || []) {
+    if (typeof rv[key] !== 'number' || rv.submittedAt === null) continue;
+    const w = typeof weightById[rv.reviewerId] === 'number' ? weightById[rv.reviewerId] : 1;
+    num += w * rv[key];
+    den += w;
+  }
+  return den ? num / den : null;
 }
 
 // Chips still at (or before) the 1st gate — only these get the Admin Review
@@ -274,14 +288,12 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
   const aiData = s.ai || {};
 
   // ── Reviewer averages — computed from the REAL submitted reviews (s.reviews).
-  //    Each category is averaged across reviews that scored it; the reviewer
-  //    overall is the average of the per-review overalls. 0 means "no data".
+  //    Categories and the overall share one weighting: each reviewer's weight
+  //    (backend reviewer_weights, else the roster's). 0 means "no data".
   const realReviews = Array.isArray(s.reviews) ? s.reviews : [];
-  const reviewerCatAvg = (key) => {
-    const vals = realReviews.map(rv => rv[key]).filter(n => typeof n === 'number');
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-  };
-  const revOverall = weightedReviewerScore(realReviews, weightById, s.reviewerScore) ?? 0;
+  const reviewWeights = { ...weightById, ...(s.reviewerWeights || {}) };
+  const reviewerCatAvg = (key) => weightedCategoryMean(realReviews, key, reviewWeights) ?? 0;
+  const revOverall = weightedReviewerScore(realReviews, reviewWeights, s.reviewerScore) ?? 0;
   // No jury scores this round — the combined overall is the reviewer overall.
   const combinedOverall = revOverall;
 
