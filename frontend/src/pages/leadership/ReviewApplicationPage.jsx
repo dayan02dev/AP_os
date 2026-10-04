@@ -4,17 +4,19 @@
 //   /leadership/applications/:track/:id/review
 //
 // Loads the full detail via leadershipApi.getApplication(id) — the backend
-// infers track from the id, so the URL's :track is canonical for routing
-// purposes only (drives schema selection + the "TIR-…/SIP-…" identifier).
+// infers track from the id. The URL's :track is the NATIVE track, but the
+// detail's `native_track` wins once loaded (old links may carry the effective
+// one): it picks the question schema. The identifier is the detail's
+// display_id.
 //
 // State machine of side effects:
-//   - On mount: kick off detail fetch, hydrate prev/next id list from
-//     sessionStorage (or fetch and cache if absent), hydrate aside collapsed
-//     state from localStorage.
+//   - On mount: kick off detail fetch, hydrate the prev/next id list the
+//     dashboard stored (reviewNav.js — the user's filtered + sorted list),
+//     hydrate aside collapsed state from localStorage.
 //   - On id change (Prev / Next): refetch detail, update URL via navigate().
 //   - On panel toggle: persist to localStorage so a reload keeps the choice.
-//   - On Back: navigate(-1) to preserve scroll/state. Falls back to a hard
-//     route if history is empty (direct URL).
+//   - On Back: /leadership — the dashboard's sticky state restores the tab,
+//     filters, sort and page the user left.
 //
 // Capability gate: applied at the router layer (LeadershipReviewRoute). This
 // component assumes the caller already has `view_app_detail`.
@@ -23,11 +25,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { readVipMemo, writeVipMemo } from "../../lib/vipMemoCache.js";
 import { leadershipApi } from "../../lib/leadershipApi.js";
-import { labelFor } from "../../lib/statusMachine.js";
 import { printWithTitle } from "../../lib/printDocument.js";
-import { trackLabel } from "../../lib/trackLabel.js";
+import { trackLabel, relabelDisplayId } from "../../lib/trackLabel.js";
 import { moveBadgeText } from "../../lib/trackMove";
 import { schemaFor } from "./applicationSchemas.js";
+import { statusLabel } from "./pipelineStages.js";
+import { ID_LIST_EVENT, readReviewIdList } from "./reviewNav.js";
 import ReviewHeader from "./review/ReviewHeader.jsx";
 import ReviewTabs from "./review/ReviewTabs.jsx";
 import ApplicationTab from "./review/ApplicationTab.jsx";
@@ -44,29 +47,11 @@ const PILOT_VIP_IDS = new Set([
   "0117bc80-98c1-4172-bccd-af61327ac580",
   "c8e45451-b9eb-4bed-8293-7a6782237168",
 ]);
-const ID_LIST_KEY = "review_app_id_list";
 const PANEL_KEY = "review_panel_collapsed";
 
-function readIdList() {
-  try {
-    const raw = sessionStorage.getItem(ID_LIST_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    return parsed.filter((e) => e && e.id && e.track);
-  } catch {
-    return null;
-  }
-}
-
-function writeIdList(list) {
-  try {
-    sessionStorage.setItem(ID_LIST_KEY, JSON.stringify(list));
-  } catch {
-    // sessionStorage full or unavailable — graceful no-op. Prev/Next falls
-    // back to disabled at the page level.
-  }
-}
+// The PDF export prints the live DOM; the VIP memo is not part of the
+// application, so keep it out of any print (Export PDF or the browser's own).
+const PRINT_HIDE_MEMO = "@media print { .review-page .vip-memo-actions { display: none !important; } }";
 
 function readPanelCollapsed() {
   try {
@@ -109,7 +94,7 @@ export default function ReviewApplicationPage() {
   const [vipMemo, setVipMemo] = useState(null);
   const [vipMemoBusy, setVipMemoBusy] = useState(false);
 
-  const [idList, setIdList] = useState(() => readIdList() || []);
+  const [idList, setIdList] = useState(() => readReviewIdList() || []);
 
   // ─── Detail fetch ─────────────────────────────────────────
   useEffect(() => {
@@ -127,26 +112,15 @@ export default function ReviewApplicationPage() {
     return () => { cancelled = true; };
   }, [id, reloadKey]);
 
-  // ─── Id list cache for Prev / Next ────────────────────────
+  // ─── Prev / Next list ─────────────────────────────────────
+  // Only the list the dashboard stored (the user's filters + sort). It may be
+  // swapped for the complete list after mount; with no list (direct URL)
+  // Prev/Next stay disabled.
   useEffect(() => {
-    if (idList.length > 0) return undefined;
-    let cancelled = false;
-    leadershipApi.listApplications({ limit: 200, offset: 0 })
-      .then((page) => {
-        if (cancelled) return;
-        const list = (page?.applications || [])
-          .map((a) => ({ track: a.track, id: a.id }))
-          .filter((e) => e.id && e.track);
-        if (list.length > 0) {
-          setIdList(list);
-          writeIdList(list);
-        }
-      })
-      .catch(() => {
-        // Best-effort. Prev/Next stays disabled if the list never lands.
-      });
-    return () => { cancelled = true; };
-  }, [idList.length]);
+    const onList = () => setIdList(readReviewIdList() || []);
+    window.addEventListener(ID_LIST_EVENT, onList);
+    return () => window.removeEventListener(ID_LIST_EVENT, onList);
+  }, []);
 
   // ─── Reset tab to Application on app change ───────────────
   useEffect(() => {
@@ -159,12 +133,26 @@ export default function ReviewApplicationPage() {
   }, [asideCollapsed]);
 
   // ─── Memo derivations ─────────────────────────────────────
-  const schema = useMemo(() => schemaFor(track), [track]);
+  // Native track drives the schema + move badge; the effective one is what the
+  // VIP memo endpoint checks.
+  const nativeTrack = detail?.native_track || track;
+  const effectiveTrack = detail?.track || track;
+  const schema = useMemo(() => schemaFor(nativeTrack), [nativeTrack]);
   const application = detail?.application || null;
   const aiScreening = detail?.ai_screening || null;
   const reviews = detail?.reviews || [];
   const assignments = detail?.reviewer_assignments || [];
   const history = detail?.status_history || [];
+  // Reviewer names the detail already carries, for History actors the
+  // backend didn't name.
+  const actorNames = useMemo(() => {
+    const out = {};
+    for (const r of [...assignments, ...reviews]) {
+      const name = r?.reviewer_name || r?.reviewer_full_name || r?.reviewer_email;
+      if (r?.reviewer_user_id && name) out[r.reviewer_user_id] = name;
+    }
+    return out;
+  }, [assignments, reviews]);
 
   const currentIndex = useMemo(() => {
     if (!idList || idList.length === 0) return -1;
@@ -174,9 +162,15 @@ export default function ReviewApplicationPage() {
   const hasNext = currentIndex >= 0 && currentIndex < idList.length - 1;
 
   const appIdentifier = useMemo(
-    () => composeAppIdentifier(track, id, application?.submitted_at, application?.created_at),
-    [track, id, application?.submitted_at, application?.created_at],
+    () => (detail?.display_id
+      ? relabelDisplayId(detail.display_id)
+      : composeAppIdentifier(effectiveTrack, id, application?.submitted_at, application?.created_at)),
+    [detail?.display_id, effectiveTrack, id, application?.submitted_at, application?.created_at],
   );
+  // Same label as the dashboard row when we came from it (gate + IC-memo
+  // aware); otherwise the raw status through the shared map.
+  const listLabel = currentIndex >= 0 ? idList[currentIndex]?.label : null;
+  const stageLabelText = listLabel || (application?.status ? statusLabel(application.status) : null);
 
   const companyName =
     aiScreening?.project_name ||
@@ -231,7 +225,7 @@ export default function ReviewApplicationPage() {
   }, []);
 
   const generateVipMemo = useCallback(async () => {
-    if (track !== "sip" || !id) return;
+    if (effectiveTrack !== "sip" || !id) return;
     setVipMemoBusy(true);
     try {
       const response = await leadershipApi.generateVipMemo(id);
@@ -242,7 +236,7 @@ export default function ReviewApplicationPage() {
     } finally {
       setVipMemoBusy(false);
     }
-  }, [track, id]);
+  }, [effectiveTrack, id]);
 
   const downloadVipMemo = useCallback(async (format) => {
     const blob = await leadershipApi.downloadVipMemo(id, format);
@@ -255,14 +249,14 @@ export default function ReviewApplicationPage() {
   }, [id]);
 
   useEffect(() => {
-    if (track !== "sip" || !PILOT_VIP_IDS.has(id)) return;
+    if (!detail || effectiveTrack !== "sip" || !PILOT_VIP_IDS.has(id)) return;
     const cached = readVipMemo(id);
     if (cached) {
       setVipMemo(cached);
       return;
     }
     generateVipMemo();
-  }, [track, id, generateVipMemo]);
+  }, [detail, effectiveTrack, id, generateVipMemo]);
 
   // ─── Keyboard navigation: ← / → ───────────────────────────
   useEffect(() => {
@@ -281,6 +275,7 @@ export default function ReviewApplicationPage() {
       <ReviewHeader
         appId={appIdentifier}
         status={application?.status || null}
+        statusLabel={stageLabelText}
         scoreOverall={aiScreening?.score_overall}
         onBack={goBack}
         onPrev={goPrev}
@@ -292,12 +287,12 @@ export default function ReviewApplicationPage() {
         onExport={handleExportPdf}
         canExport={!!detail}
       />
-      {moveBadgeText(application?.native_track || track, application?.moved_to_track) && (
+      {moveBadgeText(nativeTrack, detail?.moved_to_track) && (
         <span style={{ marginLeft: 12, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em',
           textTransform: 'uppercase', background: '#fff4d6', border: '1px solid #e6c34d',
           color: '#8a6d00', borderRadius: 999, padding: '3px 11px', display: 'inline-flex',
           alignItems: 'center', gap: 6, verticalAlign: 'middle' }}>
-          {moveBadgeText(application?.native_track || track, application?.moved_to_track)}
+          {moveBadgeText(nativeTrack, detail?.moved_to_track)}
         </span>
       )}
 
@@ -317,7 +312,7 @@ export default function ReviewApplicationPage() {
                   <h1>{appIdentifier}</h1>
                   {companyName && <p className="rpt-company">{companyName}</p>}
                   <p className="rpt-meta">
-                    {labelFor(application?.status)} · AI score{" "}
+                    {stageLabelText || "—"} · AI score{" "}
                     {hasScore ? scoreOverall.toFixed(1) : "—"} / 10
                   </p>
                 </div>
@@ -330,8 +325,10 @@ export default function ReviewApplicationPage() {
                     signedUrl={(appId, path) => leadershipApi.fileSignedUrl(appId, path)}
                   />
                 )}
-                {track === "sip" && (
+                {/* VIP memo: Application tab only, never in print. */}
+                {effectiveTrack === "sip" && tab === "application" && !pendingPrint && (
                   <div className="vip-memo-actions">
+                    <style>{PRINT_HIDE_MEMO}</style>
                     {vipMemoBusy && <p className="vip-memo-status">Preparing the investment memo — this can take a moment.</p>}
                     <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />
                   </div>
@@ -340,7 +337,7 @@ export default function ReviewApplicationPage() {
                   <ReviewsTab reviews={reviews} assignments={assignments} />
                 )}
                 {tab === "history" && (
-                  <HistoryTab history={history} />
+                  <HistoryTab history={history} actorNames={actorNames} />
                 )}
               </>
             )}

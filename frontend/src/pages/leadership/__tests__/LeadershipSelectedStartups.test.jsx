@@ -15,12 +15,14 @@ const row = (over) => ({
 });
 
 // Shortlist (status=jury_review): A signed, B unsigned, C moved TIR→VIP with a
-// memo signed under its NATIVE track, D signed under the wrong (display) track.
+// memo signed under its NATIVE track, D signed under the wrong (display) track,
+// F has two current memos of which only one is signed (not selected).
 const SHORTLIST = [
   row({ id: "A", project_name: "Alpha" }),
   row({ id: "B", project_name: "Bravo" }),
   row({ id: "C", project_name: "Charlie", track: "sip", native_track: "tir", moved_to_track: "sip" }),
   row({ id: "D", project_name: "Delta", track: "sip", native_track: "tir", moved_to_track: "sip" }),
+  row({ id: "F", project_name: "Foxtrot" }),
 ];
 const ALL = [...SHORTLIST, row({ id: "E", project_name: "Echo", status: "under_review" })];
 
@@ -49,6 +51,8 @@ const DOCS = {
     { track: "tir", application_id: "B", signed: false },
     { track: "tir", application_id: "C", signed: true },
     { track: "sip", application_id: "D", signed: true },
+    { track: "tir", application_id: "F", signed: true },
+    { track: "tir", application_id: "F", signed: false },
   ],
 };
 
@@ -59,7 +63,7 @@ async function openApps() {
   fireEvent.click(screen.getByRole("button", { name: /Filters/i }));
 }
 
-describe("Leadership — Selected startups", () => {
+describe("Leadership — Final selected (selected startups)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     leadershipApi.listApplications.mockImplementation((p = {}) => {
@@ -69,29 +73,35 @@ describe("Leadership — Selected startups", () => {
     icDocumentsApi.list.mockResolvedValue(DOCS);
   });
 
-  it("shows the chip with the selected count (native-track IC keys)", async () => {
+  it("shows the chip with the selected count (native-track IC keys, every memo signed)", async () => {
     await openApps();
-    const chip = await screen.findByRole("button", { name: /Selected startups/i });
-    expect(within(chip).getByText("2")).toBeTruthy();   // A + C
+    const chip = await screen.findByRole("button", { name: /^Final selected/i });
+    await waitFor(() => expect(within(chip).getByText("2")).toBeTruthy());   // A + C
   });
 
-  it("tags selected rows in the unfiltered list", async () => {
+  it("labels selected rows Final selected and the rest Final pending", async () => {
     await openApps();
-    await waitFor(() => expect(screen.getAllByText("Selected startup")).toHaveLength(2));
+    const table = screen.getByRole("table");
+    await waitFor(() => expect(within(table).getAllByText("Final selected")).toHaveLength(2));
     const alphaRow = screen.getByText("Alpha").closest("tr");
-    expect(within(alphaRow).getByText("Selected startup")).toBeTruthy();
+    expect(within(alphaRow).getByText("Final selected")).toBeTruthy();
     const bravoRow = screen.getByText("Bravo").closest("tr");
-    expect(within(bravoRow).queryByText("Selected startup")).toBeNull();
+    expect(within(bravoRow).getByText("Final pending")).toBeTruthy();
+    const foxRow = screen.getByText("Foxtrot").closest("tr");
+    expect(within(foxRow).getByText("Final pending")).toBeTruthy();
+    expect(within(table).queryByText("Accepted")).toBeNull();
   });
 
   it("filtering by the chip lists only selected startups, honouring other filters", async () => {
     await openApps();
-    fireEvent.click(await screen.findByRole("button", { name: /Selected startups/i }));
+    await waitFor(() => expect(icDocumentsApi.list).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole("button", { name: /^Final selected/i }));
     await waitFor(() => expect(screen.queryByText("Echo")).toBeNull());
     expect(screen.getByText("Alpha")).toBeTruthy();
     expect(screen.getByText("Charlie")).toBeTruthy();
     expect(screen.queryByText("Bravo")).toBeNull();
     expect(screen.queryByText("Delta")).toBeNull();
+    expect(screen.queryByText("Foxtrot")).toBeNull();
     expect(screen.getByText("2 of 2")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "TIR" }));
@@ -104,12 +114,11 @@ describe("Leadership — Selected startups", () => {
     expect(statuses.every((s) => s === undefined || s === "jury_review")).toBe(true);
   });
 
-  it("hides the chip and tags when the IC documents list fails", async () => {
+  it("never tags a row selected when the IC documents list fails", async () => {
     icDocumentsApi.list.mockRejectedValue(new Error("403"));
     await openApps();
     await waitFor(() => expect(icDocumentsApi.list).toHaveBeenCalled());
-    expect(screen.queryByRole("button", { name: /Selected startups/i })).toBeNull();
-    expect(screen.queryByText("Selected startup")).toBeNull();
+    expect(within(screen.getByRole("table")).queryByText("Final selected")).toBeNull();
     expect(screen.getByText("Echo")).toBeTruthy();
   });
 });

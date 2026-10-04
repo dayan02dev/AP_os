@@ -9,7 +9,7 @@
 //   - GET /leadership/stats on mount (powers Dashboard tab)
 //   - GET /leadership/applications keyed off filter state (powers Applications tab)
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.jsx";
 import { leadershipApi } from "../../lib/leadershipApi.js";
@@ -17,14 +17,22 @@ import { fmtRelative } from "../../lib/timeFmt.js";
 import { trackLabel, relabelDisplayId } from "../../lib/trackLabel.js";
 import AppDrawer from "./components/AppDrawer.jsx";
 import PortalSwitcher from "../../components/PortalSwitcher.jsx";
-import { RecoCell } from "../../components/RecoCell.jsx";
-import { bucketFor } from "./components/statusBuckets.js";
+import { RecoCell, RECO_LABEL, aggregateReco } from "../../components/RecoCell.jsx";
+import { useStickyState } from "../../hooks/useStickyState.js";
 import {
-  SELECTED_FILTER,
-  fetchSelectedApplications,
+  fetchAllApplications,
   loadSelectedKeys,
-  rowSelectionKey,
+  rowNativeTrack,
 } from "./selectedStartups.js";
+import {
+  STAGES,
+  breakdownFor,
+  recoQuery,
+  rowStage,
+  stageQuery,
+} from "./pipelineStages.js";
+import PipelineBreakdown from "./components/PipelineBreakdown.jsx";
+import { writeReviewIdList } from "./reviewNav.js";
 import "../../styles/admin.css";
 import "../../styles/leadership.css";
 
@@ -52,31 +60,35 @@ function fmtDate(iso) {
   }
 }
 
-// Green tag for a "Selected startup" (shortlisted + IC memo approved). Inline
-// colours so it reads the same as the admin Accepted tab's green rows.
-const SELECTED_LABEL = "Selected startup";
-const SELECTED_GREEN = "#2a8f5a";
+// Status dot for a stage — a .lp-status-{bucket} class or a literal colour.
+export function StageDot({ stage, style }) {
+  if (stage?.color) {
+    return <span className="lp-status-dot" style={{ background: stage.color, ...style }} />;
+  }
+  return <span className={`lp-status-dot lp-status-${stage?.dot || "open"}`} style={style} />;
+}
 
-function SelectedTag() {
+// One label for a row everywhere (list, drawer, review page, CSV) — see
+// pipelineStages.js. "Final selected" keeps the green tag styling.
+export function StageCell({ stage }) {
+  const selected = stage?.id === "final_selected";
   return (
     <span
-      className="lp-chip lp-selected-tag"
-      style={{ background: "#e6f4ec", border: `1px solid ${SELECTED_GREEN}`, color: "#1d6b43", fontWeight: 600 }}
+      className={`lp-chip${selected ? " lp-selected-tag" : ""}`}
+      style={selected ? { background: "#e6f4ec", border: `1px solid ${stage.color}`, color: "#1d6b43", fontWeight: 600 } : undefined}
     >
-      <span className="lp-status-dot" style={{ background: SELECTED_GREEN }} />
-      <span>{SELECTED_LABEL}</span>
+      <StageDot stage={stage} />
+      <span>{stage?.label || "—"}</span>
     </span>
   );
 }
 
-function StatusCell({ statusId, label, selected = false }) {
-  if (selected) return <SelectedTag />;
-  return (
-    <span className="lp-chip">
-      <span className={`lp-status-dot lp-status-${bucketFor(statusId)}`} />
-      <span style={{ textTransform: "capitalize" }}>{label || statusId}</span>
-    </span>
-  );
+// Reviewers "submitted / assigned". Reviews by a reviewer who has since been
+// unassigned must never read "3 / 0" — say what happened instead.
+function reviewersText(rv) {
+  if (!rv || !(rv.assigned > 0 || rv.submitted > 0)) return null;
+  if (rv.submitted > rv.assigned) return `${rv.submitted} submitted`;
+  return `${rv.submitted} / ${rv.assigned}`;
 }
 
 // AI score 0–10 → bar + tier-coloured fill. Tier thresholds match the
@@ -146,10 +158,11 @@ function csvCell(v) {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function buildApplicationsCsv(rows, statusLabelById, selectedKeys = null) {
+export function buildApplicationsCsv(rows, selectedKeys = null) {
   const header = [
     "Application ID", "Track", "Project", "Founder", "Organisation",
-    "Industry", "Stage", "AI score", "Status", "Submitted",
+    "Industry", "Stage", "AI score", "Reviewer score", "Reviewers", "Reco",
+    "Status", "Submitted",
   ];
   const lines = [header.map(csvCell).join(",")];
   for (const a of rows) {
@@ -162,15 +175,49 @@ function buildApplicationsCsv(rows, statusLabelById, selectedKeys = null) {
       a.industry?.label || "",
       a.stage?.label || a.stage_label || "",
       a.ai_score_overall != null ? a.ai_score_overall.toFixed(1) : "",
-      selectedKeys?.has(rowSelectionKey(a))
-        ? SELECTED_LABEL
-        : (statusLabelById?.[a.status] || a.status || ""),
+      a.reviewer_score != null ? Number(a.reviewer_score).toFixed(1) : "",
+      reviewersText(a.reviewers) || "",
+      RECO_LABEL[aggregateReco(a.reco)] || "",
+      rowStage(a, { selectedKeys }).label,
       a.submitted_at || a.created_at || "",
     ].map(csvCell).join(","));
   }
   // Lead with a BOM so Excel opens it as UTF-8.
   return "﻿" + lines.join("\r\n");
 }
+
+// Strip a pasted "TIR-"/"VIP-"/"SIP-" prefix so IDs hit the backend's
+// display_seq match; trim first so stray spaces don't zero the results.
+const normSearch = (v) => (v || "").trim().replace(/^(TIR|SIP|VIP)-/i, "");
+
+// One list query for the current filters. Stages / reco buckets the API can't
+// express exactly (see pipelineStages.js) fetch every page under the coarser
+// server filter and are narrowed + paginated here; the server-side sort still
+// orders the whole set. `all` returns every matching row (CSV, review Prev/Next).
+export async function queryApplications({
+  base, statusFilter, recoFilter, selectedKeys, offset = 0, limit = PAGE_SIZE, all = false,
+}) {
+  const sq = stageQuery(statusFilter);
+  const rq = recoQuery(recoFilter);
+  const params = { ...base, status: sq.status, recommendation: rq.recommendation };
+  const keeps = [sq.keep, rq.keep].filter(Boolean);
+  if (!keeps.length && !all) {
+    const page = await leadershipApi.listApplications({ ...params, limit, offset });
+    return { rows: page?.applications || [], total: page?.total ?? 0 };
+  }
+  const ctx = { selectedKeys };
+  const rows = (await fetchAllApplications(params)).filter((r) => keeps.every((k) => k(r, ctx)));
+  return { rows: all ? rows : rows.slice(offset, offset + limit), total: rows.length };
+}
+
+// Columns the list API can sort server-side (contract C3). Others are not
+// sortable: a client sort would only reorder the current page.
+const SORT_PARAM = {
+  id: "id", project: "project", founder: "founder", industry: "industry",
+  ai_score: "ai_score", reco: "reco", status: "status", submitted: "submitted_at",
+};
+
+const STICKY = "leadership";
 
 function triggerCsvDownload(csv, filename) {
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -208,7 +255,9 @@ export default function LeadershipDashboard() {
     navigate(p.to);
   };
 
-  const [view, setView] = useState("dashboard");
+  // View + filters are sticky so "← Back" from the review page lands on the
+  // same tab, filters, sort and page.
+  const [view, setView] = useStickyState(STICKY, "view", "dashboard");
 
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -220,30 +269,34 @@ export default function LeadershipDashboard() {
   // single source (the new /leadership/industry-categories endpoint).
   const [industryCategories, setIndustryCategories] = useState([]);
   const [industryTotal, setIndustryTotal] = useState(0);
+  // Apps with no industry; null until the backend reports it (then clickable).
+  const [industryUnclassified, setIndustryUnclassified] = useState(null);
   const [industryCap, setIndustryCap] = useState({ cap: 12, remaining_slots: 12 });
 
-  const [industry, setIndustry] = useState(null);
-  const [statusFilter, setStatusFilter] = useState(null);
-  const [trackFilter, setTrackFilter] = useState(null);
+  const [industry, setIndustry] = useStickyState(STICKY, "industry", null);
+  // A pipeline stage id (pipelineStages.STAGES), not a raw status.
+  const [statusFilter, setStatusFilter] = useStickyState(STICKY, "stage", null);
+  const [trackFilter, setTrackFilter] = useStickyState(STICKY, "track", null);
   // AI score bucket filter (0–9). Matches the histogram's floor()-bucketing
   // exactly — bucket i covers scores [i, i+1), bucket 9 also catches 10.
   // Set by clicking a histogram bar; the click also flips view to Applications.
-  const [scoreBucket, setScoreBucket] = useState(null);
-  const [recoFilter, setRecoFilter] = useState(null);
-  const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
-  const [offset, setOffset] = useState(0);
+  const [scoreBucket, setScoreBucket] = useStickyState(STICKY, "scoreBucket", null);
+  const [recoFilter, setRecoFilter] = useStickyState(STICKY, "reco", null);
+  const [searchInput, setSearchInput] = useStickyState(STICKY, "search", "");
+  const [search, setSearch] = useState(() => normSearch(searchInput));
+  const [offset, setOffset] = useStickyState(STICKY, "offset", 0);
   // Applications-tab filter panel (Status / AI score / Industry) collapses
   // behind a "Filters ▾" toggle, matching the admin pipeline presentation.
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useStickyState(STICKY, "filtersOpen", false);
 
   const [apps, setApps] = useState([]);
   const [appsTotal, setAppsTotal] = useState(0);
   const [appsLoading, setAppsLoading] = useState(false);
   const [appsError, setAppsError] = useState(null);
 
-  // Keys (`${native_track}:${id}`) of every selected startup, or null while
-  // loading / if the IC-documents or shortlist fetch failed (chip + tags hidden).
+  // Keys (`${native_track}:${id}`) of every selected startup (all current IC
+  // memos signed), or null while loading / if the IC-documents or shortlist
+  // fetch failed. Only a fallback once rows carry `final_selected`.
   const [selectedKeys, setSelectedKeys] = useState(null);
 
   const [openRow, setOpenRow] = useState(null);
@@ -251,9 +304,9 @@ export default function LeadershipDashboard() {
   // Bumped after a gate-1 decision (e.g. reject) to refetch stats + the list.
   const [refreshNonce, setRefreshNonce] = useState(0);
 
-  // ── Click-to-sort state for the applications table ──
-  const [sortCol, setSortCol] = useState(null);
-  const [sortAsc, setSortAsc] = useState(true);
+  // ── Click-to-sort state for the applications table (server-side) ──
+  const [sortCol, setSortCol] = useStickyState(STICKY, "sortCol", null);
+  const [sortAsc, setSortAsc] = useStickyState(STICKY, "sortAsc", true);
 
   // ── Initial fetch ──
   useEffect(() => {
@@ -282,6 +335,7 @@ export default function LeadershipDashboard() {
         if (cancelled) return;
         setIndustryCategories(data?.categories || []);
         setIndustryTotal(data?.total ?? 0);
+        setIndustryUnclassified(typeof data?.unclassified === "number" ? data.unclassified : null);
         setIndustryCap({
           cap: data?.cap ?? 12,
           remaining_slots: data?.remaining_slots ?? 0,
@@ -298,49 +352,42 @@ export default function LeadershipDashboard() {
     return () => { cancelled = true; };
   }, [refreshNonce]);
 
-  // The chip is hidden when the selection can't be computed — drop a stale
-  // "Selected startups" filter so the list never gets stuck on it.
-  useEffect(() => {
-    if (!selectedKeys && statusFilter === SELECTED_FILTER) setStatusFilter(null);
-  }, [selectedKeys, statusFilter]);
-
-  // ── Search debounce — strip "TIR-"/"SIP-" prefix so pasted IDs hit
-  //   the backend's display_seq.eq match.
+  // ── Search debounce — trimmed, prefix-stripped (normSearch). Only a real
+  //   change resets the page, so a remount keeps the sticky offset.
+  const searchRef = useRef(search);
   useEffect(() => {
     const t = setTimeout(() => {
-      const stripped = searchInput.replace(/^(TIR|SIP|VIP)-/i, "");
-      setSearch(stripped);
+      const next = normSearch(searchInput);
+      if (next === searchRef.current) return;
+      searchRef.current = next;
+      setSearch(next);
       setOffset(0);
     }, 300);
     return () => clearTimeout(t);
-  }, [searchInput]);
+  }, [searchInput]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Filters shared by the list, the CSV export and the review Prev/Next list.
+  const baseParams = useMemo(() => ({
+    industry: industry || undefined,
+    track: trackFilter ? trackFilter.toLowerCase() : undefined,
+    ai_score_bucket: scoreBucket ?? undefined,
+    search: search || undefined,
+    sort: sortCol ? SORT_PARAM[sortCol] : undefined,
+    order: sortCol ? (sortAsc ? "asc" : "desc") : undefined,
+  }), [industry, trackFilter, scoreBucket, search, sortCol, sortAsc]);
+  // Final pending / selected are split on the IC-memo selection.
+  const needsSelection = statusFilter === "final_selected" || statusFilter === "final_pending";
 
   // ── Refetch app list on any filter change ──
   useEffect(() => {
     let cancelled = false;
     setAppsLoading(true);
     setAppsError(null);
-    const params = {
-      industry: industry || undefined,
-      status: statusFilter || undefined,
-      track: trackFilter ? trackFilter.toLowerCase() : undefined,
-      ai_score_bucket: scoreBucket ?? undefined,
-      recommendation: recoFilter || undefined,
-      search: search || undefined,
-    };
-    // "Selected startups" isn't a backend status: fetch the whole shortlist
-    // under the other filters, keep only the selected rows, and page locally.
-    const req = statusFilter === SELECTED_FILTER
-      ? fetchSelectedApplications(params, selectedKeys).then((rows) => ({
-          applications: rows.slice(offset, offset + PAGE_SIZE),
-          total: rows.length,
-        }))
-      : leadershipApi.listApplications({ ...params, limit: PAGE_SIZE, offset });
-    req
-      .then((page) => {
+    queryApplications({ base: baseParams, statusFilter, recoFilter, selectedKeys, offset })
+      .then(({ rows, total }) => {
         if (cancelled) return;
-        setApps(page?.applications || []);
-        setAppsTotal(page?.total ?? 0);
+        setApps(rows);
+        setAppsTotal(total);
         setAppsLoading(false);
       })
       .catch((err) => {
@@ -349,10 +396,10 @@ export default function LeadershipDashboard() {
         setAppsLoading(false);
       });
     return () => { cancelled = true; };
-  // selectedKeys only matters while the Selected filter is on — keep it out of
-  // the deps otherwise so its initial load doesn't refetch the list.
-  }, [industry, statusFilter, trackFilter, scoreBucket, recoFilter, search, offset, refreshNonce, // eslint-disable-line react-hooks/exhaustive-deps
-      statusFilter === SELECTED_FILTER ? selectedKeys : null]);
+  // selectedKeys only matters for the final-round split — keep it out of the
+  // deps otherwise so its initial load doesn't refetch the list.
+  }, [baseParams, statusFilter, recoFilter, offset, refreshNonce, // eslint-disable-line react-hooks/exhaustive-deps
+      needsSelection ? selectedKeys : null]);
 
   const filterAndShow = useCallback(
     (setter) => (val) => {
@@ -363,27 +410,42 @@ export default function LeadershipDashboard() {
     [],
   );
 
-  const statusLabelById = useMemo(() => {
-    const out = {};
-    (stats?.status_counts || []).forEach((s) => { out[s.id] = s.label; });
-    return out;
-  }, [stats]);
-
-  // Map the new /industry-categories payload to the shape the existing
-  // dashboard-tab bar chart expects ({id, label, n, pct}). Single source
-  // for the filter pills too.
-  const industries = useMemo(() => {
-    if (!industryCategories.length) return [];
-    return industryCategories.map((c) => ({
-      id: c.id,
-      label: c.label,
-      n: c.count,
-      pct: industryTotal > 0 ? Math.round((c.count / industryTotal) * 1000) / 10 : 0,
-    }));
-  }, [industryCategories, industryTotal]);
-
   const totals = stats?.totals || {};
   const submitted = totals.apps_submitted ?? 0;
+
+  // Map the /industry-categories payload to the dashboard bar chart shape
+  // ({id, label, n, pct}). Apps with no industry get an "Unclassified" bar so
+  // the bars add up to every submitted app; percentages share that base and
+  // always show one decimal.
+  const unclassifiedN = industryUnclassified ?? (
+    stats && industryTotal > 0 ? Math.max(0, submitted - industryTotal) : 0
+  );
+  const industries = useMemo(() => {
+    if (!industryCategories.length) return [];
+    const base = industryTotal + unclassifiedN;
+    const pct = (n) => (base > 0 ? ((n / base) * 100).toFixed(1) : "0.0");
+    const out = industryCategories.map((c) => ({
+      id: c.id, label: c.label, n: c.count, pct: pct(c.count),
+    }));
+    if (unclassifiedN > 0) {
+      out.push({
+        id: "unclassified", label: "Unclassified", n: unclassifiedN, pct: pct(unclassifiedN),
+        // Filterable only once the backend accepts industry=unclassified.
+        clickable: industryUnclassified != null,
+      });
+    }
+    return out;
+  }, [industryCategories, industryTotal, unclassifiedN, industryUnclassified]);
+
+  // Status chips: pipeline stages with live counts (contract C1), narrowed to
+  // the track filter. Empty stages are hidden unless active. Without the
+  // breakdown (older backend) every stage shows, uncounted.
+  const breakdown = breakdownFor(stats, trackFilter);
+  const stageChips = STAGES.map((st) => {
+    let n = breakdown ? breakdown.stages?.[st.id] ?? 0 : null;
+    if (n == null && st.id === "final_selected" && selectedKeys) n = selectedKeys.size;
+    return { ...st, n };
+  }).filter((st) => !breakdown || st.n > 0 || statusFilter === st.id);
   const tirCount = totals.tir_count ?? 0;
   const sipCount = totals.sip_count ?? 0;
   const avgAi =
@@ -391,7 +453,10 @@ export default function LeadershipDashboard() {
       ? "—"
       : Number(totals.avg_ai_score).toFixed(1);
   const profiles = totals.profiles_signed_up ?? 0;
-  const advanced = totals.advanced_past_review ?? 0;
+  const pipeline = stats?.pipeline_breakdown || null;
+  // Passed the 1st gate (final round + offered + onboarded), per contract C1.
+  const advanced = pipeline?.gate1_selected ?? totals.advanced_past_review ?? 0;
+  const scoredCount = stats?.ai_scored_count ?? (stats?.ai_score_overalls || []).length;
   const onboarded = totals.onboarded ?? 0;
 
   // Six-step funnel. Backend may not yet expose `drafted` — it will render as 0
@@ -401,25 +466,26 @@ export default function LeadershipDashboard() {
     { id: "profiles",  label: "Profiles",  sub: "signed up" },
     { id: "drafted",   label: "Drafted",   sub: "started" },
     { id: "submitted", label: "Submitted", sub: "complete" },
-    { id: "in_review", label: "In review", sub: "AI + human" },
-    { id: "advanced",  label: "Advanced",  sub: "shortlist + interview" },
+    { id: "in_review", label: "In review", sub: "with reviewers" },
+    { id: "advanced",  label: "Advanced",  sub: "1st-gate selected" },
     { id: "decided",   label: "Decided",   sub: "offered + onboarded" },
   ];
   const funnelMax = Math.max(1, ...funnelOrder.map((f) => funnel[f.id] ?? 0));
 
+  // Real per-component means from /leadership/stats (ai_component_means).
+  // Weights are the scorer's (workers/ai_screener/scoring.py WEIGHTS). A
+  // missing mean renders "—", never a stand-in number.
   const componentAverages = useMemo(() => {
-    // Per-component averages will arrive in a later backend session. For now,
-    // weights are spec-grounded (sum to 100); the avg falls back to the cohort
-    // mean if available, otherwise renders an empty bar with "—".
-    const cohortMean = totals.avg_ai_score ?? null;
+    const means = stats?.ai_component_means || {};
+    const val = (k) => (typeof means[k] === "number" && Number.isFinite(means[k]) ? means[k] : null);
     return [
-      { id: "problem",    label: "Problem Impact & Importance",  weight: 22, value: cohortMean },
-      { id: "solution",   label: "Completeness & Depth of Solution", weight: 30, value: cohortMean ? cohortMean + 0.1 : null },
-      { id: "tech",       label: "Technical Depth",              weight: 22, value: cohortMean },
-      { id: "founders",   label: "Behavioral Parameters",        weight: 14, value: cohortMean ? cohortMean + 0.1 : null },
-      { id: "commitment", label: "Commitment",                   weight: 12, value: cohortMean ? cohortMean + 0.1 : null },
+      { id: "problem",    label: "Problem Impact & Importance",      weight: 22, value: val("problem") },
+      { id: "solution",   label: "Completeness & Depth of Solution", weight: 30, value: val("solution") },
+      { id: "tech",       label: "Technical Depth",                  weight: 22, value: val("tech") },
+      { id: "founders",   label: "Behavioral Parameters",            weight: 14, value: val("founders") },
+      { id: "commitment", label: "Commitment",                       weight: 12, value: val("commitment") },
     ];
-  }, [totals.avg_ai_score]);
+  }, [stats]);
 
   const histogram = useMemo(() => buildHistogram(scoreSample || []), [scoreSample]);
   const scoreMean = useMemo(() => meanOf(scoreSample || []), [scoreSample]);
@@ -436,54 +502,42 @@ export default function LeadershipDashboard() {
     setOffset(0);
   }
 
-  // Export the applications that match the CURRENT filters (not just the
-  // loaded page) — fetch a large page, then build + download a CSV client-side.
+  // Export the applications that match the CURRENT filters and sort (not
+  // just the loaded page), then build + download a CSV client-side.
   const handleExportCsv = useCallback(async () => {
     setExporting(true);
     try {
-      // The list endpoint caps `limit` at 200, so page through until we've
-      // collected every row matching the current filters.
-      const EXPORT_PAGE = 200;
-      const baseParams = {
-        industry: industry || undefined,
-        status: statusFilter || undefined,
-        track: trackFilter ? trackFilter.toLowerCase() : undefined,
-        ai_score_bucket: scoreBucket ?? undefined,
-        recommendation: recoFilter || undefined,
-        search: search || undefined,
-      };
-      const all = [];
-      if (statusFilter === SELECTED_FILTER) {
-        all.push(...await fetchSelectedApplications(baseParams, selectedKeys));
-      }
-      let pageOffset = 0;
-      let total = statusFilter === SELECTED_FILTER ? 0 : Infinity;
-      // Hard cap the loop (50 pages = 10k rows) as a safety net.
-      for (let i = 0; i < 50 && pageOffset < total; i += 1) {
-        const page = await leadershipApi.listApplications({
-          ...baseParams,
-          limit: EXPORT_PAGE,
-          offset: pageOffset,
-        });
-        const rows = page?.applications || [];
-        all.push(...rows);
-        total = page?.total ?? all.length;
-        if (rows.length === 0) break;
-        pageOffset += EXPORT_PAGE;
-      }
+      const { rows: all } = await queryApplications({
+        base: baseParams, statusFilter, recoFilter, selectedKeys, all: true,
+      });
       if (all.length === 0) {
         window.alert("No applications match the current filters.");
         return;
       }
-      const csv = buildApplicationsCsv(all, statusLabelById, selectedKeys);
-      const stamp = new Date().toISOString().slice(0, 10);
+      const csv = buildApplicationsCsv(all, selectedKeys);
+      // Local (IST) date, not the UTC one toISOString() gives.
+      const stamp = new Date().toLocaleDateString("en-CA");
       triggerCsvDownload(csv, `artpark-applications-${stamp}.csv`);
     } catch (err) {
       window.alert(err?.message || "Export failed. Please try again.");
     } finally {
       setExporting(false);
     }
-  }, [industry, statusFilter, trackFilter, scoreBucket, recoFilter, search, statusLabelById, selectedKeys]);
+  }, [baseParams, statusFilter, recoFilter, selectedKeys]);
+
+  // "Review application": Prev/Next on the review page walks the list the user
+  // came from. Seed it with the visible page right away, then swap in every
+  // matching row once fetched (the review page listens for the update).
+  const openReview = useCallback((row) => {
+    const entry = (r) => ({ id: r.id, track: rowNativeTrack(r), label: rowStage(r, { selectedKeys }).label });
+    writeReviewIdList(apps.map(entry));
+    navigate(`/leadership/applications/${rowNativeTrack(row)}/${row.id}/review`);
+    if (appsTotal > apps.length) {
+      queryApplications({ base: baseParams, statusFilter, recoFilter, selectedKeys, all: true })
+        .then(({ rows }) => { if (rows.length) writeReviewIdList(rows.map(entry)); })
+        .catch(() => { /* best-effort: the visible page is already stored */ });
+    }
+  }, [apps, appsTotal, baseParams, statusFilter, recoFilter, selectedKeys, navigate]);
   const filtersActive = !!(
     industry || statusFilter || trackFilter || scoreBucket !== null || search || recoFilter
   );
@@ -493,6 +547,8 @@ export default function LeadershipDashboard() {
   const advFilterCount =
     (statusFilter ? 1 : 0) + (scoreBucket !== null ? 1 : 0) + (industry ? 1 : 0) + (recoFilter ? 1 : 0);
 
+  // Sorting is server-side over every filtered row (contract C3, nulls last),
+  // so a new sort always starts at page 1.
   const handleSort = (col) => {
     if (sortCol === col) {
       setSortAsc(!sortAsc);
@@ -500,9 +556,11 @@ export default function LeadershipDashboard() {
       setSortCol(col);
       setSortAsc(true);
     }
+    setOffset(0);
   };
 
   const renderAppsHeader = (label, colKey, isNum = false) => {
+    if (!SORT_PARAM[colKey]) return <th className={isNum ? "num" : ""}>{label}</th>;
     const isSorted = sortCol === colKey;
     return (
       <th
@@ -517,58 +575,6 @@ export default function LeadershipDashboard() {
       </th>
     );
   };
-
-  const sortedApps = useMemo(() => {
-    if (!sortCol) return apps;
-    return [...apps].sort((a, b) => {
-      let valA, valB;
-      if (sortCol === "project") {
-        valA = a.project_name || "";
-        valB = b.project_name || "";
-      } else if (sortCol === "founder") {
-        valA = a.founder?.name || a.basic_full_name || "";
-        valB = b.founder?.name || b.basic_full_name || "";
-      } else if (sortCol === "industry") {
-        valA = a.industry?.label || "";
-        valB = b.industry?.label || "";
-      } else if (sortCol === "stage") {
-        valA = a.stage?.label || a.stage_label || "";
-        valB = b.stage?.label || b.stage_label || "";
-      } else if (sortCol === "ai_score") {
-        valA = a.ai_score_overall != null ? a.ai_score_overall : -1;
-        valB = b.ai_score_overall != null ? b.ai_score_overall : -1;
-        if (valA < valB) return sortAsc ? -1 : 1;
-        if (valA > valB) return sortAsc ? 1 : -1;
-        return 0;
-      } else if (sortCol === "reviewer_score") {
-        valA = a.reviewer_score != null ? a.reviewer_score : -1;
-        valB = b.reviewer_score != null ? b.reviewer_score : -1;
-        if (valA < valB) return sortAsc ? -1 : 1;
-        if (valA > valB) return sortAsc ? 1 : -1;
-        return 0;
-      } else if (sortCol === "reviewers") {
-        valA = a.reviewers ? a.reviewers.submitted : -1;
-        valB = b.reviewers ? b.reviewers.submitted : -1;
-        if (valA < valB) return sortAsc ? -1 : 1;
-        if (valA > valB) return sortAsc ? 1 : -1;
-        return 0;
-      } else if (sortCol === "status") {
-        valA = statusLabelById[a.status] || a.status || "";
-        valB = statusLabelById[b.status] || b.status || "";
-      } else if (sortCol === "submitted") {
-        valA = a.submitted_at || a.created_at || "";
-        valB = b.submitted_at || b.created_at || "";
-      } else if (sortCol === "id") {
-        valA = a.display_id || "";
-        valB = b.display_id || "";
-      } else {
-        return 0;
-      }
-      if (valA < valB) return sortAsc ? -1 : 1;
-      if (valA > valB) return sortAsc ? 1 : -1;
-      return 0;
-    });
-  }, [apps, sortCol, sortAsc, statusLabelById]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Human-readable snapshot timestamp for the hero subline.
   const snapshotAt = useMemo(() => {
@@ -717,7 +723,7 @@ export default function LeadershipDashboard() {
               </div>
 
               <div className="lp-metric">
-                <span className="lp-metric-kicker">Advanced past review</span>
+                <span className="lp-metric-kicker">1st-gate selected</span>
                 <span className="lp-metric-value">{statsLoading ? "…" : advanced}</span>
                 <span className="lp-metric-sub" style={{ color: "var(--ink-dim)" }}>
                   {submitted ? `${Math.round((advanced / submitted) * 100)}% of submissions` : "—"}
@@ -736,7 +742,7 @@ export default function LeadershipDashboard() {
                 <span className="lp-metric-kicker">Average AI score</span>
                 <span className="lp-metric-value">{statsLoading ? "…" : avgAi}</span>
                 <span className="lp-metric-sub">
-                  {submitted ? `across ${submitted} apps` : "no apps yet"}
+                  {scoredCount ? `across ${scoredCount} scored apps` : "no scored apps yet"}
                 </span>
               </div>
             </div>
@@ -777,6 +783,15 @@ export default function LeadershipDashboard() {
                 </div>
               )}
             </div>
+
+            {/* ── Gate-aware status breakdown (sums to every submitted app) ── */}
+            {pipeline && (
+              <PipelineBreakdown
+                breakdown={pipeline}
+                activeStage={statusFilter}
+                onFilter={(id) => filterAndShow(setStatusFilter)(statusFilter === id ? null : id)}
+              />
+            )}
 
             {/* ── AI score distribution + components (50/50 grid) ── */}
             <div className="lp-grid" style={{ marginTop: "var(--s-5)" }}>
@@ -866,8 +881,8 @@ export default function LeadershipDashboard() {
                   </span>
                   <h2 className="lp-card-title">What the score is made of</h2>
                   <p className="lp-card-blurb">
-                    Five weighted signals scored 0–10. Overall score is a weighted mean with a small
-                    calibration noise term so it doesn't perfectly track any single axis.
+                    Five weighted signals scored 0–10; the overall score is their weighted mean.
+                    Bars show the cohort average of each signal.
                   </p>
                 </div>
                 <div className="lp-comp">
@@ -922,19 +937,22 @@ export default function LeadershipDashboard() {
                     {industries.map((i) => {
                       const max = Math.max(1, ...industries.map((x) => x.n));
                       const pct = (i.n / max) * 100;
+                      const clickable = i.clickable !== false;
                       return (
                         <button
                           key={i.id}
                           type="button"
                           className="lp-ind-row"
-                          onClick={() => filterAndShow(setIndustry)(industry === i.id ? null : i.id)}
+                          disabled={!clickable}
+                          onClick={() => clickable && filterAndShow(setIndustry)(industry === i.id ? null : i.id)}
                           style={{
                             background: "transparent",
                             border: "none",
                             padding: 0,
                             textAlign: "left",
-                            cursor: "pointer",
+                            cursor: clickable ? "pointer" : "default",
                             width: "100%",
+                            color: "inherit",
                           }}
                         >
                           <span className="lp-ind-label">{i.label}</span>
@@ -959,7 +977,7 @@ export default function LeadershipDashboard() {
                     >
                       All
                     </button>
-                    {industries.map((i) => (
+                    {industries.filter((i) => i.clickable !== false).map((i) => (
                       <button
                         key={i.id}
                         type="button"
@@ -993,7 +1011,7 @@ export default function LeadershipDashboard() {
               <input
                 className="field filter-search"
                 type="search"
-                placeholder="Search by name, email, org, or project"
+                placeholder="Search by name, email, org, project or ID"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 aria-label="Search applications"
@@ -1051,38 +1069,19 @@ export default function LeadershipDashboard() {
                 >
                   All
                 </button>
-                {selectedKeys && (
+                {stageChips.map((st) => (
                   <button
+                    key={st.id}
                     type="button"
-                    className={`chip${statusFilter === SELECTED_FILTER ? " active" : ""}`}
-                    onClick={() => {
-                      setStatusFilter(statusFilter === SELECTED_FILTER ? null : SELECTED_FILTER);
-                      setOffset(0);
-                    }}
-                    title="Shortlisted startups whose IC memo has been approved"
+                    className={`chip${statusFilter === st.id ? " active" : ""}`}
+                    onClick={() => { setStatusFilter(statusFilter === st.id ? null : st.id); setOffset(0); }}
+                    title={st.id === "final_selected"
+                      ? "Final round with every current IC memo signed"
+                      : undefined}
                   >
-                    <span className="lp-status-dot" style={{ marginRight: 6, background: SELECTED_GREEN }} />
-                    Selected startups{" "}
-                    <span className="lp-pill-count">{selectedKeys.size}</span>
-                  </button>
-                )}
-                {(stats?.status_counts || [])
-                  // `jury_review` is always ~0 here (/stats folds shortlisted
-                  // apps into `accepted`) and there was no jury this round —
-                  // hide it; "Selected startups" above covers the final pick.
-                  .filter((s) => s.id !== "ai_screening" && s.id !== "jury_review")
-                  .map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    className={`chip${statusFilter === s.id ? " active" : ""}`}
-                    onClick={() => { setStatusFilter(statusFilter === s.id ? null : s.id); setOffset(0); }}
-                  >
-                    <span
-                      className={`lp-status-dot lp-status-${bucketFor(s.id)}`}
-                      style={{ marginRight: 6 }}
-                    />
-                    {s.label}
+                    <StageDot stage={st} style={{ marginRight: 6 }} />
+                    {st.label}
+                    {st.n != null && <>{" "}<span className="lp-pill-count">{st.n}</span></>}
                   </button>
                 ))}
               </div>
@@ -1132,7 +1131,7 @@ export default function LeadershipDashboard() {
                   >
                     All
                   </button>
-                  {industryCategories.map((c) => (
+                  {industries.filter((c) => c.clickable !== false).map((c) => (
                     <button
                       key={c.id}
                       type="button"
@@ -1141,10 +1140,10 @@ export default function LeadershipDashboard() {
                         setIndustry(industry === c.id ? null : c.id);
                         setOffset(0);
                       }}
-                      title={`${c.count} application${c.count === 1 ? "" : "s"}`}
+                      title={`${c.n} application${c.n === 1 ? "" : "s"}`}
                     >
                       {c.label}{" "}
-                      <span className="lp-pill-count">{c.count}</span>
+                      <span className="lp-pill-count">{c.n}</span>
                     </button>
                   ))}
                 </div>
@@ -1156,8 +1155,11 @@ export default function LeadershipDashboard() {
               <div className="filter-chips">
                 <button type="button" className={`chip${!recoFilter ? " active" : ""}`}
                   onClick={() => { setRecoFilter(null); setOffset(0); }}>All</button>
-                {[["yes", "Yes"], ["maybe", "Maybe"], ["no", "No"], ["none", "—"]].map(([v, label]) => (
+                {[["yes", "Yes"], ["maybe", "Maybe"], ["no", "No"],
+                  ["single", "1 review", "One review so far — a verdict needs 2"],
+                  ["none", "No reviews"]].map(([v, label, title]) => (
                   <button key={v} type="button" className={`chip${recoFilter === v ? " active" : ""}`}
+                    title={title}
                     onClick={() => { setRecoFilter(recoFilter === v ? null : v); setOffset(0); }}>{label}</button>
                 ))}
               </div>
@@ -1195,7 +1197,7 @@ export default function LeadershipDashboard() {
                     {renderAppsHeader("AI score", "ai_score", true)}
                     {renderAppsHeader("Reviewer score", "reviewer_score", true)}
                     {renderAppsHeader("Reviewers", "reviewers", true)}
-                    <th>Reco</th>
+                    {renderAppsHeader("Reco", "reco")}
                     {renderAppsHeader("Status", "status")}
                     {renderAppsHeader("Submitted", "submitted")}
                     <th className="lp-id-col" onClick={() => handleSort("id")} style={{ cursor: "pointer", userSelect: "none" }}>
@@ -1206,7 +1208,7 @@ export default function LeadershipDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedApps.map((a) => (
+                  {apps.map((a) => (
                     <tr
                       key={`${a.track}-${a.id}`}
                       className="clickable"
@@ -1253,20 +1255,20 @@ export default function LeadershipDashboard() {
                         }
                       </td>
                       <td className="num">
-                        {a.reviewers && (a.reviewers.assigned > 0 || a.reviewers.submitted > 0)
-                          ? <span style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}>{a.reviewers.submitted} / {a.reviewers.assigned}</span>
+                        {reviewersText(a.reviewers)
+                          ? <span style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}
+                              title={a.reviewers.submitted > a.reviewers.assigned
+                                ? `${a.reviewers.submitted} reviews submitted · ${a.reviewers.assigned} reviewer(s) currently assigned`
+                                : undefined}>{reviewersText(a.reviewers)}</span>
                           : <span style={{ color: "var(--ink-dim)" }}>—</span>}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
-                        <RecoCell reco={a.reco}
+                        <RecoCell reco={a.reco} splitSingle
+                          reviewCount={typeof a.review_count === "number" ? a.review_count : undefined}
                           onSelect={(v) => { setRecoFilter(recoFilter === v ? null : v); setOffset(0); }} />
                       </td>
                       <td>
-                        <StatusCell
-                          statusId={a.status}
-                          label={statusLabelById[a.status] || a.status}
-                          selected={!!selectedKeys?.has(rowSelectionKey(a))}
-                        />
+                        <StageCell stage={rowStage(a, { selectedKeys })} />
                       </td>
                       <td>{fmtRelative(a.submitted_at || a.created_at)}</td>
                       <td className="lp-id-col">{relabelDisplayId(a.display_id)}</td>
@@ -1305,8 +1307,8 @@ export default function LeadershipDashboard() {
         {openRow && (
           <AppDrawer
             row={openRow}
-            statusLabelById={statusLabelById}
-            selected={!!selectedKeys?.has(rowSelectionKey(openRow))}
+            stage={rowStage(openRow, { selectedKeys })}
+            onReview={openReview}
             onClose={() => setOpenRow(null)}
             onDecided={() => { setOpenRow(null); setRefreshNonce((n) => n + 1); }}
           />

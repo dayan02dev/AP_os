@@ -41,6 +41,34 @@ describe("RecoCell", () => {
   });
 });
 
+describe("RecoCell splitSingle (opt-in)", () => {
+  const wrap = (ui) => render(<table><tbody><tr><td>{ui}</td></tr></tbody></table>);
+
+  it("shows a '1 review' chip for exactly one review and filters by 'single'", () => {
+    const onSelect = vi.fn();
+    wrap(<RecoCell splitSingle reco={{ yes: 1, maybe: 0, no: 0 }} onSelect={onSelect} />);
+    expect(screen.getByText("1 review")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Filter by reco: single/i }));
+    expect(onSelect).toHaveBeenCalledWith("single");
+  });
+  it("keeps the dash for no reviews, with a 'No reviews' tooltip", () => {
+    const onSelect = vi.fn();
+    wrap(<RecoCell splitSingle reco={{ yes: 0, maybe: 0, no: 0 }} onSelect={onSelect} />);
+    expect(screen.getByTitle("No reviews")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Filter by reco: none/i }));
+    expect(onSelect).toHaveBeenCalledWith("none");
+  });
+  it("honours an explicit reviewCount", () => {
+    wrap(<RecoCell splitSingle reco={{ yes: 1 }} reviewCount={0} />);
+    expect(screen.queryByText("1 review")).toBeNull();
+  });
+  it("without splitSingle, one review still renders the plain dash", () => {
+    wrap(<RecoCell reco={{ yes: 1, maybe: 0, no: 0 }} />);
+    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.queryByText("1 review")).toBeNull();
+  });
+});
+
 describe("RecoBadge", () => {
   it("renders the value label", () => {
     render(<table><tbody><tr><td><RecoBadge value="no" /></td></tr></tbody></table>);

@@ -8,14 +8,16 @@
 // explicit that the review page lives in its own top-only chrome, no left
 // sidebar.
 
-import { labelFor } from "../../../lib/statusMachine.js";
 import { bucketFor } from "../components/statusBuckets.js";
+import { statusLabel as labelOf } from "../pipelineStages.js";
 
-function StatusInline({ statusId }) {
+// `label` is the gate-aware stage label from the dashboard list when known;
+// otherwise the raw status goes through the shared leadership label map.
+function StatusInline({ statusId, label }) {
   return (
     <span className="h-status">
       <span className={`lp-status-dot lp-status-${bucketFor(statusId)}`} />
-      {labelFor(statusId)}
+      {label || labelOf(statusId)}
     </span>
   );
 }
@@ -23,6 +25,7 @@ function StatusInline({ statusId }) {
 export default function ReviewHeader({
   appId,
   status,
+  statusLabel,
   scoreOverall,
   onBack,
   onPrev,
@@ -41,7 +44,7 @@ export default function ReviewHeader({
         ← Back
       </button>
       <span className="h-id">{appId}</span>
-      {status && <StatusInline statusId={status} />}
+      {status && <StatusInline statusId={status} label={statusLabel} />}
       <span className={`h-score${hasScore ? "" : " is-empty"}`}>
         {hasScore ? scoreOverall.toFixed(1) : "—"}
         <span className="of">/ 10</span>
