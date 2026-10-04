@@ -10,12 +10,12 @@
 // display/effective one, `native_track` is where the row lives. IC documents
 // are keyed by the native track, so that's the one we hand to selectionKey.
 //
-// Data-driven: every signed IC memo on a still-shortlisted app counts, so new
-// selections show up on the next load with no code change.
+// Data-driven: a still-shortlisted app whose current IC memos are all signed
+// counts, so new selections show up on the next load with no code change.
 
 import { leadershipApi } from "../../lib/leadershipApi.js";
 import { icDocumentsApi } from "../../lib/icDocumentsApi.js";
-import { isSelected, selectionKey, signedDocKeys } from "../../lib/selection.js";
+import { isSelected, selectionKey } from "../../lib/selection.js";
 
 // Sentinel value for the dashboard's `statusFilter` state — not a backend status.
 export const SELECTED_FILTER = "__selected__";
@@ -42,6 +42,20 @@ export async function fetchAllApplications(params = {}) {
   return all;
 }
 
+// Keys of applications whose CURRENT IC documents are ALL signed. An app can
+// hold several current memos (mig 046); one signed memo next to an unsigned
+// one is not a final selection. The endpoint only returns current
+// (non-superseded) documents.
+export function allSignedDocKeys(documents) {
+  const signed = new Map();
+  for (const d of documents || []) {
+    if (!d || !d.application_id) continue;
+    const key = selectionKey(d.track, d.application_id);
+    signed.set(key, (signed.get(key) ?? true) && !!d.signed);
+  }
+  return new Set([...signed].filter(([, all]) => all).map(([k]) => k));
+}
+
 // A row fetched with status=jury_review is shortlisted in the DB; its display
 // status is "accepted" (admin decision overlay) or "jury_review". Anything else
 // (e.g. an admin "rejected" decision on top) is not a selection.
@@ -63,7 +77,7 @@ export async function loadSelectedKeys() {
     icDocumentsApi.list(),
     fetchAllApplications({ status: "jury_review" }),
   ]);
-  const signed = signedDocKeys(docsRes?.documents || []);
+  const signed = allSignedDocKeys(docsRes?.documents || []);
   const out = new Set();
   for (const r of shortlisted) {
     if (rowIsSelected(r, signed)) out.add(rowSelectionKey(r));
