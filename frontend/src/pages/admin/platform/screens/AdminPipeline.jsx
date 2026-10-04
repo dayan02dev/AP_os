@@ -180,8 +180,10 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   // They render red with a "Final round" tag, and can be isolated.
   const isRejectedView = baseFilter?.status === 'rejected';
   const isFinalRoundReject = (s) => isRejectedView && (s.gate2_decision || '') === 'rejected';
+  // Round filter: true = final round only, 'gate1' = 1st-gate rejects only.
   const [finalOnlyState, setFinalOnly] = useStickyState(scope, 'finalOnly', false);
-  const finalOnly = isRejectedView && !!finalOnlyState;
+  const finalOnly = isRejectedView && finalOnlyState === true;
+  const gate1Only = isRejectedView && finalOnlyState === 'gate1';
   const industries = React.useMemo(() => industryCountsFor(S, track), [S, track]);
   const unspecifiedCount = React.useMemo(() => S.filter(s => !s.hidden && !s.archived
     && (track === 'all' || s.track === track) && industryOf(s) === UNSPECIFIED).length, [S, track]);
@@ -260,7 +262,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     );
   };
 
-  const hasFilters = search !== '' || (!lockTrack && track !== 'all') || status !== 'all' || industry !== 'all' || batchFilter !== 'all' || !!recoFilter || finalOnly;
+  const hasFilters = search !== '' || (!lockTrack && track !== 'all') || status !== 'all' || industry !== 'all' || batchFilter !== 'all' || !!recoFilter || finalOnly || gate1Only;
   const clearAll = () => {
     setSearch('');
     setTrack('all');
@@ -315,9 +317,10 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     if (recoFilter && recoBucket(s) !== recoFilter) return false;
 
     if (finalOnly && !isFinalRoundReject(s)) return false;
+    if (gate1Only && isFinalRoundReject(s)) return false;
 
     return true;
-  }), [S, search, track, status, industry, batchFilter, recoFilter, decisionMode, finalOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [S, search, track, status, industry, batchFilter, recoFilter, decisionMode, finalOnly, gate1Only]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleAll = () => {
     if (selectedIds.length === filtered.length && filtered.length > 0) {
@@ -384,6 +387,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   if (batchFilter !== 'all') activeChips.push({ label: 'Batch · ' + batchFilter, clear: () => setBatchFilter('all') });
   if (recoFilter) activeChips.push({ label: 'Reco · ' + ((RECO_BUCKETS.find(([v]) => v === recoFilter) || [])[1] || recoFilter).toLowerCase(), clear: () => setRecoFilter(null) });
   if (finalOnly) activeChips.push({ label: 'Final round only', clear: () => setFinalOnly(false) });
+  if (gate1Only) activeChips.push({ label: '1st gate only', clear: () => setFinalOnly(false) });
   const activeCount = activeChips.length;
 
   // ── Mutations ──────────────────────────────────────────────────────────────
@@ -858,15 +862,24 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
           <span aria-hidden="true" style={{ width: 4, height: 16, background: 'var(--bad)', borderRadius: 1, flexShrink: 0 }} />
           <span>
             <strong style={{ color: 'var(--bad)' }}>Red rows</strong> were rejected in the final selection round
-            (after interview, from the Accepted tab) — {S.filter(isFinalRoundReject).length} so far.
+            (after interview, from the Accepted tab) — {S.filter(isFinalRoundReject).length} so far;
+            {' '}{S.filter(s => !isFinalRoundReject(s)).length} at the 1st gate (Admin Review).
           </span>
           <button
             type="button"
             className={`lp-filter-btn${finalOnly ? ' active' : ''}`}
             aria-pressed={finalOnly}
-            onClick={() => setFinalOnly(!finalOnly)}
+            onClick={() => setFinalOnly(finalOnly ? false : true)}
           >
             Final round only
+          </button>
+          <button
+            type="button"
+            className={`lp-filter-btn${gate1Only ? ' active' : ''}`}
+            aria-pressed={gate1Only}
+            onClick={() => setFinalOnly(gate1Only ? false : 'gate1')}
+          >
+            1st gate only
           </button>
         </div>
       )}

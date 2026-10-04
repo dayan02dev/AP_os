@@ -69,3 +69,14 @@ describe("AdminPipeline — final-round rejects in the Rejected tab", () => {
     expect(screen.queryByText("FINAL ROUND")).toBeNull();
   });
 });
+
+describe("Rejected tab — 1st gate vs final round split (ADM-05)", () => {
+  it("can narrow to 1st-gate rejects only, with counts for both", () => {
+    renderRejected();
+    const legend = screen.getByTestId("final-round-legend");
+    expect(legend.textContent).toMatch(/1 at the 1st gate/i);
+    fireEvent.click(screen.getByRole("button", { name: "1st gate only" }));
+    expect(screen.getByText("Gate One Reject")).toBeTruthy();
+    expect(screen.queryByText("Final Round Reject")).toBeNull();
+  });
+});
