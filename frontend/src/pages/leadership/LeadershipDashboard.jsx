@@ -335,7 +335,10 @@ export default function LeadershipDashboard() {
         if (cancelled) return;
         setIndustryCategories(data?.categories || []);
         setIndustryTotal(data?.total ?? 0);
-        setIndustryUnclassified(typeof data?.unclassified === "number" ? data.unclassified : null);
+        // Backend sends {id, label, count}; tolerate a bare number too.
+        const unc = data?.unclassified;
+        const uncN = typeof unc === "number" ? unc : unc?.count;
+        setIndustryUnclassified(typeof uncN === "number" ? uncN : null);
         setIndustryCap({
           cap: data?.cap ?? 12,
           remaining_slots: data?.remaining_slots ?? 0,

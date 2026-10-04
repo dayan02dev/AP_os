@@ -16,13 +16,13 @@ const row = (over) => ({
 });
 
 const REJECTED = [
-  row({ id: "R1", project_name: "GateOneReject", status: "rejected", gate2_decision: null }),
-  row({ id: "R2", project_name: "FinalReject", status: "rejected", gate2_decision: "rejected" }),
+  row({ id: "R1", project_name: "GateOneReject", status: "rejected", gate2_decision: null, pipeline_stage: "gate1_rejected" }),
+  row({ id: "R2", project_name: "FinalReject", status: "rejected", gate2_decision: "rejected", pipeline_stage: "final_rejected" }),
 ];
 const ALL = [
-  row({ id: "U1", project_name: "Under", status: "under_review", reco: { yes: 1, maybe: 0, no: 0 } }),
-  row({ id: "J1", project_name: "Pending", status: "jury_review", reco: { yes: 2, maybe: 0, no: 0 } }),
-  row({ id: "M1", project_name: "Moved", status: "evaluated", track: "sip", native_track: "tir", moved_to_track: "sip" }),
+  row({ id: "U1", project_name: "Under", status: "under_review", review_count: 1, reco: { yes: 1, maybe: 0, no: 0 } }),
+  row({ id: "J1", project_name: "Pending", status: "jury_review", pipeline_stage: "final_pending", review_count: 2, reco: { yes: 2, maybe: 0, no: 0 } }),
+  row({ id: "M1", project_name: "Moved", status: "evaluated", pipeline_stage: "reviewed", review_count: 0, track: "sip", native_track: "tir", moved_to_track: "sip" }),
   ...REJECTED,
 ];
 
@@ -89,9 +89,14 @@ beforeEach(() => {
     categories: [{ id: "rob", label: "Robotics", count: 500 }], total: 589, unclassified: 16,
   });
   leadershipApi.listApplications.mockImplementation((p = {}) => {
+    // Mirrors the backend: stage keys filter on pipeline_stage, raw statuses
+    // on status; recommendation none/single split on review_count.
     let rows = ALL;
-    if (p.status === "rejected") rows = REJECTED;
-    else if (p.status === "jury_review") rows = ALL.filter((r) => r.status === "jury_review");
+    if (["gate1_rejected", "final_rejected", "final_pending", "final_selected", "reviewed"].includes(p.status)) {
+      rows = ALL.filter((r) => r.pipeline_stage === p.status);
+    } else if (p.status) rows = ALL.filter((r) => r.status === p.status);
+    if (p.recommendation === "none") rows = rows.filter((r) => r.review_count === 0);
+    else if (p.recommendation === "single") rows = rows.filter((r) => r.review_count === 1);
     return Promise.resolve({ applications: rows, total: rows.length, limit: p.limit, offset: p.offset });
   });
 });
@@ -142,14 +147,14 @@ describe("Applications — status chips + labels", () => {
     expect(screen.queryByRole("button", { name: /^Jury review/ })).toBeNull();
   });
 
-  it("Final rejected fetches status=rejected and keeps only gate-2 rejects", async () => {
+  it("Final rejected sends the stage key and lists only gate-2 rejects", async () => {
     await openApps();
     fireEvent.click(screen.getByRole("button", { name: /^Final rejected/ }));
     await waitFor(() => expect(screen.queryByText("GateOneReject")).toBeNull());
     expect(screen.getByText("FinalReject")).toBeTruthy();
-    expect(calls().some((p) => p.status === "rejected")).toBe(true);
-    // Never sends a stage id the API doesn't know (jury_review = selection load).
-    expect(calls().every((p) => !p.status || ["rejected", "jury_review"].includes(p.status))).toBe(true);
+    expect(calls().some((p) => p.status === "final_rejected")).toBe(true);
+    // Only stage keys the API knows (jury_review = selection load).
+    expect(calls().every((p) => !p.status || ["final_rejected", "jury_review"].includes(p.status))).toBe(true);
   });
 
   it("labels jury_review rows Final pending, never Accepted", async () => {
@@ -182,8 +187,7 @@ describe("Applications — sort, search, reco", () => {
     fireEvent.click(screen.getByRole("button", { name: "1 review" }));
     await waitFor(() => expect(screen.queryByText("Pending")).toBeNull());
     expect(screen.getByText("Under")).toBeTruthy();
-    // Applied client-side — never sent as an unknown recommendation value.
-    expect(calls().every((p) => p.recommendation === undefined)).toBe(true);
+    expect(calls().some((p) => p.recommendation === "single")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "No reviews" }));
     await waitFor(() => expect(screen.queryByText("Under")).toBeNull());
     expect(screen.getByText("Moved")).toBeTruthy();

@@ -216,7 +216,7 @@ async def list_applications(
     ai_score_max: float | None = Query(default=None),
     ai_score_bucket: int | None = Query(default=None, ge=0, le=9),
     search: str | None = Query(default=None),
-    recommendation: str | None = Query(default=None, pattern="^(yes|maybe|no|none)$"),
+    recommendation: str | None = Query(default=None, pattern="^(yes|maybe|no|none|single)$"),
     sort: str | None = Query(
         default=None,
         pattern="^(id|project|founder|ai_score|status|submitted_at|industry|reco)$",
@@ -329,16 +329,18 @@ async def list_applications(
             kept.append(r)
         rows = kept
 
-    # ─ 3b. Recommendation filter (aggregate verdict == `recommendation`;
-    #      "none" matches apps with no submitted reviews) ────────────────
+    # ─ 3b. Recommendation filter (aggregate verdict == `recommendation`).
+    #      Below the 2-review threshold the verdict is None ("—"), split by
+    #      review_count: "none" = 0 reviews, "single" = exactly 1 (LEAD-17).
     if recommendation:
-        want = None if recommendation == "none" else recommendation
-        rows = [
-            r for r in rows
-            if admin_query.reco_verdict(
-                (review_stats.get((r["track"], r["id"])) or {}).get("reco")
-            ) == want
-        ]
+        def _reco_bucket(r: dict[str, Any]) -> str:
+            rs = review_stats.get((r["track"], r["id"])) or {}
+            verdict = admin_query.reco_verdict(rs.get("reco"))
+            if verdict:
+                return verdict
+            return "single" if rs.get("review_count", 0) == 1 else "none"
+
+        rows = [r for r in rows if _reco_bucket(r) == recommendation]
 
     # ─ 4. Total = post-filter, pre-pagination count ─────────────────────
     total = len(rows)
@@ -420,9 +422,9 @@ async def list_applications(
                                     "submitted": rs.get("submitted", 0),
                                     "assigned":  rs.get("assigned", 0),
                                 } if rs else None,
-            # Submitted-review count, so a "—" reco can read "no reviews" vs
-            # "1 review (needs 2)".
-            "review_count":     rs.get("submitted", 0),
+            # Reviews counted by reco_verdict, so a "—" reco can read "no
+            # reviews" vs "1 review (needs 2)" — same field as the admin row.
+            "review_count":     rs.get("review_count", 0),
             "reco":             rs.get("reco"),
             "submitted_at":     r.get("submitted_at"),
             "created_at":       r.get("created_at"),

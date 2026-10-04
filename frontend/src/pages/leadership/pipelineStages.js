@@ -6,11 +6,11 @@
 // C1). Labels match the admin dashboard buckets. The stages are mutually
 // exclusive and sum to pipeline_breakdown.total.
 //
-// The list endpoint only filters on RAW status, so a stage that splits one raw
-// status (rejected → 1st-gate / final; jury_review → pending / selected) is
-// fetched by that status and narrowed client-side with `keep`. Everything here
-// is defensive: a field the backend has not shipped yet degrades to the
-// coarser label instead of a wrong one.
+// List rows carry the backend's `pipeline_stage` (same rules as the breakdown)
+// and the list endpoint accepts the split stage keys (SERVER_STAGES) as
+// `status`, so those filter server-side. Other multi-status stages are fetched
+// unfiltered and narrowed client-side with `keep`. A row without
+// pipeline_stage degrades to the coarser label instead of a wrong one.
 
 import { labelFor } from "../../lib/statusMachine.js";
 import { rowSelectionKey } from "./selectedStartups.js";
@@ -56,6 +56,10 @@ export const STAGES = [
 ];
 export const STAGE_BY_ID = Object.fromEntries(STAGES.map((s) => [s.id, s]));
 
+// Stage keys GET /leadership/applications accepts as `status` (leadership.py
+// _STAGE_FILTERS) — filtered on the row's pipeline_stage server-side.
+const SERVER_STAGES = new Set(["reviewed", "gate1_rejected", "final_rejected", "final_pending", "final_selected"]);
+
 // The backend's old overlay folds a shortlist decision into "accepted";
 // treat that the same as the raw jury_review it stands for.
 const rawStatus = (s) => (s === "accepted" ? "jury_review" : s);
@@ -70,6 +74,9 @@ export function statusLabel(status) {
 
 // → { id, label, dot?, color? } for a list row (or anything with a status).
 export function rowStage(row, ctx = {}) {
+  // The backend's stage is built from the RAW status; `status` is the
+  // decision-overlaid display status, so the stage wins when present.
+  if (row?.pipeline_stage && STAGE_BY_ID[row.pipeline_stage]) return STAGE_BY_ID[row.pipeline_stage];
   const status = rawStatus(row?.status);
   if (status === "rejected") {
     const fin = isFinalReject(row);
@@ -88,7 +95,7 @@ export function rowStage(row, ctx = {}) {
 // which case the caller must fetch every page and paginate locally.
 export function stageQuery(stageId) {
   const stage = STAGE_BY_ID[stageId];
-  if (!stage) return { status: stageId || undefined, keep: null };
+  if (!stage || SERVER_STAGES.has(stageId)) return { status: stageId || undefined, keep: null };
   const single = stage.statuses.length === 1;
   const keepStatus = single ? null : (row) => stage.statuses.includes(rawStatus(row?.status));
   const keep = stage.keep && keepStatus
@@ -97,18 +104,9 @@ export function stageQuery(stageId) {
   return { status: single ? stage.statuses[0] : undefined, keep };
 }
 
-// Count of submitted reviews behind a row's reco tally.
-export function reviewCountOf(row) {
-  if (typeof row?.review_count === "number") return row.review_count;
-  const r = row?.reco || {};
-  return Number(r.yes || 0) + Number(r.maybe || 0) + Number(r.no || 0);
-}
-
-// Reco filters that the API can't express precisely ("—" split into 0 vs 1
-// review) are applied client-side.
+// Every reco bucket is a list-API value: yes/maybe/no, plus the "—" split
+// none (0 reviews) and single (exactly 1) — matched on review_count.
 export function recoQuery(recoFilter) {
-  if (recoFilter === "none") return { recommendation: undefined, keep: (row) => reviewCountOf(row) === 0 };
-  if (recoFilter === "single") return { recommendation: undefined, keep: (row) => reviewCountOf(row) === 1 };
   return { recommendation: recoFilter || undefined, keep: null };
 }
 

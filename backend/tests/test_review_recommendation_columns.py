@@ -233,7 +233,8 @@ def test_leadership_list_attaches_reviewers_and_reco(monkeypatch):
 
 def _leadership_backend_multi():
     """Leadership seed with enough reviews to exercise the >=2 rule:
-    A = 2 yes -> 'yes'; B = 2 no -> 'no'; C = 1 yes -> '—' (< 2 reviews)."""
+    A = 2 yes -> 'yes'; B = 2 no -> 'no'; C = 1 yes -> '—' (1 review);
+    D = no reviews -> '—' (0 reviews)."""
     return FakeSupabase({
         "tir_applications": [
             {"id": "A", "track": "tir", "status": "under_review", "display_seq": 26001,
@@ -245,6 +246,9 @@ def _leadership_backend_multi():
             {"id": "C", "track": "tir", "status": "under_review", "display_seq": 26003,
              "basic_full_name": "Cara V", "basic_org": "Gamma", "basic_email": "c@x.io",
              "submitted_at": "2026-07-03T00:00:00Z"},
+            {"id": "D", "track": "tir", "status": "under_review", "display_seq": 26004,
+             "basic_full_name": "Dev P", "basic_org": "Delta", "basic_email": "d@x.io",
+             "submitted_at": "2026-07-04T00:00:00Z"},
         ],
         "reviewer_profiles": [{"reviewer_user_id": "rv1", "weight": 1.0},
                               {"reviewer_user_id": "rv2", "weight": 1.0}],
@@ -294,13 +298,21 @@ def test_leadership_list_recommendation_filter_aggregate(monkeypatch):
     assert {a["id"] for a in res["applications"]} == {"B"}
 
 
-def test_leadership_list_recommendation_none_matches_under_two_reviews(monkeypatch):
-    # C has only 1 review -> verdict None -> matched by "none".
+def test_leadership_list_recommendation_none_vs_single(monkeypatch):
+    # LEAD-17: the "—" bucket splits — "none" = 0 reviews (D), "single" =
+    # exactly 1 review (C). Both share verdict None.
     sb = _leadership_backend_multi()
     lr = _patch_leadership(monkeypatch, sb)
     res = asyncio.run(lr.list_applications(track="tir", recommendation="none"))
+    assert {a["id"] for a in res["applications"]} == {"D"}
+    assert res["total"] == 1
+    res = asyncio.run(lr.list_applications(track="tir", recommendation="single"))
     assert {a["id"] for a in res["applications"]} == {"C"}
     assert res["total"] == 1
+    by_id = {a["id"]: a for a in asyncio.run(
+        lr.list_applications(track="tir"))["applications"]}
+    assert by_id["C"]["review_count"] == 1
+    assert by_id["D"]["review_count"] == 0
 
 
 def test_admin_pipeline_attaches_reviewers_and_reco(monkeypatch):

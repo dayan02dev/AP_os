@@ -67,7 +67,10 @@ describe("Leadership — Final selected (selected startups)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     leadershipApi.listApplications.mockImplementation((p = {}) => {
-      const rows = p.status === "jury_review" ? SHORTLIST : ALL;
+      // Backend filters status=final_selected on its pipeline_stage (A + C).
+      const rows = p.status === "jury_review" ? SHORTLIST
+        : p.status === "final_selected" ? SHORTLIST.filter((r) => ["A", "C"].includes(r.id))
+        : ALL;
       return Promise.resolve({ applications: rows, total: rows.length, limit: p.limit, offset: p.offset });
     });
     icDocumentsApi.list.mockResolvedValue(DOCS);
@@ -107,11 +110,11 @@ describe("Leadership — Final selected (selected startups)", () => {
     fireEvent.click(screen.getByRole("button", { name: "TIR" }));
     await waitFor(() => {
       const calls = leadershipApi.listApplications.mock.calls.map((c) => c[0]);
-      expect(calls.some((p) => p.status === "jury_review" && p.track === "tir")).toBe(true);
+      expect(calls.some((p) => p.status === "final_selected" && p.track === "tir")).toBe(true);
     });
-    // Never sends the sentinel to the backend.
+    // Only backend-known values: the stage key, or jury_review (selection load).
     const statuses = leadershipApi.listApplications.mock.calls.map((c) => c[0].status);
-    expect(statuses.every((s) => s === undefined || s === "jury_review")).toBe(true);
+    expect(statuses.every((s) => s === undefined || s === "jury_review" || s === "final_selected")).toBe(true);
   });
 
   it("never tags a row selected when the IC documents list fails", async () => {
