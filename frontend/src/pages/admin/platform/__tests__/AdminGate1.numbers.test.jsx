@@ -33,6 +33,9 @@ const ALL = [
   { id: "h3", track: "tir", name: "G1Rej", adminDecision: "REJECTED", gate1_decision: "rejected", sub: "2026-05-03", decidedAt: "2026-07-09T10:00:00Z" },
   { id: "h4", track: "tir", name: "G1Rej2", adminDecision: "REJECTED", sub: "2026-05-04" },
 ];
+// Score sources for the history table: reviewer (weighted) vs AI, never mixed.
+ALL[0].rev = { overall: 4.5 }; ALL[0].ai = { overall: 6.1 };
+ALL[1].ai = { overall: 8.2 };   // AI only — no reviewer score
 
 function mount() {
   useAdminData.mockImplementation((kind, params) =>
@@ -78,5 +81,24 @@ describe("ADM-05 / ADM-19 decision history", () => {
     fireEvent.click(screen.getByText(/C · Decision history/));
     const row = screen.getByText("Picked").closest("tr");
     expect(within(row).getByText("2026-07-10")).toBeTruthy();
+  });
+});
+
+describe("Admin Review history score columns", () => {
+  it("Reviewer column shows only the weighted reviewer score; AI has its own column", () => {
+    mount();
+    fireEvent.click(screen.getByText(/C · Decision history/));
+    const heads = screen.getAllByRole("columnheader").map((h) => h.textContent);
+    expect(heads.some((h) => /Reviewer/.test(h))).toBe(true);
+    expect(heads.some((h) => /^AI/.test(h))).toBe(true);
+    const both = screen.getByText("Picked").closest("tr");
+    expect(within(both).getByText("4.5")).toBeTruthy();
+    expect(within(both).getByText("6.1")).toBeTruthy();
+    const aiOnly = screen.getByText("FinalRej").closest("tr");
+    // The AI 8.2 is shown once, in the AI column — the reviewer cell is "—".
+    expect(within(aiOnly).getAllByText("8.2")).toHaveLength(1);
+    const cells = within(aiOnly).getAllByRole("cell").map((c) => c.textContent);
+    const revIdx = heads.findIndex((h) => /Reviewer/.test(h));
+    expect(cells[revIdx]).toBe("—");
   });
 });

@@ -14,7 +14,9 @@
 //   Prototype reads s.rev.overall / s.rev[k].  Since list rows carry no
 //   per-reviewer breakdown (rev is always undefined on the pipeline list),
 //   every rev-access is guarded:
-//     reviewer overall  → s.rev?.overall ?? s.ai?.overall ?? null
+//     Variant A card     → s.rev?.overall ?? s.ai?.overall (labelled by source)
+//     B / C tables       → separate "Reviewer score" (s.rev.overall, the
+//                          weighted reviewer_score) and "AI score" columns
 //     per-category k    → s.rev?.[k]     (shows '—' if absent)
 //   For the Cutoff histogram (score-based partitioning), we use s.ai?.overall
 //   exactly as the previous AdminGate1Review.jsx did.
@@ -128,7 +130,20 @@ const WIRE_NEEDS_RATIONALE = new Set(["on_hold", "rejected", "waitlisted"]);
 // ── Small helpers ──────────────────────────────────────────────────────────
 function revScore(s) {
   // Reviewer overall if available (detail-loaded rows), else AI overall.
+  // Only for the labelled Variant A card — tables use the two below so a
+  // column never mixes reviewer and AI scores.
   const v = s?.rev?.overall ?? s?.ai?.overall ?? null;
+  return typeof v === "number" ? v : null;
+}
+
+// Weighted reviewer score (the list's reviewer_score) — null when none.
+function reviewerScoreOf(s) {
+  const v = s?.rev?.overall;
+  return typeof v === "number" ? v : null;
+}
+
+function aiScoreOf(s) {
+  const v = s?.ai?.overall;
   return typeof v === "number" ? v : null;
 }
 
@@ -241,10 +256,15 @@ function GateReviewStack({ items, reload, goDetail }) {
     let alive = true;
     loadDetail(s.track, s.id)
       .then(d => { if (alive) setDetailCache(prev => ({ ...prev, [s.id]: d ?? false })); })
-      .catch(e => { console.error("AdminGate1: loadDetail failed", e); });
+      .catch(e => {
+        console.error("AdminGate1: loadDetail failed", e);
+        if (alive) setDetailCache(prev => ({ ...prev, [s.id]: false }));
+      });
     return () => { alive = false; };
   }, [s?.id, s?.track]); // eslint-disable-line react-hooks/exhaustive-deps
   const sH = (s && detailCache[s.id]) ? { ...s, ...detailCache[s.id] } : s;
+  // Reviews not fetched yet for this app (settled = an entry, even `false`).
+  const reviewsLoading = !!s && !(s.id in detailCache);
 
   const goto = (next) => {
     setIdx(Math.max(0, Math.min(total - 1, next)));
@@ -371,7 +391,7 @@ function GateReviewStack({ items, reload, goDetail }) {
               onViewFullApplication={() => goDetail && goDetail(s.id, s.track, "gate1", seq)}
             />
             <div style={{ marginTop: 16 }}>
-              <ComparativeReviewModel startup={sH} />
+              <ComparativeReviewModel startup={sH} loading={reviewsLoading} />
             </div>
           </div>
         </div>
@@ -571,7 +591,8 @@ function GateReviewBatchDecision({ items, reload, goDetail }) {
           <tr>
             <th>Startup</th>
             <th>Batch</th>
-            <th>Score</th>
+            <th>Reviewer score</th>
+            <th>AI score</th>
             <th>Flags</th>
             <th style={{ width: 280, textAlign: "center" }}>Draft Decision</th>
           </tr>
@@ -579,14 +600,15 @@ function GateReviewBatchDecision({ items, reload, goDetail }) {
         <tbody>
           {filtered.length === 0 ? (
             <tr>
-              <td colSpan="5" style={{ textAlign: "center", padding: "32px", color: "var(--ink-dim)", fontFamily: "var(--font-serif)", fontSize: 16 }}>
+              <td colSpan="6" style={{ textAlign: "center", padding: "32px", color: "var(--ink-dim)", fontFamily: "var(--font-serif)", fontSize: 16 }}>
                 No pending evaluations found in this batch.
               </td>
             </tr>
           ) : (
             filtered.map((s) => {
               const draft = draftDecisions[s.id];
-              const score = revScore(s);
+              const score = reviewerScoreOf(s);
+              const ai    = aiScoreOf(s);
               return (
                 <tr
                   key={s.id}
@@ -601,7 +623,8 @@ function GateReviewBatchDecision({ items, reload, goDetail }) {
                     <div style={{ color: "var(--ink-dim)", fontSize: 11, marginTop: 2 }}>{s.domain}</div>
                   </td>
                   <td className="os-mono os-text-sm">{batchNamesOf(s).join(", ")}</td>
-                  <td className="num"><b>{score != null ? score.toFixed(1) : "—"}</b></td>
+                  <td className="num" title="Weighted reviewer score"><b>{score != null ? score.toFixed(1) : "—"}</b></td>
+                  <td className="num os-text-soft" title="AI screening score">{ai != null ? ai.toFixed(1) : "—"}</td>
                   <td>
                     {s.flags && s.flags.length > 0 ? (
                       <span className="os-chip red" style={{ fontSize: 11, padding: "2px 6px" }}>⚐ {s.flags.length} flag{s.flags.length > 1 ? "s" : ""}</span>
@@ -671,9 +694,13 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
     return [...startups].sort((a, b) => {
       let valA, valB;
       if (sortCol === "name")          { valA = a.name || ""; valB = b.name || ""; }
-      else if (sortCol === "sub")      { valA = dateOf(a); valB = dateOf(b); }
+      else if (sortCol === "sub")      {
+        valA = dateOf(a); valB = dateOf(b);
+        if (!valA || !valB) return (!valA) - (!valB);   // undated rows last, both directions
+      }
       else if (sortCol === "batch")    { valA = a.batch || "Unassigned"; valB = b.batch || "Unassigned"; }
-      else if (sortCol === "score")    { valA = revScore(a) ?? -1; valB = revScore(b) ?? -1; }
+      else if (sortCol === "score")    { valA = reviewerScoreOf(a) ?? -1; valB = reviewerScoreOf(b) ?? -1; }
+      else if (sortCol === "ai")       { valA = aiScoreOf(a) ?? -1; valB = aiScoreOf(b) ?? -1; }
       else if (sortCol === "flags")    { valA = a.flags ? a.flags.length : 0; valB = b.flags ? b.flags.length : 0; }
       else if (sortCol === "adminDecision") { valA = a.g1 || ""; valB = b.g1 || ""; }
       if (valA < valB) return sortAsc ? -1 : 1;
@@ -743,7 +770,8 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
             {renderHeader("Startup", "name")}
             {renderHeader(hasDecidedAt ? "Decided" : "Submitted", "sub")}
             {renderHeader("Batch", "batch")}
-            {renderHeader("Score", "score")}
+            {renderHeader("Reviewer score", "score")}
+            {renderHeader("AI score", "ai")}
             {renderHeader("Flags", "flags")}
             {renderHeader("Admin Decision", "adminDecision")}
             <th>Action</th>
@@ -752,14 +780,15 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
         <tbody>
           {sortedStartups.length === 0 ? (
             <tr>
-              <td colSpan="7" style={{ textAlign: "center", padding: "32px", color: "var(--ink-dim)", fontFamily: "var(--font-serif)", fontSize: 16 }}>
+              <td colSpan="8" style={{ textAlign: "center", padding: "32px", color: "var(--ink-dim)", fontFamily: "var(--font-serif)", fontSize: 16 }}>
                 No decisions recorded in history yet.
               </td>
             </tr>
           ) : (
             sortedStartups.map((s) => {
               const isEditing = editingId === s.id;
-              const score     = revScore(s);
+              const score     = reviewerScoreOf(s);
+              const ai        = aiScoreOf(s);
               const handleRowClick = (e) => {
                 if (e.target.closest("button") || e.target.closest("a") || isEditing) return;
                 if (goDetail) goDetail(s.id, s.track, "gate1", seq);
@@ -772,7 +801,8 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
                   </td>
                   <td className="os-mono os-text-sm">{dateOf(s) || "—"}</td>
                   <td className="os-mono os-text-sm">{batchNamesOf(s).join(", ")}</td>
-                  <td className="num"><b>{score != null ? score.toFixed(1) : "—"}</b></td>
+                  <td className="num" title="Weighted reviewer score"><b>{score != null ? score.toFixed(1) : "—"}</b></td>
+                  <td className="num os-text-soft" title="AI screening score">{ai != null ? ai.toFixed(1) : "—"}</td>
                   <td>
                     {s.flags && s.flags.length > 0 ? (
                       <span className="os-chip red" style={{ fontSize: 11, padding: "2px 6px" }}>⚐ {s.flags.length} flag{s.flags.length > 1 ? "s" : ""}</span>

@@ -5,15 +5,12 @@
 // LIVE: user list fetched from GET /admin/users via adminApi.listUsers().
 //        Refetches after every mutation attempt.
 //
-// PREVIEW (badge on controls, not whole screen):
-//   - Invite Member modal → create-user call uses adminApi.createUser() but
-//     the multi-role payload may not match the single-role backend exactly.
-//     The "Invite Member" button and modal carry a <PreviewBadge />.
-//   - Edit roles → adminApi.grantRole / revokeRole per delta. These endpoints
-//     are stubs in Session 2 backend and may 404. The "Edit" button and
-//     "Save Permissions" button carry a <PreviewBadge />.
-//   - Delete → no backend endpoint exists yet. Delete button carries a
-//     <PreviewBadge /> and shows an alert (no-op).
+// LIVE writes: Invite Member → adminApi.createUser (POST /admin/users);
+//   Edit roles → adminApi.grantRole / revokeRole per delta.
+//   Delete → no backend endpoint; shows an alert (no-op).
+//
+// Role tiles count EVERY account per role (GET /admin/users `role_counts`);
+// an older backend without it falls back to the loaded page, labelled so.
 //
 // No global OS_DATA singleton calls used anywhere.
 
@@ -22,7 +19,6 @@ import { adminApi } from "../../../../lib/adminApi";
 import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { generateBasicPassword } from "../helpers/adminHelpers";
 import { PageHead, Chip } from "../shell/osAtoms";
-import { PreviewBadge } from "../../../../components/admin/PreviewBadge";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -80,6 +76,8 @@ export function AdminRoles() {
   // exact `total`). An older backend ignores offset and reports total = rows.
   const [offset, setOffset] = useState(0);
   const [serverTotal, setServerTotal] = useState(null);
+  // Global distinct-account count per role (lowercase keys); null = older backend.
+  const [serverRoleCounts, setServerRoleCounts] = useState(null);
 
   const refetch = () => setRefetchTick(t => t + 1);
 
@@ -94,6 +92,7 @@ export function AdminRoles() {
           const raw = data?.users ?? (Array.isArray(data) ? data : []);
           setUsers(raw.map(normaliseUser));
           setServerTotal(typeof data?.total === 'number' ? data.total : null);
+          setServerRoleCounts(data?.role_counts && typeof data.role_counts === 'object' ? data.role_counts : null);
         }
       } catch (err) {
         if (!cancelled) setFetchErr(err?.message || "Couldn't load users.");
@@ -151,17 +150,21 @@ export function AdminRoles() {
   }, [filteredUsers, sortCol, sortAsc]);
 
   // ── Stats ─────────────────────────────────────────────────────────────────
-  // Real account count from the backend; the role tiles below count the
-  // loaded page only (labelled so when the page is partial).
+  // Real account count from the backend. Role tiles use the backend's global
+  // per-role counts; without them they count the loaded page (labelled so).
   const totalUsers = Math.max(serverTotal ?? 0, offset + users.length);
   const partialPage = totalUsers > users.length;
   const hasNext = offset + users.length < totalUsers && users.length > 0;
-  const roleCounts = { Reviewer: 0, Jury: 0, Leadership: 0, Founder: 0 };
+  const roleCounts = { Reviewer: 0, Jury: 0, Leadership: 0, Founder: 0, Applicant: 0 };
   let multiRoleCount = 0;
   users.forEach(u => {
     u.roles.forEach(r => { if (roleCounts[r] !== undefined) roleCounts[r]++; });
     if (u.roles.length > 1) multiRoleCount++;
   });
+  const tilesPageScoped = !serverRoleCounts && partialPage;
+  if (serverRoleCounts) {
+    for (const k of Object.keys(roleCounts)) roleCounts[k] = serverRoleCounts[k.toLowerCase()] ?? 0;
+  }
 
   // ── Add-user modal (PREVIEW — create API expects single role) ─────────────
   const [showAddModal, setShowAddModal]     = useState(false);
@@ -263,7 +266,6 @@ export function AdminRoles() {
           >
             + Invite Member
           </button>,
-          <PreviewBadge key="preview-add" />,
         ]}
       />
 
@@ -274,12 +276,12 @@ export function AdminRoles() {
           { key: 'reviewer',   label: 'Reviewers',     val: roleCounts.Reviewer, color: 'var(--accent)',      sub: 'Assigned to batches' },
           { key: 'jury',       label: 'Jury Members',  val: roleCounts.Jury,     color: 'var(--brand-green)', sub: 'Evaluation panel'    },
           { key: 'leadership', label: 'Leadership',    val: roleCounts.Leadership,color:'var(--brand-violet)','sub': 'Admins & Managers'  },
-          { key: 'founder',    label: 'Founders',      val: roleCounts.Founder,  color: 'var(--brand-amber)', sub: 'Startup applicants'  },
+          { key: 'applicant',  label: 'Applicants',    val: roleCounts.Applicant, color: 'var(--brand-amber)', sub: roleCounts.Founder ? `Startup applicants · ${roleCounts.Founder} founder${roleCounts.Founder === 1 ? '' : 's'}` : 'Startup applicants' },
         ].map(({ key, label, val, color, sub }) => (
           <div key={key} data-testid={`roles-kpi-${key}`} className="os-card soft" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--ink-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
             <span style={{ fontSize: 30, fontWeight: 400, fontFamily: 'var(--font-serif)', color }}>{val}</span>
-            <span style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{key !== 'total' && partialPage ? `${sub} · on this page` : sub}</span>
+            <span style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{key !== 'total' && tilesPageScoped ? `${sub} · on this page` : sub}</span>
           </div>
         ))}
       </div>
@@ -453,7 +455,7 @@ export function AdminRoles() {
           <div className="os-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
             <div className="os-modal-head">
               <div className="os-modal-title" style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>
-                Invite Member <PreviewBadge />
+                Invite Member
               </div>
               <button className="os-close-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--ink-dim)' }} onClick={() => setShowAddModal(false)}>×</button>
             </div>
@@ -534,7 +536,7 @@ export function AdminRoles() {
           <div className="os-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
             <div className="os-modal-head">
               <div className="os-modal-title" style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>
-                Edit User Access <PreviewBadge />
+                Edit User Access
               </div>
               <button className="os-close-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--ink-dim)' }} onClick={() => setEditingUser(null)}>×</button>
             </div>

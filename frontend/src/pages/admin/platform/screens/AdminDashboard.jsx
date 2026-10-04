@@ -21,10 +21,17 @@ const presetIndustry = (go, name) => {
 };
 
 // ─── FunnelRow ────────────────────────────────────────────────────────────────
+// Bar width in % of the row, proportional to count. A non-zero count gets a
+// thin visible floor only — a large floor (was 7%) drew every value under
+// ~42/605 at the same width and erased their order.
+export function funnelBarWidth(count, maxCount) {
+  if (!count || !(maxCount > 0)) return 0;
+  return Math.max((count / maxCount) * 100, 0.4);
+}
+
 function FunnelRow({ label, sublabel, count, maxCount, filledColor = '#1f0a8a' }) {
-  const percent = maxCount > 0 ? (count / maxCount) * 100 : 0;
   const isZero = count === 0;
-  const filled = isZero ? 0 : Math.max(percent, 7);
+  const filled = funnelBarWidth(count, maxCount);
   return (
     <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 18 }}>
       <div style={{ flex: 1, position: 'relative', height: 30, background: '#f0f0f3', borderRadius: 3, overflow: 'hidden' }}>

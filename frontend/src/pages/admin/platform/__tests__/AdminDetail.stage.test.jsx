@@ -4,17 +4,21 @@ import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
+// IC documents served to the detail (ADM-20: Accepted needs every memo signed).
+let IC_DOCS = [];
 vi.mock("../../../../hooks/useAdminData", () => ({
   loadDetail: vi.fn(),
-  useAdminData: () => ({ data: { reviewers: [
-    { id: "r1", name: "R1", weight: 2 }, { id: "r2", name: "R2", weight: 1 },
-  ] }, loading: false, error: null, reload: vi.fn() }),
+  useAdminData: (resource) => (resource === "icDocuments"
+    ? { data: { documents: IC_DOCS }, loading: false, error: null, reload: vi.fn() }
+    : { data: { reviewers: [
+      { id: "r1", name: "R1", weight: 2 }, { id: "r2", name: "R2", weight: 1 },
+    ] }, loading: false, error: null, reload: vi.fn() }),
 }));
 vi.mock("../../../../lib/adminPlatformApi", () => ({ adminPlatformApi: { decide: vi.fn() } }));
 vi.mock("../../../../lib/leadershipApi", () => ({ leadershipApi: {} }));
 
 import { loadDetail } from "../../../../hooks/useAdminData";
-import { AdminDetail, weightedReviewerScore } from "../screens/AdminDetail";
+import { AdminDetail, weightedReviewerScore, weightedCategoryMean } from "../screens/AdminDetail";
 
 const APP = { id: "a1", track: "tir", applicationId: "TIR-1", name: "Stage App", founders: [], domain: "X",
   stage: "Lab", sub: "2026-06-01", ai: {}, reviews: [], flags: [], statusHistory: [], assignedReviewers: [] };
@@ -65,5 +69,51 @@ describe("ADM-20 stage-aware header + decide panel", () => {
     mount({ chip: "JURY REVIEW", adminDecision: "APPROVED" });
     await screen.findByRole("heading", { level: 2, name: /Stage App/ });
     expect(screen.queryByRole("button", { name: "Apply decision" })).toBeNull();
+  });
+});
+
+describe("ADM-20 final-round chip follows IC sign-off (lib/selection)", () => {
+  const doc = (signed) => ({ application_id: "a1", track: "tir", signed, superseded_at: null });
+  it("jury_review with an unsigned memo reads Final pending, not Accepted", async () => {
+    IC_DOCS = [doc(true), doc(false)];
+    mount({ chip: "JURY REVIEW", adminDecision: "APPROVED" });
+    await screen.findByRole("heading", { level: 2, name: /Stage App/ });
+    const chip = screen.getByTestId("detail-status-chip");
+    expect(chip.textContent).toMatch(/Final pending/i);
+    expect(chip.textContent).not.toMatch(/Accepted/i);
+    expect(screen.getByTestId("decision-summary").textContent).not.toMatch(/^Accepted/);
+  });
+  it("jury_review with no memo is Final pending too", async () => {
+    IC_DOCS = [];
+    mount({ chip: "JURY REVIEW", adminDecision: "APPROVED" });
+    await screen.findByRole("heading", { level: 2, name: /Stage App/ });
+    expect(screen.getByTestId("detail-status-chip").textContent).toMatch(/Final pending/i);
+  });
+  it("jury_review with every current memo signed reads Accepted", async () => {
+    IC_DOCS = [doc(true), doc(true)];
+    mount({ chip: "JURY REVIEW", adminDecision: "APPROVED" });
+    await screen.findByRole("heading", { level: 2, name: /Stage App/ });
+    expect(screen.getByTestId("detail-status-chip").textContent).toMatch(/Accepted/i);
+  });
+});
+
+describe("detail category means use the same reviewer weights as the overall", () => {
+  const rv = (reviewerId, v, extra = {}) => ({ reviewerId, problem: v, solution: v, tech: v,
+    founders: v, commit: v, overall: v, submittedAt: "2026-07-01", ...extra });
+  it("weights each category by reviewer weight and skips drafts", () => {
+    const reviews = [rv("r1", 9), rv("r2", 5), rv("r3", 5), rv("r4", 1, { submittedAt: null })];
+    // (3*9 + 1*5 + 1*5) / 5 = 7.4 — drafts (submittedAt null) never count.
+    expect(weightedCategoryMean(reviews, "problem", { r1: 3, r2: 1, r3: 1 })).toBeCloseTo(7.4, 5);
+  });
+  it("is null when nothing scored that category", () => {
+    expect(weightedCategoryMean([{ reviewerId: "r1" }], "tech", {})).toBeNull();
+  });
+  it("detail categories never fall below a weighted overall built from them", async () => {
+    mount({ chip: "EVALUATED", reviewerScore: 7.4, reviewerWeights: { x1: 3, x2: 1, x3: 1 },
+      reviews: [rv("x1", 9), rv("x2", 5), rv("x3", 5)] });
+    await screen.findByRole("heading", { level: 2, name: /Stage App/ });
+    // every category reads the weighted 7.4, same as the overall
+    expect(screen.getAllByText("7.4").length).toBeGreaterThanOrEqual(6);
+    expect(screen.queryByText("6.3")).toBeNull(); // the old unweighted mean
   });
 });

@@ -69,7 +69,8 @@ const STATUSES = [
   { id: 'hold', label: 'Hold', color: '#b7a06a' },
   { id: 'offered', label: 'Offered', color: '#242424' },
   { id: 'onboarded', label: 'Onboarded', color: '#242424' },
-  { id: 'not-selected', label: 'Not selected', color: '#242424' },
+  // Same label as the REJECTED status chip in the rows (CHIP_META).
+  { id: 'not-selected', label: 'Rejected', color: '#242424' },
   { id: 'waitlisted', label: 'Waitlisted', color: '#242424' },
   { id: 'withdrawn', label: 'Withdrawn', color: '#242424' },
 ];
@@ -373,8 +374,10 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         valA = a.batch || 'Unassigned';
         valB = b.batch || 'Unassigned';
       } else if (sortCol === 'sub') {
-        valA = a.sub || '';
-        valB = b.sub || '';
+        // Undated rows (no submitted_at) sort last in both directions.
+        if (!a.sub || !b.sub) return (!a.sub) - (!b.sub);
+        valA = a.sub;
+        valB = b.sub;
       } else if (sortCol === 'id') {
         [valA, valB] = [idSortKey(a), idSortKey(b)];
         const c = valA[0] < valB[0] ? -1 : valA[0] > valB[0] ? 1 : valA[1] - valB[1];
@@ -807,13 +810,20 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                   >
                     All
                   </button>
+                  {(!readOnly || batchCounts.Unassigned > 0 || batchFilter === 'Unassigned') && (
                   <button
                     className={`lp-filter-btn${batchFilter === 'Unassigned' ? ' active' : ''}`}
                     onClick={() => setBatchFilter('Unassigned')}
                   >
                     Unassigned<span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{batchCounts.Unassigned}</span>
                   </button>
-                  {getAvailableBatches().map(b => (
+                  )}
+                  {/* Read-only tabs (Rejected) offer only batches that have rows
+                      here; the Applications tab keeps empty batches so they can
+                      still be renamed / deleted. */}
+                  {getAvailableBatches()
+                    .filter(b => !readOnly || batchCounts[b] > 0 || batchFilter === b)
+                    .map(b => (
                     <div key={b} className={`lp-filter-btn-group${batchFilter === b ? ' active' : ''}`}>
                       <button
                         className={`lp-filter-btn${batchFilter === b ? ' active' : ''}`}
@@ -1062,7 +1072,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                     </div>
                   )}
                 </td>
-                <td>{s.sub}</td>
+                <td>{s.sub || '—'}</td>
                 <td className="os-mono os-text-xs">{relabelDisplayId(s.applicationId) || s.id}</td>
               </tr>
             );

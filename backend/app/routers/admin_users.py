@@ -381,7 +381,22 @@ async def list_users(
         if role and role not in user_roles:
             continue
         rows.append({**p, "roles": user_roles})
-    return {"users": rows, "total": total}
+    return {"users": rows, "total": total, "role_counts": _role_counts(client)}
+
+
+def _role_counts(client) -> dict[str, int]:
+    """Distinct accounts per role across ALL user_roles (paginated past the
+    1000-row cap) — the User Roles tiles, which must not count one page."""
+    users_by_role: dict[str, set[str]] = {}
+    try:
+        grants = admin_query._fetch_all(
+            lambda: client.table("user_roles").select("user_id, role"))
+    except Exception:
+        return {}
+    for r in grants:
+        if r.get("role") and r.get("user_id"):
+            users_by_role.setdefault(r["role"], set()).add(r["user_id"])
+    return {role: len(ids) for role, ids in users_by_role.items()}
 
 
 _ID_CHUNK = 200
