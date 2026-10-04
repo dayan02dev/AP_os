@@ -171,8 +171,9 @@ def test_classify_industry_is_case_insensitive():
     assert bucket_id == "robotics"
 
 
-def test_phase_1_statuses_has_thirteen_entries():
-    assert len(PHASE_1_STATUSES) == 13
+def test_phase_1_statuses_has_fifteen_entries():
+    # 13 + screening_failed + on_hold, so status_counts covers every live status
+    assert len(PHASE_1_STATUSES) == 15
 
 
 def test_phase_1_statuses_includes_jury_review():
@@ -376,19 +377,25 @@ def test_fetch_app_ids_by_project_name_never_raises(monkeypatch):
 
 
 def test_get_stats_funnel_and_score_sample(client, _clear_overrides, monkeypatch):
-    """The /stats funnel reports all six stages from DB counts (drafted +
-    in_review wired to real data), and bundles the AI score sample for the
-    histogram."""
-    # 2 drafts per track (status='draft'), some submitted/shortlisted.
-    def _count_by_status(track, status_id):
-        return {"draft": 2, "shortlisted": 1, "interview": 1, "offered": 1}.get(
-            status_id, 0
-        )
+    """The /stats funnel reports every stage from one projection of the app
+    rows (drafted/started/in_review/advanced/decided), and bundles the AI
+    score sample for the histogram."""
+    from tests.fixtures.fake_supabase import FakeSupabase
 
-    monkeypatch.setattr(stats, "count_apps_by_status", _count_by_status)
-    monkeypatch.setattr(stats, "count_apps_total", lambda track: 30)
+    def _row(i, status, user=None):
+        return {"id": f"t{i}", "status": status, "user_id": user or f"u{i}"}
+
+    sb = FakeSupabase({
+        "tir_applications": [
+            _row(1, "draft", "dup"), _row(2, "draft"), _row(3, "under_review"),
+            _row(4, "evaluated"), _row(5, "jury_review"), _row(6, "offered"),
+        ],
+        "sip_applications": [{**_row(7, "draft", "dup"), "id": "s7"},
+                             {**_row(8, "under_review"), "id": "s8"}],
+        "admin_decisions": [], "ic_documents": [], "ai_screening": [],
+    })
+    monkeypatch.setattr(stats, "get_admin_client", lambda: sb)
     monkeypatch.setattr(stats, "count_profiles", lambda: 288)
-    monkeypatch.setattr(stats, "count_ai_screening_rows", lambda: 47)
     monkeypatch.setattr(stats, "fetch_ai_score_overalls", lambda: [5.0, 6.0, 7.0])
 
     app.dependency_overrides[get_current_user] = _override_user(["leadership"])
@@ -400,11 +407,12 @@ def test_get_stats_funnel_and_score_sample(client, _clear_overrides, monkeypatch
 
     funnel = body["funnel"]
     assert funnel["profiles"] == 288
-    assert funnel["drafted"] == 4          # 2 per track × 2 tracks
-    assert funnel["submitted"] == 60       # 30 per track × 2 tracks
-    assert funnel["in_review"] == 47       # screened-row count drives this
-    assert funnel["advanced"] == 4         # (shortlisted+interview) × 2 tracks
-    assert funnel["decided"] == 2          # offered × 2 tracks
+    assert funnel["started"] == 7          # distinct users; "dup" owns 2 drafts
+    assert funnel["drafted"] == 3
+    assert funnel["submitted"] == 5
+    assert funnel["in_review"] == 2        # status under_review
+    assert funnel["advanced"] == 2         # jury_review + offered passed gate 1
+    assert funnel["decided"] == 1          # offered
     assert body["ai_score_overalls"] == [5.0, 6.0, 7.0]
 
 

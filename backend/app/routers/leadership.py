@@ -42,98 +42,83 @@ router = APIRouter(prefix="/leadership", tags=["leadership"])
 async def get_stats() -> dict:
     """Bundled leadership-dashboard stats.
 
-    All aggregation happens at the DB (count(*) per status × track, plus a
-    single column projection on `ai_screening.score_overall` for the mean).
-    The only Python iteration is keyword classification of `basic_org` into
-    industry buckets — that's string derivation, not stats math.
+    One projection of every application row (id/status/moved_to_track) feeds
+    the status counts, totals, funnel and the gate-aware `pipeline_breakdown`,
+    so every number on the dashboard is derived from the same set and sums to
+    the same non-draft total. Status counts are RAW (no decision overlay) and
+    bucketed by EFFECTIVE track.
     """
-    # ─── Status counts (per status × track, summed across tracks) ─────
-    # Two count queries per status (one per track), summed in Python. That's
-    # not "iterating rows", it's summing two integers per status cell.
-    per_status_total: dict[str, int] = {}
+    apps = stats.fetch_app_status_rows()
+    non_draft = [a for a in apps if a.get("status") and a.get("status") != "draft"]
+
+    # ─── Status counts (per status × effective track) ─────────────────
     per_status_per_track: dict[str, dict[str, int]] = {}
-    for status_id, _label in stats.PHASE_1_STATUSES:
-        per_track = {
-            track: stats.count_apps_by_status(track, status_id)
-            for track in stats.TRACKS
-        }
-        per_status_per_track[status_id] = per_track
-        per_status_total[status_id] = sum(per_track.values())
-    stats.overlay_admin_decisions(per_status_per_track, per_status_total)
+    for a in non_draft:
+        eff = a.get("moved_to_track") or a["track"]
+        bucket = per_status_per_track.setdefault(a["status"], {})
+        bucket[eff] = bucket.get(eff, 0) + 1
+    per_status_total = {s: sum(v.values()) for s, v in per_status_per_track.items()}
 
     status_counts = [
-        {"id": status_id, "label": label, "n": per_status_total[status_id]}
+        {"id": status_id, "label": label, "n": per_status_total.get(status_id, 0)}
         for status_id, label in stats.PHASE_1_STATUSES
     ]
 
-    # Same numbers split by track. Additive — `status_counts` above is
-    # unchanged — and consumed by the admin tab badges, which need TIR and VIP
-    # counts separately (the jury stage now has one tab per track).
+    # Same numbers split by track (consumed by the admin tab badges).
     status_counts_by_track = [
         {"id": status_id, "label": label,
-         **{track: per_status_per_track[status_id].get(track, 0) for track in stats.TRACKS}}
+         **{track: per_status_per_track.get(status_id, {}).get(track, 0)
+            for track in stats.TRACKS}}
         for status_id, label in stats.PHASE_1_STATUSES
     ]
+
+    # ─── Gate-aware breakdown (contract C1) ──────────────────────────
+    pipeline = stats.build_pipeline_breakdown(
+        non_draft, stats.fetch_decision_rows(), stats.fetch_ic_rows(),
+    )
+    stages = pipeline["stages"]
 
     # ─── Totals card ──────────────────────────────────────────────────
     profiles_signed_up = stats.count_profiles()
-    tir_count = stats.count_apps_total("tir")
-    sip_count = stats.count_apps_total("sip")
-    apps_submitted = tir_count + sip_count
-
-    # Draft apps (started but not submitted) — feeds the funnel's "drafted"
-    # stage. count_apps_total above counts non-draft, so we query draft
-    # separately per track.
-    drafted = sum(
-        stats.count_apps_by_status(track, "draft") for track in stats.TRACKS
-    )
-
-    # Apps that have been AI-screened (have an ai_screening row), regardless
-    # of whether their status was advanced past `submitted`. Drives the
-    # funnel's "in review" stage off real data.
-    screened = stats.count_ai_screening_rows()
-
-    advanced_past_review = sum(
-        per_status_total[s] for s in stats.ADVANCED_PAST_REVIEW
-    )
-    onboarded = per_status_total.get("onboarded", 0)
+    tir_count = pipeline["by_track"]["tir"]["total"]
+    sip_count = pipeline["by_track"]["sip"]["total"]
+    apps_submitted = pipeline["total"]
+    drafted = len(apps) - len(non_draft)
+    # Distinct applicants who started anything (draft or submitted) — the
+    # funnel's narrowing "started" stage; `drafted` counts rows, and one user
+    # can hold a TIR and a VIP draft.
+    started = len({a.get("user_id") or (a["track"], a["id"]) for a in apps})
 
     # AI mean — one projection query, one Python mean. Returns None if no
     # screening rows exist yet so the frontend can render "–" instead of 0.
     scores = stats.fetch_ai_score_overalls()
     avg_ai_score: float | None = (sum(scores) / len(scores)) if scores else None
+    ai_components = stats.fetch_ai_component_stats(
+        {(a["track"], a["id"]) for a in non_draft}
+    )
 
     totals = {
         "profiles_signed_up":   profiles_signed_up,
         "apps_submitted":       apps_submitted,
         "tir_count":            tir_count,
         "sip_count":            sip_count,
-        "advanced_past_review": advanced_past_review,
-        "onboarded":            onboarded,
+        "advanced_past_review": pipeline["gate1_selected"],
+        "onboarded":            stages["onboarded"],
         "avg_ai_score":         avg_ai_score,
     }
 
     # ─── Funnel ───────────────────────────────────────────────────────
-    # Six-stage pipeline reach, all from real Supabase counts:
-    #   profiles  — everyone signed up
-    #   drafted   — apps still in `draft` (started, not submitted)
-    #   submitted — non-draft apps (reached submit)
-    #   in_review — apps with an ai_screening row (reached AI review). Uses
-    #               the row count rather than status so it stays correct even
-    #               when the screener wrote scores without advancing status.
-    #   advanced  — shortlisted + interview (by status)
-    #   decided   — offered + onboarded (by status)
-    status_bucket = {
-        bucket: sum(per_status_total.get(s, 0) for s in statuses)
-        for bucket, statuses in stats.FUNNEL_BUCKETS.items()
-    }
+    #   in_review — apps currently under review (status under_review)
+    #   advanced  — passed the 1st gate (pipeline gate1_selected)
+    #   decided   — final selected + offered + onboarded
     funnel = {
         "profiles":  profiles_signed_up,
+        "started":   started,
         "drafted":   drafted,
         "submitted": apps_submitted,
-        "in_review": max(screened, status_bucket.get("in_review", 0)),
-        "advanced":  status_bucket.get("advanced", 0),
-        "decided":   status_bucket.get("decided", 0),
+        "in_review": stages["under_review"],
+        "advanced":  pipeline["gate1_selected"],
+        "decided":   stages["final_selected"] + stages["offered"] + stages["onboarded"],
     }
 
     # Industry breakdown moved to GET /leadership/industry-categories so the
@@ -145,10 +130,12 @@ async def get_stats() -> dict:
         "funnel":            funnel,
         "status_counts":     status_counts,
         "status_counts_by_track": status_counts_by_track,
+        "pipeline_breakdown": pipeline,
         # Full list of AI overall scores (0–10) across all screened apps so
         # the dashboard can render the score-distribution histogram from the
         # complete set, not a capped page of the applications list.
         "ai_score_overalls": scores,
+        **ai_components,
     }
 
 

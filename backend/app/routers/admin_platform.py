@@ -993,16 +993,21 @@ async def get_admin_stats() -> dict[str, Any]:
     Reuses the leadership get_stats route logic for totals/funnel/status_counts/
     ai_score_overalls, then layers in a `decisions` dict counting admin_decisions
     rows by their decision value (shortlisted/on_hold/rejected/waitlisted).
+
+    `decisions` counts decision ROWS (an app decided at both gates counts
+    twice) — the per-app gate split, incl. `rejected_total`, is in
+    `pipeline_breakdown`.
     """
     from .leadership import get_stats as _leadership_get_stats
 
     # Call the leadership stats aggregation (same async route fn, no required args).
     base: dict[str, Any] = await _leadership_get_stats()
 
-    # Count admin_decisions by decision value — one bulk fetch, grouped in Python.
-    sb = admin_query.get_admin_client()
+    # Count admin_decisions by decision value — one paginated fetch, grouped in Python.
     try:
-        dec_rows = (sb.table("admin_decisions").select("decision").execute().data) or []
+        sb = admin_query.get_admin_client()
+        dec_rows = admin_query._fetch_all(
+            lambda: sb.table("admin_decisions").select("decision").order("id"))
     except Exception as exc:
         log.warning("admin_stats: admin_decisions fetch failed", extra={"err": str(exc)})
         dec_rows = []
