@@ -122,3 +122,10 @@ def test_role_filter_sees_roles_past_1000_rows(client, capped):
 def test_search_with_comma_and_parens_does_not_crash(client, capped):
     body = _get(client, "?search=a,b(c)")
     assert "users" in body
+
+
+def test_role_counts_are_global_distinct_users_per_role(client, capped):
+    """The User Roles tiles read these — every account, not the loaded page,
+    and past the 1000-row cap."""
+    body = _get(client, "?limit=200")
+    assert body["role_counts"] == {"applicant": 1250, "admin": 1, "reviewer": 2}

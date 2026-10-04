@@ -34,3 +34,37 @@ describe("AdminRoles total + paging", () => {
     expect(screen.queryByRole("button", { name: /Next/ })).toBeNull();
   });
 });
+
+describe("AdminRoles role tiles", () => {
+  it("count every account per role from the backend, incl. an Applicants tile", async () => {
+    adminApi.listUsers.mockResolvedValue({
+      users: [user(1), { ...user(2), roles: ["applicant"] }], total: 1250,
+      role_counts: { applicant: 1237, reviewer: 6, leadership: 5, jury: 1, admin: 3 },
+    });
+    render(<AdminRoles />);
+    await screen.findByText("User 1");
+    expect(screen.getByTestId("roles-kpi-reviewer").textContent).toMatch(/6/);
+    expect(screen.getByTestId("roles-kpi-leadership").textContent).toMatch(/5/);
+    expect(screen.getByTestId("roles-kpi-jury").textContent).toMatch(/1/);
+    const app = screen.getByTestId("roles-kpi-applicant");
+    expect(app.textContent).toMatch(/Applicants/i);
+    expect(app.textContent).toMatch(/1237/);
+    expect(screen.queryByText(/on this page/)).toBeNull();
+  });
+  it("page-scoped fallback counts applicants on an older backend", async () => {
+    adminApi.listUsers.mockResolvedValue({
+      users: [user(1), { ...user(2), roles: ["applicant"] }, { ...user(3), roles: ["applicant"] }],
+      total: 1250,
+    });
+    render(<AdminRoles />);
+    await screen.findByText("User 1");
+    expect(screen.getByTestId("roles-kpi-applicant").textContent).toMatch(/2/);
+    expect(screen.getAllByText(/on this page/).length).toBeGreaterThan(0);
+  });
+  it("no stale 'Preview — backend pending' badge", async () => {
+    adminApi.listUsers.mockResolvedValue({ users: [user(1)], total: 1 });
+    render(<AdminRoles />);
+    await screen.findByText("User 1");
+    expect(screen.queryByText(/backend pending/i)).toBeNull();
+  });
+});
