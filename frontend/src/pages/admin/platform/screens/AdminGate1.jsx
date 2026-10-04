@@ -256,10 +256,15 @@ function GateReviewStack({ items, reload, goDetail }) {
     let alive = true;
     loadDetail(s.track, s.id)
       .then(d => { if (alive) setDetailCache(prev => ({ ...prev, [s.id]: d ?? false })); })
-      .catch(e => { console.error("AdminGate1: loadDetail failed", e); });
+      .catch(e => {
+        console.error("AdminGate1: loadDetail failed", e);
+        if (alive) setDetailCache(prev => ({ ...prev, [s.id]: false }));
+      });
     return () => { alive = false; };
   }, [s?.id, s?.track]); // eslint-disable-line react-hooks/exhaustive-deps
   const sH = (s && detailCache[s.id]) ? { ...s, ...detailCache[s.id] } : s;
+  // Reviews not fetched yet for this app (settled = an entry, even `false`).
+  const reviewsLoading = !!s && !(s.id in detailCache);
 
   const goto = (next) => {
     setIdx(Math.max(0, Math.min(total - 1, next)));
@@ -386,7 +391,7 @@ function GateReviewStack({ items, reload, goDetail }) {
               onViewFullApplication={() => goDetail && goDetail(s.id, s.track, "gate1", seq)}
             />
             <div style={{ marginTop: 16 }}>
-              <ComparativeReviewModel startup={sH} />
+              <ComparativeReviewModel startup={sH} loading={reviewsLoading} />
             </div>
           </div>
         </div>

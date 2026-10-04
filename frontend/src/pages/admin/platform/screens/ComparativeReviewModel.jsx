@@ -28,7 +28,9 @@ const CRITERIA = [
   { key: 'commit', short: 'Commitment' },
 ];
 
-export function ComparativeReviewModel({ startup, reviewersById = {} }) {
+// `loading` — the startup's reviews are still being fetched: show that rather
+// than the empty "No reviewer evaluations" message.
+export function ComparativeReviewModel({ startup, reviewersById = {}, loading = false }) {
   const s = startup;
   if (!s) return null;
 
@@ -41,7 +43,9 @@ export function ComparativeReviewModel({ startup, reviewersById = {} }) {
         <h3 className="cem-title">Human Reviewers Consensus</h3>
       </div>
 
-      {reviews.length === 0 ? (
+      {loading && reviews.length === 0 ? (
+        <p className="os-text-dim os-text-sm">Loading reviewer evaluations…</p>
+      ) : reviews.length === 0 ? (
         <p className="os-text-dim os-text-sm">No reviewer evaluations submitted yet.</p>
       ) : (
         <div className="rv-grid">
