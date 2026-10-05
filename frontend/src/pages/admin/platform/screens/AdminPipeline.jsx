@@ -25,7 +25,7 @@ import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { Chip } from "../ui.jsx";
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
-import { relabelDisplayId, trackLabel } from "../../../../lib/trackLabel.js";
+import { relabelDisplayId, trackLabel, displayIdText } from "../../../../lib/trackLabel.js";
 import { chipLabel, chipStatusId, chipTone } from "../../../../lib/adminDataAdapter";
 import { RecoCell, aggregateReco } from "../../../../components/RecoCell";
 
@@ -1073,7 +1073,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                   )}
                 </td>
                 <td>{s.sub || '—'}</td>
-                <td className="os-mono os-text-xs">{relabelDisplayId(s.applicationId) || s.id}</td>
+                <td className="os-mono os-text-xs">{displayIdText(s.applicationId, s.movedToTrack) || s.id}</td>
               </tr>
             );
           })}

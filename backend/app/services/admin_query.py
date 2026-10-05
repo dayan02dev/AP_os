@@ -598,7 +598,9 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
         rs = review_stats.get(key) or {}
         item = {
             "id":               r["id"],
-            "applicationId":    stats.compose_display_id(eff, r.get("display_seq")),
+            # NATIVE prefix + native seq: an effective-track prefix collides
+            # with the other track's real ID (two "VIP-26255" rows).
+            "applicationId":    stats.compose_display_id(r["track"], r.get("display_seq")),
             "track":            eff,
             "native_track":     r["track"],
             "name":             name,
@@ -735,7 +737,7 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
         "also_in_track":        also_track,
         "moved_to_track":       app_row.get("moved_to_track"),
         "display_seq":          app_row.get("display_seq"),
-        "display_id":           stats.compose_display_id(eff, app_row.get("display_seq")),
+        "display_id":           stats.compose_display_id(track, app_row.get("display_seq")),
         "project_name":         (ai_screening or {}).get("project_name")
                                 or stats.derive_project_name(app_row),
         "founder": {

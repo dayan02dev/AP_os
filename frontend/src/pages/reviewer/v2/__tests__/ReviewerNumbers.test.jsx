@@ -93,6 +93,14 @@ describe("ReviewerQueue fixes", () => {
     expect(screen.getByText("RoboCo")).toBeInTheDocument();
   });
 
+  it("shows a moved app's native ID with a move marker in the ID column", () => {
+    const Q = [row({ id: "1", name: "Moved", applicationId: "TIR-26255", movedToTrack: "sip" }),
+               row({ id: "2", name: "Native", applicationId: "SIP-26255", track: "sip" })];
+    render(<ReviewerQueue onOpen={vi.fn()} queueAsync={mk(Q)} />);
+    expect(screen.getByText("TIR-26255 → VIP")).toBeInTheDocument();
+    expect(screen.getAllByText("VIP-26255").length).toBeGreaterThan(0);
+  });
+
   it("searches display IDs with or without the prefix (and VIP- for SIP-)", () => {
     const Q = [row({ id: "1", name: "Alpha", applicationId: "TIR-27061" }),
                row({ id: "2", name: "Beta", applicationId: "SIP-26623", track: "sip" })];
@@ -182,6 +190,7 @@ describe("history CSV export", () => {
   it("uses the effective track for a moved app", () => {
     const out = historyCsvRows([{ ...historyRows[0], track: "tir", movedToTrack: "sip" }]);
     expect(out[1][3]).toBe("VIP");
+    expect(out[1][1]).toBe("TIR-27061 (→ VIP)");
   });
 });
 

@@ -6,7 +6,7 @@
 
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
-import { relabelDisplayId } from "../../../lib/trackLabel.js";
+import { displayIdText } from "../../../lib/trackLabel.js";
 import { LoadingState, ErrorState, EmptyState, Chip } from "./ui.jsx";
 
 // Admin-decision buckets (backend reviewer_query._admin_decision, contract C5).
@@ -117,7 +117,7 @@ export default function ReviewerHistory({ onOpenEval }) {
                     <b>{h.name}</b>
                     {(h.applicationId || h.org) && (
                       <div style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 3, fontFamily: "var(--font-code)" }}>
-                        {[relabelDisplayId(h.applicationId), h.org].filter(Boolean).join(" · ")}
+                        {[displayIdText(h.applicationId, h.movedToTrack), h.org].filter(Boolean).join(" · ")}
                       </div>
                     )}
                   </td>

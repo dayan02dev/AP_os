@@ -2,7 +2,7 @@
 // (now removed) divergent AdminPipeline component so the ported screen + its
 // test can share it without depending on dead code.
 
-import { relabelDisplayId } from "../../../../lib/trackLabel.js";
+import { displayIdText } from "../../../../lib/trackLabel.js";
 
 function prettify(v) {
   if (!v) return "";
@@ -33,7 +33,7 @@ function csvCell(v) {
 
 export function buildPipelineCsv(rows) {
   const lines = (rows || []).map((r) => [
-    relabelDisplayId(r?.applicationId) || r?.id || "",
+    displayIdText(r?.applicationId, r?.moved_to_track, { csv: true }) || r?.id || "",
     r?.track === "sip" ? "VIP" : r?.track === "tir" ? "TIR" : r?.track ?? "",
     r?.name ?? "",
     r?.founder ?? "",

@@ -46,6 +46,16 @@ describe("buildPipelineCsv", () => {
     expect(row).toBe("42,VIP,Beta,,,,,,,,");
   });
 
+  it("keeps a moved app's native ID and marks the move", () => {
+    const csv = buildPipelineCsv([
+      { applicationId: "TIR-26255", track: "sip", native_track: "tir", moved_to_track: "sip", name: "M" },
+      { applicationId: "SIP-26255", track: "sip", name: "N" },
+    ]);
+    const [, moved, native] = csv.split("\r\n");
+    expect(moved.startsWith("TIR-26255 (→ VIP),VIP,M")).toBe(true);
+    expect(native.startsWith("VIP-26255,VIP,N")).toBe(true);
+  });
+
   it("quotes cells that contain commas or quotes", () => {
     const csv = buildPipelineCsv([
       { applicationId: "X", track: "tir", name: 'Foo, "Bar"', founder: "Z" },

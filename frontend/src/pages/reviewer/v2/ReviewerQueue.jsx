@@ -13,7 +13,7 @@
 
 import { useMemo, useRef } from "react";
 import { LoadingState, ErrorState, Chip } from "./ui.jsx";
-import { relabelDisplayId, trackLabel } from "../../../lib/trackLabel.js";
+import { relabelDisplayId, trackLabel, displayIdText } from "../../../lib/trackLabel.js";
 import { RecoBadge, RECO_LABEL } from "../../../components/RecoCell.jsx";
 import { useStickyState } from "../../../hooks/useStickyState.js";
 
@@ -405,7 +405,7 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
                     </span>
                   )}
                 </td>
-                <td style={{ fontFamily: "var(--font-code)", fontSize: 11, color: "var(--ink-dim)" }}>{relabelDisplayId(s.applicationId)}</td>
+                <td style={{ fontFamily: "var(--font-code)", fontSize: 11, color: "var(--ink-dim)" }}>{displayIdText(s.applicationId, s.movedToTrack)}</td>
               </tr>
             ))}
             {loading && (

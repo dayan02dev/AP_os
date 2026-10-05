@@ -14,7 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.jsx";
 import { leadershipApi } from "../../lib/leadershipApi.js";
 import { fmtRelative } from "../../lib/timeFmt.js";
-import { trackLabel, relabelDisplayId } from "../../lib/trackLabel.js";
+import { trackLabel, relabelDisplayId, displayIdText, movedMarker } from "../../lib/trackLabel.js";
 import AppDrawer from "./components/AppDrawer.jsx";
 import PortalSwitcher from "../../components/PortalSwitcher.jsx";
 import { RecoCell, RECO_LABEL, aggregateReco } from "../../components/RecoCell.jsx";
@@ -167,7 +167,7 @@ export function buildApplicationsCsv(rows, selectedKeys = null) {
   const lines = [header.map(csvCell).join(",")];
   for (const a of rows) {
     lines.push([
-      relabelDisplayId(a.display_id),
+      displayIdText(a.display_id, a.moved_to_track, { csv: true }),
       trackLabel(a.track),
       a.project_name || "",
       a.founder?.name || a.basic_full_name || "",
@@ -1251,11 +1251,11 @@ export default function LeadershipDashboard() {
                           {relabelDisplayId(a.display_id)} · {trackLabel(a.track)}
                           {a.moved_to_track && (
                             <span className="os-chip"
-                              title={`Moved from ${trackLabel(a.native_track || a.track)}`}
+                              title={`Moved from ${trackLabel(a.native_track || a.track)} to ${trackLabel(a.moved_to_track)}`}
                               style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.04em',
                                 background: '#fff4d6', border: '1px solid #e6c34d', color: '#8a6d00',
                                 borderRadius: 999, padding: '1px 6px', verticalAlign: 'middle' }}>
-                              {trackLabel(a.native_track || a.track).toUpperCase()} →
+                              {movedMarker(a.moved_to_track)}
                             </span>
                           )}
                         </div>
@@ -1298,7 +1298,7 @@ export default function LeadershipDashboard() {
                         <StageCell stage={rowStage(a, { selectedKeys })} />
                       </td>
                       <td>{fmtRelative(a.submitted_at || a.created_at)}</td>
-                      <td className="lp-id-col">{relabelDisplayId(a.display_id)}</td>
+                      <td className="lp-id-col">{displayIdText(a.display_id, a.moved_to_track)}</td>
                     </tr>
                   ))}
                 </tbody>

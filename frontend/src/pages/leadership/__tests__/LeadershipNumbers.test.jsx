@@ -220,6 +220,14 @@ describe("Applications — open review", () => {
 });
 
 describe("buildApplicationsCsv", () => {
+  it("writes a moved app's native ID with the move marker", () => {
+    const csv = buildApplicationsCsv([
+      row({ display_id: "TIR-26255", track: "sip", native_track: "tir", moved_to_track: "sip" }),
+    ]);
+    const [, line] = csv.replace("\ufeff", "").split("\r\n");
+    expect(line.startsWith("TIR-26255 (→ VIP),VIP,")).toBe(true);
+  });
+
   it("includes the reviewer columns and the shared stage label", () => {
     const csv = buildApplicationsCsv([
       row({ status: "rejected", gate2_decision: "rejected", reviewer_score: 6.25,

@@ -32,7 +32,7 @@ import { useAuth } from "../../../../hooks/useAuth.jsx";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { icDocumentsApi } from "../../../../lib/icDocumentsApi";
 import { stampSignature, formatSignedAt } from "../../../../lib/pdfSign";
-import { relabelDisplayId, trackLabel } from "../../../../lib/trackLabel.js";
+import { displayIdText, trackLabel } from "../../../../lib/trackLabel.js";
 import { PageHead } from "../shell/osAtoms";
 import { LoadingState, ErrorState } from "../ui.jsx";
 import ListToolbar from "./ListToolbar";
@@ -345,7 +345,7 @@ function RejectModal({ app, onClose, onDone }) {
         <div className="os-modal-body" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
           <div className="os-text-sm os-text-soft">
             Reject <strong>{app.name}</strong>
-            {app.applicationId ? ` (${relabelDisplayId(app.applicationId)})` : ""}. This records a final
+            {app.applicationId ? ` (${displayIdText(app.applicationId, app.movedToTrack)})` : ""}. This records a final
             decision and moves the application into <strong>Rejected</strong>
             {app.gate2_decision === "offered" ? ", withdrawing the offer already made" : ""}.
             The applicant is sent the standard decline email.
@@ -705,7 +705,7 @@ export function AdminSelectedApplications({ goDetail, onChanged } = {}) {
                           </a>
                         ) : s.name}
                         <small>
-                          {relabelDisplayId(s.applicationId || "") || s.founders?.[0] || "—"}
+                          {displayIdText(s.applicationId, s.movedToTrack) || s.founders?.[0] || "—"}
                           {s.founders?.[0] ? ` · ${s.founders[0]}` : ""}
                         </small>
                       </div>

@@ -71,9 +71,9 @@ def test_pipeline_shows_moved_app_under_new_track(monkeypatch):
     # a2 physically lives in tir_applications but displays as VIP now.
     assert by_id["a2"]["track"] == "sip"
     assert by_id["a2"]["native_track"] == "tir"
-    # Backend composes SIP-#### from the effective track; the frontend relabels
-    # the SIP prefix to VIP for display.
-    assert by_id["a2"]["applicationId"] == "SIP-26002"
+    # The display ID keeps the NATIVE prefix + seq (an effective prefix would
+    # collide with a real VIP ID); the frontend adds a "→ VIP" marker.
+    assert by_id["a2"]["applicationId"] == "TIR-26002"
     assert by_id["a2"]["moved_to_track"] == "sip"
 
     tir = admin_query.fetch_pipeline({"track": "tir"})

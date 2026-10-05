@@ -14,7 +14,7 @@ import "../../../styles/vip-memo.css";
 import { useAuth } from "../../../hooks/useAuth.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
-import { relabelDisplayId } from "../../../lib/trackLabel.js";
+import { displayIdText } from "../../../lib/trackLabel.js";
 import { COHORT_LABEL, initialsOf } from "./ui.jsx";
 import PortalSwitcher from "../../../components/PortalSwitcher.jsx";
 import AccountSettingsButton from "../../../components/AccountSettingsButton.jsx";
@@ -104,7 +104,7 @@ async function exportReviewerQueueCsv() {
   const queue = await reviewerApi.getQueue();
   const headers = ["ID", "Project", "Founders", "Industry", "Stage", "Track", "AI Score", "Status"];
   const rows = queue.map((s) => [
-    relabelDisplayId(s.applicationId),
+    displayIdText(s.applicationId, s.movedToTrack, { csv: true }),
     s.name,
     (s.founders || []).join("; "),
     s.industry,
@@ -128,7 +128,7 @@ export function historyCsvRows(rows) {
     "Variance", "My reco", "Admin decision"];
   return [headers, ...(rows || []).map((h) => [
     (h.date || "").slice(0, 10),
-    relabelDisplayId(h.applicationId),
+    displayIdText(h.applicationId, h.movedToTrack, { csv: true }),
     h.name,
     trackName(h.movedToTrack || h.track),
     num1(h.myScore),
