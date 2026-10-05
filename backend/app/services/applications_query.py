@@ -35,7 +35,7 @@ import re
 from typing import Any
 
 from ..supabase_client import get_admin_client
-from . import stats
+from . import staff_exclusions, stats
 
 log = logging.getLogger(__name__)
 
@@ -240,6 +240,7 @@ def _query_track_table(
         )
         return []
 
+    rows = staff_exclusions.visible(rows)
     for r in rows:
         r["track"] = track
     return rows
@@ -471,7 +472,12 @@ def find_application_with_track(
     Errors on either probe are swallowed and logged — if the tir probe fails
     transiently we still try sip. The router upgrades a final `None` into a
     404 so a real "missing" looks the same as "both probes errored".
+
+    Staff-only helper: a staff-excluded app (staff_exclusions) is reported as
+    missing, so staff detail views 404 on it.
     """
+    if staff_exclusions.is_excluded(application_id):
+        return None
     for track in stats.TRACKS:
         try:
             res = (

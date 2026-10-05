@@ -40,6 +40,7 @@ from fastapi import status as http_status
 
 from ..deps import get_current_user
 from ..rbac import require_capability
+from ..services import staff_exclusions
 from ..services.audit import actor_role_of, write_audit
 from ..supabase_client import get_admin_client
 
@@ -172,7 +173,8 @@ async def list_ic_documents(track: str | None = Query(default=None)) -> dict[str
     except Exception as exc:
         log.warning("ic_documents: list failed", extra={"track": track, "err": str(exc)})
         return {"documents": []}
-    rows = [r for r in rows if r.get("superseded_at") is None
+    rows = [r for r in staff_exclusions.visible(rows, key="application_id")
+            if r.get("superseded_at") is None
             and (not track or r.get("application_track") == track)]
     return {"documents": [_public_doc(r) for r in rows]}
 

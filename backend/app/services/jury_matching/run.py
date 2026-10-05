@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from app.services.jury_enrichment.client import _post
 from app.services.jury_enrichment.graph import _parse_json
+from app.services import staff_exclusions
 from app.services.jury_enrichment.prompts import MATCH_SYSTEM
 from app.supabase_client import get_admin_client
 
@@ -24,7 +25,8 @@ def _jury_review_apps(client) -> list[dict]:
     for track in ("tir", "sip"):
         rows = (client.table(f"{track}_applications").select("*")
                 .eq("status", "jury_review").execute().data or [])
-        rows = [r for r in rows if r.get("status") == "jury_review"]  # fake .eq no-op safety
+        rows = [r for r in staff_exclusions.visible(rows)
+                if r.get("status") == "jury_review"]  # fake .eq no-op safety
         for r in rows:
             out.append({"id": r["id"], "track": track})
     if not out:
@@ -109,7 +111,7 @@ def _jury_review_keys(client) -> set:
     for track in ("tir", "sip"):
         rows = _all(lambda t=track: client.table(f"{t}_applications")
                     .select("id,status").eq("status", "jury_review"))
-        for r in rows:
+        for r in staff_exclusions.visible(rows):
             if r.get("status") == "jury_review":   # fake .eq no-op safety
                 keys.add((r["id"], track))
     return keys

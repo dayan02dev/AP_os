@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..supabase_client import get_admin_client
+from . import staff_exclusions
 
 log = logging.getLogger(__name__)
 
@@ -67,8 +68,8 @@ def fetch_inbox(reviewer_user_id: str) -> list[dict]:
 
     # Filter out declined / reassigned in Python (the fake test client
     # doesn't model IS NULL on chained selects).
-    rows = [r for r in rows if r.get("declined_at") is None
-            and r.get("reassigned_to") is None]
+    rows = [r for r in staff_exclusions.visible(rows, key="application_id")
+            if r.get("declined_at") is None and r.get("reassigned_to") is None]
 
     # Hydrate each row with its application summary + my_review (if any).
     out = []
@@ -242,6 +243,8 @@ def fetch_application_for_reviewer(
     privacy boundary later, set ``include_ai`` below to:
         bool(my_review and my_review.get("submitted_at"))
     """
+    if staff_exclusions.is_excluded(application_id):
+        return None
     sb = get_admin_client()
 
     # Active assignment check
@@ -393,6 +396,7 @@ def fetch_completed_reviews(
             extra={"reviewer": reviewer_user_id, "err": str(exc)},
         )
         return {"reviews": [], "page": page, "total_pages": 1, "total": 0}
+    rows = staff_exclusions.visible(rows, key="application_id")
 
     now = datetime.now(timezone.utc)
     locked_mine: list[dict] = []
@@ -577,7 +581,8 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
         log.warning("queue: assignments fetch failed",
                     extra={"reviewer": reviewer_user_id, "err": str(exc)})
         return []
-    assignments = [a for a in assignments if _is_active_assignment(a)]
+    assignments = [a for a in staff_exclusions.visible(assignments, key="application_id")
+                   if _is_active_assignment(a)]
 
     # This reviewer's reviews (ALL of them — not narrowed to the assignment ids,
     # so detached submitted reviews are found): {(app_id, track): row}
@@ -591,7 +596,7 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
             extra={"reviewer": reviewer_user_id, "err": str(exc)},
         )
         rv_rows = []
-    for row in rv_rows:
+    for row in staff_exclusions.visible(rv_rows, key="application_id"):
         if row.get("reviewer_user_id") != reviewer_user_id:
             continue  # fake .in_/.eq don't filter; enforce ownership here
         rv_by_key.setdefault(
@@ -795,7 +800,7 @@ def fetch_history(reviewer_user_id: str) -> dict:
         return {**empty, "degraded": True}
 
     try:
-        submitted = [r for r in rows
+        submitted = [r for r in staff_exclusions.visible(rows, key="application_id")
                      if r.get("reviewer_user_id") == reviewer_user_id and r.get("submitted_at")]
         submitted.sort(key=lambda r: r.get("submitted_at") or "", reverse=True)
 

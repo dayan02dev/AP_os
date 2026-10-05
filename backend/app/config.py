@@ -160,6 +160,16 @@ class Settings(BaseSettings):
     # keep a value set during the soft launch. Matching is case-insensitive.
     founder_portal_allowlist: str = ""
 
+    # ── Staff-hidden applications ───────────────────────────────
+    # Comma-separated application ids kept out of every staff-facing count,
+    # list and queue (admin / leadership / reviewer / jury). The founder and
+    # applicant sides are unaffected. Default = the two internal Founder
+    # Portal test ventures (TIR-27325, TIR-27332).
+    staff_excluded_application_ids: str = (
+        "6ef1cf87-af28-4929-a759-68f486432b2c,"
+        "e7b49c04-a24f-4937-b36e-df957aeb1f7b"
+    )
+
     # ─── Normalisers ────────────────────────────────────────────
     @field_validator("env")
     @classmethod

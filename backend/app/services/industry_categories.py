@@ -17,6 +17,7 @@ import logging
 from typing import Any
 
 from ..supabase_client import get_admin_client
+from . import staff_exclusions
 
 log = logging.getLogger(__name__)
 
@@ -118,12 +119,12 @@ def categories_with_counts() -> dict[str, Any]:
         res = (
             get_admin_client()
             .table("ai_screening")
-            .select("industry_category_id")
+            .select("application_id,industry_category_id")
             .not_.is_("industry_category_id", "null")
             .limit(50_000)
             .execute()
         )
-        rows = res.data or []
+        rows = staff_exclusions.visible(res.data, key="application_id")
     except Exception as exc:
         log.warning(
             "industry_categories.categories_with_counts query failed",

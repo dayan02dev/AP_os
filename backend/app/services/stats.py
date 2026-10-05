@@ -27,6 +27,7 @@ import logging
 import re
 
 from ..supabase_client import get_admin_client
+from . import staff_exclusions
 
 log = logging.getLogger(__name__)
 
@@ -247,7 +248,7 @@ def fetch_app_status_rows() -> list[dict]:
             log.warning("stats.fetch_app_status_rows failed",
                         extra={"track": track, "err": str(exc)})
             continue
-        out.extend({**r, "track": track} for r in rows)
+        out.extend({**r, "track": track} for r in staff_exclusions.visible(rows))
     return out
 
 
@@ -709,7 +710,30 @@ def _effective_count(track: str, *, status: str | None, non_draft: bool) -> int:
                              non_draft=non_draft, moved_to=other)
     moved_in = _base_count(_track_table(other), status=status,
                            non_draft=non_draft, moved_to=track)
-    return (here_all - moved_away) + moved_in
+    return (here_all - moved_away) + moved_in - _excluded_count(
+        track, status=status, non_draft=non_draft)
+
+
+def _excluded_count(track: str, *, status: str | None, non_draft: bool) -> int:
+    """How many staff-excluded apps the effective count above included."""
+    ids = list(staff_exclusions.STAFF_EXCLUDED_APPLICATION_IDS)
+    if not ids:
+        return 0
+    n = 0
+    for native in TRACKS:
+        rows = (get_admin_client().table(_track_table(native))
+                .select("id,status,moved_to_track").in_("id", ids).execute().data) or []
+        for r in rows:
+            if r.get("id") not in staff_exclusions.STAFF_EXCLUDED_APPLICATION_IDS:
+                continue
+            st = r.get("status")
+            if status is not None and st != status:
+                continue
+            if non_draft and st == "draft":
+                continue
+            if (r.get("moved_to_track") or native) == track:
+                n += 1
+    return n
 
 
 def count_apps_by_status(track: str, status: str) -> int:
@@ -792,12 +816,11 @@ def fetch_ai_score_overalls() -> list[float]:
         res = (
             get_admin_client()
             .table("ai_screening")
-            .select("score_overall")
-            .not_.is_("score_overall", "null")
+            .select("application_id,score_overall")
             .limit(10_000)
             .execute()
         )
-        rows = res.data or []
+        rows = staff_exclusions.visible(res.data, key="application_id")
         return [float(r["score_overall"]) for r in rows if r.get("score_overall") is not None]
     except Exception as exc:
         log.warning("stats.fetch_ai_score_overalls failed", extra={"err": str(exc)})
@@ -821,12 +844,12 @@ def fetch_classification_rows(track: str) -> list[dict]:
         res = (
             get_admin_client()
             .table(_track_table(track))
-            .select("basic_org,solution_describe,solution_core_tech,problem_describe")
+            .select("id,basic_org,solution_describe,solution_core_tech,problem_describe")
             .neq("status", "draft")
             .limit(10_000)
             .execute()
         )
-        return res.data or []
+        return staff_exclusions.visible(res.data)
     except Exception as exc:
         log.warning(
             "stats.fetch_classification_rows failed",

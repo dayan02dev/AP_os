@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from ..supabase_client import get_admin_client
-from . import applications_query, review_presenter
+from . import applications_query, review_presenter, staff_exclusions
 from .founder_check.render import merge_sections as _merge_founder_sections
 
 log = logging.getLogger(__name__)
@@ -81,7 +81,8 @@ def fetch_jury_queue(juror_user_id: str) -> list[dict]:
                     extra={"juror": juror_user_id, "err": str(exc)})
         return []
     # jury_assignments v2 has NO declined_at column — every row is active.
-    assignments = [a for a in assignments if a.get("juror_user_id") == juror_user_id]
+    assignments = [a for a in staff_exclusions.visible(assignments, key="application_id")
+                   if a.get("juror_user_id") == juror_user_id]
     if not assignments:
         return []
 
@@ -191,6 +192,8 @@ def fetch_application_for_juror(
     converts None → 404). jury_assignments v2 has no declined_at — a matching
     assignment row is always active.
     """
+    if staff_exclusions.is_excluded(application_id):
+        return None
     sb = get_admin_client()
 
     # Assignment check
@@ -337,7 +340,8 @@ def fetch_my_selections(juror_user_id: str) -> list[dict]:
     sb = get_admin_client()
     rows = sb.table("jury_selections").select("*") \
         .eq("juror_user_id", juror_user_id).execute().data or []
-    return [r for r in rows if r.get("juror_user_id") == juror_user_id]
+    return [r for r in staff_exclusions.visible(rows, key="application_id")
+            if r.get("juror_user_id") == juror_user_id]
 
 
 def gate2_decided_keys(sb, pairs: list[tuple[str, str]]) -> set[tuple[str, str]]:

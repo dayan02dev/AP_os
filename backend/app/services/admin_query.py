@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..supabase_client import get_admin_client
-from . import applications_query, reviewer_query, stats
+from . import applications_query, reviewer_query, staff_exclusions, stats
 from .founder_check.render import merge_sections as _merge_founder_sections
 
 log = logging.getLogger(__name__)
@@ -879,7 +879,8 @@ def fetch_roster() -> dict[str, Any]:
 
     # Assignments grouped per reviewer.
     assignments_by_rev: dict[str, list[dict]] = {rid: [] for rid in reviewer_ids}
-    for a in _fetch_in("reviewer_assignments", "reviewer_user_id"):
+    for a in staff_exclusions.visible(
+            _fetch_in("reviewer_assignments", "reviewer_user_id"), key="application_id"):
         rid = a.get("reviewer_user_id")
         if rid in id_set:
             assignments_by_rev[rid].append(a)
@@ -887,7 +888,8 @@ def fetch_roster() -> dict[str, Any]:
     # Reviews grouped per reviewer (submitted only matter for consistency).
     reviews_by_rev: dict[str, list[dict]] = {rid: [] for rid in reviewer_ids}
     reviewed_keys: set[tuple[str, str]] = set()
-    for r in _fetch_in("reviews", "reviewer_user_id"):
+    for r in staff_exclusions.visible(
+            _fetch_in("reviews", "reviewer_user_id"), key="application_id"):
         rid = r.get("reviewer_user_id")
         if rid in id_set:
             reviews_by_rev[rid].append(r)
@@ -1048,6 +1050,8 @@ def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
     except Exception as exc:
         log.warning("reviewer apps: assignments fetch failed", extra={"err": str(exc)})
         return {"applications": []}
+    rows = staff_exclusions.visible(rows, key="application_id")
+    reviews = staff_exclusions.visible(reviews, key="application_id")
 
     active_by_key: dict[tuple[str, str], dict] = {}
     for a in rows:
@@ -1166,8 +1170,12 @@ def fetch_jury_roster() -> dict[str, Any]:
             lambda: sb.table("jury_profiles").select("*").in_("juror_user_id", juror_ids))}
         if juror_ids else {}
     )
-    assignments = _fetch_all(lambda: sb.table("jury_assignments").select("*")) if juror_ids else []
-    selections = _fetch_all(lambda: sb.table("jury_selections").select("*")) if juror_ids else []
+    assignments = staff_exclusions.visible(
+        _fetch_all(lambda: sb.table("jury_assignments").select("*")) if juror_ids else [],
+        key="application_id")
+    selections = staff_exclusions.visible(
+        _fetch_all(lambda: sb.table("jury_selections").select("*")) if juror_ids else [],
+        key="application_id")
     invites = _fetch_all(lambda: sb.table("jury_invites").select("*"))
     invite_by_id = {i["id"]: i for i in invites if i.get("id") is not None}
 
@@ -1221,7 +1229,8 @@ def fetch_juror_applications(user_id: str) -> dict[str, Any]:
         log.warning("juror apps: assignments fetch failed", extra={"err": str(exc)})
         return {"applications": []}
 
-    active = [a for a in rows if a.get("juror_user_id") == user_id]
+    active = [a for a in staff_exclusions.visible(rows, key="application_id")
+              if a.get("juror_user_id") == user_id]
     pairs = [(a["application_track"], a["application_id"]) for a in active]
     if not pairs:
         return {"applications": []}
@@ -1411,7 +1420,7 @@ def fetch_calibration() -> dict[str, Any]:
     # Submitted reviews grouped per reviewer.
     reviews_by_rev: dict[str, list[dict]] = {rid: [] for rid in reviewer_ids}
     reviewed_keys: set[tuple[str, str]] = set()
-    for r in _fetch("reviews"):
+    for r in staff_exclusions.visible(_fetch("reviews"), key="application_id"):
         rid = r.get("reviewer_user_id")
         if rid in id_set and r.get("submitted_at"):
             reviews_by_rev[rid].append(r)
@@ -1574,7 +1583,7 @@ def fetch_unassigned_apps(track: str | None = None) -> list[dict[str, Any]]:
             log.warning("rebalance: app fetch failed",
                         extra={"track": t, "err": str(exc)})
             rows = []
-        for r in rows:
+        for r in staff_exclusions.visible(rows):
             if (r.get("status") or "draft") == "draft":
                 continue
             aid = r.get("id")
@@ -1697,7 +1706,7 @@ def assign_reviewers_to_batch(
     ) or []
     apps = [
         (r["application_id"], r["application_track"])
-        for r in link_rows
+        for r in staff_exclusions.visible(link_rows, key="application_id")
         if r.get("batch_id") == batch_id and r.get("application_id") and r.get("application_track")
     ]
 
