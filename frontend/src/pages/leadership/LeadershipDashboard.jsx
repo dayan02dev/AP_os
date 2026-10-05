@@ -273,6 +273,9 @@ export default function LeadershipDashboard() {
   // Apps with no industry; null until the backend reports it (then clickable).
   const [industryUnclassified, setIndustryUnclassified] = useState(null);
   const [industryCap, setIndustryCap] = useState({ cap: 12, remaining_slots: 12 });
+  // True until the first /industry-categories response (or failure) lands, so
+  // the industry card says "Loading…" rather than flashing its empty state.
+  const [industriesLoading, setIndustriesLoading] = useState(true);
   // Per-industry counts within the active track filter ({id: n}), or null
   // (no track filter / fetch failed → the all-tracks counts).
   const [trackIndustryCounts, setTrackIndustryCounts] = useState(null);
@@ -347,11 +350,13 @@ export default function LeadershipDashboard() {
           cap: data?.cap ?? 12,
           remaining_slots: data?.remaining_slots ?? 0,
         });
+        setIndustriesLoading(false);
       })
       .catch(() => {
         if (cancelled) return;
         setIndustryCategories([]);
         setIndustryTotal(0);
+        setIndustriesLoading(false);
       });
     loadSelectedKeys()
       .then((keys) => { if (!cancelled) setSelectedKeys(keys); })
@@ -952,7 +957,7 @@ export default function LeadershipDashboard() {
                   Click an industry to jump into the Applications tab pre-filtered.
                 </p>
               </div>
-              {statsLoading ? (
+              {statsLoading || industriesLoading ? (
                 <div className="lp-loading">Loading industries…</div>
               ) : industries.length === 0 ? (
                 <div className="lp-placeholder">No industry data yet.</div>

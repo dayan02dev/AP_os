@@ -232,7 +232,7 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
             </button>
           )}
           <span className="lp-count">
-            {filtered.length} of {visible.length}
+            {loading && !data ? "…" : `${filtered.length} of ${visible.length}`}
           </span>
         </div>
 

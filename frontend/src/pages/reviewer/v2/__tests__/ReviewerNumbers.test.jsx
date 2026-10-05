@@ -82,6 +82,14 @@ describe("ReviewerDashboard numbers", () => {
 // ─── Queue ─────────────────────────────────────────────────────────────
 
 describe("ReviewerQueue fixes", () => {
+  it("shows a placeholder, not '0 of 0', while the queue loads", () => {
+    const { container, rerender } = render(<ReviewerQueue onOpen={vi.fn()}
+      queueAsync={{ data: null, loading: true, error: null, reload: vi.fn() }} />);
+    expect(container.querySelector(".lp-count").textContent).toBe("…");
+    rerender(<ReviewerQueue onOpen={vi.fn()} queueAsync={mk([])} />);
+    expect(container.querySelector(".lp-count").textContent).toBe("0 of 0");
+  });
+
   it("an explicit 'All' pick from the dashboard clears a remembered industry", () => {
     const Q = [row({ id: "1", name: "RoboCo", industry: "Robotics" }),
                row({ id: "2", name: "HealthCo", industry: "Health" })];

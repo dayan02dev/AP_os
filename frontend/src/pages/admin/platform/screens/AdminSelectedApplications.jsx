@@ -644,10 +644,11 @@ export function AdminSelectedApplications({ goDetail, onChanged } = {}) {
             options: [["all", "All tracks"], ["tir", "TIR"], ["sip", "VIP"]] },
           { ariaLabel: "Filter by decision", value: decision, onChange: setDecision,
             options: [["all", "All"], ["pending", "Pending"], ["accepted", "Accepted"]]
-              .map(([v, label]) => [v, docs.data ? `${label} ${decisionCounts[v]}` : label]) },
+              .map(([v, label]) => [v, docs.data && pipeline.data && offeredPipeline.data
+                ? `${label} ${decisionCounts[v]}` : label]) },
         ]}
-        count={rows.length}
-        total={pipeline.data ? all.length : null}
+        count={pipeline.data && offeredPipeline.data ? rows.length : "…"}
+        total={pipeline.data && offeredPipeline.data ? all.length : null}
       />
 
       {notice && <div className="os-text-sm os-text-soft os-mb-lg">{notice}</div>}

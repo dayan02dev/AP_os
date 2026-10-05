@@ -325,7 +325,7 @@ export function AdminDashboard({ go, selectedCount = null }) {
             Where the cohort is concentrated
           </h2>
           <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4, fontFamily: 'var(--font-sans)' }}>
-            All {(pipelineData?.startups || []).length} applications, every stage (including rejected and accepted).
+            All {pipelineData ? (pipelineData.startups || []).length : '…'} applications, every stage (including rejected and accepted).
             Click an industry to jump into the Applications tab pre-filtered — that tab holds only apps still in review.
           </div>
         </div>

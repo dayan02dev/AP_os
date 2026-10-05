@@ -102,6 +102,17 @@ beforeEach(() => {
 });
 
 describe("Dashboard — gate-aware numbers", () => {
+  it("shows a loading state, not 'No industry data yet.', until industries load", async () => {
+    let resolve;
+    leadershipApi.getIndustryCategories.mockReturnValue(new Promise((r) => { resolve = r; }));
+    renderDash();
+    await screen.findByTestId("lp-breakdown");          // stats have landed
+    expect(screen.queryByText("No industry data yet.")).toBeNull();
+    expect(screen.getByText("Loading industries…")).toBeTruthy();
+    resolve({ categories: [], total: 0, unclassified: 0 });
+    expect(await screen.findByText("No industry data yet.")).toBeTruthy();
+  });
+
   it("renders the pipeline breakdown with admin bucket labels", async () => {
     renderDash();
     const card = await screen.findByTestId("lp-breakdown");

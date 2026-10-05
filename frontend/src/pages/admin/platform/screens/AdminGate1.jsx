@@ -871,9 +871,12 @@ export default function AdminGate1({ goDetail }) {
   const count   = variant === "history"
     ? (allRows.filter(s => gate1DecisionOf(s)).length)
     : evalRows.length;
+  // Until the list has loaded, a neutral "…" rather than a flashed 0.
+  const pending = loading && !(variant === "history" ? allData : evalData);
+  const countText = pending ? "…" : count;
   const title = variant === "history"
-    ? `<em>${count} decision${count !== 1 ? "s" : ""}</em> at Admin Review`
-    : `Decide on <em>${count} application${count !== 1 ? "s" : ""}</em>`;
+    ? `<em>${countText} decision${count !== 1 || pending ? "s" : ""}</em> at Admin Review`
+    : `Decide on <em>${countText} application${count !== 1 || pending ? "s" : ""}</em>`;
 
   return (
     <div className="dash-scroll">
