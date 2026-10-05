@@ -2,9 +2,11 @@ import { render, screen, within, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // The Accepted badge counts SELECTED (green) applications: status jury_review
-// with a signed current IC memo. /stats can't see memos, so the portal reads
-// the jury_review pipeline + the IC-document list, exactly like the tab does.
-const state = vi.hoisted(() => ({ docsLoading: false }));
+// with every current IC memo signed — /stats `pipeline_breakdown.stages
+// .final_selected`, the same rule as the tab. The badge reads it from the
+// portal-level /stats fetch only, so it can't be lost when a tab switch leaves
+// the (much slower) jury_review pipeline / IC-document fetches unfinished.
+const state = vi.hoisted(() => ({ docsLoading: false, statsLoading: false, final_selected: 2 }));
 
 const JURY_REVIEW = [
   // signed → counts
@@ -27,11 +29,14 @@ const DOCS = [
 vi.mock("../../../../hooks/useAdminData", () => ({
   useAdminData: (kind, params) => {
     if (kind === "stats") {
+      if (state.statsLoading) return { data: null, loading: true, error: null, reload: vi.fn() };
       // Overlay-shaped: jury_review apps with a shortlist decision sit in
       // `accepted`, which is why the old jury_review badge read 0.
       return { data: { totals: { apps_submitted: 100 }, statusCounts: [
         { id: "rejected", n: 10 }, { id: "jury_review", n: 0 }, { id: "accepted", n: 4 },
-      ] }, loading: false, error: null, reload: vi.fn() };
+      ], pipelineBreakdown: { total: 100, stages: {
+        final_selected: state.final_selected, final_pending: 4 - state.final_selected,
+      } } }, loading: false, error: null, reload: vi.fn() };
     }
     if (kind === "icDocuments") {
       return state.docsLoading
@@ -71,7 +76,9 @@ const tabBadge = (container, label) => {
 };
 
 describe("AdminPortal — Accepted badge", () => {
-  beforeEach(() => { state.docsLoading = false; });
+  beforeEach(() => {
+    state.docsLoading = false; state.statsLoading = false; state.final_selected = 2;
+  });
 
   it("counts only jury_review apps with a signed IC memo", () => {
     const { container } = render(<AdminPortalDefault />);
@@ -85,10 +92,22 @@ describe("AdminPortal — Accepted badge", () => {
     expect(tabBadge(container, "Rejected")).toBe("10");
   });
 
-  it("shows no Accepted badge while the IC documents are loading", () => {
-    state.docsLoading = true;
+  it("shows no Accepted badge while /stats is loading", () => {
+    state.statsLoading = true;
     const { container } = render(<AdminPortalDefault />);
     expect(tabBadge(container, "Accepted")).toBeNull();
+  });
+
+  it("keeps Accepted=16 when the tab is switched before the list fetches finish", () => {
+    // The jury_review pipeline + IC documents never settle (aborted by the
+    // tab switch); /stats alone carries the count.
+    state.docsLoading = true;
+    state.final_selected = 16;
+    const { container } = render(<AdminPortalDefault />);
+    fireEvent.click(screen.getByText("Reviewers"));
+    expect(tabBadge(container, "Accepted")).toBe("16");
+    fireEvent.click(screen.getByText("Accepted"));
+    expect(tabBadge(container, "Accepted")).toBe("16");
   });
 });
 

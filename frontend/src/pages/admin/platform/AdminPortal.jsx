@@ -17,7 +17,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../hooks/useAuth.jsx";
 import { useAdminData } from "../../../hooks/useAdminData";
 import { writeStickyState } from "../../../hooks/useStickyState.js";
-import { pipelineBadges, selectedCount } from "../../../lib/adminBadges";
+import { pipelineBadges } from "../../../lib/adminBadges";
 import "../../../styles/admin-portal.css";
 import "../../../styles/vip-memo.css";
 import { AdminDashboard } from "./screens/AdminDashboard";
@@ -303,30 +303,32 @@ function AdminApp() {
   const [, forceAppUpdate] = React.useReducer(x => x + 1, 0);
   React.useEffect(() => { window.__osDataBump = forceAppUpdate; return () => { if (window.__osDataBump === forceAppUpdate) window.__osDataBump = null; }; }, []);
 
-  // Real tab-badge counts from /stats. While loading (or if the field is
-  // absent) we pass null so NO badge shows rather than a fabricated number.
-  const { data: statsData, loading: statsLoading, reload: reloadStats } = useAdminData('stats');
-  // Accepted badge = SELECTED (green) apps: `jury_review` + a signed IC memo.
-  // /stats can't say which memos are signed, so this reads the same two lists
-  // the Accepted tab does. The pipeline endpoint returns every row in one
-  // response (server-side FETCH_CAP 5000, no paging), so the count is whole.
-  const juryPipeline = useAdminData('pipeline', { status: 'jury_review' });
-  const icDocs = useAdminData('icDocuments');
-  const jurySelectedBadge = (juryPipeline.loading || juryPipeline.error || icDocs.loading || icDocs.error)
-    ? null
-    : selectedCount(juryPipeline.data?.startups, icDocs.data?.documents);
-  // The exact raw `jury_review` count keeps the Applications badge in step
-  // with its list (exclude_status=rejected,jury_review) — see pipelineBadges.
-  const juryReviewCount = (juryPipeline.loading || juryPipeline.error || !juryPipeline.data)
-    ? null
-    : (juryPipeline.data.startups || []).length;
+  // Real tab-badge counts from /stats, fetched once at portal level (and
+  // retried if the request fails/aborts) so they never depend on which tab is
+  // showing. While the FIRST load is pending (or the field is absent) we pass
+  // null so NO badge shows rather than a fabricated number; a refresh keeps
+  // the previous counts on screen.
+  const { data: statsData, loading: statsLoading, reload: reloadStats } =
+    useAdminData('stats', undefined, { retries: 3 });
+  const statsPending = statsLoading && !statsData;
+  // Accepted badge = SELECTED (green) apps: `jury_review` with every current
+  // IC memo signed — exactly /stats pipeline_breakdown `final_selected` (same
+  // rule as lib/selection.js), so no extra list fetches are needed.
+  const stages = statsData?.pipelineBreakdown?.stages;
+  const jurySelectedBadge = (statsPending || !stages) ? null : (stages.final_selected ?? 0);
+  // The raw `jury_review` count (final_pending + final_selected) keeps the
+  // Applications badge in step with its list
+  // (exclude_status=rejected,jury_review) — see pipelineBadges.
+  const juryReviewCount = stages
+    ? (stages.final_pending ?? 0) + (stages.final_selected ?? 0)
+    : null;
   const { appsBadge, rejectedBadge } =
-    pipelineBadges(statsData, statsLoading, juryReviewCount);
+    pipelineBadges(statsData, statsPending, juryReviewCount);
   // Approve / Reject on the Accepted tab changes these counts.
-  const refreshBadges = () => { juryPipeline.reload(); icDocs.reload(); reloadStats(); };
+  const refreshBadges = () => { reloadStats(); };
   // "Admin Review" = apps evaluated by reviewers and awaiting an admin decision.
   const evaluatedEntry = (statsData?.statusCounts || []).find(s => s.id === 'evaluated');
-  const reviewBadge = statsLoading ? null : (evaluatedEntry ? evaluatedEntry.n : null);
+  const reviewBadge = statsPending ? null : (evaluatedEntry ? evaluatedEntry.n : null);
 
   // Auto-promote startups to 'JURY REVIEW' (Interview) if jury requested interview, unless already decided
   React.useEffect(() => {

@@ -61,18 +61,24 @@ const LOADERS = {
   },
 };
 
-export function useAdminData(kind, params) {
+// `retries`: re-run a failed load (a timed-out / aborted request) up to that
+// many times, `retryDelayMs` apart, before surfacing the error.
+export function useAdminData(kind, params, { retries = 0, retryDelayMs = 1500 } = {}) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const key = JSON.stringify(params || {});
   const reload = useCallback(() => {
     setLoading(true);
-    LOADERS[kind](params || {})
+    const attempt = (left) => LOADERS[kind](params || {}).catch((e) => {
+      if (left <= 0) throw e;
+      return new Promise((r) => setTimeout(r, retryDelayMs)).then(() => attempt(left - 1));
+    });
+    attempt(retries)
       .then((d) => { setData(d); setError(null); })
       .catch((e) => setError(e))
       .finally(() => setLoading(false));
-  }, [kind, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [kind, key, retries, retryDelayMs]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { reload(); }, [reload]);
   return { data, loading, error, reload };
 }
