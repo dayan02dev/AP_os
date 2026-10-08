@@ -55,6 +55,16 @@ def _ai_row(app_id: str, memo: dict | None = None, track: str = "sip") -> dict:
     }
 
 
+@pytest.fixture(autouse=True)
+def no_bundled_memos(monkeypatch, tmp_path):
+    """Point the bundled-file fallback at an empty dir so a developer's local
+    (gitignored) memo files never leak into these tests."""
+    empty = tmp_path / "bundled_empty"
+    empty.mkdir()
+    monkeypatch.setattr(vip_memo_v2, "BUNDLED_DIR", empty)
+    return empty
+
+
 @pytest.fixture
 def fake(monkeypatch):
     sb = FakeSupabase({"ai_screening": [_ai_row(PILOT), _ai_row(NON_PILOT)]})
@@ -104,6 +114,47 @@ def test_get_memo_v2_never_raises(monkeypatch):
     def boom():
         raise RuntimeError("db down")
     monkeypatch.setattr(vip_memo_v2, "get_admin_client", boom)
+    assert vip_memo_v2.get_memo_v2(PILOT) is None
+
+
+def _bundle(directory: Path, app_id: str, memo: dict) -> None:
+    (directory / f"{app_id}.json").write_text(json.dumps(memo))
+
+
+def test_get_memo_v2_falls_back_to_bundled_file(monkeypatch, no_bundled_memos):
+    sb = FakeSupabase({"ai_screening": [{"application_id": PILOT, "application_track": "sip", "sections": {}}]})
+    monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
+    _bundle(no_bundled_memos, PILOT, {**copy.deepcopy(FIXTURE), "name": "Bundled Co"})
+    assert vip_memo_v2.get_memo_v2(PILOT)["name"] == "Bundled Co"
+
+
+def test_get_memo_v2_db_memo_wins_over_bundled_file(fake, no_bundled_memos):
+    _bundle(no_bundled_memos, PILOT, {**copy.deepcopy(FIXTURE), "name": "Bundled Co"})
+    assert vip_memo_v2.get_memo_v2(PILOT)["name"] == "Acme Robotics"
+
+
+def test_get_memo_v2_bundled_file_used_when_db_down(monkeypatch, no_bundled_memos):
+    def boom():
+        raise RuntimeError("db down")
+    monkeypatch.setattr(vip_memo_v2, "get_admin_client", boom)
+    _bundle(no_bundled_memos, PILOT, copy.deepcopy(FIXTURE))
+    assert vip_memo_v2.get_memo_v2(PILOT)["name"] == "Acme Robotics"
+
+
+def test_get_memo_v2_bundled_file_is_pilot_only_and_validated(fake, no_bundled_memos):
+    _bundle(no_bundled_memos, NON_PILOT, copy.deepcopy(FIXTURE))
+    bad = copy.deepcopy(FIXTURE)
+    bad["version"] = 1
+    _bundle(no_bundled_memos, OTHER_PILOT, bad)
+    (no_bundled_memos / "not-json.json").write_text("{")
+    assert vip_memo_v2.get_memo_v2(NON_PILOT) is None
+    assert vip_memo_v2.get_memo_v2(OTHER_PILOT) is None
+
+
+def test_get_memo_v2_bundled_file_corrupt_never_raises(monkeypatch, no_bundled_memos):
+    sb = FakeSupabase({"ai_screening": []})
+    monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
+    (no_bundled_memos / f"{PILOT}.json").write_text("{not json")
     assert vip_memo_v2.get_memo_v2(PILOT) is None
 
 

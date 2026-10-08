@@ -23,3 +23,6 @@ build/
 !.env.*.example
 # Exception: commit the .env template files (no real keys)
 !scripts/import-prod-to-staging/.env.import.example
+
+# Confidential VIP memo v2 content — bundled into the Lambda at deploy time, never committed (repo is public)
+app/data/vip_memo_v2/*.json
