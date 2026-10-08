@@ -32,6 +32,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import AiSections from "../../../components/AiSections.jsx";
 import FullApplication from "../../../components/FullApplication.jsx";
 import VipMemoPreview from "../../../components/VipMemoPreview.jsx";
+import VipNavigatorMemo from "../../../components/VipNavigatorMemo.jsx";
+import { saveBlob, useVipMemoV2, vipMemoV2Filename } from "../../../lib/vipMemoV2.js";
 import ProfilePills from "../../../components/ProfilePills.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
@@ -281,8 +283,24 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     }
   };
 
+  // VIP memo v2 (Navigator) for the pilot apps; the legacy memo is the fallback.
+  const memoV2 = useVipMemoV2(
+    content.track === "sip" && PILOT_VIP_IDS.has(content.id) ? content.id : null,
+    (appId) => reviewerApi.getVipMemoV2("sip", appId),
+  );
+
+  const downloadVipMemoV2 = async (format) => {
+    try {
+      const blob = await reviewerApi.downloadVipMemoV2("sip", content.id, format);
+      saveBlob(blob, vipMemoV2Filename(memoV2.memo, format));
+    } catch {
+      // The navigator stays usable; a failed download is not fatal here.
+    }
+  };
+
   useEffect(() => {
     if (content.track !== "sip" || !PILOT_VIP_IDS.has(content.id)) return;
+    if (memoV2.status !== "missing") return;
     const cached = readVipMemo(content.id);
     if (cached) {
       setVipMemo(cached);
@@ -291,7 +309,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     generateVipMemo();
     // Memo generation is intentionally automatic only for the two pilot apps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content.track, content.id]);
+  }, [content.track, content.id, memoV2.status]);
   const removeFlag = (i) => edit(setFlags)((prev) => prev.filter((_, j) => j !== i));
   const addFlag = () => {
     const value = flagInput.trim();
@@ -598,7 +616,10 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               )}
 
               <AiSections variant="dropdown" sections={content.aiSections} />
-              {content.track === "sip" && (
+              {content.track === "sip" && memoV2.status === "ready" && (
+                <VipNavigatorMemo key={content.id} memo={memoV2.memo} appId={content.id} onDownload={downloadVipMemoV2} />
+              )}
+              {content.track === "sip" && memoV2.status !== "ready" && (
                 <div className="vip-memo-actions">
                   {vipMemoBusy && <p className="vip-memo-status">Preparing the investment memo — this can take a moment.</p>}
                   <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />

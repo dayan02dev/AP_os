@@ -21,6 +21,7 @@ import { leadershipApi } from "../../../../lib/leadershipApi";
 import { BUTTON_TO_DECISION, chipLabel } from "../../../../lib/adminDataAdapter";
 import VipMemoPreview from "../../../../components/VipMemoPreview.jsx";
 import { readVipMemo, writeVipMemo } from "../../../../lib/vipMemoCache";
+import { saveBlob, useVipMemoV2, vipMemoV2Filename } from "../../../../lib/vipMemoV2.js";
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import FullApplication from "../../../../components/FullApplication";
 import ApplicationSummaryCard from "./ApplicationSummaryCard";
@@ -169,8 +170,25 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
     }
   };
 
+  // VIP memo v2 (Navigator) for the pilot apps; the legacy memo is the fallback.
+  const memoV2 = useVipMemoV2(
+    track === "sip" && PILOT_VIP_IDS.has(s?.id) ? s.id : null,
+    (appId) => adminPlatformApi.getVipMemoV2("sip", appId),
+  );
+
+  const downloadVipMemoV2 = async (format) => {
+    if (!s?.id) return;
+    try {
+      const blob = await adminPlatformApi.downloadVipMemoV2("sip", s.id, format);
+      saveBlob(blob, vipMemoV2Filename(memoV2.memo, format));
+    } catch (e) {
+      setBanner({ kind: "error", text: e?.message || "Could not download VIP memo." });
+    }
+  };
+
   useEffect(() => {
     if (track !== "sip" || !PILOT_VIP_IDS.has(s?.id)) return;
+    if (memoV2.status !== "missing") return;
     const cached = readVipMemo(s.id);
     if (cached) {
       setVipMemo(cached);
@@ -179,7 +197,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
     generateVipMemo();
     // Memo generation is intentionally automatic only for the two pilot apps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s?.id, track]);
+  }, [s?.id, track, memoV2.status]);
 
   const downloadVipMemo = async (format) => {
     if (!s?.id) return;
@@ -418,6 +436,8 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
             memoBusy={vipMemoBusy}
             onCreateMemo={generateVipMemo}
             onDownloadMemo={downloadVipMemo}
+            memoV2={memoV2.status === "ready" ? memoV2.memo : null}
+            onDownloadMemoV2={downloadVipMemoV2}
           />
 
           {/* Comparative review model — real reviewer evaluations */}
