@@ -37,6 +37,11 @@ export const adminPlatformApi = {
     api.post(`/admin/platform/applications/${track}/${id}/vip-memo`, {}),
   downloadVipMemo: (track, id, format) =>
     api.download(`/admin/platform/applications/${track}/${id}/vip-memo/download?format=${format}`),
+  // VIP memo v2 (Navigator): pre-built JSON for the pilot apps; 404 memo_not_available otherwise.
+  getVipMemoV2: (track, id) =>
+    api.get(`/admin/platform/applications/${track}/${id}/vip-memo-v2`),
+  downloadVipMemoV2: (track, id, format) =>
+    api.download(`/admin/platform/applications/${track}/${id}/vip-memo-v2/download?format=${format}`),
 
   decide: (track, id, body) =>
     api.post(`/admin/platform/applications/${track}/${id}/decision`, body),

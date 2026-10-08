@@ -28,6 +28,10 @@ export const leadershipApi = {
   generateVipMemo: (id) => api.post(`/leadership/applications/${id}/vip-memo`),
   downloadVipMemo: (id, format) =>
     api.download(`/leadership/applications/${id}/vip-memo/download?format=${format}`),
+  // VIP memo v2 (Navigator): pre-built JSON for the pilot apps; 404 memo_not_available otherwise.
+  getVipMemoV2: (id) => api.get(`/leadership/applications/${id}/vip-memo-v2`),
+  downloadVipMemoV2: (id, format) =>
+    api.download(`/leadership/applications/${id}/vip-memo-v2/download?format=${format}`),
 
   // Filter-pill + dashboard-tab data source. Replaces the legacy
   // stats.industry block — returns categories with counts, cap (12), and

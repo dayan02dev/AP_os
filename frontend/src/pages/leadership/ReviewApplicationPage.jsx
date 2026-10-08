@@ -38,6 +38,8 @@ import ReviewsTab from "./review/ReviewsTab.jsx";
 import HistoryTab from "./review/HistoryTab.jsx";
 import AIScreeningPanel from "./review/AIScreeningPanel.jsx";
 import VipMemoPreview from "../../components/VipMemoPreview.jsx";
+import VipNavigatorMemo from "../../components/VipNavigatorMemo.jsx";
+import { saveBlob, useVipMemoV2, vipMemoV2Filename } from "../../lib/vipMemoV2.js";
 import "../../styles/admin.css";
 import "../../styles/leadership.css";
 import "../../styles/review-application.css";
@@ -248,15 +250,29 @@ export default function ReviewApplicationPage() {
     URL.revokeObjectURL(url);
   }, [id]);
 
+  // VIP memo v2 (Navigator) for the pilot apps; the legacy memo is the fallback.
+  const vipPilot = !!detail && effectiveTrack === "sip" && PILOT_VIP_IDS.has(id);
+  const memoV2 = useVipMemoV2(vipPilot ? id : null, (appId) => leadershipApi.getVipMemoV2(appId));
+
+  const downloadVipMemoV2 = useCallback(async (format) => {
+    try {
+      const blob = await leadershipApi.downloadVipMemoV2(id, format);
+      saveBlob(blob, vipMemoV2Filename(memoV2.memo, format));
+    } catch (err) {
+      setError(err?.message || "Could not download the VIP memo.");
+    }
+  }, [id, memoV2.memo]);
+
   useEffect(() => {
     if (!detail || effectiveTrack !== "sip" || !PILOT_VIP_IDS.has(id)) return;
+    if (memoV2.status !== "missing") return;
     const cached = readVipMemo(id);
     if (cached) {
       setVipMemo(cached);
       return;
     }
     generateVipMemo();
-  }, [detail, effectiveTrack, id, generateVipMemo]);
+  }, [detail, effectiveTrack, id, generateVipMemo, memoV2.status]);
 
   // ─── Keyboard navigation: ← / → ───────────────────────────
   useEffect(() => {
@@ -317,6 +333,12 @@ export default function ReviewApplicationPage() {
                   </p>
                 </div>
                 <ReviewTabs tab={tab} onChange={setTab} />
+                {tab === "application" && memoV2.status === "ready" && (
+                  <>
+                    <VipNavigatorMemo key={id} memo={memoV2.memo} appId={id} onDownload={downloadVipMemoV2} />
+                    <div className="vipnav-divider">Full application</div>
+                  </>
+                )}
                 {tab === "application" && (
                   <ApplicationTab
                     schema={schema}
@@ -325,8 +347,9 @@ export default function ReviewApplicationPage() {
                     signedUrl={(appId, path) => leadershipApi.fileSignedUrl(appId, path)}
                   />
                 )}
-                {/* VIP memo: Application tab only, never in print. */}
-                {effectiveTrack === "sip" && tab === "application" && !pendingPrint && (
+                {/* Legacy VIP memo: Application tab only, never in print. The v2
+                    Navigator above replaces it (and prints stacked) when it loads. */}
+                {effectiveTrack === "sip" && tab === "application" && !pendingPrint && memoV2.status !== "ready" && (
                   <div className="vip-memo-actions">
                     <style>{PRINT_HIDE_MEMO}</style>
                     {vipMemoBusy && <p className="vip-memo-status">Preparing the investment memo — this can take a moment.</p>}

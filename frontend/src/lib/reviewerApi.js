@@ -37,6 +37,11 @@ export const reviewerApi = {
     api.post(`/reviewer/applications/${track}/${id}/vip-memo`),
   downloadVipMemo: (track, id, format) =>
     api.download(`/reviewer/applications/${track}/${id}/vip-memo/download?format=${format}`),
+  // VIP memo v2 (Navigator): pre-built JSON for assigned pilot apps; 404 otherwise.
+  getVipMemoV2: (track, id) =>
+    api.get(`/reviewer/applications/${track}/${id}/vip-memo-v2`),
+  downloadVipMemoV2: (track, id, format) =>
+    api.download(`/reviewer/applications/${track}/${id}/vip-memo-v2/download?format=${format}`),
   fileSignedUrl: (track, id, storagePath) =>
     api.get(
       `/reviewer/applications/${track}/${id}/files/signed-url?storage_path=${encodeURIComponent(storagePath)}`,
