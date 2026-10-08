@@ -1,0 +1,90 @@
+{
+  "version": 2,
+  "generated_at": "2026-01-15",
+  "prepared_by": "Test fixture team",
+  "source_files": ["Pitch deck (PDF)", "Cap table (XLSX)", "Budget sheet (XLSX)"],
+  "name": "Acme Robotics",
+  "headline": "FAKE: Toy robot arms that sort imaginary widgets for a pretend factory.",
+  "plain": "FAKE fixture company. Acme Robotics builds a pretend robot arm. Nothing here is real.",
+  "in_short": "A made-up robot arm for test runs only.",
+  "snapshot": {
+    "ask": {"value": "₹1.0 Cr", "note": "12 months"},
+    "instrument": {"value": "[To be confirmed]"},
+    "sector": {"value": "Robotics", "note": "Pretend warehouse automation"},
+    "stage": {"value": "TRL 4 · Active pilots", "note": "Two imaginary pilots"},
+    "location": {"value": "[To be confirmed]", "note": "Somewhere fictional"},
+    "team": {"value": "Wile Coyote + 1", "note": "co-founder · 3 holders on the cap table"},
+    "ic_date": "[To be confirmed]"
+  },
+  "figures": [["3 days", "fake setup time"], ["2", "fake pilots"], ["₹5 L", "fake price"]],
+  "know": ["Fake fact one.", "Fake fact two.", "Fake fact three."],
+  "check": ["Fake check one.", "Fake check two.", "Fake check three."],
+  "takeaways": {
+    "what": "Acme builds a fake robot arm.",
+    "why": "Fake widgets are sorted by hand today.",
+    "product": "One fake arm, one fake service.",
+    "tech": "A fake gripper that learns quickly.",
+    "competitors": "Two fake rivals, both slower.",
+    "market": "₹10–30 Cr a year of fake demand.",
+    "team": "Two fake founders hold 90%.",
+    "milestones": "Four fake quarters of work.",
+    "funds": "₹1.0 Cr; most goes to the fake team.",
+    "risks": "Five fake risks, each handled."
+  },
+  "sources": {
+    "what": "Application · Pitch deck",
+    "why": "Application · Research",
+    "product": "Pitch deck",
+    "tech": "Application",
+    "competitors": "Research",
+    "market": "Research",
+    "team": "Cap table",
+    "milestones": "Application",
+    "funds": "Budget sheet",
+    "risks": "Application"
+  },
+  "sections": {
+    "what": {"paragraphs": ["Fake paragraph one about the arm.", "Fake paragraph two about buyers."], "analogy": "Like a fake toy crane.", "in_short": "A fake arm for fake widgets."},
+    "why": {"rows": [
+      ["Today", "Fake status quo: widgets sorted by hand."],
+      ["Getting worse", "Fake trend: more widgets each year."],
+      ["Why others can't", "Fake rivals need custom code per widget."],
+      ["Hard to copy", "Fake moat: patented fake gripper."],
+      ["Proof so far", "Fake traction: two unpaid pilots."],
+      ["Plan B", "Fake pivot: sort fake parcels instead."]
+    ]},
+    "product": {
+      "kind": "hardware+software",
+      "columns": ["Offer", "What the buyer gets", "Indicative price"],
+      "offers": [["Fake Arm", "One fake arm installed", "₹5 L"], ["Fake Care", "Yearly fake support", "[To be confirmed]"]],
+      "note": "Fake pricing note."
+    },
+    "tech": {"rows": [["Fake gripper", "Learns a fake widget in minutes."], ["Fake vision", "Sees fake defects."], ["Fake edge box", "Runs offline."]]},
+    "competitors": {
+      "groups": [
+        {"segment": "Fake warehouses", "rows": [["RivalBot", "Fake arms", "Needs fake engineers", "Self-taught", "Series A"]]},
+        {"segment": "Fake factories", "rows": [["OtherCo", "Fake sorters", "Expensive", "Cheaper", "[To be confirmed]"]]}
+      ],
+      "note": "Fake mapping note."
+    },
+    "market": {
+      "rows": [
+        {"segment": "Fake warehouses", "global_size": "$1B fake", "slice_low_cr": 6, "slice_high_cr": 20, "slice_label": "₹6–20 Cr", "rationale": "Fake rationale", "source": "Fake Publisher, 2025"},
+        {"segment": "Fake factories", "global_size": "$500M fake", "slice_low_cr": 4, "slice_high_cr": 10, "slice_label": "₹4–10 Cr", "rationale": "Fake rationale two", "source": "Fake Journal, 2024"}
+      ],
+      "total": "₹10–30 Cr", "beachhead": "Fake warehouses in a fake city.", "tam_note": "Fake TAM note."
+    },
+    "team": {
+      "members": [{"name": "Wile Coyote", "role": "CEO", "background": "Fake engineer"}, {"name": "Road Runner", "role": "CTO", "background": "Fake roboticist"}],
+      "holders": [["Wile Coyote", "Founder", 60.0, true], ["Road Runner", "Co-founder", 30.0, true], ["Fake ESOP", "ESOP", 10.0, false]],
+      "notes": ["Fake note: CTO holds a fake part-time role."],
+      "confirm": ["Whether both founders are full-time"]
+    },
+    "milestones": {"rows": [["Q1", "Fake prototype v2", "₹20 L"], ["Q2", "Fake pilot 3", ""]],
+                   "infra": "Fake lab space", "note": ""},
+    "funds": {"rows": [["Team", "Fake salaries", 50.0, "₹50 L"], ["Hardware", "Fake parts", 30.0, "₹30 L"], ["Go-to-market", "Fake trips", 20.0, "₹20 L"]], "total": "₹1.0 Cr", "note": ""},
+    "risks": {"rows": [["Fake risk A", "Fake mitigant A"], ["Fake risk B", "Fake mitigant B"], ["Fake risk C", "Fake mitigant C"], ["Fake risk D", "Fake mitigant D"]]}
+  },
+  "recommendation": {"verdict": "CONDITIONAL APPROVAL", "summary": "Fake summary of a fake recommendation.", "conditions": ["Fake condition one", "Fake condition two"]},
+  "questions": ["Fake question one?", "Fake question two?", "Fake question three?", "Fake question four?", "Fake question five?"]
+}

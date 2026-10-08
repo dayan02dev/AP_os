@@ -40,6 +40,8 @@ from ..services import (
     track_move,
     vip_memo,
     vip_memo_export,
+    vip_memo_v2,
+    vip_memo_v2_export,
 )
 from ..services.assignment_email import notify_reviewers_assigned
 from ..services.audit import actor_role_of, write_audit
@@ -183,6 +185,46 @@ async def download_vip_memo(
         headers={"Content-Disposition": f'attachment; filename="vip-investment-memo-{application_id[:8]}.{suffix}"'},
     )
 
+
+
+def _memo_v2_or_404(track: str, application_id: str) -> dict[str, Any]:
+    memo = vip_memo_v2.get_memo_v2(application_id) if track == "sip" else None
+    if memo is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "memo_not_available"},
+        )
+    return memo
+
+
+@router.get(
+    "/applications/{track}/{application_id}/vip-memo-v2",
+    dependencies=[Depends(require_capability("view_app_detail"))],
+)
+async def get_vip_memo_v2(
+    track: Literal["tir", "sip"],
+    application_id: str,
+) -> dict[str, Any]:
+    """The pre-built VIP memo v2 (Navigator) JSON for a pilot VIP application."""
+    return _memo_v2_or_404(track, application_id)
+
+
+@router.post(
+    "/applications/{track}/{application_id}/vip-memo-v2/download",
+    dependencies=[Depends(require_capability("view_app_detail"))],
+)
+async def download_vip_memo_v2(
+    track: Literal["tir", "sip"],
+    application_id: str,
+    format: Literal["pdf", "docx"] = Query("pdf"),
+) -> Response:
+    memo = _memo_v2_or_404(track, application_id)
+    body, media = vip_memo_v2_export.render(memo, format)
+    return Response(
+        content=body,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{vip_memo_v2.download_filename(memo, format)}"'},
+    )
 
 class DecisionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
