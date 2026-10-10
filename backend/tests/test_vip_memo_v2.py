@@ -36,7 +36,6 @@ SECTION_TITLES = (
     "Milestones",
     "Use of funds",
     "Key risks & mitigants",
-    "IC recommendation",
     "Questions for the founders",
     "IC Reviewer Notes",
 )
@@ -188,7 +187,10 @@ def test_render_docx_v2_has_header_and_all_sections():
     assert "Acme Robotics advantage" in text
     assert "Reviewer Name" in text and "Signature" in text
     assert "Prepared by: Test fixture team" in text
-    assert "CONDITIONAL APPROVAL" in text
+    # The IC recommendation is left out of the export for now.
+    assert "IC recommendation" not in text
+    assert "CONDITIONAL APPROVAL" not in text
+    assert FIXTURE["recommendation"]["summary"] not in text
     doc = Document(io.BytesIO(body))
     sec = doc.sections[0]
     assert round(sec.page_width.inches, 1) == 8.5
@@ -210,6 +212,47 @@ def test_render_pdf_v2_has_header_and_all_sections():
     # US Letter
     box = reader.pages[0].mediabox
     assert (round(float(box.width)), round(float(box.height))) == (612, 792)
+
+
+# Long text stored as bullet lists: a bullet is a string or [lead, *sub-points];
+# risks may be {title, risk, handled} objects.
+POINTS = copy.deepcopy(FIXTURE)
+POINTS["plain"] = ["Plain point one.", "Plain point two."]
+POINTS["sections"]["what"] = {"paragraphs": ["What point one.", "What point two."],
+                              "analogy": ["Like a crane.", "But smaller."]}
+POINTS["sections"]["why"]["rows"][3] = ["Hard to copy", [["Lead moat.", "Sub moat a."], "Second moat."]]
+POINTS["sections"]["product"]["offers"] = [["Fake Arm", ["Gets one arm.", "Gets an app."], ["₹5 L", "Pilot free"]]]
+POINTS["sections"]["product"]["note"] = ["Product note one.", "Product note two."]
+POINTS["sections"]["market"]["tam_note"] = ["TAM note one.", "TAM note two."]
+POINTS["sections"]["team"]["notes"] = ["Team note one.", "Team note two."]
+POINTS["sections"]["milestones"]["infra"] = ["Lab space", "GPU time"]
+POINTS["sections"]["risks"]["rows"] = [
+    {"title": "Regulatory", "risk": ["No licence yet.", "Class unclear."], "handled": ["Test licence held."]},
+    ["Legacy risk", "Legacy mitigant"],
+]
+
+
+def test_render_docx_v2_renders_bullet_lists():
+    doc = Document(io.BytesIO(vip_memo_v2_export.render_docx_v2(POINTS)))
+    bullets = [p.text for p in doc.paragraphs if p.style.name.startswith("List Bullet")]
+    for item in ("Plain point two.", "What point two.", "But smaller.", "Lead moat.", "Sub moat a.",
+                 "Second moat.", "Product note two.", "TAM note two.", "Team note two.", "GPU time"):
+        assert item in bullets, item
+    sub = next(p for p in doc.paragraphs if p.text == "Sub moat a.")
+    assert sub.style.name == "List Bullet 2"
+    text, _ = _docx_text(vip_memo_v2_export.render_docx_v2(POINTS))
+    assert "• Gets one arm.\n• Gets an app." in text  # list inside a table cell
+    assert "Regulatory" in text and "• No licence yet.\n• Class unclear." in text
+    assert "Legacy mitigant" in text
+    assert "['" not in text  # no Python list reprs leak into the document
+
+
+def test_render_pdf_v2_renders_bullet_lists():
+    reader = PdfReader(io.BytesIO(vip_memo_v2_export.render_pdf_v2(POINTS)))
+    text = "\n".join(p.extract_text() or "" for p in reader.pages)
+    for item in ("Plain point two.", "Sub moat a.", "Gets an app.", "TAM note two.", "Class unclear.", "Legacy mitigant"):
+        assert item in text, item
+    assert "['" not in text
 
 
 def test_renderers_tolerate_sparse_memo():

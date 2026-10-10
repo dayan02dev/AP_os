@@ -1,8 +1,9 @@
 // VipNavigatorMemo — the "VIP memo · Navigator" for the pilot VIP applications.
 // Renders the v2 memo JSON (backend ai_screening.sections.vip_memo_v2; contract
-// in the VIP memo schema): header, snapshot, IC recommendation, then a
-// section rail (01–10 + Questions) beside one panel at a time. Reading progress
-// is kept per viewer in localStorage. For print, every section is stacked.
+// in the VIP memo schema): header, snapshot, then a section rail (01–10 +
+// Questions) beside one panel at a time. Long text may be a string or a list of
+// bullet points (an item may be [lead, ...sub-points]). Reading progress is kept
+// per viewer in localStorage. For print, every section is stacked.
 import React, { useCallback, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import "./VipNavigatorMemo.css";
@@ -78,6 +79,35 @@ export function T({ children }) {
   );
 }
 
+const blank = (v) => v == null || v === "" || (Array.isArray(v) && v.length === 0);
+
+/** Long text: a string is a paragraph (bare text when className is null); a
+ *  list is bullets, where an item may itself be [lead, ...sub-points]. */
+function Points({ value, className = "m3-p", variant }) {
+  if (blank(value)) return null;
+  if (!Array.isArray(value)) return className ? <p className={className}><T>{value}</T></p> : <T>{value}</T>;
+  return (
+    <ul className={variant ? `m3-pts ${variant}` : "m3-pts"}>
+      {value.filter((v) => !blank(v)).map((it, i) => (Array.isArray(it) ? (
+        <li key={i}>
+          <span className="lead"><T>{it[0]}</T></span>
+          {it.length > 1 && (
+            <ul className="m3-pts sub">{it.slice(1).map((x, j) => <li key={j}><T>{x}</T></li>)}</ul>
+          )}
+        </li>
+      ) : <li key={i}><T>{it}</T></li>))}
+    </ul>
+  );
+}
+
+/** One labelled line inside a card. */
+const Row = ({ k, v }) => (blank(v) ? null : (
+  <div className="m3-card-row">
+    <span className="k">{k}</span>
+    <div className="v"><Points value={v} className={null} /></div>
+  </div>
+));
+
 function Table({ head, rows, numeric = [] }) {
   return (
     <div className="m3-tblwrap">
@@ -90,7 +120,7 @@ function Table({ head, rows, numeric = [] }) {
             <tr key={i}>
               {head.map((_, j) => (
                 <td key={j} className={j === 0 ? "b" : numeric.includes(j) ? "n" : undefined}>
-                  {r[j] == null || r[j] === "" ? <span className="s">—</span> : <T>{r[j]}</T>}
+                  {blank(r[j]) ? <span className="s">—</span> : <Points value={r[j]} className={null} />}
                 </td>
               ))}
             </tr>
@@ -105,21 +135,30 @@ function Def({ rows }) {
   return (
     <dl className="m3-def">
       {arr(rows).map((r, i) => (
-        <div key={i}><dt><T>{arr(r)[0]}</T></dt><dd><T>{arr(r)[1]}</T></dd></div>
+        <div key={i}><dt><T>{arr(r)[0]}</T></dt><dd><Points value={arr(r)[1]} className={null} /></dd></div>
       ))}
     </dl>
   );
 }
 
-const Short = ({ label, children }) =>
-  children ? <p className="m3-short"><b>{label}</b> <T>{children}</T></p> : null;
-const Note = ({ children }) => (children ? <p className="m3-note"><T>{children}</T></p> : null);
+const Short = ({ label, children }) => {
+  if (blank(children)) return null;
+  if (!Array.isArray(children)) return <p className="m3-short"><b>{label}</b> <T>{children}</T></p>;
+  return <div className="m3-short"><b>{label}</b><Points value={children} /></div>;
+};
+const Note = ({ children }) => {
+  if (blank(children)) return null;
+  if (!Array.isArray(children)) return <p className="m3-note"><T>{children}</T></p>;
+  return <div className="m3-note"><Points value={children} /></div>;
+};
 
 const BODY = {
   what: (m, s) => (
     <>
-      {arr(s.paragraphs).map((p, i) => <p className="m3-p" key={i}><T>{p}</T></p>)}
-      {s.analogy && <p className="m3-p"><b>Think of it like this:</b> <T>{s.analogy}</T></p>}
+      <Points value={arr(s.paragraphs)} />
+      {Array.isArray(s.analogy) ? (
+        <div className="m3-block"><b className="m3-lbl">Think of it like this:</b><Points value={s.analogy} /></div>
+      ) : s.analogy && <p className="m3-p"><b>Think of it like this:</b> <T>{s.analogy}</T></p>}
       <Short label="In short:">{s.in_short || m.in_short}</Short>
     </>
   ),
@@ -128,7 +167,15 @@ const BODY = {
     const head = arr(s.columns).length ? s.columns : ["Offer", "What the buyer gets", "Indicative price"];
     return (
       <>
-        <Table head={head} rows={arr(s.offers).map(arr)} />
+        <div className="m3-cards">
+          {arr(s.offers).map(arr).map((o, i) => (
+            <article className="m3-card" key={i}>
+              <h5 className="m3-card-h"><T>{o[0]}</T></h5>
+              <Row k={<T>{head[1]}</T>} v={o[1]} />
+              <Row k={<T>{head[2]}</T>} v={o[2]} />
+            </article>
+          ))}
+        </div>
         <Note>{s.note}</Note>
       </>
     );
@@ -136,32 +183,22 @@ const BODY = {
   tech: (m, s) => <Def rows={s.rows} />,
   competitors: (m, s) => (
     <>
-      <div className="m3-tblwrap">
-        <table className="m3-tbl">
-          <thead>
-            <tr>
-              <th>Company</th><th>What they do</th><th>Key limitation</th>
-              <th>{m.name} advantage</th><th>Stage</th>
-            </tr>
-          </thead>
-          <tbody>
-            {arr(s.groups).map((g, gi) => (
-              <React.Fragment key={gi}>
-                <tr className="g"><td colSpan={5}><T>{obj(g).segment}</T></td></tr>
-                {arr(obj(g).rows).map((r, i) => (
-                  <tr key={i}>
-                    <td className="b"><T>{arr(r)[0]}</T></td>
-                    <td><T>{arr(r)[1]}</T></td>
-                    <td><T>{arr(r)[2]}</T></td>
-                    <td><T>{arr(r)[3]}</T></td>
-                    <td className="s"><T>{arr(r)[4]}</T></td>
-                  </tr>
-                ))}
-              </React.Fragment>
+      {arr(s.groups).map(obj).map((g, gi) => (
+        <div className="m3-group" key={gi}>
+          <span className="m3-subh"><T>{g.segment}</T></span>
+          <div className="m3-cards">
+            {arr(g.rows).map(arr).map((r, i) => (
+              <article className="m3-card" key={i}>
+                <h5 className="m3-card-h"><T>{r[0]}</T></h5>
+                <Row k="What they do" v={r[1]} />
+                <Row k="Key limitation" v={r[2]} />
+                <Row k={`${m.name} advantage`} v={r[3]} />
+                <Row k="Stage" v={r[4]} />
+              </article>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        </div>
+      ))}
       <Note>{s.note}</Note>
     </>
   ),
@@ -228,7 +265,7 @@ const BODY = {
           </table>
         </div>
       )}
-      {arr(s.notes).map((n, i) => <p className="m3-note" key={i}><T>{n}</T></p>)}
+      <Note>{s.notes}</Note>
       {arr(s.confirm).length > 0 && (
         <>
           <span className="m3-subh">To check with the founders</span>
@@ -275,15 +312,17 @@ const BODY = {
     );
   },
   risks: (m, s) => (
-    <div className="m3-tblwrap">
-      <table className="m3-tbl">
-        <thead><tr><th>Risk</th><th>How it is handled</th></tr></thead>
-        <tbody>
-          {arr(s.rows).map((r, i) => (
-            <tr key={i}><td><T>{arr(r)[0]}</T></td><td className="s"><T>{arr(r)[1]}</T></td></tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="m3-cards one">
+      {arr(s.rows).map((r, i) => {
+        const o = Array.isArray(r) ? { risk: r[0], handled: r[1] } : obj(r);
+        return (
+          <article className="m3-card" key={i}>
+            {o.title && <h5 className="m3-card-h"><T>{o.title}</T></h5>}
+            <Row k="Risk" v={o.risk} />
+            <Row k="How it is handled" v={o.handled} />
+          </article>
+        );
+      })}
     </div>
   ),
   questions: (m) => (
@@ -333,23 +372,6 @@ function Snapshot({ memo }) {
         <div key={label}><dt>{label}</dt>{value}{note}</div>
       ))}
     </dl>
-  );
-}
-
-function Recommendation({ rec }) {
-  const r = obj(rec);
-  if (!r.verdict && !r.summary) return null;
-  return (
-    <section className="vipnav-reco" data-testid="vipnav-reco" aria-label="IC recommendation">
-      <span className="m3-eyebrow">IC recommendation</span>
-      {r.verdict && <strong className="vipnav-verdict"><T>{r.verdict}</T></strong>}
-      {r.summary && <p className="m3-p"><T>{r.summary}</T></p>}
-      {arr(r.conditions).length > 0 && (
-        <ul className="vipnav-conditions">
-          {arr(r.conditions).map((c, i) => <li key={i}><T>{c}</T></li>)}
-        </ul>
-      )}
-    </section>
   );
 }
 
@@ -406,7 +428,7 @@ export default function VipNavigatorMemo({ memo, appId, onDownload }) {
     <div className="vipnav m3 mc" tabIndex={-1} onKeyDown={onKeyDown}>
       <span className="m3-eyebrow rule">VIP memo · {name}</span>
       {memo.headline && <h3 className="m3-headline"><T>{memo.headline}</T></h3>}
-      {memo.plain && <p className="m3-plain"><T>{memo.plain}</T></p>}
+      <Points value={memo.plain} className="m3-plain" variant="lg" />
       <div className="m3-headrow">
         <p className="m3-meta" data-testid="vipnav-meta">
           Prepared by {memo.prepared_by || "the ARTPARK venture team"} from the <b>application</b>,{" "}
@@ -421,7 +443,6 @@ export default function VipNavigatorMemo({ memo, appId, onDownload }) {
         )}
       </div>
       <Snapshot memo={memo} />
-      <Recommendation rec={memo.recommendation} />
 
       {printing ? (
         <div className="vipnav-print" data-testid="vipnav-print">

@@ -63,12 +63,12 @@ describe("VipNavigatorMemo — header + snapshot", () => {
     expect(snap.textContent).not.toContain("[To be confirmed]");
   });
 
-  it("shows the IC recommendation box under the snapshot", () => {
+  it("does not render the IC recommendation", () => {
     setup();
-    const box = screen.getByTestId("vipnav-reco");
-    expect(within(box).getByText("CONDITIONAL APPROVAL")).toBeTruthy();
-    expect(within(box).getByText(FIXTURE.recommendation.summary)).toBeTruthy();
-    expect(within(box).getByText("Fake condition one")).toBeTruthy();
+    expect(screen.queryByTestId("vipnav-reco")).toBeNull();
+    expect(screen.queryByText("IC recommendation")).toBeNull();
+    expect(screen.queryByText("CONDITIONAL APPROVAL")).toBeNull();
+    expect(screen.queryByText(FIXTURE.recommendation.summary)).toBeNull();
   });
 });
 
@@ -157,11 +157,11 @@ describe("VipNavigatorMemo — section bodies", () => {
     expect(within(panel()).getByText("Plan B")).toBeTruthy();
     go("The product");
     expect(within(panel()).getByText("Fake Arm")).toBeTruthy();
-    expect(within(panel()).getByText("Indicative price")).toBeTruthy();
+    expect(within(panel()).getAllByText("Indicative price")).toHaveLength(2);
     go("Technology edge");
     expect(within(panel()).getByText("Fake gripper")).toBeTruthy();
     go("Competitors");
-    expect(within(panel()).getByText("Acme Robotics advantage")).toBeTruthy();
+    expect(within(panel()).getAllByText("Acme Robotics advantage")).toHaveLength(2);
     expect(within(panel()).getByText("Fake warehouses")).toBeTruthy();
     expect(within(panel()).getByText("RivalBot")).toBeTruthy();
     expect(within(panel()).getByText("Fake mapping note.")).toBeTruthy();
@@ -206,6 +206,67 @@ describe("VipNavigatorMemo — section bodies", () => {
     const h = screen.getByRole("heading", { level: 3 });
     expect(h.textContent).toBe("Sells to To confirm buyers");
     expect(within(h).getByText("To confirm").className).toContain("m3-pending");
+  });
+});
+
+// The pilot memos store long text as bullet lists: a bullet is a string, or
+// [lead, ...sub-points]; risks may be {title, risk, handled} objects.
+const POINTS = {
+  ...FIXTURE,
+  plain: ["Plain point one.", "Plain point two."],
+  sections: {
+    ...FIXTURE.sections,
+    what: { paragraphs: ["What point one.", "What point two."], analogy: ["Like a crane.", "But smaller."] },
+    why: { rows: [["Hard to copy", [["Lead moat.", "Sub moat a.", "Sub moat b."], "Second moat."]]] },
+    product: { columns: ["Offer", "What the buyer gets", "Indicative price"],
+      offers: [["Fake Arm", ["Gets one arm.", "Gets an app."], ["₹5 L", "Pilot free"]]], note: ["Product note one.", "Product note two."] },
+    competitors: { groups: [{ segment: "Fake warehouses", rows: [["RivalBot", "Fake arms", "Needs fake engineers", "Self-taught", "Series A"]] }],
+      note: ["Comp note one.", "Comp note two."] },
+    milestones: { rows: [["Q1", ["Ship v2.", "Sign pilot."], "₹20 L"]], infra: ["Lab space", "GPU time"], note: ["Plan note one."] },
+    risks: { rows: [{ title: "Regulatory", risk: ["No licence yet.", "Class unclear."], handled: ["Test licence held.", "Tranche funds."] }, ["Legacy risk", "Legacy mitigant"]] },
+  },
+};
+
+describe("VipNavigatorMemo — bullet-point content", () => {
+  const items = (el) => Array.from(el.querySelectorAll(":scope > li")).map((li) => li.firstChild.textContent);
+
+  it("renders the header plain text as bullets", () => {
+    setup({ memo: POINTS });
+    const ul = screen.getByText("Plain point one.").closest("ul");
+    expect(items(ul)).toEqual(["Plain point one.", "Plain point two."]);
+  });
+
+  it("renders list-valued section text as bullets, with nested sub-points", () => {
+    setup({ memo: POINTS });
+    expect(screen.getByText("What point two.").tagName).toBe("LI");
+    expect(screen.getByText("Think of it like this:")).toBeTruthy();
+    expect(screen.getByText("But smaller.").tagName).toBe("LI");
+    fireEvent.click(navBtn("Why it matters"));
+    const lead = within(panel()).getByText("Lead moat.");
+    const sub = lead.closest("li").querySelector("ul");
+    expect(items(sub)).toEqual(["Sub moat a.", "Sub moat b."]);
+    expect(within(panel()).getByText("Second moat.").tagName).toBe("LI");
+  });
+
+  it("renders product offers, competitors and risks as cards without wide tables", () => {
+    setup({ memo: POINTS });
+    fireEvent.click(navBtn("The product"));
+    expect(within(panel()).getByText("Gets an app.").tagName).toBe("LI");
+    expect(within(panel()).getByText("Pilot free").tagName).toBe("LI");
+    expect(within(panel()).getByText("Product note two.").tagName).toBe("LI");
+    fireEvent.click(navBtn("Competitors"));
+    expect(panel().querySelector("table")).toBeNull();
+    expect(within(panel()).getByText("RivalBot")).toBeTruthy();
+    expect(within(panel()).getByText("Comp note two.").tagName).toBe("LI");
+    fireEvent.click(navBtn("12-month plan"));
+    expect(within(panel()).getByText("Sign pilot.").tagName).toBe("LI");
+    expect(within(panel()).getByText("GPU time").tagName).toBe("LI");
+    fireEvent.click(navBtn("Risks"));
+    expect(panel().querySelector("table")).toBeNull();
+    expect(within(panel()).getByText("Regulatory")).toBeTruthy();
+    expect(within(panel()).getByText("Class unclear.").tagName).toBe("LI");
+    expect(within(panel()).getByText("Tranche funds.").tagName).toBe("LI");
+    expect(within(panel()).getByText("Legacy mitigant")).toBeTruthy();
   });
 });
 

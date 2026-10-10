@@ -50,9 +50,25 @@ _WHY_POINTS = (
 )
 
 
+def _items(value: Any) -> list:
+    """Bullet items (each a string or [lead, *sub-points]) from a string or list."""
+    if isinstance(value, list):
+        return [v for v in value if v not in (None, "", [])]
+    return [] if value in (None, "") else [value]
+
+
 def _s(value: Any) -> str:
     if value is None:
         return "—"
+    if isinstance(value, list):  # bullet list → "• " lines (table cells, labels)
+        lines = []
+        for it in _items(value):
+            if isinstance(it, list):
+                lines.append(f"• {_s(it[0])}")
+                lines += [f"  – {_s(x)}" for x in it[1:]]
+            else:
+                lines.append(f"• {_s(it)}")
+        return "\n".join(lines) or "—"
     if isinstance(value, float) and value.is_integer():
         value = int(value)
     text = str(value).strip()
@@ -72,16 +88,20 @@ def _row(value: Any, width: int) -> list[str]:
     return cells + ["—"] * (width - len(cells))
 
 
-def _why_points(rows: list) -> list[tuple[str, str]]:
-    by_label: dict[str, list[str]] = {}
+def _why_points(rows: list) -> list[tuple[str, Any]]:
+    """(title, text or bullet list) per sub-point; a list wins if any row has one."""
+    by_label: dict[str, list] = {}
     for r in rows:
         cells = _l(r)
         if len(cells) >= 2:
-            by_label.setdefault(str(cells[0]).strip().lower(), []).append(_s(cells[1]))
+            by_label.setdefault(str(cells[0]).strip().lower(), []).append(cells[1])
     points = []
     for title, labels in _WHY_POINTS:
-        texts = [t for lab in labels for t in by_label.get(lab, [])]
-        points.append((title, " ".join(texts) if texts else TBC))
+        values = [v for lab in labels for v in by_label.get(lab, [])]
+        if any(isinstance(v, list) for v in values):
+            points.append((title, [i for v in values for i in _items(v)]))
+        else:
+            points.append((title, " ".join(_s(v) for v in values) if values else TBC))
     return points
 
 
@@ -90,7 +110,6 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     name = _s(memo.get("name")) if memo.get("name") else "This company"
     snap = _d(memo.get("snapshot"))
     sec = _d(memo.get("sections"))
-    rec = _d(memo.get("recommendation"))
 
     def sv(key: str, field: str = "value") -> str:
         item = snap.get(key)
@@ -102,6 +121,16 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
 
     b: list[tuple] = [("title", name, _s(memo.get("headline")) if memo.get("headline") else "")]
 
+    def prose(value: Any, kind: str = "p", label: str | None = None) -> None:
+        """A string as one paragraph; a list as bullets (under ``label`` if given)."""
+        if isinstance(value, list):
+            if _items(value):
+                if label:
+                    b.append(("label", label))
+                b.append(("bullets", _items(value)))
+        elif value:
+            b.append(("lp", label, _s(value)) if label else (kind, _s(value)))
+
     b.append(("h1", "Deal snapshot"))
     b.append(("snapshot", [
         [("Stage", stage), ("Ask", sv("ask")), ("Duration", sv("ask", "note")), ("Instrument", sv("instrument"))],
@@ -110,29 +139,29 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
 
     what = _d(sec.get("what"))
     b.append(("h1", "What does this company do?"))
-    if memo.get("plain"):
-        b.append(("p", _s(memo["plain"])))
-    for para in _l(what.get("paragraphs")):
-        b.append(("p", _s(para)))
-    if what.get("analogy"):
-        b.append(("lp", "Analogy", _s(what["analogy"])))
+    prose(memo.get("plain"))
+    prose(_l(what.get("paragraphs")))
+    prose(what.get("analogy"), label="Analogy")
     short = what.get("in_short") or memo.get("in_short")
     if short:
         b.append(("lp", "In short", _s(short)))
 
     b.append(("h1", "Why this solution matters"))
     for title, text in _why_points(_l(_d(sec.get("why")).get("rows"))):
-        b.append(("lp", title, text))
+        prose(text, label=title)
 
     product = _d(sec.get("product"))
     cols = [_s(c) for c in _l(product.get("columns"))] or ["Offer", "What the buyer gets", "Indicative price"]
     b.append(("h1", "The product"))
     b.append(("table", cols, [_row(o, len(cols)) for o in _l(product.get("offers"))], None))
-    if product.get("note"):
-        b.append(("note", _s(product["note"])))
+    prose(product.get("note"), "note")
 
     b.append(("h1", "Technology edge"))
-    b.append(("bullets", [f"{c[0]}: {c[1]}" for c in (_row(r, 2) for r in _l(_d(sec.get("tech")).get("rows")))]))
+    tech = []
+    for r in _l(_d(sec.get("tech")).get("rows")):
+        label, value = (_l(r) + [None, None])[:2]
+        tech.append([_s(label), *_items(value)] if isinstance(value, list) else f"{_s(label)}: {_s(value)}")
+    b.append(("bullets", tech))
 
     comp = _d(sec.get("competitors"))
     b.append(("h1", "Competitive landscape"))
@@ -141,8 +170,7 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
         b.append(("h2", _s(g.get("segment"))))
         b.append(("table", ["Competitor", "What they do", "Key limitation", f"{name} advantage"],
                   [_row(r, 4) for r in _l(g.get("rows"))], None))
-    if comp.get("note"):
-        b.append(("note", _s(comp["note"])))
+    prose(comp.get("note"), "note")
 
     market = _d(sec.get("market"))
     rows = [[_s(_d(r).get("segment")), _s(_d(r).get("global_size")), _s(_d(r).get("slice_label")),
@@ -150,10 +178,8 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     rows.append(["Total", "", _s(market.get("total")), "", ""])
     b.append(("h1", "Addressable market"))
     b.append(("table", ["Segment", "Global size", "Realistic slice", "Rationale", "Source"], rows, "total"))
-    if market.get("beachhead"):
-        b.append(("lp", "Beachhead", _s(market["beachhead"])))
-    if market.get("tam_note"):
-        b.append(("note", _s(market["tam_note"])))
+    prose(market.get("beachhead"), label="Beachhead")
+    prose(market.get("tam_note"), "note")
 
     team = _d(sec.get("team"))
     b.append(("h1", "Founding team"))
@@ -164,18 +190,16 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     if holders:
         b.append(("h2", "Cap table"))
         b.append(("table", ["Holder", "Type", "Equity"], holders, None))
-    if _l(team.get("notes")):
-        b.append(("bullets", [_s(n) for n in team["notes"]]))
+    if _items(team.get("notes")):
+        b.append(("bullets", _items(team["notes"])))
     if _l(team.get("confirm")):
         b.append(("lp", "To confirm with the founders", "; ".join(_s(c) for c in team["confirm"])))
 
     ms = _d(sec.get("milestones"))
     b.append(("h1", "Milestones"))
     b.append(("table", ["When", "Key deliverables", "Target / budget"], [_row(r, 3) for r in _l(ms.get("rows"))], None))
-    if ms.get("infra"):
-        b.append(("lp", "Asks ARTPARK for", _s(ms["infra"])))
-    if ms.get("note"):
-        b.append(("note", _s(ms["note"])))
+    prose(ms.get("infra"), label="Asks ARTPARK for")
+    prose(ms.get("note"), "note")
 
     funds = _d(sec.get("funds"))
     frows = []
@@ -185,15 +209,19 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     frows.append(["Total", _s(funds.get("total")), "100%" if frows else "—", ""])
     b.append(("h1", "Use of funds"))
     b.append(("table", ["Category", "Amount", "%", "Key items"], frows, "total"))
-    if funds.get("note"):
-        b.append(("note", _s(funds["note"])))
+    prose(funds.get("note"), "note")
 
     b.append(("h1", "Key risks & mitigants"))
-    b.append(("table", ["Risk", "Mitigant"], [_row(r, 2) for r in _l(_d(sec.get("risks")).get("rows"))], None))
+    risks = []
+    for r in _l(_d(sec.get("risks")).get("rows")):
+        if isinstance(r, dict):  # {title, risk, handled}
+            risk = _s(r.get("risk"))
+            risks.append([f"{_s(r['title'])}\n{risk}" if r.get("title") else risk, _s(r.get("handled"))])
+        else:
+            risks.append(_row(r, 2))
+    b.append(("table", ["Risk", "Mitigant"], risks, None))
 
-    b.append(("h1", "IC recommendation"))
-    b.append(("box", _s(rec.get("verdict")) if rec.get("verdict") else TBC, _s(rec.get("summary")) if rec.get("summary") else "",
-              [_s(c) for c in _l(rec.get("conditions"))]))
+    # The IC recommendation (memo["recommendation"]) is left out for now.
 
     b.append(("h1", "Questions for the founders"))
     b.append(("numbered", [_s(q) for q in _l(memo.get("questions"))]))
@@ -322,9 +350,16 @@ def render_docx_v2(memo: dict[str, Any]) -> bytes:
             run(p, block[2])
         elif kind == "note":
             run(doc.add_paragraph(), block[1], italic=True, color=soft, size=9)
+        elif kind == "label":
+            p = doc.add_paragraph()
+            p.paragraph_format.keep_with_next = True
+            run(p, f"{block[1]}:", bold=True, color=navy)
         elif kind == "bullets":
             for item in block[1]:
-                doc.add_paragraph(item, style="List Bullet")
+                lead, subs = (item[0], item[1:]) if isinstance(item, list) else (item, [])
+                doc.add_paragraph(_s(lead), style="List Bullet")
+                for sub in subs:
+                    doc.add_paragraph(_s(sub), style="List Bullet 2")
         elif kind == "numbered":
             for item in block[1]:
                 doc.add_paragraph(item, style="List Number")
@@ -343,20 +378,6 @@ def render_docx_v2(memo: dict[str, Any]) -> bytes:
             doc.add_paragraph()
         elif kind == "table":
             table(block[1], block[2], block[3])
-        elif kind == "box":
-            t = doc.add_table(rows=1, cols=1)
-            t.style = "Table Grid"
-            cell = t.rows[0].cells[0]
-            shade(cell, BOX)
-            cell.text = ""
-            run(cell.paragraphs[0], f"Recommendation: {block[1]}", bold=True, color=navy, size=12)
-            if block[2]:
-                run(cell.add_paragraph(), block[2])
-            if block[3]:
-                run(cell.add_paragraph(), "Conditions:", bold=True, color=navy)
-                for c in block[3]:
-                    run(cell.add_paragraph(), f"• {c}")
-            doc.add_paragraph()
         elif kind == "pagebreak":
             doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
         elif kind == "reviewer_notes":
@@ -417,6 +438,8 @@ def render_pdf_v2(memo: dict[str, Any]) -> bytes:
         "cellb": ParagraphStyle("v2cellb", parent=base, fontName="Helvetica-Bold", fontSize=8.5, leading=11, spaceAfter=0),
         "th": ParagraphStyle("v2th", parent=base, fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=colors.white, spaceAfter=0),
         "area": ParagraphStyle("v2area", parent=base, fontName="Helvetica-Bold", fontSize=10, leading=12, textColor=navy, spaceBefore=4, spaceAfter=1),
+        "bullet": ParagraphStyle("v2bullet", parent=base, leftIndent=12, firstLineIndent=-8, spaceAfter=3),
+        "sub": ParagraphStyle("v2sub", parent=base, fontSize=9, leading=12, textColor=soft, leftIndent=26, firstLineIndent=-8, spaceAfter=2),
         "q": ParagraphStyle("v2q", parent=base, fontName="Helvetica-Oblique", fontSize=8.5, leading=10, textColor=soft, spaceAfter=0),
     }
 
@@ -489,8 +512,18 @@ def render_pdf_v2(memo: dict[str, Any]) -> bytes:
             add(P(block[2], bold_label=block[1]))
         elif kind == "note":
             add(P(block[1], "note"))
-        elif kind in ("bullets", "numbered"):
-            items = [P(f"{'•' if kind == 'bullets' else str(i + 1) + '.'} {x}") for i, x in enumerate(block[1])]
+        elif kind == "label":
+            pending_heading = pending_heading + [P(f"{block[1]}:", "area")]
+        elif kind == "bullets":
+            items = []
+            for x in block[1]:
+                lead, subs = (x[0], x[1:]) if isinstance(x, list) else (x, [])
+                items.append(P(f"• {_s(lead)}", "bullet"))
+                items.extend(P(f"– {_s(sub)}", "sub") for sub in subs)
+            if items:
+                add(*items)
+        elif kind == "numbered":
+            items = [P(f"{i + 1}. {x}") for i, x in enumerate(block[1])]
             if items:
                 add(*items)
         elif kind == "snapshot":
@@ -505,20 +538,6 @@ def render_pdf_v2(memo: dict[str, Any]) -> bytes:
             add(t, Spacer(1, 6))
         elif kind == "table":
             add(grid(block[1], block[2], block[3]), Spacer(1, 6))
-        elif kind == "box":
-            inner = [P(f"Recommendation: {block[1]}", "h2")]
-            if block[2]:
-                inner.append(P(block[2]))
-            if block[3]:
-                inner.append(P("Conditions:", "cellb"))
-                inner.extend(P(f"• {c}") for c in block[3])
-            t = Table([[inner]], colWidths=[width])
-            t.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, -1), box), ("BOX", (0, 0), (-1, -1), 1.2, navy),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-            ]))
-            add(t)
         elif kind == "pagebreak":
             story.append(PageBreak())
         elif kind == "reviewer_notes":
