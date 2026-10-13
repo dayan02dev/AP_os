@@ -160,3 +160,10 @@
   .vipnav .m3-tblwrap{overflow:visible}
   .vipnav *{transition:none!important}
 }
+
+/* Admin detail: AI Memo / Application / Reviews tab strip for the pilot apps
+   (mirrors the leadership .review-tabs look). */
+.vipnav-tabs{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--line,#e3e3e8);margin-bottom:24px}
+.vipnav-tabs button{font-family:var(--font-display,inherit);font-weight:700;font-size:14px;letter-spacing:.04em;padding:12px 20px 12px 0;margin-right:24px;margin-bottom:-1px;color:var(--ink-soft,#4a4a52);background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer}
+.vipnav-tabs button:hover{color:var(--ink,#0f0f14)}
+.vipnav-tabs button.active{color:var(--artblue,#3213b7);border-bottom-color:var(--artblue,#3213b7)}

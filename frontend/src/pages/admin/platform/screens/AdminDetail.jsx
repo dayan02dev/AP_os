@@ -25,6 +25,8 @@ import { saveBlob, useVipMemoV2, vipMemoV2Filename } from "../../../../lib/vipMe
 import { ComparativeReviewModel } from "./ComparativeReviewModel";
 import FullApplication from "../../../../components/FullApplication";
 import ApplicationSummaryCard from "./ApplicationSummaryCard";
+import VipNavigatorMemo from "../../../../components/VipNavigatorMemo.jsx";
+import ReviewTabs, { VIP_MEMO_TABS } from "../../../leadership/review/ReviewTabs.jsx";
 import { trackLabel } from "../../../../lib/trackLabel";
 import { moveButtonLabel, moveBadgeText } from "../../../../lib/trackMove";
 import { isSelected, signedDocKeys } from "../../../../lib/selection";
@@ -104,6 +106,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
   const [error, setError] = useState(null);
 
   const [viewApp, setViewApp] = useState(false);
+  const [memoTab, setMemoTab] = useState("memo");
   const [vipMemo, setVipMemo] = useState(null);
   const [vipMemoBusy, setVipMemoBusy] = useState(false);
   // Decision panel
@@ -175,6 +178,8 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
     track === "sip" && PILOT_VIP_IDS.has(s?.id) ? s.id : null,
     (appId) => adminPlatformApi.getVipMemoV2("sip", appId),
   );
+
+  useEffect(() => { setMemoTab("memo"); }, [s?.id]);
 
   const downloadVipMemoV2 = async (format) => {
     if (!s?.id) return;
@@ -428,6 +433,27 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
       <div className="os-grid-evaluation">
         {/* LEFT — application & score summaries */}
         <div className="os-stack">
+          {memoV2.status === "ready" ? (
+            /* Pilot VIP apps: AI Memo / Application / Reviews tabs replace the
+               summary card (no AI summary) and the reviewer panel below. */
+            <div>
+              <ReviewTabs tab={memoTab} onChange={setMemoTab} tabs={VIP_MEMO_TABS} className="vipnav-tabs" />
+              {memoTab === "memo" && (
+                <VipNavigatorMemo key={s.id} memo={memoV2.memo} appId={s.id} onDownload={downloadVipMemoV2} />
+              )}
+              {memoTab === "application" && (
+                <FullApplication
+                  track={track}
+                  application={s.application}
+                  applicationId={s.id}
+                  signedUrl={(id, path) => leadershipApi.fileSignedUrl(id, path)}
+                />
+              )}
+              {memoTab === "reviews" && (
+                <ComparativeReviewModel startup={s} reviewersById={reviewersById} />
+              )}
+            </div>
+          ) : (<>
           {/* Application Details Card (shared with the gate) */}
           <ApplicationSummaryCard
             startup={s}
@@ -442,6 +468,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
 
           {/* Comparative review model — real reviewer evaluations */}
           <ComparativeReviewModel startup={s} reviewersById={reviewersById} />
+          </>)}
 
         </div>
 

@@ -17,6 +17,8 @@ vi.mock("../../../../lib/adminPlatformApi", () => ({
   },
 }));
 vi.mock("../../../../lib/leadershipApi", () => ({ leadershipApi: {} }));
+vi.mock("../../../../components/FullApplication", () => ({ default: () => <div data-testid="full-app" /> }));
+vi.mock("../screens/ComparativeReviewModel", () => ({ ComparativeReviewModel: () => <div data-testid="reviews" /> }));
 vi.mock("../../../../components/VipMemoPreview.jsx", () => ({
   default: () => <div data-testid="vip-memo-legacy" />,
 }));
@@ -27,6 +29,7 @@ import { AdminDetail } from "../screens/AdminDetail";
 
 const PILOT = "c8e45451-b9eb-4bed-8293-7a6782237168";
 const APP = (id) => ({ id, track: "sip", applicationId: "VIP-1", name: "Some App", founders: [], domain: "X",
+  aiSummary: "Legacy AI summary text",
   stage: "Lab", sub: "2026-06-01", ai: {}, reviews: [], flags: [], statusHistory: [], assignedReviewers: [],
   chip: "EVALUATED" });
 const mount = (id) => {
@@ -52,6 +55,22 @@ describe("AdminDetail — VIP memo Navigator", () => {
     await waitFor(() => expect(adminPlatformApi.downloadVipMemoV2).toHaveBeenCalledWith("sip", PILOT, "pdf"));
   });
 
+  it("shows AI Memo / Application / Reviews tabs with no AI summary for a pilot app", async () => {
+    adminPlatformApi.getVipMemoV2.mockResolvedValue(FIXTURE);
+    mount(PILOT);
+    expect(await screen.findByText("VIP memo · Acme Robotics")).toBeTruthy();
+    expect(screen.queryByText("Legacy AI summary text")).toBeNull();
+    expect(screen.queryByTestId("full-app")).toBeNull();
+    expect(screen.queryByTestId("reviews")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Application" }));
+    expect(screen.getByTestId("full-app")).toBeTruthy();
+    expect(screen.queryByText("VIP memo · Acme Robotics")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reviews" }));
+    expect(screen.getByTestId("reviews")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "AI Memo" }));
+    expect(screen.getByText("VIP memo · Acme Robotics")).toBeTruthy();
+  });
+
   it("falls back to the legacy memo flow when the v2 memo 404s", async () => {
     adminPlatformApi.getVipMemoV2.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
     mount(PILOT);
@@ -62,6 +81,8 @@ describe("AdminDetail — VIP memo Navigator", () => {
   it("does not ask for the v2 memo on non-pilot apps", async () => {
     mount("other-app");
     await screen.findByRole("heading", { level: 2, name: /Some App/ });
+    expect(screen.getByText("Legacy AI summary text")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "AI Memo" })).toBeNull();
     expect(adminPlatformApi.getVipMemoV2).not.toHaveBeenCalled();
     expect(screen.queryByText(/VIP memo · /)).toBeNull();
   });

@@ -32,7 +32,7 @@ import { schemaFor } from "./applicationSchemas.js";
 import { statusLabel } from "./pipelineStages.js";
 import { ID_LIST_EVENT, readReviewIdList } from "./reviewNav.js";
 import ReviewHeader from "./review/ReviewHeader.jsx";
-import ReviewTabs from "./review/ReviewTabs.jsx";
+import ReviewTabs, { VIP_MEMO_TABS } from "./review/ReviewTabs.jsx";
 import ApplicationTab from "./review/ApplicationTab.jsx";
 import ReviewsTab from "./review/ReviewsTab.jsx";
 import HistoryTab from "./review/HistoryTab.jsx";
@@ -263,6 +263,13 @@ export default function ReviewApplicationPage() {
     }
   }, [id, memoV2.memo]);
 
+  // Pilot apps with a ready memo get AI Memo / Application / Reviews tabs
+  // (no History) and open on the memo.
+  const memoTabs = memoV2.status === "ready";
+  useEffect(() => {
+    if (memoTabs) setTab("memo");
+  }, [id, memoTabs]);
+
   useEffect(() => {
     if (!detail || effectiveTrack !== "sip" || !PILOT_VIP_IDS.has(id)) return;
     if (memoV2.status !== "missing") return;
@@ -332,11 +339,14 @@ export default function ReviewApplicationPage() {
                     {hasScore ? scoreOverall.toFixed(1) : "—"} / 10
                   </p>
                 </div>
-                <ReviewTabs tab={tab} onChange={setTab} />
-                {tab === "application" && memoV2.status === "ready" && (
+                {memoTabs
+                  ? <ReviewTabs tab={tab} onChange={setTab} tabs={VIP_MEMO_TABS} />
+                  : <ReviewTabs tab={tab} onChange={setTab} />}
+                {/* AI Memo tab; Export PDF prints it stacked above the application. */}
+                {memoTabs && (tab === "memo" || (tab === "application" && pendingPrint)) && (
                   <>
                     <VipNavigatorMemo key={id} memo={memoV2.memo} appId={id} onDownload={downloadVipMemoV2} />
-                    <div className="vipnav-divider">Full application</div>
+                    {pendingPrint && <div className="vipnav-divider">Full application</div>}
                   </>
                 )}
                 {tab === "application" && (
@@ -359,7 +369,7 @@ export default function ReviewApplicationPage() {
                 {tab === "reviews" && (
                   <ReviewsTab reviews={reviews} assignments={assignments} />
                 )}
-                {tab === "history" && (
+                {tab === "history" && !memoTabs && (
                   <HistoryTab history={history} actorNames={actorNames} />
                 )}
               </>

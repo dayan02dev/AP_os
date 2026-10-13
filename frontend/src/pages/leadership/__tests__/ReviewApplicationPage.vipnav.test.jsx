@@ -44,14 +44,18 @@ beforeEach(() => {
 });
 
 describe("ReviewApplicationPage — VIP memo Navigator (pilot)", () => {
-  it("shows the Navigator above the full application, and never generates the legacy memo", async () => {
+  it("opens on an AI Memo tab, moves the full application to its own tab, and drops History", async () => {
     leadershipApi.getVipMemoV2.mockResolvedValue(FIXTURE);
     render(<ReviewApplicationPage />);
     expect(await screen.findByText("VIP memo · Acme Robotics")).toBeTruthy();
     expect(leadershipApi.getVipMemoV2).toHaveBeenCalledWith(PILOT);
-    const divider = screen.getByText("Full application");
-    const appTab = screen.getByTestId("app-tab");
-    expect(divider.compareDocumentPosition(appTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const tabs = screen.getAllByRole("button").map((b) => b.textContent);
+    expect(tabs).toEqual(expect.arrayContaining(["AI Memo", "Application", "Reviews"]));
+    expect(screen.queryByRole("button", { name: "History" })).toBeNull();
+    expect(screen.queryByTestId("app-tab")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Application" }));
+    expect(screen.getByTestId("app-tab")).toBeTruthy();
+    expect(screen.queryByText("VIP memo · Acme Robotics")).toBeNull();
     expect(screen.queryByTestId("vip-memo-legacy")).toBeNull();
     expect(leadershipApi.generateVipMemo).not.toHaveBeenCalled();
   });
@@ -75,6 +79,7 @@ describe("ReviewApplicationPage — VIP memo Navigator (pilot)", () => {
     params.id = "not-a-pilot";
     render(<ReviewApplicationPage />);
     await screen.findByTestId("app-tab");
+    expect(screen.getByRole("button", { name: "History" })).toBeTruthy();
     expect(leadershipApi.getVipMemoV2).not.toHaveBeenCalled();
     expect(screen.queryByText(/VIP memo · /)).toBeNull();
   });
