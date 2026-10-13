@@ -176,6 +176,8 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
     (appId) => adminPlatformApi.getVipMemoV2("sip", appId),
   );
 
+  const memoV2Ready = memoV2.status === "ready";
+
   const downloadVipMemoV2 = async (format) => {
     if (!s?.id) return;
     try {
@@ -368,13 +370,19 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="lp-section-head">
         <div>
-          <div className="lp-breadcrumb">
-            <a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}
-              style={{ color: '#6f6f78', textDecoration: 'none' }}>Applications</a>
-            <span style={{ margin: '0 8px', color: '#c8c8d0' }}>/</span>
-            <span style={{ color: '#8a8a92' }}>{s.name}</span>
-          </div>
-          <span className="lp-section-eyebrow" style={{ marginTop: 12 }}>APPLICATION DETAIL</span>
+          {/* With the VIP memo showing, the page is AI summary + memo; the
+              "application" labels only confused reviewers, so they are dropped. */}
+          {!memoV2Ready && (
+            <>
+              <div className="lp-breadcrumb">
+                <a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}
+                  style={{ color: '#6f6f78', textDecoration: 'none' }}>Applications</a>
+                <span style={{ margin: '0 8px', color: '#c8c8d0' }}>/</span>
+                <span style={{ color: '#8a8a92' }}>{s.name}</span>
+              </div>
+              <span className="lp-section-eyebrow" style={{ marginTop: 12 }}>APPLICATION DETAIL</span>
+            </>
+          )}
           <h2 className="lp-section-title">
             {s.name}
             {/* Status chip — always, so the stage (incl. Rejected) is visible. */}
@@ -436,7 +444,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
             memoBusy={vipMemoBusy}
             onCreateMemo={generateVipMemo}
             onDownloadMemo={downloadVipMemo}
-            memoV2={memoV2.status === "ready" ? memoV2.memo : null}
+            memoV2={memoV2Ready ? memoV2.memo : null}
             onDownloadMemoV2={downloadVipMemoV2}
           />
 

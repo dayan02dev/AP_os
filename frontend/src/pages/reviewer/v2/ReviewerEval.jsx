@@ -590,7 +590,8 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
         <div className="os-stack">
           <div className="os-card">
             <div className="os-card-head">
-              <div className="os-card-title">Application · {application.name}</div>
+              {/* Not on the VIP memo layout: there the card is AI summary + memo, not the application. */}
+              {memoV2.status !== "ready" && <div className="os-card-title">Application · {application.name}</div>}
               <div className="os-row gap-sm" style={{ alignItems: "center" }}>
                 <ProfilePills
                   alsoInTrack={content.also_in_track ? trackLabel(content.also_in_track) : null}

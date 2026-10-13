@@ -50,6 +50,14 @@ describe("ReviewerEval — VIP memo Navigator", () => {
     await waitFor(() => expect(api.downloadVipMemoV2).toHaveBeenCalledWith("sip", PILOT, "docx"));
   });
 
+  it("drops the 'Application · name' card title when the memo shows", async () => {
+    api.getContent.mockResolvedValue(content(PILOT));
+    api.getVipMemoV2.mockResolvedValue(FIXTURE);
+    render(<ReviewerEval track="sip" appId={PILOT} onBack={vi.fn()} />);
+    await screen.findByText("VIP memo · Acme Robotics");
+    expect(screen.queryByText("Application · Some App")).toBeNull();
+  });
+
   it("falls back to the legacy memo when the v2 memo 404s", async () => {
     api.getContent.mockResolvedValue(content(PILOT));
     api.getVipMemoV2.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
@@ -64,5 +72,6 @@ describe("ReviewerEval — VIP memo Navigator", () => {
     render(<ReviewerEval track="sip" appId="other-app" onBack={vi.fn()} />);
     await screen.findByText(/Your scores/);
     expect(api.getVipMemoV2).not.toHaveBeenCalled();
+    expect(screen.getByText("Application · Some App")).toBeTruthy();
   });
 });
