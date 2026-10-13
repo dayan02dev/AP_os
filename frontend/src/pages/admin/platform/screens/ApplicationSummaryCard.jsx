@@ -36,8 +36,7 @@ export default function ApplicationSummaryCard({
   return (
     <div className="os-card">
       <div className="os-card-head">
-        {/* Not on the VIP memo layout: there the card is AI summary + memo, not the application. */}
-        {!memoV2 && <div className="os-card-title">Application · {s.name}</div>}
+        <div className="os-card-title">Application · {s.name}</div>
         <div className="os-row gap-sm" style={{ alignItems: "center" }}>
           <ProfilePills
             alsoInTrack={s.alsoInTrack ? trackLabel(s.alsoInTrack) : null}

@@ -59,32 +59,10 @@ describe("AdminDetail — VIP memo Navigator", () => {
     expect(screen.queryByText(/VIP memo · /)).toBeNull();
   });
 
-  it("drops the 'Application detail' labels for a pilot app so the page reads as AI summary + memo", async () => {
-    adminPlatformApi.getVipMemoV2.mockResolvedValue(FIXTURE);
-    mount(PILOT);
-    await screen.findByText("VIP memo · Acme Robotics");
-    expect(screen.queryByText("APPLICATION DETAIL")).toBeNull();
-    expect(screen.queryByRole("link", { name: "Applications" })).toBeNull();
-    expect(screen.queryByText("Application · Some App")).toBeNull();
-    expect(screen.getByRole("heading", { level: 2, name: /Some App/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Back to applications/ })).toBeTruthy();
-  });
-
-  it("keeps the labels when the v2 memo is unavailable", async () => {
-    adminPlatformApi.getVipMemoV2.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
-    mount(PILOT);
-    await waitFor(() => expect(adminPlatformApi.generateVipMemo).toHaveBeenCalled());
-    expect(screen.getByText("APPLICATION DETAIL")).toBeTruthy();
-    expect(screen.getByText("Application · Some App")).toBeTruthy();
-  });
-
   it("does not ask for the v2 memo on non-pilot apps", async () => {
     mount("other-app");
     await screen.findByRole("heading", { level: 2, name: /Some App/ });
     expect(adminPlatformApi.getVipMemoV2).not.toHaveBeenCalled();
     expect(screen.queryByText(/VIP memo · /)).toBeNull();
-    expect(screen.getByText("APPLICATION DETAIL")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Applications" })).toBeTruthy();
-    expect(screen.getByText("Application · Some App")).toBeTruthy();
   });
 });
