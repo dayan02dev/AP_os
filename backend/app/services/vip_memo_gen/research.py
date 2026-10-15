@@ -1,8 +1,10 @@
 """Web-search research step: market and competitor facts with source URLs."""
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 import json_repair
 
@@ -17,6 +19,42 @@ _SEARCH_RESULT_TOKENS = 15000  # native: assumed input tokens each search result
 _EXA_USD_PER_RESULT = 0.004     # OpenRouter Exa pricing, $4 per 1000 results
 _EXA_RESULT_TOKENS = 8000       # total input tokens the Exa results add (observed ~4.7K)
 _SECTIONS = ("market", "competitors")
+# Social and profile sites are never market evidence (a memo once cited LinkedIn
+# profiles as market sources): excluded from the search where the engine
+# supports it, and dropped from the results either way.
+SOCIAL_DOMAINS = ("linkedin.com", "facebook.com", "x.com", "twitter.com", "instagram.com",
+                  "youtube.com", "medium.com")
+
+
+def is_social_url(url) -> bool:
+    try:
+        host = (urlsplit(str(url or "")).hostname or "").lower()
+    except ValueError:
+        return False
+    return any(host == d or host.endswith("." + d) for d in SOCIAL_DOMAINS)
+
+
+def _drop_social(parsed):
+    """The research JSON without items whose URL is a social/profile site."""
+    if not isinstance(parsed, dict):
+        return parsed
+    out = dict(parsed)
+    for key in _SECTIONS:
+        items = out.get(key)
+        if isinstance(items, dict):
+            items = [items]
+        if not isinstance(items, list):
+            continue
+        kept = []
+        for item in items:
+            if isinstance(item, dict) and isinstance(item.get("companies"), list):
+                item = {**item, "companies": [c for c in item["companies"]
+                                              if not (isinstance(c, dict) and is_social_url(c.get("url")))]}
+            elif isinstance(item, dict) and is_social_url(item.get("url")):
+                continue
+            kept.append(item)
+        out[key] = kept
+    return out
 
 
 @dataclass
@@ -73,7 +111,7 @@ def _sources(parsed, annotations: list[dict]) -> list[dict]:
                     if not isinstance(it, dict):
                         continue
                     url = _clean_url(it.get("url"))
-                    if url and url not in out:
+                    if url and url not in out and not is_social_url(url):
                         out[url] = {
                             "section_key": key,
                             "title": str(it.get("title") or it.get("name") or ""),
@@ -86,7 +124,7 @@ def _sources(parsed, annotations: list[dict]) -> list[dict]:
     for ann in annotations or []:
         c = ann.get("url_citation") if isinstance(ann, dict) and ann.get("type") == "url_citation" else None
         url = _clean_url((c or {}).get("url"))
-        if url and url not in out:
+        if url and url not in out and not is_social_url(url):
             out[url] = {"section_key": "market", "title": str(c.get("title") or ""),
                         "publisher": "", "url": url, "year": None,
                         "claim": str(c.get("content") or "")[:300]}
@@ -106,12 +144,15 @@ def estimate(cfg: GenConfig, input_chars: int) -> float:
 def run(profile: dict, cfg: GenConfig, budget: Budget, runs: RunLog,
         deadline: Deadline | None = None) -> ResearchResult:
     messages = render_research_messages(profile, cfg.max_searches)
+    plugin = {"id": "web", "engine": cfg.search_engine, "max_results": cfg.max_searches}
+    if cfg.search_engine == "exa":  # native Google search rejects domain filters
+        plugin["exclude_domains"] = list(SOCIAL_DOMAINS)
     try:
         chars = sum(len(m["content"]) for m in messages)
         result = paid_call("research", cfg.research_model, estimate(cfg, chars), budget, runs, deadline,
                            lambda timeout: openrouter.chat(
                                cfg.research_model, messages, max_tokens=cfg.research_max_tokens,
-                               plugins=[{"id": "web", "engine": cfg.search_engine, "max_results": cfg.max_searches}],
+                               plugins=[plugin],
                                response_format={"type": "json_object"},
                                zdr=False,  # no ZDR endpoint offers web search; profile is public/PII-free
                                timeout=timeout,
@@ -124,4 +165,8 @@ def run(profile: dict, cfg: GenConfig, budget: Budget, runs: RunLog,
         parsed = json_repair.loads(result.text)
     except Exception:
         parsed = None
-    return ResearchResult(result.text, _sources(parsed, result.annotations), result.usage)
+    text = result.text
+    if isinstance(parsed, dict):
+        parsed = _drop_social(parsed)
+        text = json.dumps(parsed, ensure_ascii=False)
+    return ResearchResult(text, _sources(parsed, result.annotations), result.usage)

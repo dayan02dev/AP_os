@@ -61,7 +61,8 @@ def test_research_uses_web_plugin_and_caps_searches(calls):
     out = research.run({"name": "X"}, cfg, budget, cb)
     c = calls["calls"][0]
     assert c["model"] == cfg.research_model
-    assert c["plugins"] == [{"id": "web", "engine": "exa", "max_results": 10}]
+    assert c["plugins"] == [{"id": "web", "engine": "exa", "max_results": 10,
+                             "exclude_domains": list(research.SOCIAL_DOMAINS)}]
     assert c["zdr"] is False
     assert c["response_format"] == {"type": "json_object"}
     assert c["max_tokens"] == 8000
@@ -70,6 +71,25 @@ def test_research_uses_web_plugin_and_caps_searches(calls):
                     ("https://c.com", "market")}
     assert cb.steps() == ["research"]
     assert budget.spent_usd == pytest.approx(0.01)
+
+
+def test_research_drops_social_profile_sources(calls):
+    body = json.dumps({"market": [
+        {"title": "Report", "publisher": "IMARC", "url": "https://www.imarcgroup.com/r", "claim": "$5B"},
+        {"title": "Someone", "url": "https://in.linkedin.com/in/someone", "claim": "CEO"},
+        {"title": "Post", "url": "https://medium.com/@x/post", "claim": "blog"},
+    ], "competitors": [{"companies": [{"name": "Co", "url": "https://twitter.com/co"},
+                                      {"name": "Real", "url": "https://real.in"}]}]})
+    calls["queue"].append(_res(body, annotations=[
+        {"type": "url_citation", "url_citation": {"url": "https://www.facebook.com/p"}},
+        {"type": "url_citation", "url_citation": {"url": "https://youtube.com/watch?v=1"}},
+        {"type": "url_citation", "url_citation": {"url": "https://x.com/a"}}]))
+    out = research.run({"name": "X"}, load_config(), Budget(1.0), _Runs())
+    assert {s["url"] for s in out.sources} == {"https://www.imarcgroup.com/r", "https://real.in"}
+    for bad in ("linkedin", "medium.com", "twitter.com"):
+        assert bad not in out.json_text
+    assert "imarcgroup" in out.json_text and "real.in" in out.json_text
+    assert not research.is_social_url("https://netflix.com") and research.is_social_url("https://m.facebook.com/x")
 
 
 def test_research_failure_returns_empty(calls):
