@@ -22,7 +22,11 @@ from tests.fixtures.fake_supabase import FakeSupabase
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "vip_memo_v2_fake.json").read_text())
 PILOT = sorted(vip_memo.PILOT_APPLICATION_IDS)[0]
 OTHER_PILOT = sorted(vip_memo.PILOT_APPLICATION_IDS)[1]
-NON_PILOT = "99999999-9999-9999-9999-999999999999"
+NON_PILOT = "99999999-9999-9999-9999-999999999999"   # a VIP app with a generated memo
+UNKNOWN = "11111111-1111-1111-1111-111111111111"     # exists nowhere
+TIR_APP = "22222222-2222-2222-2222-222222222222"     # native + effective TIR
+MOVED_APP = "33333333-3333-3333-3333-333333333333"   # TIR row moved to VIP
+MOVED_OUT = "44444444-4444-4444-4444-444444444444"   # VIP row moved to TIR
 
 SECTION_TITLES = (
     "Deal snapshot",
@@ -46,11 +50,21 @@ REVIEWER_AREAS = (
 )
 
 
-def _ai_row(app_id: str, memo: dict | None = None, track: str = "sip") -> dict:
+def _memo_row(app_id: str, memo: dict | None = None, **over) -> dict:
     return {
-        "application_id": app_id,
-        "application_track": track,
-        "sections": {"vip_memo_v2": copy.deepcopy(memo if memo is not None else FIXTURE)},
+        "id": f"memo-{app_id[:4]}", "application_id": app_id, "version": 1,
+        "status": "ready", "is_current": True,
+        "memo_json": copy.deepcopy(memo if memo is not None else FIXTURE), **over,
+    }
+
+
+def _apps(memo_rows: list[dict]) -> dict:
+    return {
+        "vip_memos": memo_rows,
+        "sip_applications": [{"id": i} for i in (PILOT, OTHER_PILOT, NON_PILOT)]
+                            + [{"id": MOVED_OUT, "moved_to_track": "tir"}],
+        "tir_applications": [{"id": TIR_APP}, {"id": MOVED_APP, "moved_to_track": "sip"}],
+        "vip_memo_exports": [],
     }
 
 
@@ -66,7 +80,7 @@ def no_bundled_memos(monkeypatch, tmp_path):
 
 @pytest.fixture
 def fake(monkeypatch):
-    sb = FakeSupabase({"ai_screening": [_ai_row(PILOT), _ai_row(NON_PILOT)]})
+    sb = FakeSupabase(_apps([_memo_row(PILOT), _memo_row(NON_PILOT)]))
     monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
     return sb
 
@@ -80,16 +94,18 @@ def test_get_memo_v2_returns_stored_memo_for_pilot(fake):
     assert memo["version"] == 2
 
 
-def test_get_memo_v2_is_pilot_only(fake):
-    assert vip_memo_v2.get_memo_v2(NON_PILOT) is None
+def test_db_memo_served_for_non_pilot(fake):
+    memo = vip_memo_v2.get_memo_v2(NON_PILOT)
+    assert memo is not None and memo["name"] == "Acme Robotics"
 
 
 def test_get_memo_v2_missing_row_returns_none(fake):
     assert vip_memo_v2.get_memo_v2(OTHER_PILOT) is None
 
 
-def test_get_memo_v2_ignores_tir_track_rows(monkeypatch):
-    sb = FakeSupabase({"ai_screening": [_ai_row(PILOT, track="tir")]})
+@pytest.mark.parametrize("over", [{"status": "failed"}, {"status": "running"}, {"is_current": False}])
+def test_get_memo_v2_ignores_non_current_or_non_ready_rows(monkeypatch, over):
+    sb = FakeSupabase(_apps([_memo_row(PILOT, **over)]))
     monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
     assert vip_memo_v2.get_memo_v2(PILOT) is None
 
@@ -104,7 +120,7 @@ def test_get_memo_v2_ignores_tir_track_rows(monkeypatch):
 def test_get_memo_v2_rejects_bad_shape(monkeypatch, mutate):
     memo = copy.deepcopy(FIXTURE)
     mutate(memo)
-    sb = FakeSupabase({"ai_screening": [_ai_row(PILOT, memo)]})
+    sb = FakeSupabase(_apps([_memo_row(PILOT, memo)]))
     monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
     assert vip_memo_v2.get_memo_v2(PILOT) is None
 
@@ -121,7 +137,7 @@ def _bundle(directory: Path, app_id: str, memo: dict) -> None:
 
 
 def test_get_memo_v2_falls_back_to_bundled_file(monkeypatch, no_bundled_memos):
-    sb = FakeSupabase({"ai_screening": [{"application_id": PILOT, "application_track": "sip", "sections": {}}]})
+    sb = FakeSupabase(_apps([]))
     monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
     _bundle(no_bundled_memos, PILOT, {**copy.deepcopy(FIXTURE), "name": "Bundled Co"})
     assert vip_memo_v2.get_memo_v2(PILOT)["name"] == "Bundled Co"
@@ -140,18 +156,23 @@ def test_get_memo_v2_bundled_file_used_when_db_down(monkeypatch, no_bundled_memo
     assert vip_memo_v2.get_memo_v2(PILOT)["name"] == "Acme Robotics"
 
 
-def test_get_memo_v2_bundled_file_is_pilot_only_and_validated(fake, no_bundled_memos):
-    _bundle(no_bundled_memos, NON_PILOT, copy.deepcopy(FIXTURE))
+def test_bundled_pilot_still_served(monkeypatch, no_bundled_memos):
+    monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: FakeSupabase(_apps([])))
+    _bundle(no_bundled_memos, PILOT, {**copy.deepcopy(FIXTURE), "name": "Bundled Co"})
+    memo = vip_memo_v2.get_memo_v2(PILOT)
+    assert memo["name"] == "Bundled Co"
+
+
+def test_get_memo_v2_bundled_file_is_validated(fake, no_bundled_memos):
     bad = copy.deepcopy(FIXTURE)
     bad["version"] = 1
     _bundle(no_bundled_memos, OTHER_PILOT, bad)
     (no_bundled_memos / "not-json.json").write_text("{")
-    assert vip_memo_v2.get_memo_v2(NON_PILOT) is None
     assert vip_memo_v2.get_memo_v2(OTHER_PILOT) is None
 
 
 def test_get_memo_v2_bundled_file_corrupt_never_raises(monkeypatch, no_bundled_memos):
-    sb = FakeSupabase({"ai_screening": []})
+    sb = FakeSupabase(_apps([]))
     monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
     (no_bundled_memos / f"{PILOT}.json").write_text("{not json")
     assert vip_memo_v2.get_memo_v2(PILOT) is None
@@ -306,7 +327,7 @@ def test_get_route_returns_memo(client, fake, assigned, surface, roles, path):
 @pytest.mark.parametrize("surface,roles,path", ROUTES)
 def test_get_route_404_when_not_available(client, fake, assigned, surface, roles, path):
     _as(roles)
-    for app_id in (NON_PILOT, OTHER_PILOT):
+    for app_id in (UNKNOWN, TIR_APP, OTHER_PILOT):  # unknown, TIR, VIP without a memo
         r = client.get(path.format(id=app_id))
         assert r.status_code == 404
         assert r.json()["detail"]["code"] == "memo_not_available"
@@ -340,7 +361,7 @@ def test_reviewer_route_enforces_assignment(client, fake, assigned):
 
 def test_admin_route_rejects_tir_track(client, fake):
     _as(["admin"])
-    r = client.get(f"/admin/platform/applications/tir/{PILOT}/vip-memo-v2")
+    r = client.get(f"/admin/platform/applications/tir/{TIR_APP}/vip-memo-v2")
     assert r.status_code == 404
 
 
@@ -352,3 +373,146 @@ def test_admin_route_rejects_tir_track(client, fake):
 def test_routes_require_capability(client, fake, roles, path):
     _as(roles)
     assert client.get(path).status_code == 403
+
+
+# ─── generated-memo serving (any VIP app) ────────────────────────────────
+
+def test_v2_get_404_for_unknown_or_tir_app(client, monkeypatch, assigned):
+    sb = FakeSupabase(_apps([_memo_row(TIR_APP), _memo_row(MOVED_OUT)]))
+    monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
+    for _surface, roles, path in ROUTES[:2]:  # admin, leadership resolve the track
+        _as(roles)
+        for app_id in (UNKNOWN, TIR_APP, MOVED_OUT):  # MOVED_OUT: effective track is TIR
+            r = client.get(path.format(id=app_id))
+            assert r.status_code == 404, (path, app_id)
+            assert r.json()["detail"]["code"] == "memo_not_available"
+
+
+def test_moved_tir_app_is_served_to_admin_and_leadership(client, monkeypatch):
+    sb = FakeSupabase(_apps([_memo_row(MOVED_APP)]))
+    monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
+    for _surface, roles, path in ROUTES[:2]:
+        _as(roles)
+        assert client.get(path.format(id=MOVED_APP)).status_code == 200
+
+
+@pytest.mark.parametrize("surface,roles,path", ROUTES)
+def test_recommendation_not_in_any_get(client, fake, assigned, surface, roles, path):
+    assert "recommendation" in FIXTURE  # the stored memo does carry one
+    _as(roles)
+    r = client.get(path.format(id=NON_PILOT))
+    assert r.status_code == 200
+    assert "recommendation" not in r.json()
+    assert "CONDITIONAL APPROVAL" not in r.text
+    assert FIXTURE["recommendation"]["summary"] not in r.text
+    assert "recommendation" in vip_memo_v2.get_memo_v2(NON_PILOT)  # service keeps it; public_view strips
+
+
+def test_public_view_does_not_mutate():
+    memo = {"name": "x", "recommendation": {"verdict": "APPROVE"}}
+    assert vip_memo_v2.public_view(memo) == {"name": "x"}
+    assert "recommendation" in memo
+
+
+def _with_storage(sb, files: dict):
+    class Bucket:
+        def __init__(self, name):
+            self.name = name
+
+        def download(self, path):
+            return files[(self.name, path)]
+
+    class Storage:
+        def from_(self, name):
+            return Bucket(name)
+
+    sb.storage = Storage()
+
+
+def test_stored_export_preferred(client, monkeypatch, assigned):
+    rows = _apps([_memo_row(NON_PILOT)])
+    rows["vip_memo_exports"] = [
+        {"memo_id": f"memo-{NON_PILOT[:4]}", "format": "pdf", "bucket": "vip-memos", "path": "a/b.pdf"},
+    ]
+    sb = FakeSupabase(rows)
+    _with_storage(sb, {("vip-memos", "a/b.pdf"): b"%PDF-stored"})
+    monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
+    monkeypatch.setattr(vip_memo_v2_export, "render", lambda *a, **k: pytest.fail("rendered despite stored export"))
+    assert vip_memo_v2.stored_export(NON_PILOT, "pdf") == b"%PDF-stored"
+    assert vip_memo_v2.stored_export(NON_PILOT, "docx") is None  # no docx export row
+    for _surface, roles, path in ROUTES:
+        _as(roles)
+        r = client.post(path.format(id=NON_PILOT) + "/download?format=pdf")
+        assert r.status_code == 200 and r.content == b"%PDF-stored", path
+        assert r.headers["content-type"] == "application/pdf"
+
+
+def test_stored_export_missing_or_broken_falls_back_to_render(fake, monkeypatch):
+    assert vip_memo_v2.stored_export(NON_PILOT, "pdf") is None
+    body, media = vip_memo_v2.export_for(NON_PILOT, FIXTURE, "pdf")
+    assert body.startswith(b"%PDF") and media == "application/pdf"
+    monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: (_ for _ in ()).throw(RuntimeError("down")))
+    assert vip_memo_v2.stored_export(NON_PILOT, "pdf") is None
+
+
+def test_v1_still_pilot_gated(client, fake):
+    for roles, path in ((["leadership"], f"/leadership/applications/{NON_PILOT}/vip-memo"),
+                        (["admin"], f"/admin/platform/applications/sip/{NON_PILOT}/vip-memo")):
+        _as(roles)
+        r = client.post(path)
+        assert r.status_code == 404, (path, r.text)
+        assert r.json()["detail"]["code"] == "vip_memo_pilot_only"
+
+
+# ─── exporter fixes ──────────────────────────────────────────────────────
+
+def _both_texts(memo: dict) -> list[str]:
+    pdf = PdfReader(io.BytesIO(vip_memo_v2_export.render_pdf_v2(memo)))
+    pdf_text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+    docx_text, _ = _docx_text(vip_memo_v2_export.render_docx_v2(memo))
+    return [pdf_text, docx_text]
+
+
+def test_export_unmatched_why_label_rendered():
+    memo = copy.deepcopy(FIXTURE)
+    memo["sections"]["why"]["rows"].append(["Moonshot angle", "Fake unlisted reason."])
+    for text in _both_texts(memo):
+        assert "Moonshot angle" in text and "Fake unlisted reason." in text
+        assert "Status quo" in text  # matched labels still grouped under their titles
+
+
+def test_export_competitor_stage_and_funds_columns():
+    for text in _both_texts(FIXTURE):
+        assert "Series A" in text  # 5th competitor column
+        assert "₹50 L" in text or "Rs 50 L" in text  # funds amount by column name
+        assert "Fake salaries" in text  # funds key items
+    blocks = vip_memo_v2_export.build_blocks(FIXTURE)
+    funds = next(b for b in blocks if b[0] == "table" and b[1][0] == "Category")
+    assert funds[2][0][:3] == ["Team", funds[2][0][1], "50%"]
+    assert funds[2][-1][2] == "100%"  # computed 50+30+20
+
+
+def test_export_funds_total_pct_only_when_rows_parse():
+    memo = copy.deepcopy(FIXTURE)
+    memo["sections"]["funds"]["rows"][1][2] = "n/a"
+    funds = next(b for b in vip_memo_v2_export.build_blocks(memo) if b[0] == "table" and b[1][0] == "Category")
+    assert funds[2][-1][2] == ""
+    memo["sections"]["funds"]["rows"][1][2] = "30%"
+    funds = next(b for b in vip_memo_v2_export.build_blocks(memo) if b[0] == "table" and b[1][0] == "Category")
+    assert funds[2][-1][2] == "100%"
+
+
+def test_export_special_glyphs_do_not_crash():
+    memo = copy.deepcopy(FIXTURE)
+    memo["sections"]["what"]["paragraphs"] = ["Roughly ≈ 5 → 10, ≤ 3 and ≥ 2 – ₹5 L, ₹ 7 Cr, 日本"]
+    pdf_text, docx_text = _both_texts(memo)
+    assert "~ 5 -> 10, <= 3 and >= 2 - Rs 5 L, Rs 7 Cr" in pdf_text.replace("\n", " ")
+    assert "≈" in docx_text  # docx keeps real glyphs
+
+
+def test_export_has_no_recommendation_text():
+    verdict = FIXTURE["recommendation"]["verdict"]
+    for text in _both_texts(FIXTURE):
+        assert verdict not in text
+        assert FIXTURE["recommendation"]["summary"] not in text
+        assert FIXTURE["recommendation"]["conditions"][0] not in text

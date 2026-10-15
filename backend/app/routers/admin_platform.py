@@ -41,7 +41,6 @@ from ..services import (
     vip_memo,
     vip_memo_export,
     vip_memo_v2,
-    vip_memo_v2_export,
 )
 from ..services.assignment_email import notify_reviewers_assigned
 from ..services.audit import actor_role_of, write_audit
@@ -188,7 +187,9 @@ async def download_vip_memo(
 
 
 def _memo_v2_or_404(track: str, application_id: str) -> dict[str, Any]:
-    memo = vip_memo_v2.get_memo_v2(application_id) if track == "sip" else None
+    # Resolved by id: the effective track (moved_to_track wins) must be VIP, so a
+    # TIR app moved to VIP is eligible whichever table the UI's track points at.
+    memo = vip_memo_v2.get_memo_v2(application_id) if vip_memo_v2.is_vip_app(application_id) else None
     if memo is None:
         raise HTTPException(
             status_code=http_status.HTTP_404_NOT_FOUND,
@@ -205,8 +206,8 @@ async def get_vip_memo_v2(
     track: Literal["tir", "sip"],
     application_id: str,
 ) -> dict[str, Any]:
-    """The pre-built VIP memo v2 (Navigator) JSON for a pilot VIP application."""
-    return _memo_v2_or_404(track, application_id)
+    """The VIP memo v2 (Navigator) JSON for a VIP application, recommendation stripped."""
+    return vip_memo_v2.public_view(_memo_v2_or_404(track, application_id))
 
 
 @router.post(
@@ -219,7 +220,7 @@ async def download_vip_memo_v2(
     format: Literal["pdf", "docx"] = Query("pdf"),
 ) -> Response:
     memo = _memo_v2_or_404(track, application_id)
-    body, media = vip_memo_v2_export.render(memo, format)
+    body, media = vip_memo_v2.export_for(application_id, memo, format)
     return Response(
         content=body,
         media_type=media,
