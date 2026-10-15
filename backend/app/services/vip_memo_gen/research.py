@@ -109,6 +109,7 @@ def run(profile: dict, cfg: GenConfig, budget: Budget, runs: RunLog,
                                cfg.research_model, messages, max_tokens=_MAX_TOKENS,
                                plugins=[{"id": "web", "engine": "native", "max_results": cfg.max_searches}],
                                response_format={"type": "json_object"},
+                               zdr=False,  # no ZDR endpoint offers native web search; profile is public/PII-free
                                timeout=timeout,
                            ))
     except DeadlineExceeded:

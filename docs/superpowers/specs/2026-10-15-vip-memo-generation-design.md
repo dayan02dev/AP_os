@@ -232,6 +232,7 @@ All tables have RLS **deny-all**. Access goes only through the service-role back
 - C7: Moved TIR→VIP apps are eligible but are **not** in the 5-app test. Their input builder reads TIR-schema rows.
 - C8: The $1 ceiling is per memo version, summed across all attempts and redeliveries. `force` gets a fresh $1.
 - C9: Reviews are dropped from the inputs, so no reviewer anchoring and no staleness.
+- C10a: the research step runs without ZDR because no ZDR endpoint offers native web search; it only receives the public, PII-free profile (never files). Writer and transcription keep ZDR.
 - C10: OpenRouter routing set to no-training / zero-data-retention, because founder files now leave our systems.
 - C11: The "why" section uses the pilots' six short labels (Today / Getting worse / Why others can't / Hard to copy / Proof so far / Plan B), per D11. The prompt's five arguments are folded into them.
 

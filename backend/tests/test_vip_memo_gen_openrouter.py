@@ -218,3 +218,15 @@ def test_max_searches_not_negative(monkeypatch):
 
 def test_writer_max_tokens_default():
     assert load_config().writer_max_tokens == 20000
+
+
+def test_zdr_false_omits_zdr_key():
+    seen = {}
+
+    def h(req):
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(200, json=_ok())
+
+    openrouter.chat(OPUS, [{"role": "user", "content": "x"}], max_tokens=10, zdr=False,
+                    transport=_transport(h))
+    assert seen["body"]["provider"] == {"data_collection": "deny", "require_parameters": True}

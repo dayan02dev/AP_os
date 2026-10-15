@@ -62,6 +62,7 @@ def test_research_uses_web_plugin_and_caps_searches(calls):
     c = calls["calls"][0]
     assert c["model"] == cfg.research_model
     assert c["plugins"] == [{"id": "web", "engine": "native", "max_results": cfg.max_searches}]
+    assert c["zdr"] is False
     assert c["response_format"] == {"type": "json_object"}
     assert c["max_tokens"] == 6000
     keys = {(s["url"], s["section_key"]) for s in out.sources}
@@ -93,7 +94,8 @@ def test_writer_valid_first_try(calls):
     assert memo["generated_at"] != "1999" and "T" in memo["generated_at"]
     assert len(calls["calls"]) == 1
     assert calls["calls"][0]["reasoning_effort"] == "medium"
-    assert calls["calls"][0]["response_format"]["json_schema"]["name"] == "vip_memo_v2"
+    assert calls["calls"][0]["response_format"] == {"type": "json_object"}
+    assert calls["calls"][0].get("zdr", True) is True
     assert cb.steps() == ["write"]
 
 
@@ -186,3 +188,16 @@ def test_deadline_call_timeout():
     assert Deadline(300_000).call_timeout() == pytest.approx(255, abs=1)
     with pytest.raises(DeadlineExceeded):
         Deadline(119_000).call_timeout()
+
+
+def test_writer_messages_embed_schema_once_outside_documents():
+    from app.services.vip_memo_gen.prompts import render_writer_messages
+    from app.services.vip_memo_gen.schema import writer_json_schema
+    msgs = render_writer_messages("app", [("a.pdf", "text")], "{}")
+    user = msgs[1]["content"]
+    schema_text = json.dumps(writer_json_schema(), separators=(",", ":"))
+    assert user.count("<schema>") == 1 and user.count("</schema>") == 1
+    assert user.count(schema_text) == 1
+    assert "The JSON must validate against this JSON Schema." in user
+    assert user.index("<schema>") > user.index("</documents>")
+    assert user.index("<schema>") > user.index("</research>")

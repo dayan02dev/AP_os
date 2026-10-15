@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 URL = "https://openrouter.ai/api/v1/chat/completions"
-PROVIDER_PREFS = {"data_collection": "deny", "zdr": True, "require_parameters": True}
+PROVIDER_PREFS = {"data_collection": "deny", "require_parameters": True}
 # USD per million tokens: (input, output)
 PRICES: dict[str, tuple[float, float]] = {
     "anthropic/claude-opus-5.5": (4.0, 20.0),
@@ -97,6 +97,7 @@ def chat(
     reasoning_effort: str | None = None,
     response_format: dict | None = None,
     plugins: list[dict] | None = None,
+    zdr: bool = True,
     timeout: float = 600.0,
     transport: httpx.BaseTransport | None = None,
 ) -> LlmResult:
@@ -104,7 +105,7 @@ def chat(
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
-        "provider": dict(PROVIDER_PREFS),
+        "provider": {**PROVIDER_PREFS, **({"zdr": True} if zdr else {})},
     }
     if reasoning_effort:
         payload["reasoning"] = {"effort": reasoning_effort}

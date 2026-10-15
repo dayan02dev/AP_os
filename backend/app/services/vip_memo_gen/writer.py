@@ -1,4 +1,4 @@
-"""Writer step: one structured-output call, plus at most one repair call."""
+"""Writer step: one JSON-mode call, plus at most one repair call."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -10,7 +10,7 @@ from .budget import Budget, Deadline, RunLog, estimate_cost, paid_call
 from .config import GenConfig
 from .openrouter import LlmResult
 from .prompts import REPAIR_PROMPT
-from .schema import MemoValidationError, memo_to_dict, parse_memo, writer_json_schema
+from .schema import MemoValidationError, memo_to_dict, parse_memo
 
 PREPARED_BY = "ARTPARK VIP memo generator"
 
@@ -28,8 +28,7 @@ def _call(step: str, messages: list[dict], cfg: GenConfig, budget: Budget, runs:
     return paid_call(step, cfg.writer_model, estimate, budget, runs, deadline, lambda timeout: openrouter.chat(
         cfg.writer_model, messages,
         max_tokens=cfg.writer_max_tokens, reasoning_effort="medium",
-        response_format={"type": "json_schema", "json_schema": {
-            "name": "vip_memo_v2", "strict": False, "schema": writer_json_schema()}},
+        response_format={"type": "json_object"},
         timeout=timeout,
     ))
 

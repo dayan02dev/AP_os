@@ -5,6 +5,10 @@ and the system prompt tells the model it is data, never instructions.
 """
 from __future__ import annotations
 
+import json
+
+from .schema import writer_json_schema
+
 SYSTEM_PROMPT = """\
 You are a senior investment analyst at ARTPARK (AI & Robotics Technology Park, IISc Bengaluru), a
 venture builder backing deep-tech startups in robotics and AI. You write Investment Committee (IC)
@@ -160,7 +164,9 @@ def render_writer_messages(
         f"<application>\n{_esc(application_block)}\n</application>\n"
         f"<documents>\n{docs}</documents>\n"
         f"<research>\n{_esc(research_json)}\n</research>\n\n"
-        f"{WRITER_INSTRUCTIONS}"
+        f"{WRITER_INSTRUCTIONS}\n"
+        "The JSON must validate against this JSON Schema.\n"
+        f"<schema>{json.dumps(writer_json_schema(), separators=(',', ':'))}</schema>\n"
     )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
