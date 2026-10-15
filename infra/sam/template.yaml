@@ -621,7 +621,7 @@ Resources:
             # receives (maxReceiveCount 2) without the worker ever running. 5 parallel memos;
             # each is capped at $1 (VIP_MEMO_MAX_COST_USD).
             ScalingConfig:
-              MaximumConcurrency: 5
+              MaximumConcurrency: 10
             FunctionResponseTypes:
               - ReportBatchItemFailures
       Policies:
