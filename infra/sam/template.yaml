@@ -95,6 +95,22 @@ Parameters:
       Empty string disables the allow-list (every offered/onboarded founder
       gets in), which is the intended end state.
 
+  VipMemoWriterModel:
+    Type: String
+    Default: anthropic/claude-opus-5.5
+  VipMemoResearchModel:
+    Type: String
+    Default: anthropic/claude-sonnet-5.5
+  VipMemoExtractModel:
+    Type: String
+    Default: anthropic/claude-haiku-5.5
+  VipMemoMaxCostUsd:
+    Type: String
+    Default: "1.00"
+  VipMemoMaxSearches:
+    Type: String
+    Default: "8"
+
 # ─── Globals: every function inherits these ──────────────────────────
 # arm64 + python3.11 + 1GB RAM is the sweet spot for FastAPI on Lambda:
 # 1GB gets us a full vCPU which halves cold-start parsing time; arm64 is
@@ -141,6 +157,14 @@ Globals:
         SIP_SUBMISSIONS_CLOSED: !Ref SipSubmissionsClosed
         # Founder Portal soft-launch allow-list (see the parameter above).
         FOUNDER_PORTAL_ALLOWLIST: !Ref FounderPortalAllowlist
+        # VIP memo generation: API publishes memo_id to the queue, the
+        # VipMemoFunction worker consumes it.
+        VIP_MEMO_QUEUE_URL: !Ref VipMemoQueue
+        VIP_MEMO_WRITER_MODEL: !Ref VipMemoWriterModel
+        VIP_MEMO_RESEARCH_MODEL: !Ref VipMemoResearchModel
+        VIP_MEMO_EXTRACT_MODEL: !Ref VipMemoExtractModel
+        VIP_MEMO_MAX_COST_USD: !Ref VipMemoMaxCostUsd
+        VIP_MEMO_MAX_SEARCHES: !Ref VipMemoMaxSearches
 
 Resources:
   # ── Lambda function ─────────────────────────────────────────────
@@ -536,6 +560,88 @@ Resources:
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
 
+  # ── VIP memo generation ─────────────────────────────────────────
+  # Admin trigger enqueues {memo_id}; VipMemoFunction runs the pipeline.
+  # Standard queues (no per-app ordering needed; versions are separate rows).
+  # VisibilityTimeout 5400 = 6x the 900s worker timeout. maxReceiveCount 2
+  # MUST equal VIP_MEMO_MAX_RECEIVES (the worker marks the row failed on its
+  # last receive before the message goes to the DLQ).
+  VipMemoDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub artpark-eir-vip-memo-dlq-${EnvName}
+      MessageRetentionPeriod: 1209600  # 14 days
+
+  VipMemoQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub artpark-eir-vip-memo-${EnvName}
+      VisibilityTimeout: 5400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt VipMemoDLQ.Arn
+        maxReceiveCount: 2
+
+  ApiFunctionVipMemoSendPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub artpark-eir-api-${EnvName}-vip-memo-send
+      Roles:
+        - !Ref ApiFunctionRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt VipMemoQueue.Arn
+
+  VipMemoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub artpark-eir-vip-memo-${EnvName}
+      CodeUri: ../../backend/
+      Handler: workers.vip_memo.handler.lambda_handler
+      Timeout: 900
+      MemorySize: 1536
+      ReservedConcurrentExecutions: 3
+      Environment:
+        Variables:
+          VIP_MEMO_MAX_RECEIVES: "2"
+      Events:
+        VipMemoJobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt VipMemoQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+      Policies:
+        - CloudWatchLogsFullAccess
+        - SQSPollerPolicy:
+            QueueName: !GetAtt VipMemoQueue.QueueName
+
+  VipMemoLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/artpark-eir-vip-memo-${EnvName}
+      RetentionInDays: 30
+
+  VipMemoDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub artpark-eir-vip-memo-dlq-not-empty-${EnvName}
+      AlarmDescription: VIP memo DLQ has at least one message — investigate.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt VipMemoDLQ.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
   DailyDigestFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -588,3 +694,7 @@ Outputs:
     Value: !Ref AiScreenerDLQ
   AiScreenerFunctionArn:
     Value: !GetAtt AiScreenerFunction.Arn
+  VipMemoQueueUrl:
+    Value: !Ref VipMemoQueue
+  VipMemoDLQUrl:
+    Value: !Ref VipMemoDLQ

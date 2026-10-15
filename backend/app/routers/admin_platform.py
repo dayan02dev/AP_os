@@ -44,6 +44,8 @@ from ..services import (
 )
 from ..services.assignment_email import notify_reviewers_assigned
 from ..services.audit import actor_role_of, write_audit
+from ..services.sqs_publisher import publish_vip_memo
+from ..services.vip_memo_gen import store as vip_memo_store
 from ..supabase_client import get_admin_client
 
 router = APIRouter(prefix="/admin/platform", tags=["admin-platform"])
@@ -1330,3 +1332,50 @@ async def auto_assign_jury(
                 action_type="jury.auto_assigned", target_table="jury_assignments",
                 target_id=body.juror_user_id or "all", after=result)
     return result
+
+
+# ── VIP memo generation (admin only) ────────────────────────────────────
+
+class GenerateMemoBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    application_ids: list[str] = Field(min_length=1, max_length=25)
+    force: bool = False
+
+
+@router.post(
+    "/vip-memos/generate",
+    dependencies=[Depends(require_capability("generate_vip_memo"))],
+)
+async def generate_vip_memos(
+    body: GenerateMemoBody, user: dict = Depends(get_current_user),
+) -> dict:
+    sb = get_admin_client()
+    results: list[dict] = []
+    for app_id in body.application_ids:
+        info = vip_memo_v2.app_lookup(app_id)
+        if info is None or info[1] != "sip" or info[2] == "draft":
+            results.append({"application_id": app_id, "skipped": "not_eligible"})
+            continue
+        native = info[0]
+        if not body.force and vip_memo_store.current_ready(sb, app_id):
+            results.append({"application_id": app_id, "skipped": "already_ready"})
+            continue
+        row = vip_memo_store.create_memo_version(sb, app_id, native, user["user_id"])
+        if publish_vip_memo(row["id"]):
+            results.append({"application_id": app_id, "memo_id": row["id"], "status": "queued"})
+        else:
+            vip_memo_store.set_status(sb, row["id"], "failed", "queue_unavailable")
+            results.append({"application_id": app_id, "memo_id": row["id"],
+                            "status": "failed", "error": "queue_unavailable"})
+    return {"results": results}
+
+
+@router.get(
+    "/vip-memos",
+    dependencies=[Depends(require_capability("generate_vip_memo"))],
+)
+async def list_vip_memos(application_id: str = Query(...)) -> dict:
+    rows = vip_memo_store.latest_for_app(get_admin_client(), application_id)
+    keys = ("id", "version", "status", "is_current", "cost_usd", "error",
+            "created_at", "updated_at")
+    return {"memos": [{k: r.get(k) for k in keys} for r in rows]}

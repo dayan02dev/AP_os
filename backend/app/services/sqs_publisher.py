@@ -154,3 +154,24 @@ def publish_jury_job(job: str, juror_user_id: str) -> bool:
             job, juror_user_id, exc_info=True,
         )
         return False
+
+
+def publish_vip_memo(memo_id: str) -> bool:
+    """Enqueue a VIP memo generation job ({"memo_id"}) on the standard
+    VIP-memo queue. Never raises; returns False when the queue URL is unset
+    or the send fails, so the caller can mark the memo row failed.
+    """
+    queue_url = os.getenv("VIP_MEMO_QUEUE_URL", "").strip()
+    if not queue_url:
+        log.debug("VIP_MEMO_QUEUE_URL unset — skipping vip memo enqueue memo_id=%s", memo_id)
+        return False
+    try:
+        _sqs_client().send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps({"memo_id": memo_id}),
+        )
+        log.info("Enqueued vip memo memo_id=%s", memo_id)
+        return True
+    except Exception:
+        log.warning("Failed to enqueue vip memo memo_id=%s", memo_id, exc_info=True)
+        return False

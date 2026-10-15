@@ -26,8 +26,8 @@ log = logging.getLogger(__name__)
 BUNDLED_DIR = Path(__file__).resolve().parent.parent / "data" / "vip_memo_v2"
 
 
-def track_info(app_id: str) -> tuple[str, str] | None:
-    """(native, effective) track for an application id, or None if unknown.
+def app_lookup(app_id: str) -> tuple[str, str, str | None] | None:
+    """(native, effective, status) for an application id, or None if unknown.
 
     Effective is ``moved_to_track or native``. A TIR application moved to VIP
     lives in ``tir_applications``, so both tables are checked (sip first).
@@ -36,14 +36,20 @@ def track_info(app_id: str) -> tuple[str, str] | None:
         sb = get_admin_client()
         for native in ("sip", "tir"):
             rows = (
-                sb.table(f"{native}_applications").select("id,moved_to_track")
+                sb.table(f"{native}_applications").select("id,moved_to_track,status")
                 .eq("id", app_id).limit(1).execute().data
             ) or []
             if rows:
-                return native, rows[0].get("moved_to_track") or native
+                return native, rows[0].get("moved_to_track") or native, rows[0].get("status")
     except Exception:
         log.exception("vip memo v2 track lookup failed", extra={"application_id": app_id})
     return None
+
+
+def track_info(app_id: str) -> tuple[str, str] | None:
+    """(native, effective) track for an application id, or None if unknown."""
+    info = app_lookup(app_id)
+    return (info[0], info[1]) if info else None
 
 
 def effective_track(app_id: str) -> str | None:

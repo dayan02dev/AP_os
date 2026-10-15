@@ -76,3 +76,18 @@ def test_publish_passes_track_through(monkeypatch):
 
     body = json.loads(fake_client.send_message.call_args.kwargs["MessageBody"])
     assert body["application_track"] == "sip"
+
+
+def test_publish_vip_memo(monkeypatch):
+    monkeypatch.delenv("VIP_MEMO_QUEUE_URL", raising=False)
+    assert sqs_publisher.publish_vip_memo("m1") is False
+    monkeypatch.setenv("VIP_MEMO_QUEUE_URL", "https://sqs.example/vip")
+    client = MagicMock()
+    with patch.object(sqs_publisher, "_sqs_client", return_value=client):
+        assert sqs_publisher.publish_vip_memo("m1") is True
+        kw = client.send_message.call_args.kwargs
+        assert kw["QueueUrl"] == "https://sqs.example/vip"
+        assert json.loads(kw["MessageBody"]) == {"memo_id": "m1"}
+        assert "MessageGroupId" not in kw
+        client.send_message.side_effect = RuntimeError("boom")
+        assert sqs_publisher.publish_vip_memo("m1") is False

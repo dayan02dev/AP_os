@@ -62,6 +62,7 @@ export const ROLE_CAPABILITIES = Object.freeze({
     "manage_batches",
     "manage_reviewers_roster",
     "manage_ic_documents",
+    "generate_vip_memo",
   ]),
 });
 

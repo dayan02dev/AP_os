@@ -74,6 +74,7 @@ ROLE_CAPABILITIES: dict[str, Set[str]] = {
         "manage_reviewers_roster",
         "view_stats",
         "manage_ic_documents",
+        "generate_vip_memo",
     },
 }
 
