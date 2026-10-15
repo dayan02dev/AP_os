@@ -509,7 +509,13 @@ def _cp1252_fold(ch: str) -> str:
             base.encode("cp1252")
             return base or ch
         except UnicodeEncodeError:
-            return ch
+            pass
+        # Greek letters (π0, α, β ...) spelled out: "GREEK SMALL LETTER PI" -> "pi".
+        name = unicodedata.name(ch, "")
+        if name.startswith("GREEK ") and " LETTER " in name:
+            word = name.split(" LETTER ", 1)[1].split()[0].lower()
+            return word.capitalize() if "CAPITAL" in name else word
+        return ch
 
 
 def _pdf_safe(text: Any) -> str:
@@ -517,6 +523,8 @@ def _pdf_safe(text: Any) -> str:
     for src, dst in _PDF_GLYPHS.items():
         t = t.replace(src, dst)
     t = re.sub(r"₹\s*", "Rs ", t).translate(_SCRIPT_DIGITS)
+    # Control characters (e.g. a stray DEL from a pasted deck) have no glyph.
+    t = "".join(c for c in t if c in "\n\t" or unicodedata.category(c) != "Cc")
     t = "".join(_cp1252_fold(c) for c in t)
     # Anything else WinAnsi cannot encode would print as a black box.
     safe = t.encode("cp1252", errors="replace").decode("cp1252")

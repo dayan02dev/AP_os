@@ -10,13 +10,13 @@ import json
 from pathlib import Path
 
 import pytest
+from app.deps import get_current_user
+from app.main import app
+from app.services import vip_memo, vip_memo_v2, vip_memo_v2_export
 from docx import Document
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
-from app.deps import get_current_user
-from app.main import app
-from app.services import vip_memo, vip_memo_v2, vip_memo_v2_export
 from tests.fixtures.fake_supabase import FakeSupabase
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "vip_memo_v2_fake.json").read_text())
@@ -639,3 +639,9 @@ def test_pdf_safe_glyphs_strip_diacritics_and_map_sub_superscripts():
     assert safe("−22 °C") == "-22 °C"
     assert safe("Krim-Nyāya, Pūjā, Skłodowska") == "Krim-Nyaya, Puja, Sklodowska"
     assert safe("café") == "café"  # cp1252 already has it
+
+
+def test_pdf_safe_spells_greek_letters_and_drops_control_chars():
+    from app.services.vip_memo_v2_export import _pdf_safe
+    assert _pdf_safe("Since π0 and α/Ω \x7fToday") == "Since pi0 and alpha/Omega Today"
+    assert _pdf_safe("line1\nline2\ttab") == "line1\nline2\ttab"
