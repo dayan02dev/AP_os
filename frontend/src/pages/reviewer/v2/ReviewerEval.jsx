@@ -55,7 +55,9 @@ import {
 } from "./ui.jsx";
 import { DECISION_LABEL } from "./ReviewerHistory.jsx";
 
-const PILOT_VIP_IDS = new Set([
+// v1-only: the legacy auto-generate memo effect stays limited to the two
+// original pilot apps. The v2 (Navigator) memo is not gated by this.
+const V1_PILOT_IDS = new Set([
   "0117bc80-98c1-4172-bccd-af61327ac580",
   "c8e45451-b9eb-4bed-8293-7a6782237168",
 ]);
@@ -283,9 +285,9 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     }
   };
 
-  // VIP memo v2 (Navigator) for the pilot apps; the legacy memo is the fallback.
+  // VIP memo v2 (Navigator) for every effective-VIP app (404 = no memo yet).
   const memoV2 = useVipMemoV2(
-    content.track === "sip" && PILOT_VIP_IDS.has(content.id) ? content.id : null,
+    effTrack === "sip" ? content.id : null,
     (appId) => reviewerApi.getVipMemoV2("sip", appId),
   );
 
@@ -299,7 +301,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   };
 
   useEffect(() => {
-    if (content.track !== "sip" || !PILOT_VIP_IDS.has(content.id)) return;
+    if (content.track !== "sip" || !V1_PILOT_IDS.has(content.id)) return;
     if (memoV2.status !== "missing") return;
     const cached = readVipMemo(content.id);
     if (cached) {

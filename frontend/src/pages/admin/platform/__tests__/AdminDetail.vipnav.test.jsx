@@ -1,4 +1,4 @@
-// VIP memo v2 Navigator on the admin detail: pilot apps only, legacy fallback.
+// VIP memo v2 Navigator on the admin detail: any VIP app with a ready memo.
 import React from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
@@ -78,12 +78,29 @@ describe("AdminDetail — VIP memo Navigator", () => {
     expect(screen.queryByText(/VIP memo · /)).toBeNull();
   });
 
-  it("does not ask for the v2 memo on non-pilot apps", async () => {
+  it("non-pilot VIP app with memo shows AI Memo tab", async () => {
+    adminPlatformApi.getVipMemoV2.mockResolvedValue(FIXTURE);
+    mount("other-app");
+    expect(await screen.findByText("VIP memo · Acme Robotics")).toBeTruthy();
+    expect(adminPlatformApi.getVipMemoV2).toHaveBeenCalledWith("sip", "other-app");
+    expect(screen.getByRole("button", { name: "AI Memo" })).toBeTruthy();
+    expect(screen.queryByText("Legacy AI summary text")).toBeNull();
+  });
+
+  it("non-pilot VIP app without memo (404) shows normal view and does NOT call the v1 generate API", async () => {
+    adminPlatformApi.getVipMemoV2.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
     mount("other-app");
     await screen.findByRole("heading", { level: 2, name: /Some App/ });
+    await waitFor(() => expect(adminPlatformApi.getVipMemoV2).toHaveBeenCalledWith("sip", "other-app"));
     expect(screen.getByText("Legacy AI summary text")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "AI Memo" })).toBeNull();
+    expect(adminPlatformApi.generateVipMemo).not.toHaveBeenCalled();
+  });
+
+  it("TIR app makes no v2 request", async () => {
+    loadDetail.mockResolvedValue({ ...APP("tir-app"), track: "tir" });
+    render(<AdminDetail startupId="tir-app" track="tir" onBack={() => {}} />);
+    await screen.findByRole("heading", { level: 2, name: /Some App/ });
     expect(adminPlatformApi.getVipMemoV2).not.toHaveBeenCalled();
-    expect(screen.queryByText(/VIP memo · /)).toBeNull();
   });
 });
