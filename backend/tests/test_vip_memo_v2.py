@@ -645,3 +645,8 @@ def test_pdf_safe_spells_greek_letters_and_drops_control_chars():
     from app.services.vip_memo_v2_export import _pdf_safe
     assert _pdf_safe("Since π0 and α/Ω \x7fToday") == "Since pi0 and alpha/Omega Today"
     assert _pdf_safe("line1\nline2\ttab") == "line1\nline2\ttab"
+
+
+def test_pdf_safe_folds_arrows_and_marks():
+    from app.services.vip_memo_v2_export import _pdf_safe
+    assert _pdf_safe("AI \u2194 twin \u2190 \u21aa \u2713 \u2260") == "AI <-> twin <- -> yes !="

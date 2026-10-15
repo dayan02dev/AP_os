@@ -490,6 +490,8 @@ def render_docx_v2(memo: dict[str, Any]) -> bytes:
 # substitute ASCII instead of shipping a font.
 _PDF_GLYPHS = {"≈": "~", "→": "->", "≤": "<=", "≥": ">=", "–": "-", "\u2212": "-",
                "ł": "l", "Ł": "L", "đ": "d", "Đ": "D", "ı": "i", "μ": "µ", "Δ": "Delta ", "σ": "sigma "}
+_PDF_SYMBOLS = {"↔": "<->", "⇔": "<=>", "←": "<-", "⇐": "<=", "⇒": "=>", "↑": "up", "↓": "down",
+                "✓": "yes", "✔": "yes", "✗": "no", "✘": "no", "★": "*", "☆": "*", "≠": "!=", "±": "+/-", "∞": "infinity"}
 _SCRIPT_DIGITS = str.maketrans("₀₁₂₃₄₅₆₇₈₉⁰¹²³⁴⁵⁶⁷⁸⁹", "01234567890123456789")
 
 
@@ -504,6 +506,8 @@ def _cp1252_fold(ch: str) -> str:
         ch.encode("cp1252")
         return ch
     except UnicodeEncodeError:
+        if ch in _PDF_SYMBOLS:  # before NFKD: "≠" would otherwise fold to "="
+            return _PDF_SYMBOLS[ch]
         base = "".join(c for c in unicodedata.normalize("NFKD", ch) if not unicodedata.combining(c))
         try:
             base.encode("cp1252")
@@ -512,6 +516,8 @@ def _cp1252_fold(ch: str) -> str:
             pass
         # Greek letters (π0, α, β ...) spelled out: "GREEK SMALL LETTER PI" -> "pi".
         name = unicodedata.name(ch, "")
+        if "ARROW" in name:
+            return "<->" if ("LEFT RIGHT" in name or "UP DOWN" in name) else "->"
         if name.startswith("GREEK ") and " LETTER " in name:
             word = name.split(" LETTER ", 1)[1].split()[0].lower()
             return word.capitalize() if "CAPITAL" in name else word
