@@ -83,4 +83,22 @@ describe("ReviewerEval — VIP memo Navigator", () => {
     await screen.findByText(/Your scores/);
     expect(api.getVipMemoV2).not.toHaveBeenCalled();
   });
+
+  it("memo shows for a TIR-native app moved to VIP", async () => {
+    api.getContent.mockResolvedValue({ ...content("moved-app"), track: "tir", moved_to_track: "sip" });
+    api.getVipMemoV2.mockResolvedValue(FIXTURE);
+    render(<ReviewerEval track="tir" appId="moved-app" onBack={vi.fn()} />);
+    expect(await screen.findByText("VIP memo · Acme Robotics")).toBeTruthy();
+    expect(api.getVipMemoV2).toHaveBeenCalledWith("sip", "moved-app");
+  });
+
+  it("failed v2 download shows an inline error and keeps the memo", async () => {
+    api.getContent.mockResolvedValue(content("other-app"));
+    api.getVipMemoV2.mockResolvedValue(FIXTURE);
+    api.downloadVipMemoV2.mockRejectedValue(new Error("boom"));
+    render(<ReviewerEval track="sip" appId="other-app" onBack={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Download PDF" }));
+    expect(await screen.findByText("boom")).toBeTruthy();
+    expect(screen.getByText("VIP memo · Acme Robotics")).toBeTruthy();
+  });
 });

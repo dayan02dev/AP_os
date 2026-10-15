@@ -291,12 +291,15 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     (appId) => reviewerApi.getVipMemoV2("sip", appId),
   );
 
+  const [memoDownloadError, setMemoDownloadError] = useState(null);
+
   const downloadVipMemoV2 = async (format) => {
     try {
+      setMemoDownloadError(null);
       const blob = await reviewerApi.downloadVipMemoV2("sip", content.id, format);
       saveBlob(blob, vipMemoV2Filename(memoV2.memo, format));
-    } catch {
-      // The navigator stays usable; a failed download is not fatal here.
+    } catch (err) {
+      setMemoDownloadError(err?.message || "Could not download the VIP memo.");
     }
   };
 
@@ -618,10 +621,13 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               )}
 
               <AiSections variant="dropdown" sections={content.aiSections} />
-              {content.track === "sip" && memoV2.status === "ready" && (
-                <VipNavigatorMemo key={content.id} memo={memoV2.memo} appId={content.id} onDownload={downloadVipMemoV2} />
+              {effTrack === "sip" && memoV2.status === "ready" && (
+                <>
+                  {memoDownloadError && <div className="inline-error" role="alert">{memoDownloadError}</div>}
+                  <VipNavigatorMemo key={content.id} memo={memoV2.memo} appId={content.id} onDownload={downloadVipMemoV2} />
+                </>
               )}
-              {content.track === "sip" && memoV2.status !== "ready" && (
+              {effTrack === "sip" && memoV2.status !== "ready" && (
                 <div className="vip-memo-actions">
                   {vipMemoBusy && <p className="vip-memo-status">Preparing the investment memo — this can take a moment.</p>}
                   <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />

@@ -54,7 +54,7 @@ export default function ApplicationSummaryCard({
           </div>
         )}
 
-        {s.track === "sip" && (
+        {(s.movedToTrack || s.track) === "sip" && (
           <div className="vip-memo-actions">
             {memo && (
               <VipMemoPreview memo={memo} onDownload={onDownloadMemo} generating={memoBusy} />
