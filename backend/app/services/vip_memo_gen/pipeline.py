@@ -12,7 +12,12 @@ from app.services import vip_memo_v2_export
 from app.services.vip_memo_gen import extract, openrouter, research, store, writer
 from app.services.vip_memo_gen.budget import Budget, BudgetExceeded, estimate_cost
 from app.services.vip_memo_gen.config import GenConfig, load_config
-from app.services.vip_memo_gen.inputs import FileRef, InputRecord, build_application_block, collect_files
+from app.services.vip_memo_gen.inputs import (
+    FileRef,
+    InputRecord,
+    build_application_block,
+    collect_files,
+)
 from app.services.vip_memo_gen.openrouter import OpenRouterError, Usage
 from app.services.vip_memo_gen.prompts import TRANSCRIBE_PROMPT, render_writer_messages
 from app.services.vip_memo_gen.schema import MemoValidationError

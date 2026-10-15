@@ -86,7 +86,7 @@ def _pct(value: Any) -> float | None:
     """A percentage cell (50, 50.0, "50%") as a float, or None if it is not one."""
     if isinstance(value, bool):
         return None
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return float(value)
     if isinstance(value, str):
         try:
@@ -242,7 +242,7 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     funds = _d(sec.get("funds"))
     frows, pcts = [], []
     for r in _l(funds.get("rows")):
-        c = dict(zip(_FUND_COLS, _row(r, len(_FUND_COLS))))
+        c = dict(zip(_FUND_COLS, _row(r, len(_FUND_COLS)), strict=False))
         pct = _pct(_l(r)[2] if len(_l(r)) > 2 else None)
         pcts.append(pct)
         frows.append([c["category"], c["amount"], f"{_s(pct)}%" if pct is not None else "—", c["items"]])
@@ -466,7 +466,7 @@ def _pdf_safe(text: Any) -> str:
     # Anything else WinAnsi cannot encode would print as a black box.
     safe = t.encode("cp1252", errors="replace").decode("cp1252")
     if safe != t:
-        replaced = sum(1 for x, y in zip(t, safe) if x != y)
+        replaced = sum(1 for x, y in zip(t, safe, strict=False) if x != y)
         log.warning("vip memo pdf: replaced %d character(s) the PDF font cannot show", replaced)
     return safe
 
@@ -477,7 +477,13 @@ def render_pdf_v2(memo: dict[str, Any]) -> bytes:
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import inch
     from reportlab.platypus import (
-        KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+        KeepTogether,
+        PageBreak,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
     )
     from reportlab.platypus.flowables import HRFlowable
 

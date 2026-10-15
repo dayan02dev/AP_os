@@ -7,9 +7,9 @@ renderer-only extras survive; the top level is strict.
 """
 from __future__ import annotations
 
-from typing import Any, Literal, Union
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 SECTION_KEYS: tuple[str, ...] = (
     "what", "why", "product", "tech", "competitors", "market", "team", "milestones", "funds", "risks",
@@ -19,12 +19,12 @@ WHY_LABELS: tuple[str, ...] = (
 )
 
 # Long text: a paragraph, or bullets where an item may itself be [lead, *sub-points].
-Bullets = Union[str, list[Union[str, list[str]]]]
-Num = Union[int, float]
+Bullets = str | list[str | list[str]]
+Num = int | float
 Cell = Bullets
 # Table rows are positional arrays (the renderers index them).
 Row = list[Cell]
-HolderOrFundRow = list[Union[str, int, float, bool, list[Union[str, list[str]]]]]
+HolderOrFundRow = list[str | int | float | bool | list[str | list[str]]]
 
 Verdict = Literal["APPROVE", "CONDITIONAL APPROVAL", "REQUEST MORE INFORMATION"]
 
@@ -136,7 +136,7 @@ class Team(_Leaf):
 
 class Milestones(_Leaf):
     rows: list[Row]  # [when, milestone, target]
-    infra: list[Union[str, list[str]]] = []
+    infra: list[str | list[str]] = []
     note: Bullets = ""
 
     @field_validator("infra", mode="before")

@@ -3,7 +3,6 @@ from unittest.mock import patch
 
 import httpx
 import pytest
-
 from app.services.vip_memo_gen import openrouter
 from app.services.vip_memo_gen.budget import Budget, BudgetExceeded, estimate_cost
 from app.services.vip_memo_gen.config import load_config
@@ -89,10 +88,10 @@ def test_retries_5xx_then_succeeds():
 
 
 def test_retries_exhausted_raises():
-    with patch("app.services.vip_memo_gen.openrouter.time.sleep"):
-        with pytest.raises(openrouter.OpenRouterError) as e:
-            openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(
-                lambda req: httpx.Response(500)))
+    with patch("app.services.vip_memo_gen.openrouter.time.sleep"), \
+            pytest.raises(openrouter.OpenRouterError) as e:
+        openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(
+            lambda req: httpx.Response(500)))
     assert e.value.status == 500
 
 
@@ -103,9 +102,9 @@ def test_4xx_raises_no_retry():
         calls.append(1)
         return httpx.Response(400, json={"error": "bad"})
 
-    with patch("app.services.vip_memo_gen.openrouter.time.sleep") as sl:
-        with pytest.raises(openrouter.OpenRouterError) as e:
-            openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(h))
+    with patch("app.services.vip_memo_gen.openrouter.time.sleep") as sl, \
+            pytest.raises(openrouter.OpenRouterError) as e:
+        openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(h))
     assert e.value.status == 400 and len(calls) == 1 and not sl.called
 
 
@@ -149,9 +148,9 @@ def test_read_timeout_not_retried():
         calls.append(1)
         raise httpx.ReadTimeout("slow", request=req)
 
-    with patch("app.services.vip_memo_gen.openrouter.time.sleep") as sl:
-        with pytest.raises(openrouter.OpenRouterError):
-            openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(h))
+    with patch("app.services.vip_memo_gen.openrouter.time.sleep") as sl, \
+            pytest.raises(openrouter.OpenRouterError):
+        openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(h))
     assert len(calls) == 1 and not sl.called
 
 

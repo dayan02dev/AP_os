@@ -5,9 +5,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from app.services.vip_memo_gen import store
 from app.services.vip_memo_gen.schema import SECTION_KEYS, memo_to_dict, parse_memo
+
 from tests.fixtures.fake_supabase import FakeSupabase
 
 FAKE = Path(__file__).parent / "fixtures" / "vip_memo_v2_fake.json"

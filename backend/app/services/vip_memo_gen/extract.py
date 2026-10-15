@@ -159,4 +159,4 @@ def budget_texts(items, total_chars: int = 60000):
         if extra > 0:
             used[i] = text[: len(used[i]) + extra]
             remaining -= extra
-    return [(ref, u, len(u) < len(text)) for (ref, text), u in zip(ordered, used)]
+    return [(ref, u, len(u) < len(text)) for (ref, text), u in zip(ordered, used, strict=False)]

@@ -4,7 +4,7 @@ from __future__ import annotations
 import io
 from types import SimpleNamespace
 
-from app.services.vip_memo_gen import extract, inputs
+from app.services.vip_memo_gen import inputs
 from app.services.vip_memo_gen.extract import budget_texts, extract_any
 from app.services.vip_memo_gen.inputs import FileRef
 
@@ -97,7 +97,7 @@ def test_legacy_formats_skipped():
 def test_images_need_transcription_and_csv_txt():
     r = extract_any(b"\x89PNG", "image/png", "a.png")
     assert r.needs_transcription and r.text == ""
-    assert extract_any("a,b\n1,2".encode(), "text/csv", "a.csv").text == "a,b\n1,2"
+    assert extract_any(b"a,b\n1,2", "text/csv", "a.csv").text == "a,b\n1,2"
 
 
 def test_extract_never_raises_on_garbage():

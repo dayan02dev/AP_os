@@ -4,12 +4,11 @@ import json
 from pathlib import Path
 
 import pytest
-
 from app.services.vip_memo_gen.schema import (
     SECTION_KEYS,
     WHY_LABELS,
-    MemoValidationError,
     MemoV2,
+    MemoValidationError,
     memo_to_dict,
     parse_memo,
     writer_json_schema,

@@ -3,9 +3,9 @@ import shutil
 from pathlib import Path
 
 import pytest
-
 from app.services.vip_memo_gen import pipeline
 from scripts import import_vip_memo_json as imp
+
 from tests.fixtures.fake_supabase import FakeSupabase
 
 FAKE = Path(__file__).parent / "fixtures" / "vip_memo_v2_fake.json"

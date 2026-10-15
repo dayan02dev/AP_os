@@ -7,7 +7,7 @@ memo dict given to ``persist_memo`` is the one already normalised by
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.services.vip_memo_gen.schema import SECTION_KEYS
@@ -19,7 +19,7 @@ _SNAP_FIELDS = ("ask", "instrument", "sector", "stage", "location", "team")
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _rows(res: Any) -> list[dict]:

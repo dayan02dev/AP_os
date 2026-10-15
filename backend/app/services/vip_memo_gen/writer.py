@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
-from typing import Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
 
 import json_repair
 
@@ -20,7 +20,7 @@ PREPARED_BY = "ARTPARK VIP memo generator"
 def _stamp(data: dict) -> None:
     data["version"] = 2
     data["prepared_by"] = PREPARED_BY
-    data["generated_at"] = datetime.now(timezone.utc).isoformat()
+    data["generated_at"] = datetime.now(UTC).isoformat()
 
 
 def _call(step: str, messages: list[dict], cfg: GenConfig, budget: Budget,

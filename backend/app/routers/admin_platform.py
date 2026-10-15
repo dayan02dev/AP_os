@@ -24,8 +24,6 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-log = logging.getLogger(__name__)
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from fastapi.responses import Response
@@ -48,6 +46,8 @@ from ..services.audit import actor_role_of, write_audit
 from ..services.sqs_publisher import publish_vip_memo
 from ..services.vip_memo_gen import store as vip_memo_store
 from ..supabase_client import get_admin_client
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/platform", tags=["admin-platform"])
 

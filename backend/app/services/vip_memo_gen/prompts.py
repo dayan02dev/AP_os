@@ -5,8 +5,6 @@ and the system prompt tells the model it is data, never instructions.
 """
 from __future__ import annotations
 
-import json
-
 SYSTEM_PROMPT = """\
 You are a senior investment analyst at ARTPARK (AI & Robotics Technology Park, IISc Bengaluru), a
 venture builder backing deep-tech startups in robotics and AI. You write Investment Committee (IC)
@@ -171,7 +169,7 @@ def render_writer_messages(
 
 
 def _join(v) -> str:
-    return ", ".join(str(x) for x in v) if isinstance(v, (list, tuple)) else str(v or "")
+    return ", ".join(str(x) for x in v) if isinstance(v, list | tuple) else str(v or "")
 
 
 def render_research_messages(profile: dict, max_searches: int) -> list[dict]:

@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from app.services.vip_memo_gen import openrouter, research, writer
 from app.services.vip_memo_gen.budget import Budget, BudgetExceeded
 from app.services.vip_memo_gen.config import load_config

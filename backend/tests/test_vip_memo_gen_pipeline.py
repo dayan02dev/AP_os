@@ -1,14 +1,13 @@
 """Pipeline orchestrator + SQS worker, hermetic (fake Supabase, fake OpenRouter, fake storage)."""
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
-
 from app.services.vip_memo_gen import openrouter, pipeline, store
 from app.services.vip_memo_gen.config import load_config
 from app.services.vip_memo_gen.inputs import FileRef
 from app.services.vip_memo_gen.openrouter import LlmResult, OpenRouterError, Usage
+
 from tests.fixtures.fake_supabase import FakeSupabase
 
 FAKE = Path(__file__).parent / "fixtures" / "vip_memo_v2_fake.json"
@@ -65,6 +64,7 @@ def chat(monkeypatch):
 
 def _blank_pdf() -> bytes:
     import io
+
     from pypdf import PdfWriter
     w = PdfWriter()
     w.add_blank_page(width=200, height=200)
@@ -204,7 +204,9 @@ def test_handler_reports_only_unexpected_failures(monkeypatch):
 
     monkeypatch.setattr(handler, "generate", fake_generate)
     monkeypatch.setattr(handler, "get_admin_client", lambda: object())
-    rec = lambda i, mid: {"messageId": i, "body": json.dumps({"memo_id": mid})}
+    def rec(i, mid):
+        return {"messageId": i, "body": json.dumps({"memo_id": mid})}
+
     out = handler.lambda_handler({"Records": [rec("1", "ok"), rec("2", "bad"), rec("3", "over"),
                                               {"messageId": "4", "body": "not json"}]}, None)
     assert out == {"batchItemFailures": [{"itemIdentifier": "2"}, {"itemIdentifier": "4"}]}
@@ -246,8 +248,10 @@ def test_handler_final_attempt_by_receive_count(chat, monkeypatch):
     _files(monkeypatch, [])
     _boom_writer(monkeypatch)
     monkeypatch.setattr(handler, "get_admin_client", lambda: c)
-    rec = lambda n: {"messageId": "m", "body": json.dumps({"memo_id": mid}),
-                     "attributes": {"ApproximateReceiveCount": str(n)}}
+    def rec(n):
+        return {"messageId": "m", "body": json.dumps({"memo_id": mid}),
+                "attributes": {"ApproximateReceiveCount": str(n)}}
+
     assert handler.lambda_handler({"Records": [rec(1)]}, None) == {"batchItemFailures": [{"itemIdentifier": "m"}]}
     assert store.get_memo(c, mid)["status"] == "running"
     assert handler.lambda_handler({"Records": [rec(2)]}, None) == {"batchItemFailures": []}
