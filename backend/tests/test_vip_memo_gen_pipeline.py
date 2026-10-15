@@ -457,3 +457,26 @@ def test_repair_over_budget_keeps_raw_output(chat, monkeypatch):
     row = store.get_memo(c, mid)
     assert row["status"] == "failed_budget" and '"W"' in row["memo_json"]["_raw"]
     assert store.current_ready(c, APP) is None
+
+
+def test_source_files_only_used_files_deduped_and_scrubbed(chat, monkeypatch):
+    c, mid = _client(blobs={
+        ("b", "bad.pdf"): b"not a pdf at all",
+        ("b", "n1.txt"): b"first notes",
+        ("b", "n2.txt"): b"second notes",
+        ("b", "m.txt"): b"mou text",
+    })
+    _files(monkeypatch, [
+        FileRef("b", "bad.pdf", "broken_deck.pdf", "application/pdf", "deck"),
+        FileRef("b", "n1.txt", "notes.txt", "text/plain", "traction"),
+        FileRef("b", "n2.txt", "notes.txt", "text/plain", "traction"),
+        FileRef("b", "m.txt", "MOU_ceo@acme.in_signed.txt", "text/plain", "other"),
+    ])
+    assert pipeline.generate(c, mid, CFG) == "ready"
+    files = store.get_memo(c, mid)["memo_json"]["source_files"]
+    assert len(files) == 3 and files[0] == "notes.txt" and files[2] == "VIP application form"
+    assert "[email removed]" in files[1] and "@" not in files[1]
+    sent = json.dumps([x["messages"] for x in chat["calls"]])
+    assert "ceo@acme.in" not in sent
+    bad = next(r for r in c.tables["vip_memo_inputs"] if r["path"] == "bad.pdf")
+    assert bad["skipped_reason"] == "extract_error"

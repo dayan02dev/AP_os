@@ -165,7 +165,7 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attemp
             # Contact details never reach a model (D6). Raw bytes sent for transcription
             # cannot be scrubbed; that is a recorded exception in spec section 5.3.
             text = extract.scrub_contacts(text)
-            if text.strip():
+            if text.strip() and not skipped:
                 texts.append((ref, text))
                 methods[ref.path] = method
             else:
@@ -179,13 +179,15 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attemp
                                        len(used), truncated, None))
         state["inputs_recorded"] = True
         store.record_inputs(client, memo_id, records)
-        documents = [(ref.filename, used) for ref, used, _ in allocated if used.strip()]
+        # File names can carry contact details too (e.g. "MOU_name@mail.com.pdf").
+        documents = [(extract.scrub_contacts(ref.filename), used) for ref, used, _ in allocated if used.strip()]
 
         found = research.run(research.profile_from_application(block, documents), cfg, budget, runs,
                              deadline)
         store.record_sources(client, memo_id, found.sources)
 
-        state["source_files"] = [name for name, _ in documents] + [APPLICATION_FORM]
+        # Only files whose text reached the writer, each name once.
+        state["source_files"] = list(dict.fromkeys([name for name, _ in documents] + [APPLICATION_FORM]))
         notes: list[str] = []
         memo = writer.write(render_writer_messages(block, documents, found.json_text), cfg, budget, runs,
                             deadline, notes=notes)

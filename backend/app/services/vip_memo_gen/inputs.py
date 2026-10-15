@@ -59,6 +59,32 @@ def _is_pii_key(key: str) -> bool:
     return key in _PII_KEYS or key.endswith("_email") or key.endswith("_phone")
 
 
+# Form values that mean "not filled in" (front-end serialisation leaks them).
+_PLACEHOLDERS = {"null", "undefined", "none", "n/a", "na", "nil", "-", "--", "nan"}
+
+
+def _missing(v) -> bool:
+    if v is None:
+        return True
+    if isinstance(v, str):
+        return v.strip().lower() in _PLACEHOLDERS or not v.strip()
+    return False
+
+
+def _clean(v):
+    """Drop placeholder strings from a field value (top level, lists, dict entries)."""
+    if isinstance(v, list):
+        items = [_clean(x) for x in v if not _missing(x)]
+        return [x for x in items if x not in ({}, [])]
+    if isinstance(v, dict):
+        return {k: _clean(x) for k, x in v.items() if not _missing(x)}
+    return v
+
+
+def _known(d: dict) -> dict:
+    return {k: v for k, v in d.items() if v is not None}
+
+
 def _pick(entries, keys):
     out = []
     for e in entries if isinstance(entries, list) else []:
@@ -70,16 +96,17 @@ def _pick(entries, keys):
 
 
 def build_application_block(app_row: dict, track: str) -> str:
+    app_row = {k: _clean(v) for k, v in app_row.items() if not _missing(v)}
     row = {k: v for k, v in app_row.items() if not _is_pii_key(k)}
     mates = app_row.get("basic_teammates")
     if mates:
         row["basic_teammates"] = [
-            {"name": m.get("name") or m.get("fullName"), "role": m.get("role")}
+            _known({"name": m.get("name") or m.get("fullName"), "role": m.get("role")})
             for m in mates if isinstance(m, dict) and (m.get("name") or m.get("fullName"))
         ]
     if app_row.get("sip_founders"):
         row["sip_founders"] = [
-            {"name": f.get("name"), "share": f.get("share", f.get("percent"))}
+            _known({"name": f.get("name"), "share": f.get("share", f.get("percent"))})
             for f in app_row["sip_founders"]
             if isinstance(f, dict) and f.get("name")
         ]

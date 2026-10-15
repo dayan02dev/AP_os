@@ -262,3 +262,20 @@ def test_scrub_contacts_keeps_years_amounts_trl(text):
     from app.services.vip_memo_gen.extract import scrub_contacts
 
     assert scrub_contacts(text) == text
+
+
+def test_application_block_drops_placeholder_values():
+    row = {
+        "basic_org": "Acme Robotics",
+        "problem_describe": "null",
+        "solution_describe": " Undefined ",
+        "sip_demo_video_url": "N/A",
+        "basic_teammates": [{"fullName": "Tia Team", "role": "null"}, {"name": "undefined", "role": "CTO"}],
+        "sip_founders": [{"name": "None", "percent": 10}, {"name": "Fay Founder", "percent": "n/a"}],
+    }
+    t = inputs.build_application_block(row, "sip")
+    assert "Acme Robotics" in t and "Tia Team" in t and "Fay Founder" in t
+    low = t.lower()
+    for bad in ("null", "undefined", "n/a", "'none'", ": none"):
+        assert bad not in low, (bad, t)
+    assert "Demo video" not in t
