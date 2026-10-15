@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+import unicodedata
 from typing import Any
 from xml.sax.saxutils import escape
 
@@ -94,6 +95,25 @@ def _pct(value: Any) -> float | None:
         except ValueError:
             return None
     return None
+
+
+def _pct_text(value: Any) -> str:
+    """A percent cell for display: a bare number gets "%"; text such as
+    "~14–17%", "[To be confirmed]" or "CCD" is kept as written."""
+    if value is None or value == "" or isinstance(value, bool):
+        return "—"
+    if isinstance(value, int | float):
+        return f"{_s(value)}%"
+    text = _s(value)
+    return f"{text}%" if re.fullmatch(r"-?\d+(\.\d+)?", text) else text
+
+
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+
+def _scrub(text: str) -> str:
+    """Source lines can quote uploaded file names, which sometimes hold an e-mail."""
+    return _EMAIL.sub("[email removed]", text)
 
 
 def _d(value: Any) -> dict:
@@ -206,16 +226,24 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     for group in _l(comp.get("groups")):
         g = _d(group)
         b.append(("h2", _s(g.get("segment"))))
-        b.append(("table", ["Competitor", "What they do", "Key limitation", f"{name} advantage", "Stage"],
+        adv = "Advantage" if TBC in name else f"{name} advantage"
+        b.append(("table", ["Competitor", "What they do", "Key limitation", adv, "Stage"],
                   [_row(r, 5) for r in _l(g.get("rows"))], None))
     prose(comp.get("note"), "note")
 
+    # One block per segment: name, a Global market / Realistic slice strip,
+    # rationale (paragraph or bullets) and the source. Slice figures are not
+    # charted here (they are often 0 = not estimated).
     market = _d(sec.get("market"))
-    rows = [[_s(_d(r).get("segment")), _s(_d(r).get("global_size")), _s(_d(r).get("slice_label")),
-             _s(_d(r).get("rationale")), _s(_d(r).get("source"))] for r in _l(market.get("rows"))]
-    rows.append(["Total", "", _s(market.get("total")), "", ""])
     b.append(("h1", "Addressable market"))
-    b.append(("table", ["Segment", "Global size", "Realistic slice", "Rationale", "Source"], rows, "total"))
+    for r in _l(market.get("rows")):
+        r = _d(r)
+        b.append(("h2", _s(r.get("segment"))))
+        b.append(("table", ["Global market", "Realistic slice"], [[_s(r.get("global_size")), _s(r.get("slice_label"))]], None))
+        prose(r.get("rationale"), label="Rationale")
+        if r.get("source"):
+            b.append(("note", f"Source: {_scrub(_s(r.get('source')))}"))
+    prose(market.get("total"), label="Realistic opportunity, per year")
     prose(market.get("beachhead"), label="Beachhead")
     prose(market.get("tam_note"), "note")
 
@@ -224,7 +252,8 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     b.append(("table", ["Name", "Role", "Background"],
               [[_s(_d(m).get("name")), _s(_d(m).get("role")), _s(_d(m).get("background"))]
                for m in _l(team.get("members"))], None))
-    holders = [[_s(h[0]), _s(h[1]), f"{_s(h[2])}%"] for h in (_row(x, 3) for x in _l(team.get("holders")))]
+    holders = [[_s(h[0]), _s(h[1]), _pct_text(h[2])]
+               for h in ((_l(x) + [None] * 3)[:3] for x in _l(team.get("holders")))]
     if holders:
         b.append(("h2", "Cap table"))
         b.append(("table", ["Holder", "Type", "Equity"], holders, None))
@@ -243,9 +272,9 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     frows, pcts = [], []
     for r in _l(funds.get("rows")):
         c = dict(zip(_FUND_COLS, _row(r, len(_FUND_COLS)), strict=False))
-        pct = _pct(_l(r)[2] if len(_l(r)) > 2 else None)
-        pcts.append(pct)
-        frows.append([c["category"], c["amount"], f"{_s(pct)}%" if pct is not None else "—", c["items"]])
+        raw = _l(r)[2] if len(_l(r)) > 2 else None
+        pcts.append(_pct(raw))
+        frows.append([c["category"], c["amount"], _pct_text(raw), c["items"]])
     # The total % is the sum of the row values, shown only when every row parses.
     total_pct = sum(pcts) if frows and all(p is not None for p in pcts) else None
     frows.append(["Total", _s(funds.get("total")), f"{_s(round(total_pct, 2))}%" if total_pct is not None else "", ""])
@@ -266,7 +295,11 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     # memo["recommendation"] is deliberately never rendered.
 
     b.append(("h1", "Questions for the founders"))
-    b.append(("numbered", [_s(q) for q in _l(memo.get("questions"))]))
+    questions = [_s(q) for q in _items(memo.get("questions"))]
+    if questions:
+        b.append(("numbered", questions))
+    else:
+        b.append(("p", "No founder questions were generated."))
 
     b.append(("pagebreak",))
     b.append(("h1", "IC Reviewer Notes"))
@@ -455,14 +488,36 @@ def render_docx_v2(memo: dict[str, Any]) -> bytes:
 # Helvetica (a PDF base font, WinAnsi) lacks these glyphs, and no Unicode TTF is
 # guaranteed inside the Lambda package (reportlab bundles Vera only), so
 # substitute ASCII instead of shipping a font.
-_PDF_GLYPHS = {"≈": "~", "→": "->", "≤": "<=", "≥": ">=", "–": "-"}
+_PDF_GLYPHS = {"≈": "~", "→": "->", "≤": "<=", "≥": ">=", "–": "-", "\u2212": "-",
+               "ł": "l", "Ł": "L", "đ": "d", "Đ": "D", "ı": "i", "μ": "µ", "Δ": "Delta ", "σ": "sigma "}
+_SCRIPT_DIGITS = str.maketrans("₀₁₂₃₄₅₆₇₈₉⁰¹²³⁴⁵⁶⁷⁸⁹", "01234567890123456789")
+
+
+# Column shares for tables whose cells differ a lot in length.
+_PDF_COL_FRACS = {("Category", "Amount", "%", "Key items"): (0.28, 0.22, 0.12, 0.38)}
+
+
+def _cp1252_fold(ch: str) -> str:
+    """A character WinAnsi lacks, folded to its base letters (ā -> a) when
+    NFKD gives encodable ones; otherwise left for the "?" fallback."""
+    try:
+        ch.encode("cp1252")
+        return ch
+    except UnicodeEncodeError:
+        base = "".join(c for c in unicodedata.normalize("NFKD", ch) if not unicodedata.combining(c))
+        try:
+            base.encode("cp1252")
+            return base or ch
+        except UnicodeEncodeError:
+            return ch
 
 
 def _pdf_safe(text: Any) -> str:
     t = str(text)
     for src, dst in _PDF_GLYPHS.items():
         t = t.replace(src, dst)
-    t = re.sub(r"₹\s*", "Rs ", t)
+    t = re.sub(r"₹\s*", "Rs ", t).translate(_SCRIPT_DIGITS)
+    t = "".join(_cp1252_fold(c) for c in t)
     # Anything else WinAnsi cannot encode would print as a black box.
     safe = t.encode("cp1252", errors="replace").decode("cp1252")
     if safe != t:
@@ -521,7 +576,9 @@ def render_pdf_v2(memo: dict[str, Any]) -> bytes:
         for n, r in enumerate(rows):
             is_total = kind == "total" and n == len(rows) - 1
             data.append([P(v, "cellb" if (i == 0 or is_total) else "cell") for i, v in enumerate(r)])
-        t = Table(data, colWidths=col_widths or [width / len(header)] * len(header), repeatRows=1)
+        fracs = _PDF_COL_FRACS.get(tuple(header))
+        col_widths = col_widths or ([f * width for f in fracs] if fracs else [width / len(header)] * len(header))
+        t = Table(data, colWidths=col_widths, repeatRows=1)
         style = [
             ("BACKGROUND", (0, 0), (-1, 0), navy),
             ("GRID", (0, 0), (-1, -1), 0.4, rule),

@@ -556,3 +556,86 @@ def test_export_has_no_recommendation_text():
         assert verdict not in text
         assert FIXTURE["recommendation"]["summary"] not in text
         assert FIXTURE["recommendation"]["conditions"][0] not in text
+
+
+# ─── representation fixes (market cards, percents, empty questions, glyphs) ──
+
+TBC = "[To be confirmed]"
+
+
+def _shaped_memo() -> dict:
+    memo = copy.deepcopy(FIXTURE)
+    memo["sections"]["market"]["rows"] = [
+        {"segment": "Cold rooms", "global_size": "$4.2B (2025, global)", "slice_low_cr": 230, "slice_high_cr": 780,
+         "slice_label": "~₹230–780 Cr", "rationale": ["Storage held 68.0% (2025).", "Food share 84%."],
+         "source": "Deck_founder@gmail.com.pdf; Fake Research 2026"},
+        {"segment": "Pharma chain", "global_size": TBC, "slice_low_cr": 0, "slice_high_cr": 0,
+         "slice_label": TBC, "rationale": "No third-party figure.", "source": TBC},
+    ]
+    memo["sections"]["market"]["total"] = [TBC, "Combined slice not stated."]
+    memo["sections"]["funds"]["rows"] = [
+        ["Deploy", "Sensors", "~14–17%", "₹70 L"],
+        ["Models", ["ML engineers", "Compute"], "24%", "₹60 L"],
+        ["Validation", "Lab", 15, "₹30 L"],
+        ["Other", "Gap", TBC, TBC],
+    ]
+    memo["sections"]["team"]["holders"] = [["A", "Founder", 60, True], ["B", "Founder", TBC, False],
+                                           ["C", "Investor", "CCD", TBC], ["D", "ESOP", None, False]]
+    return memo
+
+
+def test_export_market_is_per_segment_with_bullet_rationale():
+    memo = _shaped_memo()
+    blocks = vip_memo_v2_export.build_blocks(memo)
+    i = blocks.index(("h1", "Addressable market"))
+    j = next(n for n in range(i + 1, len(blocks)) if blocks[n][0] == "h1")
+    market = blocks[i:j]
+    assert ("h2", "Cold rooms") in market and ("h2", "Pharma chain") in market
+    stats = [b for b in market if b[0] == "table"]
+    assert stats[0][1] == ["Global market", "Realistic slice"]
+    assert stats[0][2] == [["$4.2B (2025, global)", "~₹230–780 Cr"]]
+    assert ("bullets", ["Storage held 68.0% (2025).", "Food share 84%."]) in market
+    doc = Document(io.BytesIO(vip_memo_v2_export.render_docx_v2(memo)))
+    bullets = [p.text for p in doc.paragraphs if p.style.name.startswith("List Bullet")]
+    assert "Storage held 68.0% (2025)." in bullets and "Combined slice not stated." in bullets
+    for text in _both_texts(memo):
+        assert "globally" not in text
+        assert ".," not in text
+        assert "@gmail.com" not in text
+        assert "Realistic opportunity, per year" in text
+
+
+def test_export_percent_cells_keep_text_and_never_double_percent():
+    memo = _shaped_memo()
+    blocks = vip_memo_v2_export.build_blocks(memo)
+    funds = next(b for b in blocks if b[0] == "table" and b[1][0] == "Category")
+    assert [r[2] for r in funds[2]] == ["~14–17%", "24%", "15%", TBC, ""]
+    holders = next(b for b in blocks if b[0] == "table" and b[1][0] == "Holder")
+    assert [r[2] for r in holders[2]] == ["60%", TBC, "CCD", "—"]
+    for text in _both_texts(memo):
+        assert "%%" not in text and "]%" not in text and "—%" not in text
+        assert "14-17%" in text or "14–17%" in text
+
+
+def test_export_empty_questions_keeps_heading_with_neutral_line():
+    memo = copy.deepcopy(FIXTURE)
+    memo["questions"] = []
+    for text in _both_texts(memo):
+        assert "Questions for the founders" in text
+        assert "No founder questions were generated." in text
+
+
+def test_export_unknown_company_name_competitor_label():
+    memo = copy.deepcopy(FIXTURE)
+    memo["name"] = TBC
+    blocks = vip_memo_v2_export.build_blocks(memo)
+    comp = next(b for b in blocks if b[0] == "table" and b[1][0] == "Competitor")
+    assert comp[1][3] == "Advantage"
+
+
+def test_pdf_safe_glyphs_strip_diacritics_and_map_sub_superscripts():
+    safe = vip_memo_v2_export._pdf_safe
+    assert safe("CO₂ and O₂, TiO₂, x² ") == "CO2 and O2, TiO2, x2 "
+    assert safe("−22 °C") == "-22 °C"
+    assert safe("Krim-Nyāya, Pūjā, Skłodowska") == "Krim-Nyaya, Puja, Sklodowska"
+    assert safe("café") == "café"  # cp1252 already has it
