@@ -137,14 +137,20 @@ def extract_any(data: bytes, mime: str, filename: str) -> Extracted:
 
 
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
-# Each alternative is anchored so it never starts or ends inside a longer number,
-# which keeps years, TRL levels, grouped amounts (1,50,000) and patent numbers intact.
+# Separators inside a number are a single space, dot or dash, never a tab or newline,
+# because DOCX/XLSX table cells are joined with tabs. Each alternative is anchored so it
+# never starts or ends inside a longer number, keeping years, TRL levels, grouped amounts
+# (1,50,000) and patent numbers intact. An unprefixed Indian mobile must be one contiguous
+# 10-digit run: "90000 12000" is far more often two table figures than a phone number.
 _PHONE = re.compile(
-    r"(?<![\w+])\+\d{1,3}(?:[\s.-]?\(\d{1,4}\))?(?:[\s.-]?\d{2,5}){1,4}(?![\d,])"  # +91 98765 43210
-    r"|(?<![\d,.])\(\d{2,5}\)[\s.-]?\d{3,4}[\s.-]?\d{3,4}(?![\d,])"               # (080) 2345 6789
-    r"|(?<![\d,.])0?[6-9]\d{4}[\s-]?\d{5}(?![\d,])"                                 # Indian mobile
-    r"|(?<![\d,.])0\d{2,4}[\s-]\d{6,8}(?![\d,])"                                    # 080-23456789
-    r"|(?<![\d,.])\d{3}[.-]\d{3}[.-]\d{4}(?![\d,])"                                 # 415-555-0123
+    r"(?<![\w+])\+\d{1,3}(?:[ .-]?\(\d{1,4}\))?(?:[ .-]?\d{2,5}){1,4}(?![\d,])"  # +91 98765 43210
+    r"|(?<![\d,.])\(\d{2,5}\)[ .-]?\d{3,4}[ .-]?\d{3,4}(?![\d,])"               # (080) 2345 6789
+    r"|(?<![\w,.])(?:91|0)[ -]?[6-9]\d{4}[ -]?\d{5}(?![\d,])"                     # 098450 12345
+    r"|(?<![\d,.₹$])[6-9]\d{9}(?![\d,])"                                          # 9876543210
+    r"(?!\s*(?:INR|USD|Rs\b|rupees|crores?|lakhs?|cr\b))"
+    r"|(?<![\d,.])0\d{2,4}[ -]\d{3,4}[ -]?\d{3,4}(?![\d,])"                        # 080 2345 6789
+    r"|(?<![\d,.])\d{3}[.-]\d{3}[.-]\d{4}(?![\d,])",                              # 415-555-0123
+    re.IGNORECASE,
 )
 
 

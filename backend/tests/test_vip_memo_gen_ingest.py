@@ -231,9 +231,10 @@ def test_legacy_mimes_skipped_regardless_of_extension():
 
 
 @pytest.mark.parametrize("phone", [
-    "+91 98765 43210", "+91-9876543210", "+919876543210", "98765 43210", "9876543210",
+    "+91 98765 43210", "+91-9876543210", "+919876543210", "9876543210",
     "09876543210", "(080) 2345 6789", "080-23456789", "+1 (415) 555-0123",
-    "+44 20 7946 0958", "415-555-0123",
+    "+44 20 7946 0958", "415-555-0123", "+91-98765-43210", "098450 12345",
+    "080 2345 6789", "022-2345-6789", "+1 415 555 0100",
 ])
 def test_scrub_contacts_removes_phones(phone):
     from app.services.vip_memo_gen.extract import scrub_contacts
@@ -253,7 +254,9 @@ def test_scrub_contacts_removes_emails():
     "Raised ₹1,50,000 in 2024", "Ask: Rs 1,50,00,000 over 2019-2024", "TRL 6 to TRL-7",
     "FY2024-25 revenue ₹ 2.5 Cr", "10,000 units sold", "ISO 9001:2015", "1.5 million users",
     "Patent application 202141012345", "Pincode 560012", "Grant of $250,000 (2023)",
-    "Revenue 12,34,56,789 INR",
+    "Revenue 12,34,56,789 INR", "Jan 65000\t72000", "users 90000 12000", "65000 72000 81000",
+    "Revenue 7500000000 INR", "Valuation ₹7500000000", "Order 987654321012 units", "2023 2024",
+    "Q1\t98765\t43210",
 ])
 def test_scrub_contacts_keeps_years_amounts_trl(text):
     from app.services.vip_memo_gen.extract import scrub_contacts
