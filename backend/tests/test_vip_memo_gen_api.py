@@ -167,3 +167,42 @@ def test_generate_writes_audit(env, monkeypatch):
     assert calls[0]["actor_user_id"] == "admin-1"
     assert calls[0]["after"]["force"] is True and calls[0]["after"]["application_ids"] == [SIP]
     assert len(calls[0]["after"]["memo_ids"]) == 1
+
+
+def _ago(hours):
+    from datetime import UTC, datetime, timedelta
+    return (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
+
+
+def test_stale_in_flight_row_is_superseded(env):
+    fake, published, _ = env
+    fake.tables["vip_memos"] = [{"id": "old", "application_id": SIP, "native_track": "sip",
+                                 "version": 1, "status": "running", "is_current": False,
+                                 "created_at": _ago(5), "updated_at": _ago(3)}]
+    res = post([SIP]).json()["results"][0]
+    assert res["status"] == "queued" and published == [res["memo_id"]]
+    old = fake.row("vip_memos", "old")
+    assert (old["status"], old["error"]) == ("failed", "superseded")
+
+
+def test_fresh_in_flight_row_still_blocks(env):
+    fake, published, _ = env
+    fake.tables["vip_memos"] = [{"id": "new", "application_id": SIP, "native_track": "sip",
+                                 "version": 1, "status": "queued", "is_current": False,
+                                 "created_at": _ago(3), "updated_at": _ago(1)}]
+    assert post([SIP]).json()["results"] == [{"application_id": SIP, "skipped": "in_progress"}]
+    assert published == [] and fake.row("vip_memos", "new")["status"] == "queued"
+
+
+def test_force_supersedes_fresh_in_flight_rows(env):
+    fake, published, _ = env
+    fake.tables["vip_memos"] = [{"id": "q", "application_id": SIP, "native_track": "sip",
+                                 "version": 1, "status": "queued", "is_current": False,
+                                 "updated_at": _ago(0.1)},
+                                {"id": "r", "application_id": SIP, "native_track": "sip",
+                                 "version": 2, "status": "ready", "is_current": True}]
+    res = post([SIP], force=True).json()["results"][0]
+    assert res["status"] == "queued"
+    assert (fake.row("vip_memos", "q")["status"], fake.row("vip_memos", "q")["error"]) == (
+        "failed", "superseded")
+    assert fake.row("vip_memos", "r")["status"] == "ready"  # ready rows are not touched

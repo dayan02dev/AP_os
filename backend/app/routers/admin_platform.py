@@ -1351,17 +1351,39 @@ def _is_uuid(v: str) -> bool:
         return False
 
 
+# A queued/running memo untouched this long is dead (the worker times out at 15 min).
+VIP_MEMO_STALE_HOURS = 2
+
+
+def _is_stale_memo(row: dict, now: datetime) -> bool:
+    ts = row.get("updated_at") or row.get("created_at")
+    if not ts:
+        return False
+    try:
+        when = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return (now - when).total_seconds() > VIP_MEMO_STALE_HOURS * 3600
+
+
 def _generate_one(sb, app_id: str, force: bool, actor_id: str) -> dict:
     info = vip_memo_v2.app_lookup(app_id) if _is_uuid(app_id) else None
     if info is None or info[1] != "sip" or info[2] == "draft":
         return {"application_id": app_id, "skipped": "not_eligible"}
     native = info[0]
+    now = datetime.now(UTC)
+    in_flight = [v for v in vip_memo_store.latest_for_app(sb, app_id)
+                 if v.get("status") in ("queued", "running")]
+    stale = [v for v in in_flight if _is_stale_memo(v, now)]
     if not force:
-        versions = vip_memo_store.latest_for_app(sb, app_id)
-        if any(v.get("status") in ("queued", "running") for v in versions):
+        if len(stale) < len(in_flight):
             return {"application_id": app_id, "skipped": "in_progress"}
         if vip_memo_store.current_ready(sb, app_id):
             return {"application_id": app_id, "skipped": "already_ready"}
+    for v in in_flight if force else stale:
+        vip_memo_store.set_status(sb, v["id"], "failed", "superseded")
     row = vip_memo_store.create_memo_version(sb, app_id, native, actor_id)
     if publish_vip_memo(row["id"]):
         return {"application_id": app_id, "memo_id": row["id"], "status": "queued"}
