@@ -48,7 +48,7 @@ def _export(client, memo_id: str, application_id: str, memo: dict) -> None:
             log.warning("vip memo export failed", extra={"memo_id": memo_id, "fmt": fmt}, exc_info=True)
 
 
-def generate(client, memo_id: str, cfg: GenConfig | None = None) -> str:
+def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attempt: bool = False) -> str:
     cfg = cfg or load_config()
     row = store.get_memo(client, memo_id)
     if row is None:
@@ -58,7 +58,19 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None) -> str:
 
     models = {"writer": cfg.writer_model, "research": cfg.research_model, "extract": cfg.extract_model}
 
+    records: list[InputRecord] = []
+    texts: list[tuple[FileRef, str]] = []
+    state = {"inputs_recorded": False}
+
     def finish(status: str, error: str | None = None) -> str:
+        if not state["inputs_recorded"]:  # audit whatever was gathered before the failure
+            state["inputs_recorded"] = True
+            rest = [InputRecord(r.kind, r.bucket, r.path, r.mime, "none", 0, False, "not_used")
+                    for r, _ in texts]
+            try:
+                store.record_inputs(client, memo_id, records + rest)
+            except Exception:
+                log.warning("vip memo input audit failed", extra={"memo_id": memo_id}, exc_info=True)
         store.set_status(client, memo_id, status, error)
         store.finalize_cost(client, memo_id, models)
         return status
@@ -76,12 +88,10 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None) -> str:
         res = client.table(f"{track}_applications").select("*").eq("id", application_id).limit(1).execute()
         rows = list(res.data or [])
         if not rows:
-            raise ValueError(f"application {application_id} not found in {track}_applications")
+            return finish("failed", f"application not found in {track}_applications")
         app_row = rows[0]
         block = build_application_block(app_row, track)
 
-        records: list[InputRecord] = []
-        texts: list[tuple[FileRef, str]] = []
         methods: dict[str, str] = {}
         for ref in collect_files(client, app_row, track):
             try:
@@ -99,13 +109,18 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None) -> str:
                 except BudgetExceeded:
                     skipped = "budget"
                 else:
-                    current.update(step="extract", model=cfg.extract_model)
                     t0 = time.monotonic()
-                    result = openrouter.chat(cfg.extract_model, _transcription_messages(ref, data),
-                                             max_tokens=_TRANSCRIBE_MAX_TOKENS)
-                    budget.add(result.usage.cost_usd)
-                    on_usage("extract", result, int((time.monotonic() - t0) * 1000))
-                    text, method, skipped = result.text, "transcribe", None
+                    try:
+                        result = openrouter.chat(cfg.extract_model, _transcription_messages(ref, data),
+                                                 max_tokens=_TRANSCRIBE_MAX_TOKENS)
+                    except OpenRouterError as e:
+                        store.record_run(client, memo_id, "extract", cfg.extract_model, Usage(),
+                                         int((time.monotonic() - t0) * 1000), False, str(e)[:_ERROR_CHARS])
+                        skipped = "transcribe_error"
+                    else:
+                        budget.add(result.usage.cost_usd)
+                        on_usage("extract", result, int((time.monotonic() - t0) * 1000))
+                        text, method, skipped = result.text, "transcribe", None
             if text.strip():
                 texts.append((ref, text))
                 methods[ref.path] = method
@@ -118,6 +133,7 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None) -> str:
             records.append(InputRecord(ref.kind, ref.bucket, ref.path, ref.mime,
                                        methods[ref.path],
                                        len(used), truncated, None))
+        state["inputs_recorded"] = True
         store.record_inputs(client, memo_id, records)
         documents = [(ref.filename, used) for ref, used, _ in allocated if used.strip()]
 
@@ -135,6 +151,11 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None) -> str:
         if isinstance(e, OpenRouterError):
             store.record_run(client, memo_id, current["step"], current["model"], Usage(), 0, False,
                              str(e)[:_ERROR_CHARS])
+        return finish("failed", f"{type(e).__name__}: {e}"[:_ERROR_CHARS])
+    except Exception as e:
+        if not final_attempt:
+            raise  # SQS retries; the memo stays running until then
+        log.error("vip memo failed on final attempt", extra={"memo_id": memo_id}, exc_info=True)
         return finish("failed", f"{type(e).__name__}: {e}"[:_ERROR_CHARS])
 
     store.finalize_cost(client, memo_id, models)

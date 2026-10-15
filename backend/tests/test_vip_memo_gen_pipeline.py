@@ -196,7 +196,7 @@ def test_handler_reports_only_unexpected_failures(monkeypatch):
 
     seen = []
 
-    def fake_generate(client, memo_id, cfg=None):
+    def fake_generate(client, memo_id, cfg=None, *, final_attempt=False):
         seen.append(memo_id)
         if memo_id == "bad":
             raise RuntimeError("db down")
@@ -209,3 +209,79 @@ def test_handler_reports_only_unexpected_failures(monkeypatch):
                                               {"messageId": "4", "body": "not json"}]}, None)
     assert out == {"batchItemFailures": [{"itemIdentifier": "2"}, {"itemIdentifier": "4"}]}
     assert seen == ["ok", "bad", "over"]
+
+
+def _boom_writer(monkeypatch):
+    from app.services.vip_memo_gen import writer
+
+    def boom(*a, **k):
+        raise KeyError("unexpected")
+
+    monkeypatch.setattr(writer, "write", boom)
+
+
+def test_unexpected_error_non_final_stays_running_and_reraises(chat, monkeypatch):
+    c, mid = _client()
+    _files(monkeypatch, [])
+    _boom_writer(monkeypatch)
+    with pytest.raises(KeyError):
+        pipeline.generate(c, mid, CFG)
+    assert store.get_memo(c, mid)["status"] == "running"
+
+
+def test_unexpected_error_final_attempt_fails_and_finalizes(chat, monkeypatch):
+    c, mid = _client()
+    _files(monkeypatch, [])
+    _boom_writer(monkeypatch)
+    assert pipeline.generate(c, mid, CFG, final_attempt=True) == "failed"
+    row = store.get_memo(c, mid)
+    assert row["status"] == "failed" and row["error"].startswith("KeyError")
+    assert row["cost_usd"] == pytest.approx(0.1)
+
+
+def test_handler_final_attempt_by_receive_count(chat, monkeypatch):
+    from workers.vip_memo import handler
+
+    c, mid = _client()
+    _files(monkeypatch, [])
+    _boom_writer(monkeypatch)
+    monkeypatch.setattr(handler, "get_admin_client", lambda: c)
+    rec = lambda n: {"messageId": "m", "body": json.dumps({"memo_id": mid}),
+                     "attributes": {"ApproximateReceiveCount": str(n)}}
+    assert handler.lambda_handler({"Records": [rec(1)]}, None) == {"batchItemFailures": [{"itemIdentifier": "m"}]}
+    assert store.get_memo(c, mid)["status"] == "running"
+    assert handler.lambda_handler({"Records": [rec(2)]}, None) == {"batchItemFailures": []}
+    assert store.get_memo(c, mid)["status"] == "failed"
+
+
+def test_app_not_found_is_terminal_failed(chat):
+    c = Client({})
+    mid = store.create_memo_version(c, APP, "sip", None)["id"]
+    assert pipeline.generate(c, mid, CFG) == "failed"
+    row = store.get_memo(c, mid)
+    assert row["status"] == "failed" and "not found" in row["error"] and row["cost_usd"] == 0
+
+
+def test_transcription_error_skips_file_and_continues(chat, monkeypatch):
+    c, mid = _client(blobs={("b", "d.png"): b"x"})
+    _files(monkeypatch, [FileRef("b", "d.png", "deck.png", "image/png", "deck")])
+    orig = openrouter.chat
+
+    def flaky(model, messages, **kw):
+        if model == CFG.extract_model:
+            raise OpenRouterError("timeout")
+        return orig(model, messages, **kw)
+
+    monkeypatch.setattr(openrouter, "chat", flaky)
+    assert pipeline.generate(c, mid, CFG) == "ready"
+    assert c.tables["vip_memo_inputs"][0]["skipped_reason"] == "transcribe_error"
+    bad = [r for r in c.tables["vip_memo_runs"] if not r["ok"]]
+    assert bad and bad[0]["step"] == "extract"
+
+
+def test_inputs_recorded_on_failed_budget(chat, monkeypatch):
+    c, mid = _client(blobs={("b", "n.txt"): b"notes"})
+    _files(monkeypatch, [FileRef("b", "n.txt", "notes.txt", "text/plain", "traction")])
+    store.record_run(c, mid, "write", CFG.writer_model, Usage(cost_usd=0.99), 1, True, None)
+    assert pipeline.generate(c, mid, CFG) == "failed_budget"
+    assert len(c.tables["vip_memo_inputs"]) == 1

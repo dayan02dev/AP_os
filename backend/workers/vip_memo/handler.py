@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
 
 from app.services.vip_memo_gen.pipeline import generate
@@ -19,7 +20,9 @@ def _process_record(record: dict) -> None:
     body_raw = record.get("body", "{}")
     body = json.loads(body_raw) if isinstance(body_raw, str) else body_raw
     memo_id = body["memo_id"]
-    status = generate(get_admin_client(), memo_id)
+    max_receives = int(os.getenv("VIP_MEMO_MAX_RECEIVES", "2"))
+    receives = int((record.get("attributes") or {}).get("ApproximateReceiveCount", 1))
+    status = generate(get_admin_client(), memo_id, final_attempt=receives >= max_receives)
     log.info("vip memo %s finished status=%s", memo_id, status)
 
 
