@@ -136,7 +136,7 @@ def collect_files(client, app_row: dict, track: str) -> list[FileRef]:
             )
             rows = res.data or []
         except Exception:
-            log.warning("collect_files: template lookup failed", extra={"track": track})
+            log.warning("collect_files: template lookup failed", extra={"track": track}, exc_info=True)
             rows = []
         if rows and rows[0].get("storage_path"):
             r = rows[0]

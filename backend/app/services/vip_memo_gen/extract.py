@@ -8,8 +8,13 @@ from dataclasses import dataclass
 log = logging.getLogger(__name__)
 
 # Priority order (highest first) and relative weights for budget_texts.
-PRIORITY = ["deck", "template", "traction", "milestones", "cap_table", "patents", "cv"]
-_WEIGHTS = {"deck": 4, "template": 3, "traction": 3, "milestones": 2, "cap_table": 2, "patents": 1, "cv": 1}
+_PRIORITY_WEIGHTS = [
+    ("deck", 4), ("template", 3), ("traction", 3), ("milestones", 2),
+    ("cap_table", 2), ("patents", 1), ("cv", 1),
+]
+PRIORITY = [k for k, _ in _PRIORITY_WEIGHTS]
+_WEIGHTS = dict(_PRIORITY_WEIGHTS)
+_LEGACY_MIMES = {"application/msword", "application/vnd.ms-powerpoint", "application/vnd.ms-excel"}
 
 _SCANNED_PDF_CHARS_PER_PAGE = 200
 _XLSX_MAX_ROWS = 200
@@ -52,6 +57,21 @@ def _docx(data: bytes) -> Extracted:
     return Extracted("\n".join(parts), "python-docx")
 
 
+def _shape_lines(shapes, skip_id, lines: list[str]) -> None:
+    for shape in shapes:
+        if shape.shape_id == skip_id:
+            continue
+        if hasattr(shape, "shapes"):  # GroupShape
+            _shape_lines(shape.shapes, skip_id, lines)
+        elif shape.has_text_frame:
+            t = shape.text_frame.text.strip()
+            if t:
+                lines.append(t)
+        elif getattr(shape, "has_table", False) and shape.has_table:
+            for row in shape.table.rows:
+                lines.append("\t".join(c.text.strip() for c in row.cells))
+
+
 def _pptx(data: bytes) -> Extracted:
     from pptx import Presentation
 
@@ -59,17 +79,11 @@ def _pptx(data: bytes) -> Extracted:
     out: list[str] = []
     for i, slide in enumerate(prs.slides, start=1):
         lines: list[str] = []
-        title = slide.shapes.title.text_frame.text.strip() if slide.shapes.title is not None else ""
-        if title:
-            lines.append(title)
-        for shape in slide.shapes:
-            if shape.has_text_frame and shape is not slide.shapes.title:
-                t = shape.text_frame.text.strip()
-                if t:
-                    lines.append(t)
-            elif getattr(shape, "has_table", False) and shape.has_table:
-                for row in shape.table.rows:
-                    lines.append("\t".join(c.text.strip() for c in row.cells))
+        title_shape = slide.shapes.title
+        title_id = title_shape.shape_id if title_shape is not None else None
+        if title_shape is not None and title_shape.text_frame.text.strip():
+            lines.append(title_shape.text_frame.text.strip())
+        _shape_lines(slide.shapes, title_id, lines)
         if slide.has_notes_slide:
             notes = slide.notes_slide.notes_text_frame.text.strip()
             if notes:
@@ -101,7 +115,7 @@ def extract_any(data: bytes, mime: str, filename: str) -> Extracted:
     ext = _ext(filename or "")
     mime = (mime or "").lower()
     try:
-        if ext in _LEGACY:
+        if ext in _LEGACY or mime in _LEGACY_MIMES:
             return Extracted("", "none", skipped_reason="unsupported_legacy_format")
         if ext == "pdf" or mime == "application/pdf":
             return _pdf(data)
@@ -131,12 +145,18 @@ def budget_texts(items, total_chars: int = 60000):
 
     ordered = sorted(items, key=lambda it: rank(it[0].kind))  # stable
     remaining = total_chars
-    out = []
+    used: list[str] = []
     for idx, (ref, text) in enumerate(ordered):
-        weight = _WEIGHTS.get(ref.kind, 1)
         rest = sum(_WEIGHTS.get(r.kind, 1) for r, _ in ordered[idx:])
-        share = remaining * weight // rest
-        used = text[:share]
-        remaining -= len(used)
-        out.append((ref, used, len(used) < len(text)))
-    return out
+        share = remaining * _WEIGHTS.get(ref.kind, 1) // rest
+        used.append(text[:share])
+        remaining -= len(used[-1])
+    # Second pass: leftover budget goes to truncated items, highest priority first.
+    for i, (_, text) in enumerate(ordered):
+        if remaining <= 0:
+            break
+        extra = min(remaining, len(text) - len(used[i]))
+        if extra > 0:
+            used[i] = text[: len(used[i]) + extra]
+            remaining -= extra
+    return [(ref, u, len(u) < len(text)) for (ref, text), u in zip(ordered, used)]

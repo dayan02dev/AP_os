@@ -199,3 +199,31 @@ def test_collect_files_resume_and_template(monkeypatch):
     assert kinds["template"].mime.endswith("wordprocessingml.document")
     # no user id -> templates skipped
     assert "template" not in {r.kind for r in inputs.collect_files(_Client(tpl), {}, "sip")}
+
+
+def test_budget_second_pass_gives_leftover_to_deck():
+    items = [(_ref("deck"), "d" * 40000), (_ref("traction"), "t" * 1000), (_ref("cv"), "c" * 1000)]
+    out = {r.kind: (t, trunc) for r, t, trunc in budget_texts(items, total_chars=60000)}
+    assert len(out["deck"][0]) == 40000 and out["deck"][1] is False
+    assert not out["traction"][1] and not out["cv"][1]
+
+
+def test_pptx_title_once_and_grouped_text():
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    slide.shapes.title.text = "UniqueTitle"
+    grp = slide.shapes.add_group_shape()
+    grp.shapes.add_textbox(Inches(1), Inches(2), Inches(3), Inches(1)).text_frame.text = "InsideGroup"
+    buf = io.BytesIO()
+    prs.save(buf)
+    t = extract_any(buf.getvalue(), "", "g.pptx").text
+    assert t.count("UniqueTitle") == 1
+    assert "InsideGroup" in t
+
+
+def test_legacy_mimes_skipped_regardless_of_extension():
+    for m in ("application/msword", "application/vnd.ms-powerpoint", "application/vnd.ms-excel"):
+        assert extract_any(b"x", m, "file.bin").skipped_reason == "unsupported_legacy_format"
