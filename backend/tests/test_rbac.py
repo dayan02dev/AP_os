@@ -62,3 +62,9 @@ def test_admin_has_platform_capabilities():
     from app.rbac import ROLE_CAPABILITIES as C
     assert {"decide_application","manage_batches","manage_reviewers_roster","assign_reviewers"} <= C["admin"]
     assert "decide_application" in C["leadership"]
+
+
+def test_generate_vip_memo_admin_only():
+    assert has_capability(["admin"], "generate_vip_memo") is True
+    for role in ("leadership", "reviewer", "jury", "applicant"):
+        assert has_capability([role], "generate_vip_memo") is False

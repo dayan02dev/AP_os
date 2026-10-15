@@ -14,6 +14,7 @@ from app.services.vip_memo_gen.schema import SECTION_KEYS
 
 BUCKET = "vip-memos"
 STATUSES = ("queued", "running", "ready", "failed", "failed_budget")
+LIST_COLUMNS = "id,version,status,is_current,cost_usd,error,created_at,updated_at"
 _SNAP_FIELDS = ("ask", "instrument", "sector", "stage", "location", "team")
 
 
@@ -202,7 +203,7 @@ def current_ready(client, application_id: str) -> dict | None:
 
 def latest_for_app(client, application_id: str) -> list[dict]:
     rows = _rows(
-        client.table("vip_memos").select("*").eq("application_id", application_id)
+        client.table("vip_memos").select(LIST_COLUMNS).eq("application_id", application_id)
         .order("version", desc=True).execute()
     )
     return sorted(rows, key=lambda r: r["version"], reverse=True)

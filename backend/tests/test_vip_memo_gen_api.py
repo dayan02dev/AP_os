@@ -120,3 +120,50 @@ def test_status_lists_versions(env):
 def test_body_limit_25(env):
     assert post([f"id-{i}" for i in range(26)]).status_code == 422
     assert post([]).status_code == 422
+
+
+def test_in_progress_skipped_unless_force(env):
+    fake, published, _ = env
+    for st in ("queued", "running"):
+        fake.tables["vip_memos"] = [{"id": "m1", "application_id": SIP, "native_track": "sip",
+                                     "version": 1, "status": st, "is_current": False}]
+        assert post([SIP]).json()["results"] == [{"application_id": SIP, "skipped": "in_progress"}]
+        assert published == []
+        assert post([SIP], force=True).json()["results"][0]["status"] == "queued"
+        published.clear()
+
+
+def test_non_uuid_post_id_makes_no_db_query(env, monkeypatch):
+    def boom(_):
+        raise AssertionError("db queried")
+    monkeypatch.setattr("app.services.vip_memo_v2.get_admin_client", boom)
+    res = post(["not-a-uuid"]).json()["results"]
+    assert res == [{"application_id": "not-a-uuid", "skipped": "not_eligible"}]
+
+
+def test_status_non_uuid_is_422(env):
+    assert TestClient(app).get("/admin/platform/vip-memos?application_id=zzz").status_code == 422
+
+
+def test_one_failure_does_not_lose_batch(env, monkeypatch):
+    from app.services.vip_memo_gen import store
+    orig = store.create_memo_version
+
+    def flaky(c, app_id, native, by):
+        if app_id == SIP:
+            raise RuntimeError("db down")
+        return orig(c, app_id, native, by)
+    monkeypatch.setattr("app.routers.admin_platform.vip_memo_store.create_memo_version", flaky)
+    res = post([SIP, MOVED]).json()["results"]
+    assert res[0] == {"application_id": SIP, "error": "create_failed"}
+    assert res[1]["status"] == "queued"
+
+
+def test_generate_writes_audit(env, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: calls.append(k))
+    post([SIP], force=True)
+    assert calls[0]["action_type"] == "vip_memo.generate_requested"
+    assert calls[0]["actor_user_id"] == "admin-1"
+    assert calls[0]["after"]["force"] is True and calls[0]["after"]["application_ids"] == [SIP]
+    assert len(calls[0]["after"]["memo_ids"]) == 1

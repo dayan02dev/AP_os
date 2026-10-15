@@ -20,6 +20,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -1342,6 +1343,33 @@ class GenerateMemoBody(BaseModel):
     force: bool = False
 
 
+def _is_uuid(v: str) -> bool:
+    try:
+        uuid.UUID(v)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def _generate_one(sb, app_id: str, force: bool, actor_id: str) -> dict:
+    info = vip_memo_v2.app_lookup(app_id) if _is_uuid(app_id) else None
+    if info is None or info[1] != "sip" or info[2] == "draft":
+        return {"application_id": app_id, "skipped": "not_eligible"}
+    native = info[0]
+    if not force:
+        versions = vip_memo_store.latest_for_app(sb, app_id)
+        if any(v.get("status") in ("queued", "running") for v in versions):
+            return {"application_id": app_id, "skipped": "in_progress"}
+        if vip_memo_store.current_ready(sb, app_id):
+            return {"application_id": app_id, "skipped": "already_ready"}
+    row = vip_memo_store.create_memo_version(sb, app_id, native, actor_id)
+    if publish_vip_memo(row["id"]):
+        return {"application_id": app_id, "memo_id": row["id"], "status": "queued"}
+    vip_memo_store.set_status(sb, row["id"], "failed", "queue_unavailable")
+    return {"application_id": app_id, "memo_id": row["id"],
+            "status": "failed", "error": "queue_unavailable"}
+
+
 @router.post(
     "/vip-memos/generate",
     dependencies=[Depends(require_capability("generate_vip_memo"))],
@@ -1352,21 +1380,19 @@ async def generate_vip_memos(
     sb = get_admin_client()
     results: list[dict] = []
     for app_id in body.application_ids:
-        info = vip_memo_v2.app_lookup(app_id)
-        if info is None or info[1] != "sip" or info[2] == "draft":
-            results.append({"application_id": app_id, "skipped": "not_eligible"})
-            continue
-        native = info[0]
-        if not body.force and vip_memo_store.current_ready(sb, app_id):
-            results.append({"application_id": app_id, "skipped": "already_ready"})
-            continue
-        row = vip_memo_store.create_memo_version(sb, app_id, native, user["user_id"])
-        if publish_vip_memo(row["id"]):
-            results.append({"application_id": app_id, "memo_id": row["id"], "status": "queued"})
-        else:
-            vip_memo_store.set_status(sb, row["id"], "failed", "queue_unavailable")
-            results.append({"application_id": app_id, "memo_id": row["id"],
-                            "status": "failed", "error": "queue_unavailable"})
+        try:
+            results.append(_generate_one(sb, app_id, body.force, user["user_id"]))
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "vip memo generate failed application_id=%s", app_id)
+            results.append({"application_id": app_id, "error": "create_failed"})
+    write_audit(
+        actor_user_id=user["user_id"], actor_role=actor_role_of(user),
+        action_type="vip_memo.generate_requested", target_table="vip_memos",
+        target_id=",".join(body.application_ids),
+        after={"application_ids": body.application_ids, "force": body.force,
+               "memo_ids": [r["memo_id"] for r in results if r.get("memo_id")]},
+    )
     return {"results": results}
 
 
@@ -1374,8 +1400,8 @@ async def generate_vip_memos(
     "/vip-memos",
     dependencies=[Depends(require_capability("generate_vip_memo"))],
 )
-async def list_vip_memos(application_id: str = Query(...)) -> dict:
-    rows = vip_memo_store.latest_for_app(get_admin_client(), application_id)
+async def list_vip_memos(application_id: uuid.UUID = Query(...)) -> dict:
+    rows = vip_memo_store.latest_for_app(get_admin_client(), str(application_id))
     keys = ("id", "version", "status", "is_current", "cost_usd", "error",
             "created_at", "updated_at")
     return {"memos": [{k: r.get(k) for k in keys} for r in rows]}
