@@ -56,7 +56,8 @@ def test_apply_creates_ready_current_memo(memo_file):
     assert line == f"{APP} 1 ready"
     (m,) = c.tables["vip_memos"]
     assert (m["status"], m["is_current"], m["triggered_by"], m["native_track"]) == (
-        "ready", True, "import", "sip")
+        "ready", True, None, "sip")  # triggered_by is a uuid FK; no actor for an import
+    assert m["models"] == {"source": "import"}
     assert c.tables["vip_memo_sections"]
     assert len(c.storage.uploads) == 2
 

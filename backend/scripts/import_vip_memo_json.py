@@ -57,7 +57,7 @@ def import_file(client, path: Path, apply: bool) -> str:
         raise ValueError("application not found as a VIP app or a TIR app moved to VIP")
     if not apply:
         return f"{application_id} - dry-run"
-    row = store.create_memo_version(client, application_id, native, triggered_by="import")
+    row = store.create_memo_version(client, application_id, native, triggered_by=None)
     store.persist_memo(client, row["id"], memo)
     _export(client, row["id"], application_id, memo)
     store.finalize_cost(client, row["id"], {"source": "import"})
