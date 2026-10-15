@@ -309,9 +309,11 @@ def assigned(monkeypatch):
     from app.services import reviewer_query
     calls = []
 
+    native = {MOVED_APP: "tir", TIR_APP: "tir"}  # everything else is natively "sip"
+
     def _fetch(uid, track, app_id):
         calls.append((uid, track, app_id))
-        return {"application": {}} if uid == "u-1" else None
+        return {"application": {}} if uid == "u-1" and track == native.get(app_id, "sip") else None
     monkeypatch.setattr(reviewer_query, "fetch_application_for_reviewer", _fetch)
     return calls
 
@@ -380,7 +382,7 @@ def test_routes_require_capability(client, fake, roles, path):
 def test_v2_get_404_for_unknown_or_tir_app(client, monkeypatch, assigned):
     sb = FakeSupabase(_apps([_memo_row(TIR_APP), _memo_row(MOVED_OUT)]))
     monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
-    for _surface, roles, path in ROUTES[:2]:  # admin, leadership resolve the track
+    for _surface, roles, path in ROUTES:
         _as(roles)
         for app_id in (UNKNOWN, TIR_APP, MOVED_OUT):  # MOVED_OUT: effective track is TIR
             r = client.get(path.format(id=app_id))
@@ -388,12 +390,25 @@ def test_v2_get_404_for_unknown_or_tir_app(client, monkeypatch, assigned):
             assert r.json()["detail"]["code"] == "memo_not_available"
 
 
-def test_moved_tir_app_is_served_to_admin_and_leadership(client, monkeypatch):
+def test_moved_tir_app_is_served_on_every_surface(client, monkeypatch, assigned):
     sb = FakeSupabase(_apps([_memo_row(MOVED_APP)]))
     monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
-    for _surface, roles, path in ROUTES[:2]:
+    for _surface, roles, path in ROUTES:
         _as(roles)
-        assert client.get(path.format(id=MOVED_APP)).status_code == 200
+        assert client.get(path.format(id=MOVED_APP)).status_code == 200, path
+        assert client.post(path.format(id=MOVED_APP) + "/download?format=pdf").status_code == 200, path
+    # the reviewer's assignment is looked up under the NATIVE track
+    assert ("u-1", "tir", MOVED_APP) in assigned
+
+
+def test_reviewer_moved_app_any_url_track_and_assignment_still_enforced(client, monkeypatch, assigned):
+    sb = FakeSupabase(_apps([_memo_row(MOVED_APP)]))
+    monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
+    _as(["reviewer"])
+    for url_track in ("sip", "tir"):
+        assert client.get(f"/reviewer/applications/{url_track}/{MOVED_APP}/vip-memo-v2").status_code == 200
+    _as(["reviewer"], user_id="someone-else")
+    assert client.get(f"/reviewer/applications/sip/{MOVED_APP}/vip-memo-v2").status_code == 404
 
 
 @pytest.mark.parametrize("surface,roles,path", ROUTES)
@@ -438,8 +453,9 @@ def test_stored_export_preferred(client, monkeypatch, assigned):
     _with_storage(sb, {("vip-memos", "a/b.pdf"): b"%PDF-stored"})
     monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
     monkeypatch.setattr(vip_memo_v2_export, "render", lambda *a, **k: pytest.fail("rendered despite stored export"))
-    assert vip_memo_v2.stored_export(NON_PILOT, "pdf") == b"%PDF-stored"
-    assert vip_memo_v2.stored_export(NON_PILOT, "docx") is None  # no docx export row
+    mid = f"memo-{NON_PILOT[:4]}"
+    assert vip_memo_v2.stored_export(mid, "pdf") == b"%PDF-stored"
+    assert vip_memo_v2.stored_export(mid, "docx") is None  # no docx export row
     for _surface, roles, path in ROUTES:
         _as(roles)
         r = client.post(path.format(id=NON_PILOT) + "/download?format=pdf")
@@ -448,11 +464,35 @@ def test_stored_export_preferred(client, monkeypatch, assigned):
 
 
 def test_stored_export_missing_or_broken_falls_back_to_render(fake, monkeypatch):
-    assert vip_memo_v2.stored_export(NON_PILOT, "pdf") is None
-    body, media = vip_memo_v2.export_for(NON_PILOT, FIXTURE, "pdf")
+    mid = f"memo-{NON_PILOT[:4]}"
+    assert vip_memo_v2.stored_export(mid, "pdf") is None
+    body, media = vip_memo_v2.export_for(mid, FIXTURE, "pdf")
     assert body.startswith(b"%PDF") and media == "application/pdf"
     monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: (_ for _ in ()).throw(RuntimeError("down")))
-    assert vip_memo_v2.stored_export(NON_PILOT, "pdf") is None
+    assert vip_memo_v2.stored_export(mid, "pdf") is None
+
+
+def test_bundled_memo_never_gets_a_db_export(client, monkeypatch, no_bundled_memos):
+    """DB has only a non-current row with an export; the served memo is the bundled
+    file, so that export must NOT be served."""
+    rows = _apps([_memo_row(PILOT, is_current=False)])
+    rows["vip_memo_exports"] = [{"memo_id": f"memo-{PILOT[:4]}", "format": "pdf",
+                                 "bucket": "vip-memos", "path": "old.pdf"}]
+    sb = FakeSupabase(rows)
+    _with_storage(sb, {("vip-memos", "old.pdf"): b"%PDF-stale"})
+    monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
+    _bundle(no_bundled_memos, PILOT, {**copy.deepcopy(FIXTURE), "name": "Bundled Co"})
+    memo, memo_id = vip_memo_v2.load_memo_v2(PILOT)
+    assert memo["name"] == "Bundled Co" and memo_id is None
+    _as(["leadership"])
+    r = client.post(f"/leadership/applications/{PILOT}/vip-memo-v2/download?format=pdf")
+    assert r.status_code == 200 and r.content != b"%PDF-stale" and r.content.startswith(b"%PDF")
+
+
+def test_pdf_replacement_logs_count_only(caplog):
+    with caplog.at_level("WARNING"):
+        assert vip_memo_v2_export._pdf_safe("a 日本 b") == "a ?? b"
+    assert "2 character" in caplog.text and "日本" not in caplog.text
 
 
 def test_v1_still_pilot_gated(client, fake):

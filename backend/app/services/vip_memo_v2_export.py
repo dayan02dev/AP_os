@@ -15,9 +15,12 @@ with a bottom rule, tables with a navy header row and alternating shading.
 from __future__ import annotations
 
 import io
+import logging
 import re
 from typing import Any
 from xml.sax.saxutils import escape
+
+log = logging.getLogger(__name__)
 
 TBC = "[To be confirmed]"
 NAVY = "1F3864"
@@ -461,7 +464,11 @@ def _pdf_safe(text: Any) -> str:
         t = t.replace(src, dst)
     t = re.sub(r"₹\s*", "Rs ", t)
     # Anything else WinAnsi cannot encode would print as a black box.
-    return t.encode("cp1252", errors="replace").decode("cp1252")
+    safe = t.encode("cp1252", errors="replace").decode("cp1252")
+    if safe != t:
+        replaced = sum(1 for x, y in zip(t, safe) if x != y)
+        log.warning("vip memo pdf: replaced %d character(s) the PDF font cannot show", replaced)
+    return safe
 
 
 def render_pdf_v2(memo: dict[str, Any]) -> bytes:

@@ -186,16 +186,16 @@ async def download_vip_memo(
 
 
 
-def _memo_v2_or_404(track: str, application_id: str) -> dict[str, Any]:
+def _memo_v2_or_404(track: str, application_id: str) -> tuple[dict[str, Any], str | None]:
     # Resolved by id: the effective track (moved_to_track wins) must be VIP, so a
     # TIR app moved to VIP is eligible whichever table the UI's track points at.
-    memo = vip_memo_v2.get_memo_v2(application_id) if vip_memo_v2.is_vip_app(application_id) else None
-    if memo is None:
+    loaded = vip_memo_v2.load_memo_v2(application_id) if vip_memo_v2.is_vip_app(application_id) else None
+    if loaded is None:
         raise HTTPException(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail={"code": "memo_not_available"},
         )
-    return memo
+    return loaded
 
 
 @router.get(
@@ -207,7 +207,7 @@ async def get_vip_memo_v2(
     application_id: str,
 ) -> dict[str, Any]:
     """The VIP memo v2 (Navigator) JSON for a VIP application, recommendation stripped."""
-    return vip_memo_v2.public_view(_memo_v2_or_404(track, application_id))
+    return vip_memo_v2.public_view(_memo_v2_or_404(track, application_id)[0])
 
 
 @router.post(
@@ -219,8 +219,8 @@ async def download_vip_memo_v2(
     application_id: str,
     format: Literal["pdf", "docx"] = Query("pdf"),
 ) -> Response:
-    memo = _memo_v2_or_404(track, application_id)
-    body, media = vip_memo_v2.export_for(application_id, memo, format)
+    memo, memo_id = _memo_v2_or_404(track, application_id)
+    body, media = vip_memo_v2.export_for(memo_id, memo, format)
     return Response(
         content=body,
         media_type=media,

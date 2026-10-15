@@ -26,11 +26,12 @@ log = logging.getLogger(__name__)
 BUNDLED_DIR = Path(__file__).resolve().parent.parent / "data" / "vip_memo_v2"
 
 
-def effective_track(app_id: str) -> str | None:
-    """``moved_to_track or track`` for an application id, or None if unknown.
+def track_info(app_id: str) -> tuple[str, str] | None:
+    """(native, effective) track for an application id, or None if unknown.
 
-    A TIR application moved to VIP lives in ``tir_applications``, so both tables
-    are checked (sip first). Never raises."""
+    Effective is ``moved_to_track or native``. A TIR application moved to VIP
+    lives in ``tir_applications``, so both tables are checked (sip first).
+    Never raises."""
     try:
         sb = get_admin_client()
         for native in ("sip", "tir"):
@@ -39,24 +40,29 @@ def effective_track(app_id: str) -> str | None:
                 .eq("id", app_id).limit(1).execute().data
             ) or []
             if rows:
-                return rows[0].get("moved_to_track") or native
+                return native, rows[0].get("moved_to_track") or native
     except Exception:
         log.exception("vip memo v2 track lookup failed", extra={"application_id": app_id})
     return None
+
+
+def effective_track(app_id: str) -> str | None:
+    info = track_info(app_id)
+    return info[1] if info else None
 
 
 def is_vip_app(app_id: str) -> bool:
     return effective_track(app_id) == "sip"
 
 
-def _stored_memo(app_id: str) -> dict[str, Any] | None:
+def _stored_memo(app_id: str) -> tuple[dict[str, Any], str | None] | None:
     try:
         row = store.current_ready(get_admin_client(), app_id)
     except Exception:
         log.exception("vip memo v2 read failed", extra={"application_id": app_id})
         return None
     memo = row.get("memo_json") if row else None
-    return memo if isinstance(memo, dict) else None
+    return (memo, row.get("id")) if isinstance(memo, dict) else None
 
 
 def _bundled_memo(app_id: str) -> dict[str, Any] | None:
@@ -71,18 +77,26 @@ def _bundled_memo(app_id: str) -> dict[str, Any] | None:
     return memo if isinstance(memo, dict) else None
 
 
-def get_memo_v2(app_id: str) -> dict[str, Any] | None:
-    """The validated v2 memo (full, including the recommendation) or None.
-    Order: current ready DB memo, then the bundled file. Never raises."""
-    for memo in (_stored_memo(app_id), _bundled_memo(app_id)):
-        if memo is None:
+def load_memo_v2(app_id: str) -> tuple[dict[str, Any], str | None] | None:
+    """(validated memo incl. recommendation, id of the vip_memos row it came
+    from, or None when it came from the bundled file). Order: current ready DB
+    memo, then the bundled file. Never raises."""
+    bundled = _bundled_memo(app_id)
+    for found in (_stored_memo(app_id), (bundled, None) if bundled is not None else None):
+        if found is None:
             continue
+        memo, memo_id = found
         try:
-            return memo_to_dict(parse_memo(memo))
+            return memo_to_dict(parse_memo(memo)), memo_id
         except MemoValidationError as exc:
             log.warning("vip memo v2 has an invalid shape",
                         extra={"application_id": app_id, "errors": exc.messages[:5]})
     return None
+
+
+def get_memo_v2(app_id: str) -> dict[str, Any] | None:
+    loaded = load_memo_v2(app_id)
+    return loaded[0] if loaded else None
 
 
 def public_view(memo: dict[str, Any]) -> dict[str, Any]:
@@ -90,29 +104,30 @@ def public_view(memo: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in memo.items() if k != "recommendation"}
 
 
-def stored_export(app_id: str, fmt: str) -> bytes | None:
-    """The current memo's pre-rendered export from the ``vip-memos`` bucket, or None."""
+def stored_export(memo_id: str | None, fmt: str) -> bytes | None:
+    """The pre-rendered export of the served ``vip_memos`` row from the
+    ``vip-memos`` bucket, or None (always None for a bundled-file memo)."""
+    if not memo_id:
+        return None
     try:
         sb = get_admin_client()
-        row = store.current_ready(sb, app_id)
-        if not row:
-            return None
         exports = (
             sb.table("vip_memo_exports").select("bucket,path")
-            .eq("memo_id", row["id"]).eq("format", fmt).limit(1).execute().data
+            .eq("memo_id", memo_id).eq("format", fmt)
+            .order("created_at", desc=True).limit(1).execute().data
         ) or []
         if not exports:
             return None
         data = sb.storage.from_(exports[0].get("bucket") or store.BUCKET).download(exports[0]["path"])
         return bytes(data) if data else None
     except Exception:
-        log.exception("vip memo v2 stored export unavailable", extra={"application_id": app_id})
+        log.exception("vip memo v2 stored export unavailable", extra={"memo_id": memo_id})
         return None
 
 
-def export_for(app_id: str, memo: dict[str, Any], fmt: str) -> tuple[bytes, str]:
+def export_for(memo_id: str | None, memo: dict[str, Any], fmt: str) -> tuple[bytes, str]:
     """(body, media type): the stored export if there is one, else rendered now."""
-    stored = stored_export(app_id, fmt)
+    stored = stored_export(memo_id, fmt)
     if stored is not None:
         media = vip_memo_v2_export.DOCX_MEDIA if fmt == "docx" else "application/pdf"
         return stored, media
