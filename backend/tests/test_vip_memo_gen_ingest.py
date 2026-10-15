@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 from types import SimpleNamespace
 
+import pytest
 from app.services.vip_memo_gen import inputs
 from app.services.vip_memo_gen.extract import budget_texts, extract_any
 from app.services.vip_memo_gen.inputs import FileRef
@@ -227,3 +228,34 @@ def test_pptx_title_once_and_grouped_text():
 def test_legacy_mimes_skipped_regardless_of_extension():
     for m in ("application/msword", "application/vnd.ms-powerpoint", "application/vnd.ms-excel"):
         assert extract_any(b"x", m, "file.bin").skipped_reason == "unsupported_legacy_format"
+
+
+@pytest.mark.parametrize("phone", [
+    "+91 98765 43210", "+91-9876543210", "+919876543210", "98765 43210", "9876543210",
+    "09876543210", "(080) 2345 6789", "080-23456789", "+1 (415) 555-0123",
+    "+44 20 7946 0958", "415-555-0123",
+])
+def test_scrub_contacts_removes_phones(phone):
+    from app.services.vip_memo_gen.extract import scrub_contacts
+
+    out = scrub_contacts(f"Call {phone} today.")
+    assert out == "Call [phone removed] today."
+
+
+def test_scrub_contacts_removes_emails():
+    from app.services.vip_memo_gen.extract import scrub_contacts
+
+    assert scrub_contacts("Mail ceo.name+vip@acme-robotics.co.in or a_b@x.io.") == (
+        "Mail [email removed] or [email removed].")
+
+
+@pytest.mark.parametrize("text", [
+    "Raised ₹1,50,000 in 2024", "Ask: Rs 1,50,00,000 over 2019-2024", "TRL 6 to TRL-7",
+    "FY2024-25 revenue ₹ 2.5 Cr", "10,000 units sold", "ISO 9001:2015", "1.5 million users",
+    "Patent application 202141012345", "Pincode 560012", "Grant of $250,000 (2023)",
+    "Revenue 12,34,56,789 INR",
+])
+def test_scrub_contacts_keeps_years_amounts_trl(text):
+    from app.services.vip_memo_gen.extract import scrub_contacts
+
+    assert scrub_contacts(text) == text

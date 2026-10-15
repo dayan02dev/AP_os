@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
@@ -133,6 +134,28 @@ def extract_any(data: bytes, mime: str, filename: str) -> Extracted:
     except Exception:
         log.warning("vip_memo_gen extract failed", extra={"file_ext": ext}, exc_info=True)
         return Extracted("", "none", skipped_reason="extract_error")
+
+
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+# Each alternative is anchored so it never starts or ends inside a longer number,
+# which keeps years, TRL levels, grouped amounts (1,50,000) and patent numbers intact.
+_PHONE = re.compile(
+    r"(?<![\w+])\+\d{1,3}(?:[\s.-]?\(\d{1,4}\))?(?:[\s.-]?\d{2,5}){1,4}(?![\d,])"  # +91 98765 43210
+    r"|(?<![\d,.])\(\d{2,5}\)[\s.-]?\d{3,4}[\s.-]?\d{3,4}(?![\d,])"               # (080) 2345 6789
+    r"|(?<![\d,.])0?[6-9]\d{4}[\s-]?\d{5}(?![\d,])"                                 # Indian mobile
+    r"|(?<![\d,.])0\d{2,4}[\s-]\d{6,8}(?![\d,])"                                    # 080-23456789
+    r"|(?<![\d,.])\d{3}[.-]\d{3}[.-]\d{4}(?![\d,])"                                 # 415-555-0123
+)
+
+
+def _phone(m: re.Match) -> str:
+    digits = sum(c.isdigit() for c in m.group(0))
+    return "[phone removed]" if 8 <= digits <= 15 else m.group(0)
+
+
+def scrub_contacts(text: str) -> str:
+    """Remove e-mail addresses and phone numbers from founder document text (spec D6)."""
+    return _PHONE.sub(_phone, _EMAIL.sub("[email removed]", text or ""))
 
 
 def budget_texts(items, total_chars: int = 60000):

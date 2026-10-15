@@ -126,6 +126,7 @@ enqueue(app_id) ─► VipMemoFunction (own SQS queue, batch 1)
   | PNG/JPG, and PDFs whose text is under a threshold per page | Haiku 5.5 transcription |
 
   Every file gets a `vip_memo_inputs` row: method, chars used, truncated flag, skipped reason.
+- **Contact details in document text (D6).** E-mail addresses and phone numbers are regex-scrubbed from every extracted and transcribed text before it is budgeted into the prompt. **Accepted exception:** a scanned PDF or image sent to Haiku for transcription goes as raw bytes and cannot be scrubbed first; only its transcribed text is scrubbed.
 
 ### 5.4 Storage (Supabase, migration `047_vip_memos.sql` + `047_vip_memos_PROD_APPLY.sql`)
 
