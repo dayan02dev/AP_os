@@ -49,6 +49,22 @@ class OpenRouterError(RuntimeError):
         self.maybe_billed = maybe_billed
 
 
+class ModelRefusal(OpenRouterError):
+    """The model declined to answer (safety classifier). Refusals are not billed."""
+
+
+def _refusal_reason(choice: dict, msg: dict, has_usage: bool) -> str | None:
+    fin = choice.get("finish_reason")
+    native = choice.get("native_finish_reason")
+    if fin == "refusal" or "refusal" in str(native or "").lower():
+        return f"finish_reason={fin} native_finish_reason={native}"
+    if msg.get("refusal"):
+        return "message.refusal set"
+    if not has_usage and not _text(msg.get("content")).strip():
+        return f"no usage and empty content (finish_reason={fin} native_finish_reason={native})"
+    return None
+
+
 def _text(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -66,7 +82,13 @@ def _parse(model: str, data: dict) -> LlmResult:
     except (KeyError, IndexError, TypeError) as e:
         raise OpenRouterError(f"malformed OpenRouter response: {e}", maybe_billed=True) from e
     u = data.get("usage")
-    if not isinstance(u, dict) or not u:
+    has_usage = isinstance(u, dict) and bool(u)
+    choice = data["choices"][0]
+    if isinstance(choice, dict) and isinstance(msg, dict):
+        reason = _refusal_reason(choice, msg, has_usage)
+        if reason:
+            raise ModelRefusal(f"{model} refused the request ({reason})", maybe_billed=False)
+    if not has_usage:
         raise OpenRouterError(f"OpenRouter response for {model} has no usage; cost unknown",
                               maybe_billed=True)
     inp = int(u.get("prompt_tokens") or 0)

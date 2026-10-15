@@ -23,7 +23,7 @@ from app.services.vip_memo_gen.inputs import (
     build_application_block,
     collect_files,
 )
-from app.services.vip_memo_gen.openrouter import OpenRouterError
+from app.services.vip_memo_gen.openrouter import ModelRefusal, OpenRouterError
 from app.services.vip_memo_gen.prompts import TRANSCRIBE_PROMPT, render_writer_messages
 from app.services.vip_memo_gen.schema import MemoValidationError
 
@@ -189,8 +189,13 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attemp
         # Only files whose text reached the writer, each name once.
         state["source_files"] = list(dict.fromkeys([name for name, _ in documents] + [APPLICATION_FORM]))
         notes: list[str] = []
-        memo = writer.write(render_writer_messages(block, documents, found.json_text), cfg, budget, runs,
-                            deadline, notes=notes)
+        used: dict = {}
+        try:
+            memo = writer.write(render_writer_messages(block, documents, found.json_text), cfg, budget,
+                                runs, deadline, notes=notes, used=used)
+        finally:
+            if used.get("writer"):
+                models["writer_used"] = used["writer"]
         memo["source_files"] = state["source_files"]
         if notes:
             log.warning("vip memo salvaged", extra={"memo_id": memo_id, "notes": len(notes)})
@@ -200,6 +205,8 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attemp
         return finish("failed_budget", str(e)[:_ERROR_CHARS])
     except (MemoValidationError, OpenRouterError) as e:  # OpenRouter run rows are settled by paid_call
         keep_raw(e)
+        if isinstance(e, ModelRefusal):
+            return finish("failed", str(e)[:_ERROR_CHARS])
         return finish("failed", f"{type(e).__name__}: {e}"[:_ERROR_CHARS])
     except Exception as e:  # includes DeadlineExceeded
         keep_raw(e)

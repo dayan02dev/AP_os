@@ -1,12 +1,13 @@
 """Pipeline orchestrator + SQS worker, hermetic (fake Supabase, fake OpenRouter, fake storage)."""
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from app.services.vip_memo_gen import openrouter, pipeline, store
 from app.services.vip_memo_gen.config import load_config
 from app.services.vip_memo_gen.inputs import FileRef
-from app.services.vip_memo_gen.openrouter import LlmResult, OpenRouterError, Usage
+from app.services.vip_memo_gen.openrouter import LlmResult, ModelRefusal, OpenRouterError, Usage
 
 from tests.fixtures.fake_supabase import FakeSupabase
 
@@ -480,3 +481,45 @@ def test_source_files_only_used_files_deduped_and_scrubbed(chat, monkeypatch):
     assert "ceo@acme.in" not in sent
     bad = next(r for r in c.tables["vip_memo_inputs"] if r["path"] == "bad.pdf")
     assert bad["skipped_reason"] == "extract_error"
+
+
+def _refusing(monkeypatch, fallback_refuses):
+    """Fallback gets its own model id so the shared fixture can't mistake it for research."""
+    monkeypatch.setitem(openrouter.PRICES, "x/fallback", (2.0, 10.0))
+    cfg = replace(CFG, fallback_model="x/fallback")
+    seen = []
+    orig = openrouter.chat
+
+    def fake(model, messages, **kw):
+        if model == cfg.writer_model or (model == "x/fallback" and fallback_refuses):
+            seen.append(model)
+            raise ModelRefusal("refused", maybe_billed=False)
+        if model == "x/fallback":
+            seen.append(model)
+            return _res(FAKE.read_text(), 0.2, model)
+        return orig(model, messages, **kw)
+
+    monkeypatch.setattr(openrouter, "chat", fake)
+    return cfg, seen
+
+
+def test_double_refusal_marks_failed_with_clear_error(chat, monkeypatch):
+    c, mid = _client()
+    _files(monkeypatch, [])
+    cfg, seen = _refusing(monkeypatch, True)
+    assert pipeline.generate(c, mid, cfg) == "failed"
+    row = store.get_memo(c, mid)
+    assert row["status"] == "failed"
+    assert row["error"] == "refused by model safety filter (opus and fallback)"
+    assert seen == [cfg.writer_model, "x/fallback"]
+    assert row["cost_usd"] == pytest.approx(0.1)  # refusals settle at $0
+
+
+def test_fallback_success_records_writer_used(chat, monkeypatch):
+    c, mid = _client()
+    _files(monkeypatch, [])
+    cfg, seen = _refusing(monkeypatch, False)
+    assert pipeline.generate(c, mid, cfg) == "ready"
+    assert seen == [cfg.writer_model, "x/fallback"]
+    models = store.get_memo(c, mid)["models"]
+    assert models["writer_used"] == "x/fallback" and models["writer"] == cfg.writer_model

@@ -193,7 +193,7 @@ def test_maybe_billed_flags():
     assert e.value.maybe_billed
     with pytest.raises(openrouter.OpenRouterError) as e:
         openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(
-            lambda req: httpx.Response(200, json={"choices": [{"message": {}}]})))
+            lambda req: httpx.Response(200, json={"choices": [{"message": {"content": "x"}}]})))
     assert e.value.maybe_billed  # no usage: ran, cost unknown
     with pytest.raises(openrouter.OpenRouterError) as e:
         openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(
@@ -246,3 +246,50 @@ def test_zdr_false_omits_zdr_key():
     openrouter.chat(OPUS, [{"role": "user", "content": "x"}], max_tokens=10, zdr=False,
                     transport=_transport(h))
     assert seen["body"]["provider"] == {"data_collection": "deny", "require_parameters": True}
+
+
+def _resp(choice, usage=None):
+    body = {"choices": [choice]}
+    if usage is not None:
+        body["usage"] = usage
+    return httpx.Response(200, json=body)
+
+
+@pytest.mark.parametrize("choice,usage,needle", [
+    ({"message": {"content": ""}, "finish_reason": "refusal"}, {"cost": 0.01}, "finish_reason=refusal"),
+    ({"message": {"content": "x"}, "finish_reason": "stop", "native_finish_reason": "Refusal"}, None, "Refusal"),
+    ({"message": {"content": "x", "refusal": "I cannot help"}, "finish_reason": "stop"}, {"cost": 0.01},
+     "message.refusal"),
+    ({"message": {"content": ""}, "finish_reason": "stop"}, None, "no usage and empty content"),
+    ({"message": {}}, None, "no usage and empty content"),
+])
+def test_refusal_detected_not_billed(choice, usage, needle):
+    with pytest.raises(openrouter.ModelRefusal) as e:
+        openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(lambda req: _resp(choice, usage)))
+    assert not e.value.maybe_billed and needle in str(e.value)
+    assert isinstance(e.value, openrouter.OpenRouterError)
+
+
+def test_refusal_settles_run_at_zero():
+    from app.services.vip_memo_gen.budget import paid_call
+
+    class Runs:
+        def start(self, *a):
+            return 0
+
+        def finish(self, run_id, model, usage, ms, ok, err):
+            self.out = (usage.cost_usd, ok)
+
+    runs, budget = Runs(), Budget(1.0)
+    choice = {"message": {"content": ""}, "finish_reason": "refusal"}
+    with pytest.raises(openrouter.ModelRefusal):
+        paid_call("write", OPUS, 0.5, budget, runs, None, lambda t: openrouter.chat(
+            OPUS, [], max_tokens=1, transport=_transport(lambda req: _resp(choice))))
+    assert runs.out == (0.0, False) and budget.spent_usd == 0
+
+
+def test_no_usage_with_content_still_fails_closed():
+    with pytest.raises(openrouter.OpenRouterError) as e:
+        openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(
+            lambda req: _resp({"message": {"content": "answer"}, "finish_reason": "stop"})))
+    assert not isinstance(e.value, openrouter.ModelRefusal) and e.value.maybe_billed

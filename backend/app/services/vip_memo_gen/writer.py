@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import json_repair
@@ -23,7 +24,7 @@ from .budget import (
     paid_call,
 )
 from .config import GenConfig
-from .openrouter import PRICES, LlmResult, OpenRouterError
+from .openrouter import PRICES, LlmResult, ModelRefusal, OpenRouterError
 from .prompts import REPAIR_PROMPT, REPAIR_SYSTEM
 from .schema import MemoValidationError, memo_to_dict, parse_memo, salvage
 
@@ -33,6 +34,7 @@ _MAX_LOGGED = 20
 _MAX_REPORTED = 10
 _MSG_CHARS = 200
 TRUNCATED = "output truncated at max_tokens"
+REFUSED_BOTH = "refused by model safety filter (opus and fallback)"
 PREPARED_BY = "ARTPARK VIP memo generator"
 MIN_REPAIR_TOKENS = 16000  # a full memo at low reasoning needs ~15k output tokens
 
@@ -44,12 +46,14 @@ def _stamp(data: dict) -> None:
 
 
 def _call(step: str, messages: list[dict], cfg: GenConfig, budget: Budget, runs: RunLog,
-          deadline: Deadline | None, effort: str, max_tokens: int | None = None) -> LlmResult:
+          deadline: Deadline | None, effort: str, max_tokens: int | None = None,
+          model: str | None = None) -> LlmResult:
+    model = model or cfg.writer_model
     max_tokens = max_tokens or cfg.writer_max_tokens
     chars = sum(len(m["content"]) for m in messages)
-    estimate = estimate_cost(cfg.writer_model, chars, max_tokens)
-    return paid_call(step, cfg.writer_model, estimate, budget, runs, deadline, lambda timeout: openrouter.chat(
-        cfg.writer_model, messages,
+    estimate = estimate_cost(model, chars, max_tokens)
+    return paid_call(step, model, estimate, budget, runs, deadline, lambda timeout: openrouter.chat(
+        model, messages,
         max_tokens=max_tokens, reasoning_effort=effort,
         response_format={"type": "json_object"},  # never json_schema: Anthropic caps optional/union params
         timeout=timeout,
@@ -109,10 +113,27 @@ def _attach(e: BaseException, raw: str, messages: list[str]) -> None:
 
 
 def write(messages: list[dict], cfg: GenConfig, budget: Budget, runs: RunLog,
-          deadline: Deadline | None = None, notes: list[str] | None = None) -> dict:
-    """``notes`` (out): salvage notes of the accepted memo, paths only."""
+          deadline: Deadline | None = None, notes: list[str] | None = None,
+          used: dict | None = None) -> dict:
+    """``notes`` (out): salvage notes of the accepted memo, paths only.
+    ``used`` (out): ``{"writer": <model that wrote the memo>}``.
+
+    A refusal by the writer model is retried once on ``cfg.fallback_model`` (if set)."""
     notes = notes if notes is not None else []
-    result = _call("write", messages, cfg, budget, runs, deadline, "medium")
+    used = used if used is not None else {}
+    model = cfg.writer_model
+    used["writer"] = model
+    try:
+        result = _call("write", messages, cfg, budget, runs, deadline, "medium")
+    except ModelRefusal as first:
+        if not cfg.fallback_model:
+            raise
+        log.warning("vip memo writer refused (%s); retrying once on %s", first, cfg.fallback_model)
+        model = used["writer"] = cfg.fallback_model
+        try:
+            result = _call("write_fallback", messages, cfg, budget, runs, deadline, "medium", model=model)
+        except ModelRefusal as second:
+            raise ModelRefusal(REFUSED_BOTH, maybe_billed=False) from second
     try:
         memo, found = validate(result.text)
     except MemoValidationError as err:
@@ -128,12 +149,12 @@ def write(messages: list[dict], cfg: GenConfig, budget: Budget, runs: RunLog,
         {"role": "user", "content": REPAIR_PROMPT.format(errors="\n".join(errors), raw=result.text)},
     ]
     write_text = result.text
-    repair_max = repair_max_tokens(repair, cfg, budget)
+    repair_max = repair_max_tokens(repair, replace(cfg, writer_model=model), budget)
     try:
         if repair_max < MIN_REPAIR_TOKENS:  # a cut-off repair would only waste money
             raise BudgetExceeded(f"repair skipped: only {repair_max} output tokens fit the remaining "
                                  f"${budget.remaining:.4f} (needs {MIN_REPAIR_TOKENS})")
-        result = _call("repair", repair, cfg, budget, runs, deadline, "low", repair_max)
+        result = _call("repair", repair, cfg, budget, runs, deadline, "low", repair_max, model)
     except (BudgetExceeded, DeadlineExceeded, OpenRouterError) as e:
         _attach(e, write_text, failure.messages)
         raise

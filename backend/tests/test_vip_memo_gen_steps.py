@@ -5,7 +5,7 @@ import pytest
 from app.services.vip_memo_gen import openrouter, research, writer
 from app.services.vip_memo_gen.budget import Budget, BudgetExceeded
 from app.services.vip_memo_gen.config import load_config
-from app.services.vip_memo_gen.openrouter import LlmResult, OpenRouterError, Usage
+from app.services.vip_memo_gen.openrouter import LlmResult, ModelRefusal, OpenRouterError, Usage
 from app.services.vip_memo_gen.schema import MemoValidationError
 
 FAKE = Path(__file__).parent / "fixtures" / "vip_memo_v2_fake.json"
@@ -383,3 +383,53 @@ def test_writer_messages_embed_schema_once_outside_documents():
     assert "The JSON must validate against this JSON Schema." in user
     assert user.index("<schema>") > user.index("</documents>")
     assert user.index("<schema>") > user.index("</research>")
+
+
+FB = "anthropic/claude-sonnet-5.5"
+
+
+def test_writer_falls_back_once_on_refusal(calls):
+    calls["queue"] += [ModelRefusal("refused", maybe_billed=False), _res(FAKE.read_text())]
+    cb, used = _Runs(), {}
+    memo = writer.write(MSGS, load_config(), Budget(1.0), cb, used=used)
+    assert memo["prepared_by"] == "ARTPARK VIP memo generator"
+    assert [c["model"] for c in calls["calls"]] == [load_config().writer_model, FB]
+    assert calls["calls"][1]["messages"] == calls["calls"][0]["messages"]
+    assert calls["calls"][1]["reasoning_effort"] == "medium"
+    assert calls["calls"][1]["response_format"] == {"type": "json_object"}
+    assert cb.steps() == ["write", "write_fallback"]
+    assert used == {"writer": FB}
+
+
+def test_repair_after_fallback_uses_fallback_model(calls):
+    calls["queue"] += [ModelRefusal("r"), _res("not json"), _res(FAKE.read_text())]
+    writer.write(MSGS, load_config(), Budget(1.0), _Runs())
+    assert [c["model"] for c in calls["calls"]] == [load_config().writer_model, FB, FB]
+
+
+def test_double_refusal_raises_after_exactly_two_calls(calls):
+    calls["queue"] += [ModelRefusal("a"), ModelRefusal("b")]
+    with pytest.raises(ModelRefusal, match=r"refused by model safety filter \(opus and fallback\)"):
+        writer.write(MSGS, load_config(), Budget(1.0), _Runs())
+    assert len(calls["calls"]) == 2
+
+
+def test_fallback_disabled_keeps_original_behaviour(calls, monkeypatch):
+    monkeypatch.setenv("VIP_MEMO_FALLBACK_MODEL", "")
+    calls["queue"] += [ModelRefusal("refused")]
+    with pytest.raises(ModelRefusal, match="^refused$"):
+        writer.write(MSGS, load_config(), Budget(1.0), _Runs())
+    assert len(calls["calls"]) == 1
+
+
+def test_fallback_config_default_and_env(monkeypatch):
+    assert load_config().fallback_model == FB
+    monkeypatch.setenv("VIP_MEMO_FALLBACK_MODEL", "x/y")
+    assert load_config().fallback_model == "x/y"
+
+
+def test_non_refusal_openrouter_error_does_not_fall_back(calls):
+    calls["queue"] += [OpenRouterError("no usage", maybe_billed=True)]
+    with pytest.raises(OpenRouterError):
+        writer.write(MSGS, load_config(), Budget(1.0), _Runs())
+    assert len(calls["calls"]) == 1

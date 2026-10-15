@@ -104,6 +104,9 @@ Parameters:
   VipMemoExtractModel:
     Type: String
     Default: anthropic/claude-haiku-5.5
+  VipMemoFallbackModel:
+    Type: String
+    Default: anthropic/claude-sonnet-5.5
   VipMemoMaxCostUsd:
     Type: String
     Default: "1.00"
@@ -167,6 +170,7 @@ Globals:
         VIP_MEMO_WRITER_MODEL: !Ref VipMemoWriterModel
         VIP_MEMO_RESEARCH_MODEL: !Ref VipMemoResearchModel
         VIP_MEMO_EXTRACT_MODEL: !Ref VipMemoExtractModel
+        VIP_MEMO_FALLBACK_MODEL: !Ref VipMemoFallbackModel
         VIP_MEMO_MAX_COST_USD: !Ref VipMemoMaxCostUsd
         VIP_MEMO_MAX_SEARCHES: !Ref VipMemoMaxSearches
         VIP_MEMO_SEARCH_ENGINE: !Ref VipMemoSearchEngine

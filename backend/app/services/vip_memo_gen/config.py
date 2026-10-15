@@ -16,6 +16,7 @@ class GenConfig:
     file_chars: int = 60000
     writer_max_tokens: int = 32000  # Opus spends 6-11K on reasoning before ~14K of JSON
     search_engine: str = "exa"
+    fallback_model: str = "anthropic/claude-sonnet-5.5"  # "" disables the refusal fallback
     research_max_tokens: int = 8000
 
 
@@ -48,4 +49,5 @@ def load_config() -> GenConfig:
         max_cost_usd=max_cost,
         max_searches=max_searches,
         search_engine=engine,
+        fallback_model=env("VIP_MEMO_FALLBACK_MODEL", "anthropic/claude-sonnet-5.5").strip(),
     )
