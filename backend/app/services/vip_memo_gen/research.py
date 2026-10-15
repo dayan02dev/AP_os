@@ -2,19 +2,19 @@
 from __future__ import annotations
 
 import re
-import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import json_repair
 
 from . import openrouter
-from .budget import Budget, estimate_cost
+from .budget import Budget, Deadline, DeadlineExceeded, RunLog, estimate_cost, paid_call
 from .config import GenConfig
-from .openrouter import LlmResult, Usage
+from .openrouter import PRICES, WEB_SEARCH_USD, Usage
 from .prompts import render_research_messages
 
 _FIELD_CHARS = 300
+_MAX_TOKENS = 6000
+_SEARCH_RESULT_TOKENS = 15000  # assumed input tokens each search result adds
 _SECTIONS = ("market", "competitors")
 
 
@@ -92,24 +92,29 @@ def _sources(parsed, annotations: list[dict]) -> list[dict]:
     return list(out.values())
 
 
-def run(profile: dict, cfg: GenConfig, budget: Budget,
-        on_usage: Callable[[str, LlmResult, int], None]) -> ResearchResult:
+def estimate(cfg: GenConfig, input_chars: int) -> float:
+    """Tokens plus every allowed web search: its fee and the result text it feeds back."""
+    per_search = WEB_SEARCH_USD + _SEARCH_RESULT_TOKENS * PRICES[cfg.research_model][0] / 1_000_000
+    return estimate_cost(cfg.research_model, input_chars, _MAX_TOKENS) + cfg.max_searches * per_search
+
+
+def run(profile: dict, cfg: GenConfig, budget: Budget, runs: RunLog,
+        deadline: Deadline | None = None) -> ResearchResult:
     messages = render_research_messages(profile, cfg.max_searches)
-    max_tokens = 6000
     try:
         chars = sum(len(m["content"]) for m in messages)
-        budget.check(estimate_cost(cfg.research_model, chars, max_tokens))
-        t0 = time.monotonic()
-        result = openrouter.chat(
-            cfg.research_model, messages, max_tokens=max_tokens,
-            plugins=[{"id": "web", "engine": "native", "max_results": cfg.max_searches}],
-            response_format={"type": "json_object"},
-        )
+        # No OpenRouter parameter caps the number of native searches; the prompt does.
+        result = paid_call("research", cfg.research_model, estimate(cfg, chars), budget, runs, deadline,
+                           lambda timeout: openrouter.chat(
+                               cfg.research_model, messages, max_tokens=_MAX_TOKENS,
+                               plugins=[{"id": "web", "engine": "native", "max_results": cfg.max_searches}],
+                               response_format={"type": "json_object"},
+                               timeout=timeout,
+                           ))
+    except DeadlineExceeded:
+        raise
     except Exception:  # research is best-effort; the memo falls back to [To be confirmed]
         return ResearchResult()
-    duration_ms = int((time.monotonic() - t0) * 1000)
-    budget.add(result.usage.cost_usd)
-    on_usage("research", result, duration_ms)
     try:
         parsed = json_repair.loads(result.text)
     except Exception:

@@ -99,7 +99,11 @@ def test_happy_path_ready_with_exports(chat, monkeypatch):
     assert "research" in steps and "write" in steps
     assert 0 < row["cost_usd"] <= 1.0
     assert row["models"]["writer"] == CFG.writer_model
-    assert c.tables["vip_memo_inputs"][0]["chars_used"] == len("founder notes text")
+    form, notes = c.tables["vip_memo_inputs"]
+    assert (form["kind"], form["method"], form["path"]) == ("field", "form", None)
+    assert form["chars_used"] > 0
+    assert notes["chars_used"] == len("founder notes text")
+    assert all(r["ok"] is True for r in c.tables["vip_memo_runs"])  # no run left pending
 
 
 def test_generates_with_no_files(chat, monkeypatch):
@@ -107,7 +111,7 @@ def test_generates_with_no_files(chat, monkeypatch):
     _files(monkeypatch, [])
     assert pipeline.generate(c, mid, CFG) == "ready"
     assert store.get_memo(c, mid)["memo_json"]["source_files"] == ["VIP application form"]
-    assert not c.tables.get("vip_memo_inputs")
+    assert [r["kind"] for r in c.tables["vip_memo_inputs"]] == ["field"]
 
 
 def test_redelivery_respects_prior_spend(chat, monkeypatch):
@@ -147,7 +151,7 @@ def test_pdf_transcription_uses_file_part_and_budget_skip(chat, monkeypatch):
     store.record_run(c, mid, "x", "m", Usage(cost_usd=0.999999), 1, True, None)
     assert pipeline.generate(c, mid, CFG) == "failed_budget"
     assert not [x for x in chat["calls"] if x["model"] == CFG.extract_model]
-    assert c.tables["vip_memo_inputs"][0]["skipped_reason"] == "budget"
+    assert c.tables["vip_memo_inputs"][1]["skipped_reason"] == "budget"
 
 
 def test_pdf_file_part_shape(chat, monkeypatch):
@@ -196,7 +200,7 @@ def test_handler_reports_only_unexpected_failures(monkeypatch):
 
     seen = []
 
-    def fake_generate(client, memo_id, cfg=None, *, final_attempt=False):
+    def fake_generate(client, memo_id, cfg=None, *, final_attempt=False, remaining_ms=None):
         seen.append(memo_id)
         if memo_id == "bad":
             raise RuntimeError("db down")
@@ -278,7 +282,7 @@ def test_transcription_error_skips_file_and_continues(chat, monkeypatch):
 
     monkeypatch.setattr(openrouter, "chat", flaky)
     assert pipeline.generate(c, mid, CFG) == "ready"
-    assert c.tables["vip_memo_inputs"][0]["skipped_reason"] == "transcribe_error"
+    assert c.tables["vip_memo_inputs"][1]["skipped_reason"] == "transcribe_error"
     bad = [r for r in c.tables["vip_memo_runs"] if not r["ok"]]
     assert bad and bad[0]["step"] == "extract"
 
@@ -288,4 +292,114 @@ def test_inputs_recorded_on_failed_budget(chat, monkeypatch):
     _files(monkeypatch, [FileRef("b", "n.txt", "notes.txt", "text/plain", "traction")])
     store.record_run(c, mid, "write", CFG.writer_model, Usage(cost_usd=0.99), 1, True, None)
     assert pipeline.generate(c, mid, CFG) == "failed_budget"
-    assert len(c.tables["vip_memo_inputs"]) == 1
+    assert [r["kind"] for r in c.tables["vip_memo_inputs"]] == ["field", "traction"]
+
+
+def test_killed_call_counts_at_estimate_on_redelivery(chat, monkeypatch):
+    """Invocation dies inside the writer call: the pending row keeps its estimate."""
+    from app.services.vip_memo_gen import budget as budget_mod
+
+    c, mid = _client()
+    _files(monkeypatch, [])
+    orig = openrouter.chat
+
+    class Killed(BaseException):  # stands in for the Lambda being frozen mid-request
+        pass
+
+    def dies(model, messages, **kw):
+        if model == CFG.writer_model:
+            raise Killed()
+        return orig(model, messages, **kw)
+
+    monkeypatch.setattr(openrouter, "chat", dies)
+    with pytest.raises(Killed):
+        pipeline.generate(c, mid, CFG)
+    pending = [r for r in c.tables["vip_memo_runs"] if r["ok"] is None]
+    assert len(pending) == 1 and pending[0]["step"] == "write" and pending[0]["cost_usd"] > 0
+    estimate = pending[0]["cost_usd"]
+    assert store.spent_usd(c, mid) == pytest.approx(0.1 + estimate)
+
+    # Redelivery: the budget starts from research + the writer estimate.
+    seen = {}
+    real_budget = budget_mod.Budget
+
+    def spy(ceiling, spent=0.0):
+        seen["spent"] = spent
+        return real_budget(ceiling, spent)
+
+    monkeypatch.setattr(pipeline, "Budget", spy)
+    monkeypatch.setattr(openrouter, "chat", orig)
+    status = pipeline.generate(c, mid, CFG)
+    assert seen["spent"] == pytest.approx(0.1 + estimate)
+    assert status in ("ready", "failed_budget")
+    assert store.get_memo(c, mid)["cost_usd"] >= 0.1 + estimate
+
+
+def test_deadline_guard_skips_paid_calls_and_retries(chat, monkeypatch):
+    c, mid = _client()
+    _files(monkeypatch, [])
+    from app.services.vip_memo_gen.budget import DeadlineExceeded
+
+    with pytest.raises(DeadlineExceeded):
+        pipeline.generate(c, mid, CFG, remaining_ms=100_000)
+    assert chat["calls"] == [] and not c.tables.get("vip_memo_runs")
+    assert store.get_memo(c, mid)["status"] == "running"
+    assert pipeline.generate(c, mid, CFG, final_attempt=True, remaining_ms=100_000) == "failed"
+    assert store.get_memo(c, mid)["error"].startswith("DeadlineExceeded")
+
+
+def test_call_timeout_follows_remaining_time(chat, monkeypatch):
+    c, mid = _client()
+    _files(monkeypatch, [])
+    assert pipeline.generate(c, mid, CFG, remaining_ms=400_000) == "ready"
+    timeouts = [x["timeout"] for x in chat["calls"]]
+    assert timeouts and all(t <= 400 - 45 for t in timeouts)
+    c2, mid2 = _client()
+    chat["calls"].clear()
+    assert pipeline.generate(c2, mid2, CFG) == "ready"
+    assert all(x["timeout"] == 600 for x in chat["calls"])
+
+
+def test_handler_passes_remaining_time(monkeypatch):
+    from workers.vip_memo import handler
+
+    seen = {}
+
+    def fake_generate(client, memo_id, cfg=None, *, final_attempt=False, remaining_ms=None):
+        seen["remaining_ms"] = remaining_ms
+        return "ready"
+
+    class Ctx:
+        def get_remaining_time_in_millis(self):
+            return 890_000
+
+    monkeypatch.setattr(handler, "generate", fake_generate)
+    monkeypatch.setattr(handler, "get_admin_client", lambda: object())
+    handler.lambda_handler({"Records": [{"messageId": "1", "body": json.dumps({"memo_id": "x"})}]}, Ctx())
+    assert seen["remaining_ms"] == 890_000
+
+
+def test_document_contacts_scrubbed_before_writer(chat, monkeypatch):
+    c, mid = _client(blobs={("b", "n.txt"): b"Reach me at ceo@acme.in or +91 98765 43210. TRL 6, 2024."})
+    _files(monkeypatch, [FileRef("b", "n.txt", "notes.txt", "text/plain", "traction")])
+    assert pipeline.generate(c, mid, CFG) == "ready"
+    sent = json.dumps([x["messages"] for x in chat["calls"]])
+    assert "ceo@acme.in" not in sent and "98765" not in sent
+    assert "[email removed]" in sent and "[phone removed]" in sent and "TRL 6, 2024." in sent
+
+
+def test_transcribed_text_scrubbed(chat, monkeypatch):
+    c, mid = _client(blobs={("b", "d.png"): b"x"})
+    _files(monkeypatch, [FileRef("b", "d.png", "deck.png", "image/png", "deck")])
+    orig = openrouter.chat
+
+    def ocr(model, messages, **kw):
+        if model == CFG.extract_model:
+            orig(model, messages, **kw)
+            return _res("Contact: founder@x.io, 9876543210", 0.01, model)
+        return orig(model, messages, **kw)
+
+    monkeypatch.setattr(openrouter, "chat", ocr)
+    assert pipeline.generate(c, mid, CFG) == "ready"
+    writer_msgs = json.dumps([x["messages"] for x in chat["calls"] if x["model"] == CFG.writer_model])
+    assert "founder@x.io" not in writer_msgs and "9876543210" not in writer_msgs

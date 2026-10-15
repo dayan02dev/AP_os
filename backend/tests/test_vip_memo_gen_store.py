@@ -155,3 +155,15 @@ def test_prod_apply_body_matches_migration_and_runs_ok_is_nullable():
     runs = _sql_body("047_vip_memos.sql").split("vip_memo_runs (", 1)[1].split(");", 1)[0]
     ok_line = next(line for line in runs.splitlines() if line.strip().startswith("ok "))
     assert "not null" not in ok_line  # null = paid call in flight
+
+
+def test_start_and_finish_run():
+    c = FakeSupabase({})
+    mid = store.create_memo_version(c, APP, "sip", None)["id"]
+    rid = store.start_run(c, mid, "write", "m", 0.42)
+    (row,) = c.tables["vip_memo_runs"]
+    assert row["ok"] is None and row["cost_usd"] == 0.42
+    assert store.spent_usd(c, mid) == pytest.approx(0.42)  # pending counts at its estimate
+    store.finish_run(c, rid, "m-actual", usage(0.3), 1200, True, None)
+    assert (row["ok"], row["cost_usd"], row["model"], row["input_tokens"]) == (True, 0.3, "m-actual", 10)
+    assert store.spent_usd(c, mid) == pytest.approx(0.3)

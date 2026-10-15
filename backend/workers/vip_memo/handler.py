@@ -16,13 +16,15 @@ from app.supabase_client import get_admin_client
 log = logging.getLogger(__name__)
 
 
-def _process_record(record: dict) -> None:
+def _process_record(record: dict, context: Any) -> None:
     body_raw = record.get("body", "{}")
     body = json.loads(body_raw) if isinstance(body_raw, str) else body_raw
     memo_id = body["memo_id"]
     max_receives = int(os.getenv("VIP_MEMO_MAX_RECEIVES", "2"))
     receives = int((record.get("attributes") or {}).get("ApproximateReceiveCount", 1))
-    status = generate(get_admin_client(), memo_id, final_attempt=receives >= max_receives)
+    remaining_ms = context.get_remaining_time_in_millis() if context is not None else None
+    status = generate(get_admin_client(), memo_id, final_attempt=receives >= max_receives,
+                      remaining_ms=remaining_ms)
     log.info("vip memo %s finished status=%s", memo_id, status)
 
 
@@ -31,7 +33,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
     for record in event.get("Records", []):
         message_id = record.get("messageId", "<unknown>")
         try:
-            _process_record(record)
+            _process_record(record, context)
         except Exception:
             log.exception("vip memo record failed messageId=%s", message_id)
             failed.append({"itemIdentifier": message_id})

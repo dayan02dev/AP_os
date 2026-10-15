@@ -6,11 +6,16 @@ from __future__ import annotations
 
 import base64
 import logging
-import time
 
 from app.services import vip_memo_v2_export
 from app.services.vip_memo_gen import extract, openrouter, research, store, writer
-from app.services.vip_memo_gen.budget import Budget, BudgetExceeded, estimate_cost
+from app.services.vip_memo_gen.budget import (
+    Budget,
+    BudgetExceeded,
+    Deadline,
+    estimate_cost,
+    paid_call,
+)
 from app.services.vip_memo_gen.config import GenConfig, load_config
 from app.services.vip_memo_gen.inputs import (
     FileRef,
@@ -18,7 +23,7 @@ from app.services.vip_memo_gen.inputs import (
     build_application_block,
     collect_files,
 )
-from app.services.vip_memo_gen.openrouter import OpenRouterError, Usage
+from app.services.vip_memo_gen.openrouter import OpenRouterError
 from app.services.vip_memo_gen.prompts import TRANSCRIBE_PROMPT, render_writer_messages
 from app.services.vip_memo_gen.schema import MemoValidationError
 
@@ -53,8 +58,24 @@ def _export(client, memo_id: str, application_id: str, memo: dict) -> None:
             log.warning("vip memo export failed", extra={"memo_id": memo_id, "fmt": fmt}, exc_info=True)
 
 
-def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attempt: bool = False) -> str:
+class _Runs:
+    """vip_memo_runs bookkeeping for budget.paid_call (provisional row, then settled)."""
+
+    def __init__(self, client, memo_id: str):
+        self.client, self.memo_id = client, memo_id
+
+    def start(self, step, model, estimate_usd):
+        return store.start_run(self.client, self.memo_id, step, model, estimate_usd)
+
+    def finish(self, run_id, model, usage, duration_ms, ok, error):
+        store.finish_run(self.client, run_id, model, usage, duration_ms, ok, error)
+
+
+def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attempt: bool = False,
+             remaining_ms: int | None = None) -> str:
+    """``remaining_ms``: Lambda time left (paid calls are not started too close to the end)."""
     cfg = cfg or load_config()
+    deadline = Deadline(remaining_ms)
     row = store.get_memo(client, memo_id)
     if row is None:
         raise ValueError(f"vip memo {memo_id} not found")
@@ -82,10 +103,7 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attemp
 
     store.set_status(client, memo_id, "running")
     budget = Budget(cfg.max_cost_usd, store.spent_usd(client, memo_id))
-    current = {"step": "write", "model": cfg.writer_model}
-
-    def on_usage(step, result, duration_ms):
-        store.record_run(client, memo_id, step, result.model, result.usage, duration_ms, True, None)
+    runs = _Runs(client, memo_id)
 
     try:
         track = row["native_track"]
@@ -96,6 +114,7 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attemp
             return finish("failed", f"application not found in {track}_applications")
         app_row = rows[0]
         block = build_application_block(app_row, track)
+        records.append(InputRecord("field", None, None, None, "form", len(block), False, None))
 
         methods: dict[str, str] = {}
         for ref in collect_files(client, app_row, track):
@@ -109,23 +128,23 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attemp
             ex = extract.extract_any(data, ref.mime, ref.filename)
             text, method, skipped = ex.text, ex.method, ex.skipped_reason
             if ex.needs_transcription:
+                messages = _transcription_messages(ref, data)
                 try:
-                    budget.check(estimate_cost(cfg.extract_model, len(data), _TRANSCRIBE_MAX_TOKENS))
+                    result = paid_call(
+                        "extract", cfg.extract_model,
+                        estimate_cost(cfg.extract_model, len(data), _TRANSCRIBE_MAX_TOKENS),
+                        budget, runs, deadline,
+                        lambda timeout, m=messages: openrouter.chat(
+                            cfg.extract_model, m, max_tokens=_TRANSCRIBE_MAX_TOKENS, timeout=timeout))
                 except BudgetExceeded:
                     skipped = "budget"
+                except OpenRouterError:  # run row already settled as failed
+                    skipped = "transcribe_error"
                 else:
-                    t0 = time.monotonic()
-                    try:
-                        result = openrouter.chat(cfg.extract_model, _transcription_messages(ref, data),
-                                                 max_tokens=_TRANSCRIBE_MAX_TOKENS)
-                    except OpenRouterError as e:
-                        store.record_run(client, memo_id, "extract", cfg.extract_model, Usage(),
-                                         int((time.monotonic() - t0) * 1000), False, str(e)[:_ERROR_CHARS])
-                        skipped = "transcribe_error"
-                    else:
-                        budget.add(result.usage.cost_usd)
-                        on_usage("extract", result, int((time.monotonic() - t0) * 1000))
-                        text, method, skipped = result.text, "transcribe", None
+                    text, method, skipped = result.text, "transcribe", None
+            # Contact details never reach a model (D6). Raw bytes sent for transcription
+            # cannot be scrubbed; that is a recorded exception in spec section 5.3.
+            text = extract.scrub_contacts(text)
             if text.strip():
                 texts.append((ref, text))
                 methods[ref.path] = method
@@ -142,22 +161,19 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attemp
         store.record_inputs(client, memo_id, records)
         documents = [(ref.filename, used) for ref, used, _ in allocated if used.strip()]
 
-        current.update(step="research", model=cfg.research_model)
-        found = research.run(research.profile_from_application(block, documents), cfg, budget, on_usage)
+        found = research.run(research.profile_from_application(block, documents), cfg, budget, runs,
+                             deadline)
         store.record_sources(client, memo_id, found.sources)
 
-        current.update(step="write", model=cfg.writer_model)
-        memo = writer.write(render_writer_messages(block, documents, found.json_text), cfg, budget, on_usage)
+        memo = writer.write(render_writer_messages(block, documents, found.json_text), cfg, budget, runs,
+                            deadline)
         memo["source_files"] = [name for name, _ in documents] + [APPLICATION_FORM]
         store.persist_memo(client, memo_id, memo)
     except BudgetExceeded as e:
         return finish("failed_budget", str(e)[:_ERROR_CHARS])
-    except (MemoValidationError, OpenRouterError) as e:
-        if isinstance(e, OpenRouterError):
-            store.record_run(client, memo_id, current["step"], current["model"], Usage(), 0, False,
-                             str(e)[:_ERROR_CHARS])
+    except (MemoValidationError, OpenRouterError) as e:  # OpenRouter run rows are settled by paid_call
         return finish("failed", f"{type(e).__name__}: {e}"[:_ERROR_CHARS])
-    except Exception as e:
+    except Exception as e:  # includes DeadlineExceeded
         if not final_attempt:
             raise  # SQS retries; the memo stays running until then
         log.error("vip memo failed on final attempt", extra={"memo_id": memo_id}, exc_info=True)

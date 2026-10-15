@@ -126,7 +126,37 @@ def record_run(client, memo_id: str, step: str, model: str, usage: Any,
     }).execute()
 
 
+def start_run(client, memo_id: str, step: str, model: str, estimate_usd: float) -> str:
+    """Provisional row before a paid call: ok=NULL, cost_usd = the pre-call estimate."""
+    res = client.table("vip_memo_runs").insert({
+        "memo_id": memo_id,
+        "step": step,
+        "model": model,
+        "cost_usd": float(estimate_usd),
+        "ok": None,
+        "error": None,
+    }).execute()
+    return _rows(res)[0]["id"]
+
+
+def finish_run(client, run_id: str, model: str, usage: Any, duration_ms: int, ok: bool,
+               error: str | None) -> None:
+    """Settle a provisional row to the call's actual usage and cost."""
+    client.table("vip_memo_runs").update({
+        "model": model,
+        "input_tokens": getattr(usage, "input_tokens", 0) or 0,
+        "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+        "reasoning_tokens": getattr(usage, "reasoning_tokens", 0) or 0,
+        "web_searches": getattr(usage, "web_searches", 0) or 0,
+        "cost_usd": float(getattr(usage, "cost_usd", 0) or 0),
+        "duration_ms": duration_ms,
+        "ok": ok,
+        "error": error,
+    }).eq("id", run_id).execute()
+
+
 def spent_usd(client, memo_id: str) -> float:
+    """All runs, including pending ones still at their pre-call estimate."""
     rows = _rows(client.table("vip_memo_runs").select("cost_usd").eq("memo_id", memo_id).execute())
     return float(sum(float(r.get("cost_usd") or 0) for r in rows))
 
