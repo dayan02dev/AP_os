@@ -63,7 +63,7 @@ Write the IC memo as JSON matching the schema. Section by section:
 HEADER
 - version: "2". generated_at, prepared_by, source_files: fill from the information given, else
   "[To be confirmed]" / [].
-- name: company name. headline: one line on what they do. plain: 3 short plain-language bullets.
+- name: company name. headline: one line on what they do, at most 25 words. plain: 3 short plain-language bullets.
   in_short: one sentence.
 - snapshot: ask (amount), instrument (equity / grant / CCPS / SAFE), sector, stage (TRL or product
   stage), location, team (size / composition). Each has a "value" and an optional short "note". Unknown →
@@ -90,23 +90,40 @@ product, tech, competitors, market, team, milestones, funds, risks)
 4. tech — sections.tech.rows: 3–5 points of technical differentiation, 1–2 lines each, specific
    terms allowed.
 5. competitors — sections.competitors.groups, grouped by target industry / customer segment
-   (segment, rows). Per segment 2–3 competitors (mix global and Indian); each row is [name, what
-   they do, key limitation, this startup's advantage, stage]. Be fair to competitors. If the
+   (segment, rows). Per segment at least 2 named competitors, up to 3 (mix global and Indian;
+   include an Indian player wherever one exists); each row is [name, what they do, key limitation,
+   this startup's advantage, stage]. Name real companies from <research> or <documents>. Never add
+   a row that is entirely "[To be confirmed]": if fewer than 2 can be named for a segment, list the
+   ones you have and state the gap in competitors.note. Be fair to competitors. If the
    materials name no competitors, add the note: "This mapping is based on independent analysis;
    validating competitive positioning during IC discussion would strengthen the investment thesis."
-6. market — sections.market.rows, one per industry segment: segment, global_size (global market
-   size), slice_low_cr and slice_high_cr (realistic addressable slice in ₹ crore: what a
-   product/software layer like this can capture, not total industry spend), slice_label, rationale,
-   source with year. total: a combined realistic total. beachhead: 1–2 segments with the shortest
+6. market — sections.market.rows, one per industry segment:
+   - segment: short name.
+   - global_size: a short figure with year and scope, e.g. "$4.2B (2025, global)" or
+     "₹2,79,940 Cr (2026, India)", or exactly "[To be confirmed]"; never a sentence (explanations
+     go in rationale).
+   - slice_low_cr and slice_high_cr: numbers in ₹ crore for the realistic addressable slice (what
+     a product/software layer like this can capture, not total industry spend) when it can be
+     estimated from the inputs; otherwise set both to 0 (0 means "not estimated" and is never
+     shown).
+   - slice_label: short, e.g. "~₹230–780 Cr", or "[To be confirmed]".
+   - rationale: 2–4 short bullets on how the slice was derived.
+   - source: publisher and year from <research>. For a row with no third-party source, the
+     source must be exactly "[To be confirmed]" (no free text such as "research note"). total: a combined realistic total. beachhead: 1–2 segments with the shortest
    sales cycle and clearest buyer. If the startup's TAM claim is much larger than the realistic
    slice, note the difference factually in tam_note.
 7. team — sections.team.members (name, role, one-line background). Note concurrent academic or
    advisory-only positions neutrally. Note planned hires for gaps in notes. Shareholding in holders
-   ([holder, type, equity %, is_founder]) if the cap table is provided.
+   ([holder, type, equity %, is_founder]) if the cap table is provided; equity % is a number
+   (e.g. 24) or a short string like "~14–17%", or "[To be confirmed]". members: one person per
+   entry, never several names in one entry.
 8. milestones — sections.milestones.rows [period, key deliverables, target/budget] from the
    materials; note factually in note if they appear aggressive.
-9. funds — sections.funds.rows [category, key items, % share, amount] from the budget documents;
-   total; note any category that looks disproportionate for the stage.
+9. funds — sections.funds.rows [category, key items, % share, amount] from the budget documents.
+   Copy amounts exactly as the documents state them; never compute or convert an amount. % share
+   is a number (e.g. 24) or a short string like "~14–17%"; keep the shares consistent with each
+   other, and when they are ranges or rounded, say in note that totals are approximate. total;
+   note any category that looks disproportionate for the stage.
 10. risks — sections.risks.rows: at least 4 cards, each {title, risk, handled}: include
     team/execution, competitive, commercial/sales-cycle and technical/integration risk. Specific and
     credible, neutral wording.
@@ -116,7 +133,8 @@ RECOMMENDATION (internal; stored, not displayed)
 - summary: 3–4 neutral lines. conditions: 3–4 items when conditional.
 
 QUESTIONS
-- questions: 7 specific questions the IC should ask the founders, each tied to a gap or risk above.
+- questions: required, exactly 7 specific questions the IC should ask the founders, each tied to a
+  gap or risk above. Never leave the list empty.
 """
 
 RESEARCH_PROMPT = """\
@@ -130,6 +148,8 @@ Using web search (at most {max_searches} searches), return JSON:
   figures where available.
 - competitors: for each segment, 2–3 relevant companies (global and Indian): what they do, a fair
   key limitation, URL.
+Use only third-party market reports, industry bodies, government data and company websites.
+Never use LinkedIn, Facebook, X/Twitter, Instagram, YouTube or Medium pages, or personal profiles.
 Only report what a source states. If you cannot find a figure, omit it rather than estimate.
 """
 

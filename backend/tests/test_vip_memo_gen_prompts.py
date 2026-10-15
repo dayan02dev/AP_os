@@ -1,3 +1,4 @@
+from app.services.vip_memo_gen import prompts
 from app.services.vip_memo_gen.prompts import (
     REPAIR_PROMPT,
     SYSTEM_PROMPT,
@@ -56,3 +57,26 @@ def test_research_prompt_formats():
 def test_misc_prompts():
     assert TRANSCRIBE_PROMPT.startswith("Transcribe all text")
     assert "{errors}" in REPAIR_PROMPT
+
+
+def test_writer_instructions_shape_rules():
+    w = " ".join(prompts.WRITER_INSTRUCTIONS.split())
+    # market rows: short figures, never sentences; numbers only when estimable
+    assert '"$4.2B (2025, global)"' in w and "never a sentence" in w
+    assert '"~₹230–780 Cr"' in w and "set both to 0" in w
+    assert "2–4 short bullets" in w
+    assert 'source must be exactly "[To be confirmed]"' in w
+    # funds / holders percents
+    assert '"~14–17%"' in w and "never compute" in w and "approximate" in w
+    # competitors, team, headline, questions
+    assert "at least 2 named competitors" in w and "Indian" in w
+    assert 'Never add a row that is entirely "[To be confirmed]"' in w
+    assert "one person per entry" in w
+    assert "at most 25 words" in w
+    assert "exactly 7" in w and "required" in w
+
+
+def test_research_prompt_asks_for_third_party_sources_only():
+    r = prompts.RESEARCH_PROMPT
+    assert "LinkedIn" in r and "never" in r.lower()
+    assert "industry bodies" in r and "government" in r
