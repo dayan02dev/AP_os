@@ -1,5 +1,5 @@
-// VIP memo v2 Navigator on the reviewer evaluation page: pilot apps only,
-// legacy memo fallback when the v2 memo is unavailable.
+// VIP memo v2 Navigator on the reviewer evaluation page: any VIP app with a
+// ready memo; legacy memo fallback only for the v1 pilot ids.
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
@@ -59,10 +59,46 @@ describe("ReviewerEval — VIP memo Navigator", () => {
     expect(screen.queryByText(/VIP memo · /)).toBeNull();
   });
 
-  it("does not ask for the v2 memo on non-pilot apps", async () => {
+  it("memo shows for assigned non-pilot VIP app", async () => {
     api.getContent.mockResolvedValue(content("other-app"));
+    api.getVipMemoV2.mockResolvedValue(FIXTURE);
+    render(<ReviewerEval track="sip" appId="other-app" onBack={vi.fn()} />);
+    expect(await screen.findByText("VIP memo · Acme Robotics")).toBeTruthy();
+    expect(api.getVipMemoV2).toHaveBeenCalledWith("sip", "other-app");
+  });
+
+  it("non-pilot VIP app without memo (404) does NOT call the v1 generate API", async () => {
+    api.getContent.mockResolvedValue(content("other-app"));
+    api.getVipMemoV2.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
     render(<ReviewerEval track="sip" appId="other-app" onBack={vi.fn()} />);
     await screen.findByText(/Your scores/);
+    await waitFor(() => expect(api.getVipMemoV2).toHaveBeenCalled());
+    expect(api.generateVipMemo).not.toHaveBeenCalled();
+    expect(screen.queryByText(/VIP memo · /)).toBeNull();
+  });
+
+  it("TIR app makes no v2 request", async () => {
+    api.getContent.mockResolvedValue({ ...content("tir-app"), track: "tir" });
+    render(<ReviewerEval track="tir" appId="tir-app" onBack={vi.fn()} />);
+    await screen.findByText(/Your scores/);
     expect(api.getVipMemoV2).not.toHaveBeenCalled();
+  });
+
+  it("memo shows for a TIR-native app moved to VIP", async () => {
+    api.getContent.mockResolvedValue({ ...content("moved-app"), track: "tir", moved_to_track: "sip" });
+    api.getVipMemoV2.mockResolvedValue(FIXTURE);
+    render(<ReviewerEval track="tir" appId="moved-app" onBack={vi.fn()} />);
+    expect(await screen.findByText("VIP memo · Acme Robotics")).toBeTruthy();
+    expect(api.getVipMemoV2).toHaveBeenCalledWith("sip", "moved-app");
+  });
+
+  it("failed v2 download shows an inline error and keeps the memo", async () => {
+    api.getContent.mockResolvedValue(content("other-app"));
+    api.getVipMemoV2.mockResolvedValue(FIXTURE);
+    api.downloadVipMemoV2.mockRejectedValue(new Error("boom"));
+    render(<ReviewerEval track="sip" appId="other-app" onBack={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Download PDF" }));
+    expect(await screen.findByText("boom")).toBeTruthy();
+    expect(screen.getByText("VIP memo · Acme Robotics")).toBeTruthy();
   });
 });

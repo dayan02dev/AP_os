@@ -40,7 +40,9 @@ const METRICS = [
   { key: 'commit',   label: 'Commitment to be fully available' },
 ];
 
-const PILOT_VIP_IDS = new Set([
+// v1-only: the legacy auto-generate memo effect stays limited to the two
+// original pilot apps. The v2 (Navigator) memo is not gated by this.
+const V1_PILOT_IDS = new Set([
   "0117bc80-98c1-4172-bccd-af61327ac580",
   "c8e45451-b9eb-4bed-8293-7a6782237168",
 ]);
@@ -173,9 +175,9 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
     }
   };
 
-  // VIP memo v2 (Navigator) for the pilot apps; the legacy memo is the fallback.
+  // VIP memo v2 (Navigator) for every effective-VIP app (404 = no memo yet).
   const memoV2 = useVipMemoV2(
-    track === "sip" && PILOT_VIP_IDS.has(s?.id) ? s.id : null,
+    s?.id && (s.movedToTrack || track) === "sip" ? s.id : null,
     (appId) => adminPlatformApi.getVipMemoV2("sip", appId),
   );
 
@@ -192,7 +194,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
   };
 
   useEffect(() => {
-    if (track !== "sip" || !PILOT_VIP_IDS.has(s?.id)) return;
+    if (track !== "sip" || !V1_PILOT_IDS.has(s?.id)) return;
     if (memoV2.status !== "missing") return;
     const cached = readVipMemo(s.id);
     if (cached) {
@@ -462,8 +464,6 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
             memoBusy={vipMemoBusy}
             onCreateMemo={generateVipMemo}
             onDownloadMemo={downloadVipMemo}
-            memoV2={memoV2.status === "ready" ? memoV2.memo : null}
-            onDownloadMemoV2={downloadVipMemoV2}
           />
 
           {/* Comparative review model — real reviewer evaluations */}

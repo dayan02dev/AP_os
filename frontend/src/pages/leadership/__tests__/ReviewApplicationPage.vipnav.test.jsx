@@ -75,12 +75,45 @@ describe("ReviewApplicationPage — VIP memo Navigator (pilot)", () => {
     expect(screen.queryByText(/VIP memo · /)).toBeNull();
   });
 
-  it("is not requested for a non-pilot VIP application", async () => {
+  it("non-pilot VIP app with memo shows AI Memo tab", async () => {
     params.id = "not-a-pilot";
+    leadershipApi.getVipMemoV2.mockResolvedValue(FIXTURE);
+    render(<ReviewApplicationPage />);
+    expect(await screen.findByText("VIP memo · Acme Robotics")).toBeTruthy();
+    expect(leadershipApi.getVipMemoV2).toHaveBeenCalledWith("not-a-pilot");
+    expect(screen.getByRole("button", { name: "AI Memo" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "History" })).toBeNull();
+  });
+
+  it("non-pilot VIP app without memo (404) shows normal view and does NOT call the v1 generate API", async () => {
+    params.id = "not-a-pilot";
+    leadershipApi.getVipMemoV2.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
     render(<ReviewApplicationPage />);
     await screen.findByTestId("app-tab");
+    await waitFor(() => expect(leadershipApi.getVipMemoV2).toHaveBeenCalledWith("not-a-pilot"));
     expect(screen.getByRole("button", { name: "History" })).toBeTruthy();
-    expect(leadershipApi.getVipMemoV2).not.toHaveBeenCalled();
     expect(screen.queryByText(/VIP memo · /)).toBeNull();
+    expect(leadershipApi.generateVipMemo).not.toHaveBeenCalled();
+  });
+
+  it("TIR app makes no v2 request", async () => {
+    params.id = "a-tir-app";
+    params.track = "tir";
+    leadershipApi.getApplication.mockImplementation((id) =>
+      Promise.resolve({ ...DETAIL(id), track: "tir", native_track: "tir" }));
+    render(<ReviewApplicationPage />);
+    await screen.findByTestId("app-tab");
+    expect(leadershipApi.getVipMemoV2).not.toHaveBeenCalled();
+    params.track = "sip";
+  });
+
+  it("leadership download failure keeps the page rendered", async () => {
+    leadershipApi.getVipMemoV2.mockResolvedValue(FIXTURE);
+    leadershipApi.downloadVipMemoV2.mockRejectedValue(new Error("boom"));
+    render(<ReviewApplicationPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Download PDF" }));
+    expect(await screen.findByText("boom")).toBeTruthy();
+    expect(screen.getByText("VIP memo · Acme Robotics")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Application" })).toBeTruthy();
   });
 });

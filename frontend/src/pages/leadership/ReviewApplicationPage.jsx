@@ -45,7 +45,9 @@ import "../../styles/leadership.css";
 import "../../styles/review-application.css";
 import "../../styles/vip-memo.css";
 
-const PILOT_VIP_IDS = new Set([
+// v1-only: the legacy auto-generate memo effect stays limited to the two
+// original pilot apps. The v2 (Navigator) memo is not gated by this.
+const V1_PILOT_IDS = new Set([
   "0117bc80-98c1-4172-bccd-af61327ac580",
   "c8e45451-b9eb-4bed-8293-7a6782237168",
 ]);
@@ -87,6 +89,7 @@ export default function ReviewApplicationPage() {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [downloadError, setDownloadError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const [tab, setTab] = useState("application");
@@ -250,16 +253,19 @@ export default function ReviewApplicationPage() {
     URL.revokeObjectURL(url);
   }, [id]);
 
-  // VIP memo v2 (Navigator) for the pilot apps; the legacy memo is the fallback.
-  const vipPilot = !!detail && effectiveTrack === "sip" && PILOT_VIP_IDS.has(id);
-  const memoV2 = useVipMemoV2(vipPilot ? id : null, (appId) => leadershipApi.getVipMemoV2(appId));
+  // VIP memo v2 (Navigator) for every effective-VIP app (404 = no memo yet).
+  const vipApp = !!detail && effectiveTrack === "sip";
+  const memoV2 = useVipMemoV2(vipApp ? id : null, (appId) => leadershipApi.getVipMemoV2(appId));
+
+  useEffect(() => { setDownloadError(null); }, [id]);
 
   const downloadVipMemoV2 = useCallback(async (format) => {
     try {
+      setDownloadError(null);
       const blob = await leadershipApi.downloadVipMemoV2(id, format);
       saveBlob(blob, vipMemoV2Filename(memoV2.memo, format));
     } catch (err) {
-      setError(err?.message || "Could not download the VIP memo.");
+      setDownloadError(err?.message || "Could not download the VIP memo.");
     }
   }, [id, memoV2.memo]);
 
@@ -271,7 +277,7 @@ export default function ReviewApplicationPage() {
   }, [id, memoTabs]);
 
   useEffect(() => {
-    if (!detail || effectiveTrack !== "sip" || !PILOT_VIP_IDS.has(id)) return;
+    if (!detail || effectiveTrack !== "sip" || !V1_PILOT_IDS.has(id)) return;
     if (memoV2.status !== "missing") return;
     const cached = readVipMemo(id);
     if (cached) {
@@ -339,6 +345,9 @@ export default function ReviewApplicationPage() {
                     {hasScore ? scoreOverall.toFixed(1) : "—"} / 10
                   </p>
                 </div>
+                {downloadError && (
+                  <div className="inline-error" role="alert">{downloadError}</div>
+                )}
                 {memoTabs
                   ? <ReviewTabs tab={tab} onChange={setTab} tabs={VIP_MEMO_TABS} />
                   : <ReviewTabs tab={tab} onChange={setTab} />}

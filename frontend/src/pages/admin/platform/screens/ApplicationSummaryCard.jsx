@@ -7,7 +7,6 @@
 import React, { useState } from "react";
 import AiSections from "../../../../components/AiSections.jsx";
 import VipMemoPreview from "../../../../components/VipMemoPreview.jsx";
-import VipNavigatorMemo from "../../../../components/VipNavigatorMemo.jsx";
 import ProfilePills from "../../../../components/ProfilePills";
 import { Chip } from "../shell/osAtoms";
 import { leadershipApi } from "../../../../lib/leadershipApi";
@@ -20,8 +19,6 @@ export default function ApplicationSummaryCard({
   memoBusy = false,
   onCreateMemo,
   onDownloadMemo,
-  memoV2 = null,
-  onDownloadMemoV2,
 }) {
   const s = startup || {};
   const [secOpen, setSecOpen] = useState({});
@@ -57,10 +54,7 @@ export default function ApplicationSummaryCard({
           </div>
         )}
 
-        {s.track === "sip" && memoV2 && (
-          <VipNavigatorMemo key={s.id} memo={memoV2} appId={s.id} onDownload={onDownloadMemoV2} />
-        )}
-        {s.track === "sip" && !memoV2 && (
+        {(s.movedToTrack || s.track) === "sip" && (
           <div className="vip-memo-actions">
             {memo && (
               <VipMemoPreview memo={memo} onDownload={onDownloadMemo} generating={memoBusy} />
@@ -70,7 +64,7 @@ export default function ApplicationSummaryCard({
             )}
           </div>
         )}
-        {!memo && !memoV2 && !memoBusy && <AiSections variant="dropdown" sections={s.aiSections} />}
+        {!memo && !memoBusy && <AiSections variant="dropdown" sections={s.aiSections} />}
 
         {s.reviews && s.reviews.length > 0 && (
           <div>
