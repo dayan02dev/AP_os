@@ -139,7 +139,10 @@ class Milestones(_Leaf):
     infra: list[Union[str, list[str]]] = []
     note: Bullets = ""
 
-    _infra_list = field_validator("infra", mode="before")(lambda cls, v: _as_list(v))
+    @field_validator("infra", mode="before")
+    @classmethod
+    def _infra_as_list(cls, v: Any) -> Any:
+        return _as_list(v)
 
 
 class Funds(_Leaf):
@@ -166,7 +169,11 @@ class Risks(_Leaf):
         out = []
         for r in rows:
             if isinstance(r, list) and len(r) == 2:
-                first = r[0] if isinstance(r[0], str) else (r[0][0] if r[0] else "")
+                lead = r[0]
+                first = lead[0] if isinstance(lead, list) and lead else lead
+                if not isinstance(first, str):
+                    out.append(r)  # malformed: let RiskCard validation report it
+                    continue
                 title = first if len(first) <= 60 else first[:57].rstrip() + "..."
                 r = {"title": title, "risk": r[0], "handled": r[1]}
             out.append(r)
@@ -208,7 +215,7 @@ class Recommendation(_Leaf):
 class MemoV2(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    version: str = "2"
+    version: int = 2
     generated_at: str
     prepared_by: str
     source_files: list[str] = []
@@ -228,10 +235,10 @@ class MemoV2(BaseModel):
 
     @field_validator("version", mode="before")
     @classmethod
-    def _version_two(cls, v: Any) -> str:
-        if str(v) != "2":
+    def _version_two(cls, v: Any) -> int:
+        if isinstance(v, bool) or v not in (2, "2"):
             raise ValueError("version must be 2")
-        return "2"
+        return 2
 
     @field_validator("name")
     @classmethod

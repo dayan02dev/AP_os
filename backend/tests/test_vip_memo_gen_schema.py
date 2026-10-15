@@ -108,3 +108,21 @@ def test_unknown_top_level_key_rejected_but_leaf_extras_kept():
     d = copy.deepcopy(fake())
     d["sections"]["tech"]["extra_leaf"] = "kept"
     assert memo_to_dict(parse_memo(d))["sections"]["tech"]["extra_leaf"] == "kept"
+
+
+def test_version_serialises_as_int_and_schema_is_integer():
+    d = fake()
+    assert d["version"] in (2, "2")
+    for v in (2, "2"):
+        d["version"] = v
+        out = memo_to_dict(parse_memo(d))["version"]
+        assert out == 2 and type(out) is int
+    assert writer_json_schema()["properties"]["version"]["type"] == "integer"
+    assert "const" not in writer_json_schema()["properties"]["version"]
+
+
+def test_malformed_legacy_risk_pair_is_validation_error():
+    d = fake()
+    d["sections"]["risks"]["rows"] = [[[["deep"]], "h"]]
+    with pytest.raises(MemoValidationError):
+        parse_memo(d)
