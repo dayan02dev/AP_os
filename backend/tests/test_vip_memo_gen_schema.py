@@ -99,11 +99,10 @@ def test_version_must_be_2():
         parse_memo(d)
 
 
-def test_unknown_top_level_key_rejected_but_leaf_extras_kept():
+def test_unknown_top_level_key_dropped_but_leaf_extras_kept():
     d = fake()
     d["bogus"] = 1
-    with pytest.raises(MemoValidationError):
-        parse_memo(d)
+    assert "bogus" not in memo_to_dict(parse_memo(d))
     d = copy.deepcopy(fake())
     d["sections"]["tech"]["extra_leaf"] = "kept"
     assert memo_to_dict(parse_memo(d))["sections"]["tech"]["extra_leaf"] == "kept"

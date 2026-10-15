@@ -3,7 +3,7 @@
 An LLM writes this shape, the backend validates and stores it, and
 ``VipNavigatorMemo.jsx`` / ``vip_memo_v2_export.py`` render it. Every key those
 two read is a field here. Leaf models keep unknown keys (``extra="allow"``) so
-renderer-only extras survive; the top level is strict.
+renderer-only extras survive; unknown top-level keys are dropped.
 """
 from __future__ import annotations
 
@@ -213,7 +213,7 @@ class Recommendation(_Leaf):
 
 
 class MemoV2(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")  # unknown top-level keys are dropped
 
     version: int = 2
     generated_at: str

@@ -13,8 +13,9 @@ from .openrouter import PRICES, WEB_SEARCH_USD, Usage
 from .prompts import render_research_messages
 
 _FIELD_CHARS = 300
-_MAX_TOKENS = 6000
-_SEARCH_RESULT_TOKENS = 15000  # assumed input tokens each search result adds
+_SEARCH_RESULT_TOKENS = 15000  # native: assumed input tokens each search result adds
+_EXA_USD_PER_RESULT = 0.004     # OpenRouter Exa pricing, $4 per 1000 results
+_EXA_RESULT_TOKENS = 8000       # total input tokens the Exa results add (observed ~4.7K)
 _SECTIONS = ("market", "competitors")
 
 
@@ -93,9 +94,13 @@ def _sources(parsed, annotations: list[dict]) -> list[dict]:
 
 
 def estimate(cfg: GenConfig, input_chars: int) -> float:
-    """Tokens plus every allowed web search: its fee and the result text it feeds back."""
-    per_search = WEB_SEARCH_USD + _SEARCH_RESULT_TOKENS * PRICES[cfg.research_model][0] / 1_000_000
-    return estimate_cost(cfg.research_model, input_chars, _MAX_TOKENS) + cfg.max_searches * per_search
+    """Worst case: tokens plus the search fee and the result text fed back to the model."""
+    pin, pout = PRICES[cfg.research_model]
+    if cfg.search_engine == "exa":
+        return (cfg.max_searches * _EXA_USD_PER_RESULT
+                + ((input_chars / 4 + _EXA_RESULT_TOKENS) * pin + cfg.research_max_tokens * pout) / 1_000_000)
+    per_search = WEB_SEARCH_USD + _SEARCH_RESULT_TOKENS * pin / 1_000_000
+    return estimate_cost(cfg.research_model, input_chars, cfg.research_max_tokens) + cfg.max_searches * per_search
 
 
 def run(profile: dict, cfg: GenConfig, budget: Budget, runs: RunLog,
@@ -103,13 +108,12 @@ def run(profile: dict, cfg: GenConfig, budget: Budget, runs: RunLog,
     messages = render_research_messages(profile, cfg.max_searches)
     try:
         chars = sum(len(m["content"]) for m in messages)
-        # No OpenRouter parameter caps the number of native searches; the prompt does.
         result = paid_call("research", cfg.research_model, estimate(cfg, chars), budget, runs, deadline,
                            lambda timeout: openrouter.chat(
-                               cfg.research_model, messages, max_tokens=_MAX_TOKENS,
-                               plugins=[{"id": "web", "engine": "native", "max_results": cfg.max_searches}],
+                               cfg.research_model, messages, max_tokens=cfg.research_max_tokens,
+                               plugins=[{"id": "web", "engine": cfg.search_engine, "max_results": cfg.max_searches}],
                                response_format={"type": "json_object"},
-                               zdr=False,  # no ZDR endpoint offers native web search; profile is public/PII-free
+                               zdr=False,  # no ZDR endpoint offers web search; profile is public/PII-free
                                timeout=timeout,
                            ))
     except DeadlineExceeded:

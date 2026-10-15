@@ -61,10 +61,10 @@ def test_research_uses_web_plugin_and_caps_searches(calls):
     out = research.run({"name": "X"}, cfg, budget, cb)
     c = calls["calls"][0]
     assert c["model"] == cfg.research_model
-    assert c["plugins"] == [{"id": "web", "engine": "native", "max_results": cfg.max_searches}]
+    assert c["plugins"] == [{"id": "web", "engine": "exa", "max_results": 10}]
     assert c["zdr"] is False
     assert c["response_format"] == {"type": "json_object"}
-    assert c["max_tokens"] == 6000
+    assert c["max_tokens"] == 8000
     keys = {(s["url"], s["section_key"]) for s in out.sources}
     assert keys == {("https://a.com/x", "market"), ("https://b.com", "competitors"),
                     ("https://c.com", "market")}
@@ -145,16 +145,59 @@ def test_profile_has_no_file_text():
     assert all("<" not in str(v) and ">" not in str(v) for v in p.values())
 
 
-def test_research_estimate_includes_searches(calls):
+def test_research_estimate_exa(calls):
+    cfg = load_config()
+    expected = 10 * 0.004 + ((1000 / 4 + 8000) * 2.0 + 8000 * 10.0) / 1e6
+    assert research.estimate(cfg, 1000) == pytest.approx(expected)
+    # a budget below the estimate makes no call
+    out = research.run({"name": "X"}, cfg, Budget(0.01), _Runs())
+    assert out.sources == [] and calls["calls"] == []
+
+
+def test_research_estimate_native(calls):
     from app.services.vip_memo_gen.budget import estimate_cost
 
-    cfg = load_config()
-    base = estimate_cost(cfg.research_model, 1000, 6000)
+    cfg = load_config().__class__(**{**load_config().__dict__, "search_engine": "native"})
+    base = estimate_cost(cfg.research_model, 1000, 8000)
     per = 0.01 + 15000 * 2.0 / 1e6
     assert research.estimate(cfg, 1000) == pytest.approx(base + cfg.max_searches * per)
-    # a budget that covers tokens but not the searches makes no call
-    out = research.run({"name": "X"}, cfg, Budget(base + 0.05), _Runs())
-    assert out.sources == [] and calls["calls"] == []
+
+
+def test_research_tolerates_json_fences(calls):
+    body = '```json\n' + json.dumps({"market": [{"title": "T", "url": "https://a.com/x"}],
+                                      "competitors": []}) + '\n```'
+    calls["queue"].append(_res(body))
+    out = research.run({"name": "X"}, load_config(), Budget(1.0), _Runs())
+    assert [s["url"] for s in out.sources] == ["https://a.com/x"]
+
+
+def _bad():
+    d = json.loads(FAKE.read_text())
+    d["sections"]["tech"]["rows"] = "SECRET-CONTENT"
+    return json.dumps(d)
+
+
+def test_writer_logs_paths_not_content_and_reports_them(calls, caplog):
+    import logging
+    calls["queue"] += [_res(_bad()), _res(_bad())]
+    with (caplog.at_level(logging.WARNING, logger="app.services.vip_memo_gen.writer"),
+          pytest.raises(MemoValidationError) as e):
+        writer.write(MSGS, load_config(), Budget(1.0), _Runs())
+    assert len(calls["calls"]) == 2
+    assert str(e.value).startswith("validation: ")
+    assert "sections.tech" in str(e.value)
+    assert "SECRET-CONTENT" not in str(e.value) + caplog.text
+    assert "sections.tech" in caplog.text
+    assert len([r for r in caplog.records if r.levelname == "WARNING"]) == 2
+
+
+def test_writer_truncated_output_is_obvious_and_skips_repair(calls):
+    r = _res('{"version": 2, "name": "X", "sections": {"te')
+    r.finish_reason = "length"
+    calls["queue"].append(r)
+    with pytest.raises(MemoValidationError, match="output truncated at max_tokens"):
+        writer.write(MSGS, load_config(), Budget(1.0), _Runs())
+    assert len(calls["calls"]) == 1
 
 
 def test_paid_call_rows_and_failure_costs(calls):

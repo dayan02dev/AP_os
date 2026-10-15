@@ -109,7 +109,11 @@ Parameters:
     Default: "1.00"
   VipMemoMaxSearches:
     Type: String
-    Default: "8"
+    Default: "10"
+  VipMemoSearchEngine:
+    Type: String
+    Default: "exa"
+    AllowedValues: ["exa", "native"]
 
 # ─── Globals: every function inherits these ──────────────────────────
 # arm64 + python3.11 + 1GB RAM is the sweet spot for FastAPI on Lambda:
@@ -165,6 +169,7 @@ Globals:
         VIP_MEMO_EXTRACT_MODEL: !Ref VipMemoExtractModel
         VIP_MEMO_MAX_COST_USD: !Ref VipMemoMaxCostUsd
         VIP_MEMO_MAX_SEARCHES: !Ref VipMemoMaxSearches
+        VIP_MEMO_SEARCH_ENGINE: !Ref VipMemoSearchEngine
 
 Resources:
   # ── Lambda function ─────────────────────────────────────────────

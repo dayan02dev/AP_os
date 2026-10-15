@@ -1,6 +1,7 @@
 """Writer step: one JSON-mode call, plus at most one repair call."""
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 import json_repair
@@ -12,6 +13,12 @@ from .openrouter import LlmResult
 from .prompts import REPAIR_PROMPT
 from .schema import MemoValidationError, memo_to_dict, parse_memo
 
+log = logging.getLogger(__name__)
+
+_MAX_LOGGED = 20
+_MAX_REPORTED = 10
+_MSG_CHARS = 200
+TRUNCATED = "output truncated at max_tokens"
 PREPARED_BY = "ARTPARK VIP memo generator"
 
 
@@ -46,16 +53,34 @@ def _validate(text: str) -> dict:
     return memo
 
 
+def _failure(step: str, result: LlmResult, err: MemoValidationError, cfg: GenConfig) -> MemoValidationError:
+    """Log field paths and messages only (never memo content); return the error to raise."""
+    msgs = [m[:_MSG_CHARS] for m in err.messages[:_MAX_LOGGED]]
+    truncated = result.finish_reason == "length"
+    log.warning("vip memo %s failed validation: model=%s finish_reason=%s output_tokens=%s "
+                "max_tokens=%s errors=%d: %s", step, result.model, result.finish_reason,
+                result.usage.output_tokens, cfg.writer_max_tokens, len(err.messages), " | ".join(msgs))
+    if truncated:
+        return MemoValidationError([TRUNCATED])
+    return MemoValidationError(["validation: " + "; ".join(m[:_MSG_CHARS] for m in err.messages[:_MAX_REPORTED])])
+
+
 def write(messages: list[dict], cfg: GenConfig, budget: Budget, runs: RunLog,
           deadline: Deadline | None = None) -> dict:
     result = _call("write", messages, cfg, budget, runs, deadline)
     try:
         return _validate(result.text)
     except MemoValidationError as err:
+        failure = _failure("write", result, err, cfg)
         errors = "\n".join(err.messages)
+    if result.finish_reason == "length":
+        raise failure  # a repair would be cut off the same way
     repair = messages + [
         {"role": "assistant", "content": result.text},
         {"role": "user", "content": REPAIR_PROMPT.format(errors=errors)},
     ]
     result = _call("repair", repair, cfg, budget, runs, deadline)
-    return _validate(result.text)
+    try:
+        return _validate(result.text)
+    except MemoValidationError as err:
+        raise _failure("repair", result, err, cfg) from err

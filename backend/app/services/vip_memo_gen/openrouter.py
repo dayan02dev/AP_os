@@ -36,6 +36,7 @@ class LlmResult:
     annotations: list[dict]
     usage: Usage
     model: str
+    finish_reason: str | None = None
     raw: dict = field(default_factory=dict)
 
 
@@ -86,7 +87,7 @@ def _parse(model: str, data: dict) -> LlmResult:
         cost_usd=float(cost),
     )
     return LlmResult(_text(msg.get("content")), msg.get("annotations") or [], usage,
-                     data.get("model") or model, data)
+                     data.get("model") or model, data["choices"][0].get("finish_reason"), data)
 
 
 def chat(

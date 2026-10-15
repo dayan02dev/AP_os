@@ -125,7 +125,7 @@ def test_load_config_defaults(monkeypatch):
     for k in ("VIP_MEMO_WRITER_MODEL", "VIP_MEMO_MAX_COST_USD", "VIP_MEMO_MAX_SEARCHES"):
         monkeypatch.delenv(k, raising=False)
     c = load_config()
-    assert c.writer_model == OPUS and c.max_cost_usd == 1.0 and c.max_searches == 8
+    assert c.writer_model == OPUS and c.max_cost_usd == 1.0 and c.max_searches == 10
 
 
 def test_unpriced_model_without_cost_raises():
@@ -217,7 +217,23 @@ def test_max_searches_not_negative(monkeypatch):
 
 
 def test_writer_max_tokens_default():
-    assert load_config().writer_max_tokens == 20000
+    assert load_config().writer_max_tokens == 32000
+    assert load_config().research_max_tokens == 8000
+    assert load_config().search_engine == "exa"
+
+
+def test_search_engine_validated(monkeypatch):
+    monkeypatch.setenv("VIP_MEMO_SEARCH_ENGINE", "native")
+    assert load_config().search_engine == "native"
+    monkeypatch.setenv("VIP_MEMO_SEARCH_ENGINE", "bing")
+    with pytest.raises(ValueError, match="VIP_MEMO_SEARCH_ENGINE"):
+        load_config()
+
+
+def test_finish_reason_exposed():
+    r = openrouter._parse(OPUS, {"choices": [{"message": {"content": "x"}, "finish_reason": "length"}],
+                                 "usage": {"prompt_tokens": 1, "completion_tokens": 1, "cost": 0.1}})
+    assert r.finish_reason == "length"
 
 
 def test_zdr_false_omits_zdr_key():
