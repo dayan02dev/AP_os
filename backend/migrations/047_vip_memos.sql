@@ -152,11 +152,18 @@ as $$
 declare
   v_app   uuid;
   v_track text;
+  v_status text;
 begin
-  select application_id, native_track into v_app, v_track
+  select application_id, native_track, status into v_app, v_track, v_status
     from public.vip_memos where id = p_memo_id;
   if not found then
     raise exception 'vip_memo_make_current: memo % not found', p_memo_id;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext(v_app::text || ':' || v_track));
+
+  if v_status <> 'ready' then
+    raise exception 'vip_memo_make_current: memo % is % (must be ready)', p_memo_id, v_status;
   end if;
 
   update public.vip_memos

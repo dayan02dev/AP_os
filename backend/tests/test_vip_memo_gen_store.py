@@ -110,3 +110,21 @@ def test_record_inputs_and_sources():
     store.record_sources(c, row["id"], [])
     assert c.tables["vip_memo_inputs"][0]["method"] == "pypdf"
     assert c.tables["vip_memo_sources"][0]["memo_id"] == row["id"]
+
+
+def test_finalize_cost_writes_sum_and_models():
+    c = FakeSupabase()
+    row = store.create_memo_version(c, APP, "sip", None)
+    store.record_run(c, row["id"], "research", "m1", usage(0.25), 1, True, None)
+    store.record_run(c, row["id"], "write", "m2", usage(0.5), 1, True, None)
+    assert store.finalize_cost(c, row["id"], {"write": "m2"}) == pytest.approx(0.75)
+    got = store.get_memo(c, row["id"])
+    assert got["cost_usd"] == pytest.approx(0.75) and got["models"] == {"write": "m2"}
+
+
+def test_make_current_refuses_non_ready():
+    c = FakeSupabase()
+    row = store.create_memo_version(c, APP, "sip", None)
+    with pytest.raises(RuntimeError, match="must be ready"):
+        c.rpc("vip_memo_make_current", {"p_memo_id": row["id"]}).execute()
+    assert store.get_memo(c, row["id"])["is_current"] is False

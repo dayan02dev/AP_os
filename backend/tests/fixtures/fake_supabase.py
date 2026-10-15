@@ -151,6 +151,10 @@ class FakeSupabase:
                 target = next((r for r in rows if r["id"] == memo_id), None)
                 if target is None:
                     raise RuntimeError(f"memo {memo_id} not found")
+                if target.get("status") != "ready":
+                    raise RuntimeError(
+                        f"vip_memo_make_current: memo {memo_id} is {target.get('status')} (must be ready)"
+                    )
                 for r in rows:
                     if (r["application_id"], r["native_track"]) == (
                         target["application_id"], target["native_track"]

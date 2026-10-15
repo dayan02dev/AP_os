@@ -130,6 +130,15 @@ def spent_usd(client, memo_id: str) -> float:
     return float(sum(float(r.get("cost_usd") or 0) for r in rows))
 
 
+def finalize_cost(client, memo_id: str, models: dict[str, str]) -> float:
+    """Write the summed run cost and the models used onto the memo row."""
+    cost = spent_usd(client, memo_id)
+    client.table("vip_memos").update(
+        {"cost_usd": cost, "models": models, "updated_at": _now()}
+    ).eq("id", memo_id).execute()
+    return cost
+
+
 def record_inputs(client, memo_id: str, inputs: list) -> None:
     if not inputs:
         return
