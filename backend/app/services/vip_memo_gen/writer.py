@@ -7,6 +7,7 @@ pipeline can store it and ``scripts/revalidate_vip_memo.py`` can recover it at n
 from __future__ import annotations
 
 import logging
+import math
 from datetime import UTC, datetime
 
 import json_repair
@@ -22,7 +23,7 @@ from .budget import (
     paid_call,
 )
 from .config import GenConfig
-from .openrouter import LlmResult, OpenRouterError
+from .openrouter import PRICES, LlmResult, OpenRouterError
 from .prompts import REPAIR_PROMPT, REPAIR_SYSTEM
 from .schema import MemoValidationError, memo_to_dict, parse_memo, salvage
 
@@ -33,6 +34,7 @@ _MAX_REPORTED = 10
 _MSG_CHARS = 200
 TRUNCATED = "output truncated at max_tokens"
 PREPARED_BY = "ARTPARK VIP memo generator"
+MIN_REPAIR_TOKENS = 16000  # a full memo at low reasoning needs ~15k output tokens
 
 
 def _stamp(data: dict) -> None:
@@ -42,12 +44,13 @@ def _stamp(data: dict) -> None:
 
 
 def _call(step: str, messages: list[dict], cfg: GenConfig, budget: Budget, runs: RunLog,
-          deadline: Deadline | None, effort: str) -> LlmResult:
+          deadline: Deadline | None, effort: str, max_tokens: int | None = None) -> LlmResult:
+    max_tokens = max_tokens or cfg.writer_max_tokens
     chars = sum(len(m["content"]) for m in messages)
-    estimate = estimate_cost(cfg.writer_model, chars, cfg.writer_max_tokens)
+    estimate = estimate_cost(cfg.writer_model, chars, max_tokens)
     return paid_call(step, cfg.writer_model, estimate, budget, runs, deadline, lambda timeout: openrouter.chat(
         cfg.writer_model, messages,
-        max_tokens=cfg.writer_max_tokens, reasoning_effort=effort,
+        max_tokens=max_tokens, reasoning_effort=effort,
         response_format={"type": "json_object"},  # never json_schema: Anthropic caps optional/union params
         timeout=timeout,
     ))
@@ -91,6 +94,14 @@ def _failure(step: str, result: LlmResult, err: MemoValidationError, cfg: GenCon
     return out
 
 
+def repair_max_tokens(messages: list[dict], cfg: GenConfig, budget: Budget) -> int:
+    """Largest output allowance whose worst-case cost still fits the remaining budget."""
+    pin, pout = PRICES[cfg.writer_model]
+    input_cost = sum(len(m["content"]) for m in messages) / 4 * pin / 1_000_000
+    fits = math.floor((budget.remaining - input_cost) * 1_000_000 / pout) if pout else cfg.writer_max_tokens
+    return max(0, min(cfg.writer_max_tokens, fits))
+
+
 def _attach(e: BaseException, raw: str, messages: list[str]) -> None:
     e.raw, e.raw_write = raw, None  # type: ignore[attr-defined]
     if not getattr(e, "messages", None):
@@ -117,8 +128,12 @@ def write(messages: list[dict], cfg: GenConfig, budget: Budget, runs: RunLog,
         {"role": "user", "content": REPAIR_PROMPT.format(errors="\n".join(errors), raw=result.text)},
     ]
     write_text = result.text
+    repair_max = repair_max_tokens(repair, cfg, budget)
     try:
-        result = _call("repair", repair, cfg, budget, runs, deadline, "low")
+        if repair_max < MIN_REPAIR_TOKENS:  # a cut-off repair would only waste money
+            raise BudgetExceeded(f"repair skipped: only {repair_max} output tokens fit the remaining "
+                                 f"${budget.remaining:.4f} (needs {MIN_REPAIR_TOKENS})")
+        result = _call("repair", repair, cfg, budget, runs, deadline, "low", repair_max)
     except (BudgetExceeded, DeadlineExceeded, OpenRouterError) as e:
         _attach(e, write_text, failure.messages)
         raise

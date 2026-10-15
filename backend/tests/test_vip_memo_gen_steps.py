@@ -116,7 +116,7 @@ def test_one_repair_then_fail(calls):
     assert "Validation errors" in msgs[1]["content"] and "RAW-1" in msgs[1]["content"]
     assert "DOCUMENT-TEXT-XYZ" not in json.dumps(msgs)  # no source documents in the repair
     assert rep["reasoning_effort"] == "low"
-    assert rep["max_tokens"] == load_config().writer_max_tokens
+    assert rep["max_tokens"] == load_config().writer_max_tokens  # $1 budget: the full allowance fits
     assert rep["response_format"] == {"type": "json_object"}
     assert cb.steps() == ["write", "repair"]
     assert budget.spent_usd == pytest.approx(0.02)
@@ -146,16 +146,61 @@ def test_salvageable_output_needs_no_repair_and_reports_notes(calls):
 
 
 def test_repair_over_budget_keeps_raw(calls):
-    calls["queue"].append(_res('{"name": "", "headline": "RAW-W"}', cost=0.0))
     cfg = load_config()
-    # leave enough for the write estimate only: the repair (input = raw + errors) cannot fit
+    # leave enough for the write estimate plus $0.10: too little for a useful repair
     from app.services.vip_memo_gen.budget import estimate_cost
     write_est = estimate_cost(cfg.writer_model, sum(len(m["content"]) for m in MSGS), cfg.writer_max_tokens)
-    b = Budget(write_est + 0.0001)
-    with pytest.raises(BudgetExceeded) as e:
+    calls["queue"].append(_res('{"name": "", "headline": "RAW-W"}', cost=write_est))
+    b = Budget(write_est + 0.10)
+    with pytest.raises(BudgetExceeded, match="repair skipped") as e:
         writer.write(MSGS, cfg, b, _Runs())
     assert len(calls["calls"]) == 1
     assert "RAW-W" in e.value.raw and e.value.messages
+
+
+def _leave(monkeypatch, spent):
+    """After the (free) write call, set the budget's spend just before the repair cap is computed."""
+    real = writer.repair_max_tokens
+    seen = {}
+
+    def cap(messages, cfg_, budget):
+        budget.spent_usd = spent
+        seen["n"] = real(messages, cfg_, budget)
+        return seen["n"]
+
+    monkeypatch.setattr(writer, "repair_max_tokens", cap)
+    return seen
+
+
+def test_repair_capped_to_remaining_budget(calls, monkeypatch):
+    from app.services.vip_memo_gen.budget import estimate_cost
+    calls["queue"] += [_res('{"name": "", "headline": "W"}', cost=0.0), _res(FAKE.read_text(), cost=0.2)]
+    _leave(monkeypatch, 0.60)  # ~$0.40 left
+    cfg, runs, b = load_config(), _Runs(), Budget(1.0)
+    memo = writer.write(MSGS, cfg, b, runs)
+    rep = calls["calls"][1]
+    assert memo["name"] and runs.steps() == ["write", "repair"]
+    assert writer.MIN_REPAIR_TOKENS <= rep["max_tokens"] < cfg.writer_max_tokens
+    est = estimate_cost(cfg.writer_model, sum(len(m["content"]) for m in rep["messages"]), rep["max_tokens"])
+    assert 0.60 + est <= 1.0  # the pre-check used the capped value: never past the ceiling
+    assert b.spent_usd == pytest.approx(0.80)
+
+
+def test_repair_skipped_when_too_little_budget_left(calls, monkeypatch):
+    calls["queue"].append(_res('{"name": "", "headline": "W"}', cost=0.0))
+    seen = _leave(monkeypatch, 0.75)  # ~$0.25 left: ~12k tokens, below MIN_REPAIR_TOKENS
+    with pytest.raises(BudgetExceeded, match="repair skipped") as e:
+        writer.write(MSGS, load_config(), Budget(1.0), _Runs())
+    assert 0 < seen["n"] < writer.MIN_REPAIR_TOKENS
+    assert len(calls["calls"]) == 1 and "W" in e.value.raw
+
+
+def test_repair_max_tokens_formula():
+    cfg = load_config()
+    msgs = [{"role": "user", "content": "x" * 40000}]  # 10k input tokens = $0.04
+    assert writer.repair_max_tokens(msgs, cfg, Budget(1.0, 0.6)) == 18000  # (0.40-0.04)/20e-6
+    assert writer.repair_max_tokens(msgs, cfg, Budget(1.0, 0.0)) == cfg.writer_max_tokens
+    assert writer.repair_max_tokens(msgs, cfg, Budget(1.0, 0.99)) == 0
 
 
 def test_repair_openrouter_error_keeps_raw(calls):
