@@ -27,7 +27,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from ..rbac import require_capability
-from ..services import admin_query, applications_query, industry_categories, stats, vip_memo, vip_memo_export, vip_memo_v2, vip_memo_v2_export
+from ..services import admin_query, applications_query, industry_categories, stats, vip_memo, vip_memo_export, vip_memo_v2
 from ..services.founder_check.render import merge_sections as _merge_founder_sections
 from ..supabase_client import get_admin_client
 
@@ -604,11 +604,11 @@ async def download_vip_memo(
 
 
 
-def _memo_v2_or_404(application_id: str) -> dict[str, Any]:
-    memo = vip_memo_v2.get_memo_v2(application_id)
-    if memo is None:
+def _memo_v2_or_404(application_id: str) -> tuple[dict[str, Any], str | None]:
+    loaded = vip_memo_v2.load_memo_v2(application_id) if vip_memo_v2.is_vip_app(application_id) else None
+    if loaded is None:
         raise HTTPException(status_code=404, detail={"code": "memo_not_available"})
-    return memo
+    return loaded
 
 
 @router.get(
@@ -616,8 +616,8 @@ def _memo_v2_or_404(application_id: str) -> dict[str, Any]:
     dependencies=[Depends(require_capability("view_app_detail"))],
 )
 async def get_vip_memo_v2(application_id: str) -> dict[str, Any]:
-    """The pre-built VIP memo v2 (Navigator) JSON for a pilot VIP application."""
-    return _memo_v2_or_404(application_id)
+    """The VIP memo v2 (Navigator) JSON for a VIP application, recommendation stripped."""
+    return vip_memo_v2.public_view(_memo_v2_or_404(application_id)[0])
 
 
 @router.post(
@@ -628,8 +628,8 @@ async def download_vip_memo_v2(
     application_id: str,
     format: Literal["pdf", "docx"] = Query("pdf"),
 ) -> Response:
-    memo = _memo_v2_or_404(application_id)
-    body, media = vip_memo_v2_export.render(memo, format)
+    memo, memo_id = _memo_v2_or_404(application_id)
+    body, media = vip_memo_v2.export_for(memo_id, memo, format)
     return Response(body, media_type=media, headers={
         "Content-Disposition": f'attachment; filename="{vip_memo_v2.download_filename(memo, format)}"'})
 

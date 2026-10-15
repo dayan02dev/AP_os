@@ -15,8 +15,12 @@ with a bottom rule, tables with a navy header row and alternating shading.
 from __future__ import annotations
 
 import io
+import logging
+import re
 from typing import Any
 from xml.sax.saxutils import escape
+
+log = logging.getLogger(__name__)
 
 TBC = "[To be confirmed]"
 NAVY = "1F3864"
@@ -39,6 +43,9 @@ REVIEWER_AREAS = (
     ("Follow-on Fundability", "Will this company be able to raise its next round after the programme?"),
     ("Overall Verdict", "Approve, approve with conditions, or ask for more information — and why?"),
 )
+
+# funds row layout (schema.Funds): [category, key items, percent, amount]
+_FUND_COLS = ("category", "items", "pct", "amount")
 
 # why-row label → (sub-point title, index fallback)
 _WHY_POINTS = (
@@ -75,6 +82,20 @@ def _s(value: Any) -> str:
     return text or "—"
 
 
+def _pct(value: Any) -> float | None:
+    """A percentage cell (50, 50.0, "50%") as a float, or None if it is not one."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip().rstrip("%").strip())
+        except ValueError:
+            return None
+    return None
+
+
 def _d(value: Any) -> dict:
     return value if isinstance(value, dict) else {}
 
@@ -88,20 +109,37 @@ def _row(value: Any, width: int) -> list[str]:
     return cells + ["—"] * (width - len(cells))
 
 
+def _norm_label(value: Any) -> str:
+    return str(value).strip().lower().replace("\u2019", "'")
+
+
 def _why_points(rows: list) -> list[tuple[str, Any]]:
-    """(title, text or bullet list) per sub-point; a list wins if any row has one."""
+    """(title, text or bullet list) per sub-point. Rows whose label matches a
+    ``_WHY_POINTS`` entry are grouped under its title; any other row is kept as
+    its own point under its own label (never dropped)."""
     by_label: dict[str, list] = {}
+    order: list[str] = []
+    raw_label: dict[str, str] = {}
     for r in rows:
         cells = _l(r)
         if len(cells) >= 2:
-            by_label.setdefault(str(cells[0]).strip().lower(), []).append(cells[1])
-    points = []
-    for title, labels in _WHY_POINTS:
-        values = [v for lab in labels for v in by_label.get(lab, [])]
+            key = _norm_label(cells[0])
+            if key not in by_label:
+                order.append(key)
+                raw_label[key] = _s(cells[0])
+            by_label.setdefault(key, []).append(cells[1])
+
+    def combine(title: str, values: list) -> tuple[str, Any]:
         if any(isinstance(v, list) for v in values):
-            points.append((title, [i for v in values for i in _items(v)]))
-        else:
-            points.append((title, " ".join(_s(v) for v in values) if values else TBC))
+            return title, [i for v in values for i in _items(v)]
+        return title, " ".join(_s(v) for v in values) if values else TBC
+
+    points = []
+    matched: set[str] = set()
+    for title, labels in _WHY_POINTS:
+        matched.update(labels)
+        points.append(combine(title, [v for lab in labels for v in by_label.get(lab, [])]))
+    points += [combine(raw_label[k], by_label[k]) for k in order if k not in matched]
     return points
 
 
@@ -168,8 +206,8 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     for group in _l(comp.get("groups")):
         g = _d(group)
         b.append(("h2", _s(g.get("segment"))))
-        b.append(("table", ["Competitor", "What they do", "Key limitation", f"{name} advantage"],
-                  [_row(r, 4) for r in _l(g.get("rows"))], None))
+        b.append(("table", ["Competitor", "What they do", "Key limitation", f"{name} advantage", "Stage"],
+                  [_row(r, 5) for r in _l(g.get("rows"))], None))
     prose(comp.get("note"), "note")
 
     market = _d(sec.get("market"))
@@ -202,11 +240,15 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     prose(ms.get("note"), "note")
 
     funds = _d(sec.get("funds"))
-    frows = []
+    frows, pcts = [], []
     for r in _l(funds.get("rows")):
-        c = _row(r, 4)
-        frows.append([c[0], c[3], f"{c[2]}%" if c[2] != "—" else "—", c[1]])
-    frows.append(["Total", _s(funds.get("total")), "100%" if frows else "—", ""])
+        c = dict(zip(_FUND_COLS, _row(r, len(_FUND_COLS))))
+        pct = _pct(_l(r)[2] if len(_l(r)) > 2 else None)
+        pcts.append(pct)
+        frows.append([c["category"], c["amount"], f"{_s(pct)}%" if pct is not None else "—", c["items"]])
+    # The total % is the sum of the row values, shown only when every row parses.
+    total_pct = sum(pcts) if frows and all(p is not None for p in pcts) else None
+    frows.append(["Total", _s(funds.get("total")), f"{_s(round(total_pct, 2))}%" if total_pct is not None else "", ""])
     b.append(("h1", "Use of funds"))
     b.append(("table", ["Category", "Amount", "%", "Key items"], frows, "total"))
     prose(funds.get("note"), "note")
@@ -221,7 +263,7 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
             risks.append(_row(r, 2))
     b.append(("table", ["Risk", "Mitigant"], risks, None))
 
-    # The IC recommendation (memo["recommendation"]) is left out for now.
+    # memo["recommendation"] is deliberately never rendered.
 
     b.append(("h1", "Questions for the founders"))
     b.append(("numbered", [_s(q) for q in _l(memo.get("questions"))]))
@@ -410,6 +452,25 @@ def render_docx_v2(memo: dict[str, Any]) -> bytes:
 
 # ─── PDF ────────────────────────────────────────────────────────────────
 
+# Helvetica (a PDF base font, WinAnsi) lacks these glyphs, and no Unicode TTF is
+# guaranteed inside the Lambda package (reportlab bundles Vera only), so
+# substitute ASCII instead of shipping a font.
+_PDF_GLYPHS = {"≈": "~", "→": "->", "≤": "<=", "≥": ">=", "–": "-"}
+
+
+def _pdf_safe(text: Any) -> str:
+    t = str(text)
+    for src, dst in _PDF_GLYPHS.items():
+        t = t.replace(src, dst)
+    t = re.sub(r"₹\s*", "Rs ", t)
+    # Anything else WinAnsi cannot encode would print as a black box.
+    safe = t.encode("cp1252", errors="replace").decode("cp1252")
+    if safe != t:
+        replaced = sum(1 for x, y in zip(t, safe) if x != y)
+        log.warning("vip memo pdf: replaced %d character(s) the PDF font cannot show", replaced)
+    return safe
+
+
 def render_pdf_v2(memo: dict[str, Any]) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
@@ -444,8 +505,7 @@ def render_pdf_v2(memo: dict[str, Any]) -> bytes:
     }
 
     def P(text, style="body", bold_label=None):
-        # Helvetica (a PDF base font) has no rupee glyph; spell it out.
-        t = escape(str(text).replace("₹", "Rs ")).replace("\n", "<br/>")
+        t = escape(_pdf_safe(text)).replace("\n", "<br/>")
         if bold_label:
             t = f'<font name="Helvetica-Bold" color="#{NAVY}">{escape(bold_label)}:</font> {t}'
         return Paragraph(t, base if style == "body" else st[style])

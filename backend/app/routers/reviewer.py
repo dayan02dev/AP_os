@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..deps import get_current_user
 from ..rbac import require_capability
-from ..services import applications_query, review_presenter, reviewer_query, state_machine, vip_memo, vip_memo_export, vip_memo_v2, vip_memo_v2_export
+from ..services import applications_query, review_presenter, reviewer_query, state_machine, vip_memo, vip_memo_export, vip_memo_v2
 from ..services import rubric as rubric_service
 from ..services.audit import write_audit
 from ..services.founder_check.render import merge_sections as _merge_founder_sections
@@ -121,19 +121,24 @@ async def get_application_content(
         "admin_decision": payload.get("admin_decision"),
     }
 
-def _memo_v2_for_reviewer(track: str, application_id: str, user: dict) -> dict:
-    """Pilot + assignment gated read of the VIP memo v2 JSON (404 otherwise)."""
-    if track != "sip" or application_id not in vip_memo.PILOT_APPLICATION_IDS:
+def _memo_v2_for_reviewer(application_id: str, user: dict) -> tuple[dict, str | None]:
+    """Assignment-gated read of the VIP memo v2 JSON (404 otherwise).
+
+    The URL track is ignored: eligibility is the app's EFFECTIVE track (VIP) and
+    the assignment is looked up under its NATIVE track, so a TIR app moved to VIP
+    works and a VIP app moved to TIR does not."""
+    info = vip_memo_v2.track_info(application_id)
+    if info is None or info[1] != "sip":
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
                             detail={"code": "memo_not_available"})
-    if reviewer_query.fetch_application_for_reviewer(user["user_id"], "sip", application_id) is None:
+    if reviewer_query.fetch_application_for_reviewer(user["user_id"], info[0], application_id) is None:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
                             detail={"code": "not_found"})
-    memo = vip_memo_v2.get_memo_v2(application_id)
-    if memo is None:
+    loaded = vip_memo_v2.load_memo_v2(application_id)
+    if loaded is None:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
                             detail={"code": "memo_not_available"})
-    return memo
+    return loaded
 
 
 @router.get(
@@ -145,8 +150,8 @@ async def get_vip_memo_v2_for_reviewer(
     application_id: str,
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """The pre-built VIP memo v2 (Navigator) JSON for an assigned pilot app."""
-    return _memo_v2_for_reviewer(track, application_id, user)
+    """The VIP memo v2 (Navigator) JSON for an assigned VIP app, recommendation stripped."""
+    return vip_memo_v2.public_view(_memo_v2_for_reviewer(application_id, user)[0])
 
 
 @router.post(
@@ -159,8 +164,8 @@ async def download_vip_memo_v2_for_reviewer(
     format: Literal["pdf", "docx"] = Query("pdf"),
     user: dict = Depends(get_current_user),
 ) -> Response:
-    memo = _memo_v2_for_reviewer(track, application_id, user)
-    body, media = vip_memo_v2_export.render(memo, format)
+    memo, memo_id = _memo_v2_for_reviewer(application_id, user)
+    body, media = vip_memo_v2.export_for(memo_id, memo, format)
     return Response(body, media_type=media, headers={
         "Content-Disposition": f'attachment; filename="{vip_memo_v2.download_filename(memo, format)}"'})
 
