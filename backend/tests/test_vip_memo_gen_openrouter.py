@@ -15,7 +15,7 @@ def _ok(usage=None, content="hi", annotations=None):
     msg = {"content": content}
     if annotations is not None:
         msg["annotations"] = annotations
-    return {"choices": [{"message": msg}], "usage": usage or {}}
+    return {"choices": [{"message": msg}], "usage": {"cost": 0.01} if usage is None else usage}
 
 
 def _transport(handler):
