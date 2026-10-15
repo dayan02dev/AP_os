@@ -59,12 +59,16 @@ def _parse(model: str, data: dict) -> LlmResult:
         msg = data["choices"][0]["message"]
     except (KeyError, IndexError, TypeError) as e:
         raise OpenRouterError(f"malformed OpenRouter response: {e}") from e
-    u = data.get("usage") or {}
+    u = data.get("usage")
+    if not isinstance(u, dict) or not u:
+        raise OpenRouterError(f"OpenRouter response for {model} has no usage; cost unknown")
     inp = int(u.get("prompt_tokens") or 0)
     out = int(u.get("completion_tokens") or 0)
     cost = u.get("cost")
     if cost is None:
-        pin, pout = PRICES.get(model, (0.0, 0.0))
+        if model not in PRICES:
+            raise OpenRouterError(f"no usage.cost and no price for model {model}; cost unknown")
+        pin, pout = PRICES[model]
         cost = (inp * pin + out * pout) / 1_000_000
     usage = Usage(
         input_tokens=inp,
@@ -109,6 +113,9 @@ def chat(
         for attempt in range(len(_BACKOFF) + 1):
             try:
                 resp = client.post(URL, headers=headers, json=payload)
+            except httpx.ReadTimeout as e:
+                # The request may already be billed; never resend.
+                raise OpenRouterError(f"read timeout (not retried): {e}") from e
             except httpx.TransportError as e:
                 last = OpenRouterError(f"connection error: {e}")
             else:

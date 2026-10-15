@@ -127,3 +127,50 @@ def test_load_config_defaults(monkeypatch):
         monkeypatch.delenv(k, raising=False)
     c = load_config()
     assert c.writer_model == OPUS and c.max_cost_usd == 1.0 and c.max_searches == 8
+
+
+def test_unpriced_model_without_cost_raises():
+    with pytest.raises(openrouter.OpenRouterError, match="x/unknown"):
+        openrouter.chat("x/unknown", [], max_tokens=1, transport=_transport(
+            lambda req: httpx.Response(200, json=_ok({"prompt_tokens": 1, "completion_tokens": 1}))))
+
+
+def test_missing_usage_raises():
+    for body in ({"choices": [{"message": {"content": "x"}}]}, _ok({})):
+        with pytest.raises(openrouter.OpenRouterError, match="usage"):
+            openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(
+                lambda req, b=body: httpx.Response(200, json=b)))
+
+
+def test_read_timeout_not_retried():
+    calls = []
+
+    def h(req):
+        calls.append(1)
+        raise httpx.ReadTimeout("slow", request=req)
+
+    with patch("app.services.vip_memo_gen.openrouter.time.sleep") as sl:
+        with pytest.raises(openrouter.OpenRouterError):
+            openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(h))
+    assert len(calls) == 1 and not sl.called
+
+
+def test_connect_error_retried():
+    calls = []
+
+    def h(req):
+        calls.append(1)
+        if len(calls) < 2:
+            raise httpx.ConnectError("down", request=req)
+        return httpx.Response(200, json=_ok({"cost": 0.1}))
+
+    with patch("app.services.vip_memo_gen.openrouter.time.sleep"):
+        assert openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(h)).text == "hi"
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("var", ["VIP_MEMO_MAX_COST_USD", "VIP_MEMO_MAX_SEARCHES"])
+def test_malformed_config_names_variable(monkeypatch, var):
+    monkeypatch.setenv(var, "abc")
+    with pytest.raises(ValueError, match=var):
+        load_config()
