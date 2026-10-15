@@ -602,7 +602,6 @@ Resources:
       Handler: workers.vip_memo.handler.lambda_handler
       Timeout: 900
       MemorySize: 1536
-      ReservedConcurrentExecutions: 3
       Environment:
         Variables:
           VIP_MEMO_MAX_RECEIVES: "2"
@@ -612,6 +611,11 @@ Resources:
           Properties:
             Queue: !GetAtt VipMemoQueue.Arn
             BatchSize: 1
+            # Poller-side cap instead of ReservedConcurrentExecutions: a throttled
+            # invoke would return the message to the queue and burn one of the 2
+            # receives (maxReceiveCount 2) without the worker ever running.
+            ScalingConfig:
+              MaximumConcurrency: 2
             FunctionResponseTypes:
               - ReportBatchItemFailures
       Policies:
