@@ -128,3 +128,30 @@ def test_make_current_refuses_non_ready():
     with pytest.raises(RuntimeError, match="must be ready"):
         c.rpc("vip_memo_make_current", {"p_memo_id": row["id"]}).execute()
     assert store.get_memo(c, row["id"])["is_current"] is False
+
+
+MIGRATIONS = Path(__file__).parent.parent / "migrations"
+
+
+def _sql_body(name: str) -> str:
+    text = (MIGRATIONS / name).read_text()
+    return text[text.index("\nbegin;"):text.index("\ncommit;")]
+
+
+def test_inputs_kind_check_allows_every_pipeline_kind():
+    import re
+
+    from app.services.vip_memo_gen import inputs
+
+    sql = (MIGRATIONS / "047_vip_memos.sql").read_text()
+    m = re.search(r"kind\s+text not null check \(kind in \(([^)]*)\)\)", sql)
+    allowed = set(re.findall(r"'([a-z_]+)'", m.group(1)))
+    emitted = set(inputs._FIELD_KIND.values()) | {"cv", "template", "field"}
+    assert emitted <= allowed
+
+
+def test_prod_apply_body_matches_migration_and_runs_ok_is_nullable():
+    assert _sql_body("047_vip_memos.sql") == _sql_body("047_vip_memos_PROD_APPLY.sql")
+    runs = _sql_body("047_vip_memos.sql").split("vip_memo_runs (", 1)[1].split(");", 1)[0]
+    ok_line = next(line for line in runs.splitlines() if line.strip().startswith("ok "))
+    assert "not null" not in ok_line  # null = paid call in flight

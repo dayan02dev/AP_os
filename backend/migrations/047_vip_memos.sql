@@ -98,7 +98,8 @@ create table if not exists public.vip_memo_sources (
 create table if not exists public.vip_memo_inputs (
   id             uuid primary key default gen_random_uuid(),
   memo_id        uuid not null references public.vip_memos(id) on delete cascade,
-  kind           text not null check (kind in ('field', 'file')),
+  kind           text not null check (kind in ('field', 'file', 'deck', 'template', 'traction',
+                                                'milestones', 'cap_table', 'patents', 'cv')),
   bucket         text,
   path           text,
   mime           text,
@@ -119,7 +120,7 @@ create table if not exists public.vip_memo_runs (
   web_searches     integer not null default 0,
   cost_usd         numeric(10, 4) not null default 0,
   duration_ms      integer,
-  ok               boolean not null default true,
+  ok               boolean,  -- null = call in flight (cost_usd holds the pre-call estimate)
   error            text,
   created_at       timestamptz not null default now()
 );
