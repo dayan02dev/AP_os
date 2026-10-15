@@ -52,7 +52,8 @@ def set_status(client, memo_id: str, status: str, error: str | None = None) -> N
     ).eq("id", memo_id).execute()
 
 
-def persist_memo(client, memo_id: str, memo: dict) -> None:
+def persist_memo(client, memo_id: str, memo: dict, error: str | None = None) -> None:
+    """``error`` on a ready row is a note only (e.g. "salvaged: <paths>")."""
     snap = memo["snapshot"]
     rec = memo.get("recommendation") or {}
     header: dict[str, Any] = {
@@ -105,8 +106,22 @@ def persist_memo(client, memo_id: str, memo: dict) -> None:
             for i, q in enumerate(questions)
         ]).execute()
 
-    set_status(client, memo_id, "ready")
+    set_status(client, memo_id, "ready", error)
     client.rpc("vip_memo_make_current", {"p_memo_id": memo_id}).execute()
+
+
+def save_raw_output(client, memo_id: str, text: str, errors: list[str] | tuple = (), *,
+                    raw_write: str | None = None, source_files: list[str] | None = None) -> None:
+    """Keep the paid model output of a failed memo for ``scripts/revalidate_vip_memo.py``.
+
+    Only ever called for failed rows; ``current_ready`` serves status 'ready' rows only.
+    """
+    blob: dict[str, Any] = {"_raw": text, "_errors": list(errors)}
+    if raw_write is not None:
+        blob["_raw_write"] = raw_write
+    if source_files is not None:
+        blob["_source_files"] = source_files
+    client.table("vip_memos").update({"memo_json": blob, "updated_at": _now()}).eq("id", memo_id).execute()
 
 
 def record_run(client, memo_id: str, step: str, model: str, usage: Any,

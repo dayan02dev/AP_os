@@ -138,10 +138,11 @@ TRANSCRIBE_PROMPT = (
     "Describe charts in one line each. Output plain text only."
 )
 
+REPAIR_SYSTEM = "You fix JSON. Return only the corrected JSON object."
 REPAIR_PROMPT = (
-    "Your previous JSON failed validation. The errors are listed below. Fix every error and return "
-    "the corrected FULL memo as a single JSON object matching the schema. Output the JSON only, "
-    "with no prose.\n\nValidation errors:\n{errors}\n"
+    "The JSON object below failed validation. Fix every listed error, keep all other content "
+    "exactly as it is, and return the corrected full JSON object only, with no prose.\n\n"
+    "Validation errors:\n{errors}\n\nJSON:\n{raw}\n"
 )
 
 

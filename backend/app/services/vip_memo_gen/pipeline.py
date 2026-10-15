@@ -33,6 +33,7 @@ TERMINAL = ("ready", "failed", "failed_budget")
 APPLICATION_FORM = "VIP application form"
 _TRANSCRIBE_MAX_TOKENS = 4000
 _ERROR_CHARS = 500
+_SALVAGE_NOTES = 10
 _IMAGE_MIMES = ("image/png", "image/jpeg")
 
 
@@ -56,6 +57,13 @@ def _export(client, memo_id: str, application_id: str, memo: dict) -> None:
             store.record_export(client, memo_id, fmt, store.BUCKET, path, data)
         except Exception:
             log.warning("vip memo export failed", extra={"memo_id": memo_id, "fmt": fmt}, exc_info=True)
+
+
+def salvage_error(notes: list[str], prefix: str = "salvaged") -> str | None:
+    """The note kept in a ready row's ``error`` column: paths only, never values."""
+    if not notes:
+        return None
+    return f"{prefix}: " + "; ".join(notes[:_SALVAGE_NOTES])[:_ERROR_CHARS]
 
 
 class _Runs:
@@ -86,7 +94,19 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attemp
 
     records: list[InputRecord] = []
     texts: list[tuple[FileRef, str]] = []
-    state = {"inputs_recorded": False}
+    state: dict = {"inputs_recorded": False, "source_files": None}
+
+    def keep_raw(e: BaseException) -> None:
+        """A paid writer output that did not become a memo is stored on the row, never lost."""
+        raw = getattr(e, "raw", None)
+        if raw is None:
+            return
+        try:
+            store.save_raw_output(client, memo_id, raw, getattr(e, "messages", None) or [str(e)],
+                                  raw_write=getattr(e, "raw_write", None),
+                                  source_files=state["source_files"])
+        except Exception:
+            log.warning("vip memo raw output save failed", extra={"memo_id": memo_id}, exc_info=True)
 
     def finish(status: str, error: str | None = None) -> str:
         if not state["inputs_recorded"]:  # audit whatever was gathered before the failure
@@ -165,15 +185,22 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attemp
                              deadline)
         store.record_sources(client, memo_id, found.sources)
 
+        state["source_files"] = [name for name, _ in documents] + [APPLICATION_FORM]
+        notes: list[str] = []
         memo = writer.write(render_writer_messages(block, documents, found.json_text), cfg, budget, runs,
-                            deadline)
-        memo["source_files"] = [name for name, _ in documents] + [APPLICATION_FORM]
-        store.persist_memo(client, memo_id, memo)
+                            deadline, notes=notes)
+        memo["source_files"] = state["source_files"]
+        if notes:
+            log.warning("vip memo salvaged", extra={"memo_id": memo_id, "notes": len(notes)})
+        store.persist_memo(client, memo_id, memo, error=salvage_error(notes))
     except BudgetExceeded as e:
+        keep_raw(e)
         return finish("failed_budget", str(e)[:_ERROR_CHARS])
     except (MemoValidationError, OpenRouterError) as e:  # OpenRouter run rows are settled by paid_call
+        keep_raw(e)
         return finish("failed", f"{type(e).__name__}: {e}"[:_ERROR_CHARS])
     except Exception as e:  # includes DeadlineExceeded
+        keep_raw(e)
         if not final_attempt:
             raise  # SQS retries; the memo stays running until then
         log.error("vip memo failed on final attempt", extra={"memo_id": memo_id}, exc_info=True)

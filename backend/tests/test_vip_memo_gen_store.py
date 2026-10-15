@@ -167,3 +167,28 @@ def test_start_and_finish_run():
     store.finish_run(c, rid, "m-actual", usage(0.3), 1200, True, None)
     assert (row["ok"], row["cost_usd"], row["model"], row["input_tokens"]) == (True, 0.3, "m-actual", 10)
     assert store.spent_usd(c, mid) == pytest.approx(0.3)
+
+
+def test_save_raw_output_on_failed_row_is_never_served():
+    c = FakeSupabase()
+    a = store.create_memo_version(c, APP, "sip", None)
+    store.set_status(c, a["id"], "failed", "validation: name")
+    store.save_raw_output(c, a["id"], '{"name": ""}', ["name: missing"],
+                          raw_write="first", source_files=["deck.pdf"])
+    row = store.get_memo(c, a["id"])
+    assert row["status"] == "failed"
+    assert row["memo_json"] == {"_raw": '{"name": ""}', "_errors": ["name: missing"],
+                                "_raw_write": "first", "_source_files": ["deck.pdf"]}
+    assert store.current_ready(c, APP) is None
+    # even a failed row wrongly flagged current is not served
+    row["is_current"] = True
+    assert store.current_ready(c, APP) is None
+
+
+def test_persist_memo_records_salvage_note_and_stays_ready():
+    c = FakeSupabase()
+    a = store.create_memo_version(c, APP, "sip", None)
+    store.persist_memo(c, a["id"], memo(), error="salvaged: sections.tech: missing")
+    row = store.get_memo(c, a["id"])
+    assert row["status"] == "ready" and row["error"] == "salvaged: sections.tech: missing"
+    assert store.current_ready(c, APP)["id"] == a["id"]

@@ -46,7 +46,7 @@ def _res(text, cost=0.05, model="m"):
 
 @pytest.fixture
 def chat(monkeypatch):
-    log = {"calls": [], "writer_cost": 0.3, "fail_writer": None}
+    log = {"calls": [], "writer_cost": 0.3, "fail_writer": None, "writer_texts": []}
 
     def fake(model, messages, **kw):
         log["calls"].append({"model": model, "messages": messages, **kw})
@@ -56,6 +56,8 @@ def chat(monkeypatch):
             return _res("TRANSCRIBED DECK TEXT", 0.01, model)
         if log["fail_writer"]:
             raise log["fail_writer"]
+        if log["writer_texts"]:
+            return _res(log["writer_texts"].pop(0), log["writer_cost"], model)
         return _res(FAKE.read_text(), log["writer_cost"], model)
 
     monkeypatch.setattr(openrouter, "chat", fake)
@@ -403,3 +405,55 @@ def test_transcribed_text_scrubbed(chat, monkeypatch):
     assert pipeline.generate(c, mid, CFG) == "ready"
     writer_msgs = json.dumps([x["messages"] for x in chat["calls"] if x["model"] == CFG.writer_model])
     assert "founder@x.io" not in writer_msgs and "9876543210" not in writer_msgs
+
+
+def _salvageable() -> str:
+    d = json.loads(FAKE.read_text())
+    del d["sections"]["tech"]
+    d["headline"] = 7
+    return json.dumps(d)
+
+
+def test_salvaged_memo_is_ready_with_note(chat, monkeypatch):
+    c, mid = _client()
+    _files(monkeypatch, [])
+    chat["writer_texts"] = [_salvageable()]
+    assert pipeline.generate(c, mid, CFG) == "ready"
+    row = store.get_memo(c, mid)
+    assert row["status"] == "ready" and row["is_current"] is True
+    assert row["error"].startswith("salvaged: ") and "sections.tech" in row["error"]
+    assert "7" not in row["error"].replace("salvaged", "")
+    assert [r["step"] for r in c.tables["vip_memo_runs"]].count("write") == 1
+    assert "repair" not in [r["step"] for r in c.tables["vip_memo_runs"]]
+
+
+def test_clean_memo_has_no_error(chat, monkeypatch):
+    c, mid = _client()
+    _files(monkeypatch, [])
+    assert pipeline.generate(c, mid, CFG) == "ready"
+    assert store.get_memo(c, mid)["error"] is None
+
+
+def test_failed_memo_keeps_raw_output_and_is_not_served(chat, monkeypatch):
+    c, mid = _client(blobs={("b", "n.txt"): b"notes"})
+    _files(monkeypatch, [FileRef("b", "n.txt", "notes.txt", "text/plain", "traction")])
+    chat["writer_texts"] = ['{"name": "", "headline": "W"}', '{"name": "", "headline": "R"}']
+    chat["writer_cost"] = 0.05
+    assert pipeline.generate(c, mid, CFG) == "failed"
+    row = store.get_memo(c, mid)
+    assert row["status"] == "failed" and row["is_current"] is False
+    mj = row["memo_json"]
+    assert '"R"' in mj["_raw"] and '"W"' in mj["_raw_write"] and mj["_errors"]
+    assert mj["_source_files"] == ["notes.txt", "VIP application form"]
+    assert store.current_ready(c, APP) is None
+
+
+def test_repair_over_budget_keeps_raw_output(chat, monkeypatch):
+    c, mid = _client()
+    _files(monkeypatch, [])
+    chat["writer_texts"] = ['{"name": "", "headline": "W"}']
+    chat["writer_cost"] = 0.6  # leaves too little for the repair estimate
+    assert pipeline.generate(c, mid, CFG) == "failed_budget"
+    row = store.get_memo(c, mid)
+    assert row["status"] == "failed_budget" and '"W"' in row["memo_json"]["_raw"]
+    assert store.current_ready(c, APP) is None
