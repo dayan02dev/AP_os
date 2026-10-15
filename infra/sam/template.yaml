@@ -618,9 +618,10 @@ Resources:
             BatchSize: 1
             # Poller-side cap instead of ReservedConcurrentExecutions: a throttled
             # invoke would return the message to the queue and burn one of the 2
-            # receives (maxReceiveCount 2) without the worker ever running.
+            # receives (maxReceiveCount 2) without the worker ever running. 5 parallel memos;
+            # each is capped at $1 (VIP_MEMO_MAX_COST_USD).
             ScalingConfig:
-              MaximumConcurrency: 2
+              MaximumConcurrency: 5
             FunctionResponseTypes:
               - ReportBatchItemFailures
       Policies:
