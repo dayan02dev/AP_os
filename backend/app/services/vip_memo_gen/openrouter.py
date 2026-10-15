@@ -16,6 +16,8 @@ PRICES: dict[str, tuple[float, float]] = {
     "anthropic/claude-sonnet-5.5": (2.0, 10.0),
     "anthropic/claude-haiku-5.5": (0.10, 0.50),
 }
+# USD per native web search request (pre-call estimate and the no-usage.cost fallback).
+WEB_SEARCH_USD = 0.01
 _BACKOFF = (2, 8)
 
 
@@ -38,9 +40,12 @@ class LlmResult:
 
 
 class OpenRouterError(RuntimeError):
-    def __init__(self, message: str, status: int | None = None):
+    """``maybe_billed``: the provider may have run (and charged for) the call."""
+
+    def __init__(self, message: str, status: int | None = None, maybe_billed: bool = False):
         super().__init__(message)
         self.status = status
+        self.maybe_billed = maybe_billed
 
 
 def _text(content: Any) -> str:
@@ -58,23 +63,26 @@ def _parse(model: str, data: dict) -> LlmResult:
     try:
         msg = data["choices"][0]["message"]
     except (KeyError, IndexError, TypeError) as e:
-        raise OpenRouterError(f"malformed OpenRouter response: {e}") from e
+        raise OpenRouterError(f"malformed OpenRouter response: {e}", maybe_billed=True) from e
     u = data.get("usage")
     if not isinstance(u, dict) or not u:
-        raise OpenRouterError(f"OpenRouter response for {model} has no usage; cost unknown")
+        raise OpenRouterError(f"OpenRouter response for {model} has no usage; cost unknown",
+                              maybe_billed=True)
     inp = int(u.get("prompt_tokens") or 0)
     out = int(u.get("completion_tokens") or 0)
+    searches = int((u.get("server_tool_use") or {}).get("web_search_requests") or 0)
     cost = u.get("cost")
     if cost is None:
         if model not in PRICES:
-            raise OpenRouterError(f"no usage.cost and no price for model {model}; cost unknown")
+            raise OpenRouterError(f"no usage.cost and no price for model {model}; cost unknown",
+                                  maybe_billed=True)
         pin, pout = PRICES[model]
-        cost = (inp * pin + out * pout) / 1_000_000
+        cost = (inp * pin + out * pout) / 1_000_000 + searches * WEB_SEARCH_USD
     usage = Usage(
         input_tokens=inp,
         output_tokens=out,
         reasoning_tokens=int((u.get("completion_tokens_details") or {}).get("reasoning_tokens") or 0),
-        web_searches=int((u.get("server_tool_use") or {}).get("web_search_requests") or 0),
+        web_searches=searches,
         cost_usd=float(cost),
     )
     return LlmResult(_text(msg.get("content")), msg.get("annotations") or [], usage,
@@ -115,7 +123,7 @@ def chat(
                 resp = client.post(URL, headers=headers, json=payload)
             except httpx.ReadTimeout as e:
                 # The request may already be billed; never resend.
-                raise OpenRouterError(f"read timeout (not retried): {e}") from e
+                raise OpenRouterError(f"read timeout (not retried): {e}", maybe_billed=True) from e
             except httpx.TransportError as e:
                 last = OpenRouterError(f"connection error: {e}")
             else:
@@ -123,7 +131,7 @@ def chat(
                     try:
                         data = resp.json()
                     except ValueError as e:
-                        raise OpenRouterError("non-JSON OpenRouter response") from e
+                        raise OpenRouterError("non-JSON OpenRouter response", maybe_billed=True) from e
                     return _parse(model, data)
                 err = OpenRouterError(
                     f"OpenRouter HTTP {resp.status_code}: {resp.text[:300]}", resp.status_code)

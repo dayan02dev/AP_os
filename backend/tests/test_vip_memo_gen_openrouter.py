@@ -173,3 +173,48 @@ def test_malformed_config_names_variable(monkeypatch, var):
     monkeypatch.setenv(var, "abc")
     with pytest.raises(ValueError, match=var):
         load_config()
+
+
+def test_fallback_cost_counts_web_searches():
+    usage = {"prompt_tokens": 1000, "completion_tokens": 100,
+             "server_tool_use": {"web_search_requests": 3}}
+    r = openrouter.chat("anthropic/claude-sonnet-5.5", [], max_tokens=1, transport=_transport(
+        lambda req: httpx.Response(200, json=_ok(usage))))
+    assert r.usage.web_searches == 3
+    assert r.usage.cost_usd == pytest.approx((1000 * 2.0 + 100 * 10.0) / 1e6 + 3 * 0.01)
+
+
+def test_maybe_billed_flags():
+    def raise_timeout(req):
+        raise httpx.ReadTimeout("slow", request=req)
+
+    with pytest.raises(openrouter.OpenRouterError) as e:
+        openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(raise_timeout))
+    assert e.value.maybe_billed
+    with pytest.raises(openrouter.OpenRouterError) as e:
+        openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(
+            lambda req: httpx.Response(200, json={"choices": [{"message": {}}]})))
+    assert e.value.maybe_billed  # no usage: ran, cost unknown
+    with pytest.raises(openrouter.OpenRouterError) as e:
+        openrouter.chat(OPUS, [], max_tokens=1, transport=_transport(
+            lambda req: httpx.Response(400, text="bad")))
+    assert not e.value.maybe_billed and e.value.status == 400
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-inf", "0", "-1"])
+def test_max_cost_must_be_finite_positive(monkeypatch, value):
+    monkeypatch.setenv("VIP_MEMO_MAX_COST_USD", value)
+    with pytest.raises(ValueError, match="VIP_MEMO_MAX_COST_USD"):
+        load_config()
+
+
+def test_max_searches_not_negative(monkeypatch):
+    monkeypatch.setenv("VIP_MEMO_MAX_SEARCHES", "-1")
+    with pytest.raises(ValueError, match="VIP_MEMO_MAX_SEARCHES"):
+        load_config()
+    monkeypatch.setenv("VIP_MEMO_MAX_SEARCHES", "0")
+    assert load_config().max_searches == 0
+
+
+def test_writer_max_tokens_default():
+    assert load_config().writer_max_tokens == 20000
