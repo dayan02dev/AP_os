@@ -170,7 +170,7 @@ describe("VipNavigatorMemo — section bodies", () => {
     expect(within(panel()).getByText("Source · Fake Publisher, 2025")).toBeTruthy();
     expect(within(panel()).getByText("₹10–30 Cr")).toBeTruthy();
     expect(within(panel()).getByText(/Fake warehouses in a fake city/)).toBeTruthy();
-    const bars = panel().querySelectorAll(".m3-mrow .hi");
+    const bars = panel().querySelectorAll(".m3-seg .hi");
     expect(bars[0].style.width).toBe("100%");
     expect(bars[1].style.width).toBe("50%");
     go("Team and ownership");
@@ -288,5 +288,147 @@ describe("VipNavigatorMemo — downloads + print", () => {
     expect(within(all).getByText("RivalBot")).toBeTruthy();
     act(() => { window.dispatchEvent(new Event("afterprint")); });
     expect(screen.queryByTestId("vipnav-print")).toBeNull();
+  });
+});
+
+// Shapes seen in generated memos: percent strings, TBC sizes, sentence-long
+// global sizes, string-or-list rationale, zero slice numbers.
+const TBCX = "[To be confirmed]";
+const withSections = (over, top = {}) => ({
+  ...FIXTURE, ...top, sections: { ...FIXTURE.sections, ...over },
+});
+const MARKET = withSections({
+  market: {
+    rows: [
+      { segment: "Cold rooms", global_size: "$4.2B (2025, global)", slice_low_cr: 230, slice_high_cr: 780,
+        slice_label: "~₹230–780 Cr", rationale: ["Storage held 68.0% (2025).", "Food & beverages ≈ 84%."], source: "Fake Research, 2026" },
+      { segment: "Pharma chain", global_size: TBCX, slice_low_cr: 0, slice_high_cr: 0,
+        slice_label: TBCX, rationale: "No third-party figure.", source: TBCX },
+      { segment: "Seafood", global_size: "India: USD 19.35B (2026), projected USD 25.35B by 2031, 5.55% CAGR. Transport is 54.07% of the market.",
+        slice_low_cr: 0, slice_high_cr: 110, slice_label: "~₹30–110 Cr", rationale: "Plain rationale.", source: "Fake Mordor" },
+    ],
+    total: [TBCX, "Combined slice not stated."], beachhead: ["Packhouses in Pune."], tam_note: "Deck TAM unsourced.",
+  },
+});
+
+describe("VipNavigatorMemo — market cards", () => {
+  const goMarket = (memo) => { setup({ memo }); fireEvent.click(navBtn("Market")); };
+
+  it("renders one card per segment with Global market / Realistic slice stats", () => {
+    goMarket(MARKET);
+    const cards = panel().querySelectorAll(".m3-seg");
+    expect(cards).toHaveLength(3);
+    expect(within(cards[0]).getByText("Cold rooms")).toBeTruthy();
+    expect(within(cards[0]).getByText("Global market")).toBeTruthy();
+    expect(within(cards[0]).getByText("Realistic slice")).toBeTruthy();
+    expect(within(cards[0]).getByText("$4.2B (2025, global)")).toBeTruthy();
+    expect(within(cards[0]).getByText("~₹230–780 Cr")).toBeTruthy();
+    expect(panel().textContent).not.toMatch(/globally/);
+  });
+
+  it("renders the rationale as bullets, never a comma-joined list", () => {
+    goMarket(MARKET);
+    expect(within(panel()).getByText("Storage held 68.0% (2025).").tagName).toBe("LI");
+    expect(within(panel()).getByText("Food & beverages ≈ 84%.").tagName).toBe("LI");
+    expect(within(panel()).getByText("Plain rationale.")).toBeTruthy();
+    expect(panel().textContent).not.toContain(".,");
+  });
+
+  it("shows TBC sizes as chips and the total / beachhead lists as bullets", () => {
+    goMarket(MARKET);
+    expect(panel().textContent).not.toContain(TBCX);
+    const card = panel().querySelectorAll(".m3-seg")[1];
+    expect(within(card).getAllByText("To confirm").length).toBeGreaterThanOrEqual(2);
+    expect(within(panel()).getByText("Combined slice not stated.").tagName).toBe("LI");
+    expect(within(panel()).getByText("Packhouses in Pune.").tagName).toBe("LI");
+  });
+
+  it("draws a bar only for rows with two positive slice numbers, never a zero", () => {
+    goMarket(MARKET);
+    const cards = panel().querySelectorAll(".m3-seg");
+    expect(cards[0].querySelector(".m3-seg-bar")).toBeTruthy();
+    expect(cards[1].querySelector(".m3-seg-bar")).toBeNull();
+    expect(cards[2].querySelector(".m3-seg-bar")).toBeNull();
+    expect(panel().querySelector(".m3-key")).toBeTruthy();
+    expect(panel().textContent).not.toMatch(/₹0\b/);
+  });
+
+  it("hides the legend when no row has numbers and marks long sizes", () => {
+    const rows = MARKET.sections.market.rows.slice(1);
+    goMarket(withSections({ market: { ...MARKET.sections.market, rows } }));
+    expect(panel().querySelector(".m3-seg-bar")).toBeNull();
+    expect(panel().querySelector(".m3-key")).toBeNull();
+    const long = within(panel()).getByText(/USD 19.35B/).closest(".m3-stat-v");
+    expect(long.className).toContain("long");
+  });
+
+  it("scales bars across the rows that have numbers", () => {
+    goMarket(FIXTURE);
+    const bars = panel().querySelectorAll(".m3-seg .hi");
+    expect(bars).toHaveLength(2);
+    expect(bars[0].style.width).toBe("100%");
+    expect(bars[1].style.width).toBe("50%");
+  });
+});
+
+describe("VipNavigatorMemo — percent cells, labels, empty questions", () => {
+  const FUNDS = withSections({
+    funds: { rows: [
+      ["Deploy", "Sensors", "~32%", "₹70 L"],
+      ["Models", ["ML engineers", "Compute"], "24%", "₹60 L"],
+      ["Validation", "Lab", 15, "₹30 L"],
+      ["Other", "Gap", TBCX, TBCX],
+      ["Misc", "x", "n/a", "₹1 L"],
+    ], total: "₹2 Cr", note: "" },
+    team: { ...FIXTURE.sections.team, holders: [["A", "Founder", 60, true], ["B", "Founder", TBCX, false], ["C", "Investor", "CCD", "[To be confirmed]"]] },
+  });
+
+  it("use of funds: percent shown as-is, % appended only to bare numbers, bar from leading number", () => {
+    setup({ memo: FUNDS });
+    fireEvent.click(navBtn("Use of funds"));
+    const t = panel().textContent;
+    expect(t).not.toContain("%%");
+    expect(t).not.toContain(TBCX);
+    expect(within(panel()).getByText("~32%")).toBeTruthy();
+    expect(within(panel()).getByText("15%")).toBeTruthy();
+    expect(within(panel()).getByText("Compute").tagName).toBe("LI");
+    const segs = panel().querySelectorAll(".m3-stack i");
+    expect(Array.from(segs).map((s) => s.style.width)).toEqual(["32%", "24%", "15%"]);
+  });
+
+  it("team holders: equity strings kept, no stray %", () => {
+    setup({ memo: FUNDS });
+    fireEvent.click(navBtn("Team and ownership"));
+    const t = panel().textContent;
+    expect(t).not.toContain("]%");
+    expect(within(panel()).getByText("60%")).toBeTruthy();
+    expect(within(panel()).getByText("CCD")).toBeTruthy();
+  });
+
+  it("competitors: falls back to 'Advantage' when the company name is unknown", () => {
+    setup({ memo: { ...FIXTURE, name: TBCX } });
+    fireEvent.click(navBtn("Competitors"));
+    expect(within(panel()).getAllByText("Advantage").length).toBeGreaterThan(0);
+    expect(panel().textContent).not.toContain("advantage");
+  });
+
+  it("questions: an empty list still renders the section with a neutral line", () => {
+    setup({ memo: { ...FIXTURE, questions: [] } });
+    fireEvent.click(navBtn("Questions for the founders"));
+    expect(within(panel()).getByText("No founder questions were generated.")).toBeTruthy();
+  });
+
+  it("list-valued fields rendered inline never join with commas", () => {
+    const memo = withSections({}, { headline: ["Head one.", "Head two."] });
+    setup({ memo });
+    expect(document.body.textContent).not.toContain("Head one.,Head two.");
+  });
+
+  it("meta counts unique source files and section sources hide e-mail addresses", () => {
+    const memo = { ...FIXTURE, source_files: ["a.pdf", "a.pdf", "b.pdf"],
+      sources: { ...FIXTURE.sources, what: "Deck_founder@gmail.com_v2.pdf · Application" } };
+    setup({ memo });
+    expect(screen.getByTestId("vipnav-meta").textContent).toContain("2 uploaded files");
+    expect(panel().textContent).not.toContain("@gmail.com");
   });
 });

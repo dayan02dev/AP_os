@@ -81,33 +81,41 @@
 .vipnav .m3-confirm{list-style:none;padding:0;display:flex;flex-direction:column;gap:8px}
 .vipnav .m3-confirm li{display:flex;gap:10px;align-items:baseline;font-size:14px;line-height:1.5;color:var(--vn-ink)}
 
-/* market bars: from zero — solid = conservative, pale = upper estimate */
-.vipnav .m3-mkt{display:flex;flex-direction:column}
-.vipnav .m3-mrow{display:grid;grid-template-columns:220px minmax(0,1fr) 120px;gap:6px 16px;align-items:center;padding:11px 0;border-bottom:1px dashed var(--vn-line)}
-.vipnav .m3-mrow:last-child{border-bottom:0}
-.vipnav .m3-mrow .l{font-size:14px;line-height:1.4;color:var(--vn-ink)}
-.vipnav .m3-mrow .l small{display:block;font-size:12.5px;color:var(--vn-soft)}
-.vipnav .m3-mrow .t{position:relative;height:10px;background:var(--vn-paper-soft)}
-.vipnav .m3-mrow .hi{position:absolute;left:0;top:0;bottom:0;background:rgba(50,19,183,.2)}
-.vipnav .m3-mrow .lo{position:absolute;left:0;top:0;bottom:0;background:var(--vn-blue)}
-.vipnav .m3-mrow .v{text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--vn-soft)}
-.vipnav .m3-mrow .src{grid-column:1/-1;font-size:11.5px;color:var(--vn-dim)}
+/* market: one card per segment — 2-up stat strip, optional bar (solid =
+   conservative, pale = upper estimate; drawn only when both figures exist),
+   rationale bullets, source line */
+.vipnav .m3-segs{display:flex;flex-direction:column;gap:12px}
+.vipnav .m3-seg{gap:12px;padding:16px 18px}
+.vipnav .m3-seg-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--vn-line);border:1px solid var(--vn-line)}
+.vipnav .m3-stat{background:var(--vn-paper-soft);padding:10px 14px 12px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.vipnav .m3-stat .k{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--vn-dim)}
+.vipnav .m3-stat-v{font-family:var(--font-display,inherit);font-weight:700;font-size:17px;line-height:1.35;color:var(--vn-ink);font-variant-numeric:tabular-nums;overflow-wrap:break-word}
+.vipnav .m3-stat-v.long{font-family:var(--font-body,inherit);font-weight:500;font-size:13.5px;line-height:1.5}
+.vipnav .m3-stat-v .m3-pts{font-size:13.5px;font-weight:500;font-family:var(--font-body,inherit);gap:3px}
+.vipnav .m3-stat-v .s{color:var(--vn-dim)}
+.vipnav .m3-seg-bar{position:relative;height:8px;background:var(--vn-paper-soft)}
+.vipnav .m3-seg-bar .hi{position:absolute;left:0;top:0;bottom:0;background:rgba(50,19,183,.2)}
+.vipnav .m3-seg-bar .lo{position:absolute;left:0;top:0;bottom:0;background:var(--vn-blue)}
+.vipnav .m3-seg-src{font-size:12px;line-height:1.5;color:var(--vn-dim);border-top:1px dashed var(--vn-line);padding-top:8px}
 .vipnav .m3-key{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--vn-soft)}
 .vipnav .m3-key span{display:inline-flex;align-items:center;gap:8px}
 .vipnav .m3-key i{display:inline-block;width:14px;height:8px;background:var(--vn-blue)}
 .vipnav .m3-key i.pale{background:rgba(50,19,183,.2)}
 .vipnav .m3-total{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap;padding:16px 18px;background:var(--vn-paper-soft)}
 .vipnav .m3-total .k{font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--vn-dim)}
-.vipnav .m3-total .n{font-family:var(--font-display,inherit);font-weight:700;font-size:22px;color:var(--vn-ink);font-variant-numeric:tabular-nums}
+.vipnav .m3-total .n{font-family:var(--font-display,inherit);font-weight:700;font-size:22px;line-height:1.35;color:var(--vn-ink);font-variant-numeric:tabular-nums;min-width:0;max-width:100%}
+.vipnav .m3-total .n.long{font-size:16px;line-height:1.45;flex-basis:100%}
+.vipnav .m3-total .n .m3-pts{font-family:var(--font-body,inherit);font-size:14px;font-weight:500;gap:4px}
 
 /* use of funds */
-.vipnav .m3-stack{display:flex;height:12px;background:var(--vn-paper-soft)}
+.vipnav .m3-stack{display:flex;height:12px;background:var(--vn-paper-soft);overflow:hidden}
 .vipnav .m3-stack i{display:block;height:100%}
 .vipnav .m3-legend{display:flex;flex-direction:column;border-top:1px solid var(--vn-line)}
-.vipnav .m3-legend>div{display:grid;grid-template-columns:14px minmax(0,1fr) 56px 72px;gap:12px;align-items:baseline;padding:11px 0;border-bottom:1px solid var(--vn-line)}
+.vipnav .m3-legend>div{display:grid;grid-template-columns:14px minmax(0,1fr) 84px 96px;gap:12px;align-items:baseline;padding:11px 0;border-bottom:1px solid var(--vn-line)}
 .vipnav .m3-legend .sw{width:12px;height:12px;align-self:center}
 .vipnav .m3-legend .c{font-size:14px;color:var(--vn-ink);line-height:1.4}
-.vipnav .m3-legend .c small{display:block;font-size:12.5px;color:var(--vn-soft)}
+.vipnav .m3-legend .c .sm{display:block;font-size:12.5px;color:var(--vn-soft);margin-top:2px}
+.vipnav .m3-legend .m3-pts{font-size:inherit;gap:2px}
 .vipnav .m3-legend .p,.vipnav .m3-legend .a{text-align:right;font-variant-numeric:tabular-nums;font-size:13.5px;color:var(--vn-soft)}
 .vipnav .m3-legend .a{color:var(--vn-ink);font-weight:600}
 
@@ -149,10 +157,25 @@
   .vipnav .mc-progress{width:100%}
   .vipnav .mc-navbtn{width:auto;grid-template-columns:auto auto}
   .vipnav .mc-panel{padding-left:0}
-  .vipnav .m3-mrow{grid-template-columns:minmax(0,1fr) 110px}
-  .vipnav .m3-mrow .t{grid-column:1/-1;grid-row:2}
   .vipnav .m3-def>div{grid-template-columns:1fr;gap:4px}
   .vipnav .m3-cards.one .m3-card-row{grid-template-columns:1fr;gap:3px}
+}
+
+/* phones: compact snapshot tiles so the section rail stays near the top;
+   market stats and the funds legend stack */
+@container (max-width:640px){
+  .vipnav{gap:24px}
+  .vipnav .m3-snap{grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--vn-line);border:1px solid var(--vn-line)}
+  .vipnav .m3-snap>div,.vipnav .m3-snap>div+div{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border:0;background:var(--vn-paper)}
+  .vipnav .m3-snap>div:first-child{grid-column:1/-1}
+  .vipnav .m3-snap dt{font-size:10px;padding-top:0}
+  .vipnav .m3-snap dd{font-size:14px}
+  .vipnav .m3-snap dd.ask{font-size:18px}
+  .vipnav .m3-snap dd.note{font-size:11.5px;line-height:1.4}
+  .vipnav .m3-seg-stats{grid-template-columns:1fr}
+  .vipnav .m3-seg{padding:14px}
+  .vipnav .m3-legend>div{grid-template-columns:14px minmax(0,1fr) auto;row-gap:2px}
+  .vipnav .m3-legend .a{grid-column:2/-1;text-align:left}
 }
 
 @media print{

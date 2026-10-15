@@ -61,9 +61,11 @@ export function Pending() {
   );
 }
 
-/** Text with every "[To be confirmed]" replaced by the dashed chip. */
+/** Text with every "[To be confirmed]" replaced by the dashed chip. A list is
+ *  rendered as bullets (never String(list), which joins items with commas). */
 export function T({ children }) {
   if (children == null || children === "") return null;
+  if (Array.isArray(children)) return <Points value={children} className={null} />;
   const text = String(children);
   if (!text.includes(TBC)) return text;
   const parts = text.split(TBC);
@@ -78,6 +80,26 @@ export function T({ children }) {
     </>
   );
 }
+
+const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+/** Source lines can quote uploaded file names, which sometimes hold an e-mail. */
+const scrub = (v) => (typeof v === "string" ? v.replace(EMAIL, "[email removed]") : v);
+
+/** A percent cell: a bare number (or numeric string) gets "%", anything else
+ *  ("~14–17%", "[To be confirmed]", "CCD") is shown as written. */
+function pctText(v) {
+  if (typeof v === "number") return Number.isFinite(v) ? `${v}%` : null;
+  if (typeof v === "string" && /^\s*-?\d+(\.\d+)?\s*$/.test(v)) return `${v.trim()}%`;
+  return v;
+}
+/** The leading number of a percent cell, for bar widths; null if none. */
+function pctNum(v) {
+  if (typeof v === "number") return Number.isFinite(v) && v > 0 ? v : null;
+  const m = /^\s*~?\s*(\d+(?:\.\d+)?)/.exec(typeof v === "string" ? v : "");
+  return m && Number(m[1]) > 0 ? Number(m[1]) : null;
+}
+const posNum = (v) => typeof v === "number" && Number.isFinite(v) && v > 0;
+const flat = (v) => (Array.isArray(v) ? v.flat(Infinity).join(" ") : String(v ?? ""));
 
 const blank = (v) => v == null || v === "" || (Array.isArray(v) && v.length === 0);
 
@@ -181,7 +203,9 @@ const BODY = {
     );
   },
   tech: (m, s) => <Def rows={s.rows} />,
-  competitors: (m, s) => (
+  competitors: (m, s) => {
+    const advLabel = !m.name || String(m.name).includes(TBC) ? "Advantage" : `${m.name} advantage`;
+    return (
     <>
       {arr(s.groups).map(obj).map((g, gi) => (
         <div className="m3-group" key={gi}>
@@ -192,7 +216,7 @@ const BODY = {
                 <h5 className="m3-card-h"><T>{r[0]}</T></h5>
                 <Row k="What they do" v={r[1]} />
                 <Row k="Key limitation" v={r[2]} />
-                <Row k={`${m.name} advantage`} v={r[3]} />
+                <Row k={advLabel} v={r[3]} />
                 <Row k="Stage" v={r[4]} />
               </article>
             ))}
@@ -201,43 +225,55 @@ const BODY = {
       ))}
       <Note>{s.note}</Note>
     </>
-  ),
+    );
+  },
   market: (m, s) => {
     const rows = arr(s.rows).map(obj);
-    const max = Math.max(0, ...rows.map((r) => Number(r.slice_high_cr) || 0)) || 1;
-    const pct = (v) => `${Math.max(0, Math.min(100, ((Number(v) || 0) / max) * 100))}%`;
+    // A bar only where both slice numbers are real (0 means "not estimated").
+    const hasBar = (r) => posNum(r.slice_low_cr) && posNum(r.slice_high_cr);
+    const max = Math.max(0, ...rows.filter(hasBar).map((r) => Math.max(r.slice_low_cr, r.slice_high_cr)));
+    const pct = (v) => `${Math.max(0, Math.min(100, (v / max) * 100))}%`;
+    const stat = (label, v) => (
+      <div className="m3-stat">
+        <span className="k">{label}</span>
+        <div className={`m3-stat-v${flat(v).length > 48 ? " long" : ""}`}>
+          {blank(v) ? <span className="s">—</span> : <Points value={v} className={null} />}
+        </div>
+      </div>
+    );
     return (
       <>
-        <div className="m3-mkt">
+        <div className="m3-segs">
           {rows.map((r, i) => (
-            <div className="m3-mrow" key={i}>
-              <span className="l">
-                <T>{r.segment}</T>
-                {(r.global_size || r.rationale) && (
-                  <small>
-                    {r.global_size && <><T>{r.global_size}</T> globally</>}
-                    {r.global_size && r.rationale && " · "}
-                    <T>{r.rationale}</T>
-                  </small>
-                )}
-              </span>
-              <span className="t">
-                <span className="hi" style={{ width: pct(r.slice_high_cr) }} />
-                <span className="lo" style={{ width: pct(r.slice_low_cr) }} />
-              </span>
-              <span className="v"><T>{r.slice_label}</T></span>
-              {r.source && <span className="src">Source · <T>{r.source}</T></span>}
-            </div>
+            <article className="m3-card m3-seg" key={i}>
+              <h5 className="m3-card-h"><T>{r.segment}</T></h5>
+              <div className="m3-seg-stats">
+                {stat("Global market", r.global_size)}
+                {stat("Realistic slice", r.slice_label)}
+              </div>
+              {hasBar(r) && (
+                <div className="m3-seg-bar" aria-hidden="true">
+                  <span className="hi" style={{ width: pct(r.slice_high_cr) }} />
+                  <span className="lo" style={{ width: pct(r.slice_low_cr) }} />
+                </div>
+              )}
+              <Row k="Rationale" v={r.rationale} />
+              {!blank(r.source) && <span className="m3-seg-src">Source · <T>{scrub(r.source)}</T></span>}
+            </article>
           ))}
         </div>
-        <div className="m3-key">
-          <span><i />Conservative estimate</span>
-          <span><i className="pale" />Up to the upper estimate</span>
-        </div>
-        <div className="m3-total">
-          <span className="k">Realistic opportunity, per year</span>
-          <span className="n"><T>{s.total}</T></span>
-        </div>
+        {rows.some(hasBar) && (
+          <div className="m3-key">
+            <span><i />Conservative estimate</span>
+            <span><i className="pale" />Up to the upper estimate</span>
+          </div>
+        )}
+        {!blank(s.total) && (
+          <div className="m3-total">
+            <span className="k">Realistic opportunity, per year</span>
+            <div className={`n${flat(s.total).length > 48 ? " long" : ""}`}><Points value={s.total} className={null} /></div>
+          </div>
+        )}
         <Short label="Start here:">{s.beachhead}</Short>
         <Note>{s.tam_note}</Note>
       </>
@@ -256,9 +292,9 @@ const BODY = {
             <tbody>
               {arr(s.holders).map((h, i) => (
                 <tr key={i}>
-                  <td className={arr(h)[3] ? "b" : undefined}><T>{arr(h)[0]}</T></td>
+                  <td className={arr(h)[3] === true ? "b" : undefined}><T>{arr(h)[0]}</T></td>
                   <td className="s"><T>{arr(h)[1]}</T></td>
-                  <td className="n">{arr(h)[2] == null ? "—" : `${arr(h)[2]}%`}</td>
+                  <td className="n">{blank(arr(h)[2]) ? "—" : <T>{pctText(arr(h)[2])}</T>}</td>
                 </tr>
               ))}
             </tbody>
@@ -288,24 +324,24 @@ const BODY = {
     return (
       <>
         <div className="m3-stack" role="img" aria-label="Use of funds split">
-          {rows.map((r, i) => (
-            <i key={i} title={String(r[0] ?? "")}
-              style={{ width: `${Number(r[2]) || 0}%`, background: `rgba(50,19,183,${SHADES[i % 5]})` }} />
-          ))}
+          {rows.map((r, i) => (pctNum(r[2]) == null ? null : (
+            <i key={i} title={flat(r[0])}
+              style={{ width: `${pctNum(r[2])}%`, background: `rgba(50,19,183,${SHADES[i % 5]})` }} />
+          )))}
         </div>
         <div className="m3-legend">
           {rows.map((r, i) => (
             <div key={i}>
               <span className="sw" style={{ background: `rgba(50,19,183,${SHADES[i % 5]})` }} />
-              <span className="c"><T>{r[0]}</T>{r[1] && <small><T>{r[1]}</T></small>}</span>
-              <span className="p">{r[2] == null ? "—" : `${r[2]}%`}</span>
+              <span className="c"><T>{r[0]}</T>{!blank(r[1]) && <span className="sm"><T>{r[1]}</T></span>}</span>
+              <span className="p">{blank(r[2]) ? "—" : <T>{pctText(r[2])}</T>}</span>
               <span className="a"><T>{r[3]}</T></span>
             </div>
           ))}
         </div>
         <div className="m3-total">
           <span className="k">Total</span>
-          <span className="n"><T>{s.total}</T></span>
+          <div className={`n${flat(s.total).length > 48 ? " long" : ""}`}><Points value={s.total} className={null} /></div>
         </div>
         <Note>{s.note}</Note>
       </>
@@ -325,12 +361,14 @@ const BODY = {
       })}
     </div>
   ),
-  questions: (m) => (
-    <>
-      <p className="m3-p">Every open point in this memo, written as a question to send to the founders or ask in the interview.</p>
-      <ol className="mc-qs">{arr(m.questions).map((q, i) => <li key={i}><T>{q}</T></li>)}</ol>
-    </>
-  ),
+  questions: (m) => (arr(m.questions).length === 0
+    ? <p className="m3-p">No founder questions were generated.</p>
+    : (
+      <>
+        <p className="m3-p">Every open point in this memo, written as a question to send to the founders or ask in the interview.</p>
+        <ol className="mc-qs">{arr(m.questions).map((q, i) => <li key={i}><T>{q}</T></li>)}</ol>
+      </>
+    )),
 };
 
 function sectionLabel(k) {
@@ -344,7 +382,7 @@ function SectionContent({ memo, k }) {
     <>
       <span className="m3-eyebrow">{sectionLabel(k)}</span>
       {say && <h4 className="mc-say"><T>{say}</T></h4>}
-      {src && <span className="m3-src">Sources · {src}</span>}
+      {!blank(src) && <span className="m3-src">Sources · <T>{scrub(Array.isArray(src) ? src.join(" · ") : src)}</T></span>}
       {BODY[k](memo, obj(obj(memo.sections)[k]))}
     </>
   );
@@ -409,7 +447,7 @@ export default function VipNavigatorMemo({ memo, appId, onDownload }) {
 
   if (!memo) return null;
   const name = memo.name || "This company";
-  const files = arr(memo.source_files).length;
+  const files = new Set(arr(memo.source_files).map(String)).size;
   const done = ORDER.filter((k) => read[k]).length;
   const i = SEQUENCE.indexOf(cur);
   const prev = i > 0 ? SEQUENCE[i - 1] : null;
@@ -426,7 +464,7 @@ export default function VipNavigatorMemo({ memo, appId, onDownload }) {
 
   return (
     <div className="vipnav m3 mc" tabIndex={-1} onKeyDown={onKeyDown}>
-      <span className="m3-eyebrow rule">VIP memo · {name}</span>
+      <span className="m3-eyebrow rule">VIP memo · <T>{name}</T></span>
       {memo.headline && <h3 className="m3-headline"><T>{memo.headline}</T></h3>}
       <Points value={memo.plain} className="m3-plain" variant="lg" />
       <div className="m3-headrow">
