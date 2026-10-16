@@ -47,6 +47,18 @@ const keyOf = (track, id) => `${track}:${id}`;
 // differ, so every IC read/write goes through nativeOf().
 const nativeOf = (s) => (s?.nativeTrack || s?.track);
 
+// Display-ID search, same rule as the Applications tab: "TIR-26853",
+// "VIP-26303", "SIP-26303" or a bare "26853" all reduce to the digits.
+const ID_QUERY = /^(?:(?:tir|vip|sip)-?)?(\d+)$/;
+const idDigits = (id) => String(id || "").replace(/^\D+/, "");
+const matchesSearch = (s, q) => {
+  if (!q) return true;
+  const idq = q.match(ID_QUERY);
+  if (idq && idDigits(s.applicationId) === idq[1]) return true;
+  return `${s.name || ""} ${s.domain || ""} ${(s.founders || []).join(" ")}`
+    .toLowerCase().includes(q);
+};
+
 // Row decision state, derived — never stored.
 //
 // `accepted` means every memo document on this screen has been signed via
@@ -587,8 +599,7 @@ export function AdminSelectedApplications({ goDetail, onChanged } = {}) {
       .filter((s) => track === "all" || s.track === track)
       .filter((s) => decision === "all"
         || decisionStateOf(s, docsFor(s)) === decision)
-      .filter((s) => !q || `${s.name || ""} ${s.domain || ""} ${(s.founders || []).join(" ")}`
-        .toLowerCase().includes(q))
+      .filter((s) => matchesSearch(s, q))
       .slice()
       .sort((a, b) => {
         const da = ORDER[decisionStateOf(a, docsFor(a))];
