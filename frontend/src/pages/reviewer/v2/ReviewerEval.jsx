@@ -35,6 +35,7 @@ import VipMemoPreview from "../../../components/VipMemoPreview.jsx";
 import VipNavigatorMemo from "../../../components/VipNavigatorMemo.jsx";
 import { saveBlob, useVipMemoV2, vipMemoV2Filename } from "../../../lib/vipMemoV2.js";
 import ProfilePills from "../../../components/ProfilePills.jsx";
+import ReviewTabs, { VIP_MEMO_TABS } from "../../leadership/review/ReviewTabs.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
 import { relabelDisplayId, trackLabel } from "../../../lib/trackLabel.js";
@@ -63,6 +64,10 @@ const V1_PILOT_IDS = new Set([
 ]);
 
 const MAX_FLAGS = 8;
+
+// Admin's AI Memo / Application strip, minus Reviews: reviewers never see
+// each other's reviews.
+const REVIEWER_MEMO_TABS = VIP_MEMO_TABS.filter((t) => t.id !== "reviews");
 
 // Server codes meaning "this review can no longer be written" (reviewer.py).
 const LOCK_CODES = { application_decided: "decided", assignment_removed: "unassigned" };
@@ -292,6 +297,8 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   );
 
   const [memoDownloadError, setMemoDownloadError] = useState(null);
+  const [memoTab, setMemoTab] = useState("memo");
+  useEffect(() => { setMemoTab("memo"); }, [content.id]);
 
   const downloadVipMemoV2 = async (format) => {
     try {
@@ -593,6 +600,27 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
       <div className="os-grid-evaluation">
         {/* LEFT — application */}
         <div className="os-stack">
+          {effTrack === "sip" && memoV2.status === "ready" ? (
+            /* Same AI Memo / Application tabs as the admin detail page; they
+               replace the application card (no AI summary / sections). */
+            <div>
+              <ReviewTabs tab={memoTab} onChange={setMemoTab} tabs={REVIEWER_MEMO_TABS} className="vipnav-tabs" />
+              {memoTab === "memo" && (
+                <>
+                  {memoDownloadError && <div className="inline-error" role="alert">{memoDownloadError}</div>}
+                  <VipNavigatorMemo key={content.id} memo={memoV2.memo} appId={content.id} onDownload={downloadVipMemoV2} />
+                </>
+              )}
+              {memoTab === "application" && (
+                <FullApplication
+                  track={content.track}
+                  application={content.application}
+                  applicationId={content.id}
+                  signedUrl={(id, path) => reviewerApi.fileSignedUrl(content.track, id, path)}
+                />
+              )}
+            </div>
+          ) : (
           <div className="os-card">
             <div className="os-card-head">
               <div className="os-card-title">Application · {application.name}</div>
@@ -621,13 +649,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               )}
 
               <AiSections variant="dropdown" sections={content.aiSections} />
-              {effTrack === "sip" && memoV2.status === "ready" && (
-                <>
-                  {memoDownloadError && <div className="inline-error" role="alert">{memoDownloadError}</div>}
-                  <VipNavigatorMemo key={content.id} memo={memoV2.memo} appId={content.id} onDownload={downloadVipMemoV2} />
-                </>
-              )}
-              {effTrack === "sip" && memoV2.status !== "ready" && (
+              {effTrack === "sip" && (
                 <div className="vip-memo-actions">
                   {vipMemoBusy && <p className="vip-memo-status">Preparing the investment memo — this can take a moment.</p>}
                   <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />
@@ -641,6 +663,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               </button>
             </div>
           </div>
+          )}
 
           {aiBlock && (
             <div className="os-card soft">

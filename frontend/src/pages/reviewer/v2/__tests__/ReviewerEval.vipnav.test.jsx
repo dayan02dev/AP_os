@@ -92,6 +92,42 @@ describe("ReviewerEval — VIP memo Navigator", () => {
     expect(api.getVipMemoV2).toHaveBeenCalledWith("sip", "moved-app");
   });
 
+  it("ready memo: admin-style AI Memo / Application tabs replace the application card", async () => {
+    api.getContent.mockResolvedValue({ ...content("other-app"), aiSummary: "AI says hello" });
+    api.getVipMemoV2.mockResolvedValue(FIXTURE);
+    const { container } = render(<ReviewerEval track="sip" appId="other-app" onBack={vi.fn()} />);
+    expect(await screen.findByText("VIP memo · Acme Robotics")).toBeTruthy();
+    const tabs = container.querySelector("nav.vipnav-tabs");
+    expect(tabs).toBeTruthy();
+    expect([...tabs.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["AI Memo", "Application"]);
+    expect(tabs.querySelector("button.active").textContent).toBe("AI Memo");
+    expect(screen.queryByText("AI says hello")).toBeNull();
+    expect(screen.queryByRole("button", { name: /View full application/ })).toBeNull();
+    expect(screen.getByText(/Your scores/)).toBeTruthy();
+  });
+
+  it("Application tab renders the full application inline, scoring stays visible", async () => {
+    api.getContent.mockResolvedValue(content("other-app"));
+    api.getVipMemoV2.mockResolvedValue(FIXTURE);
+    render(<ReviewerEval track="sip" appId="other-app" onBack={vi.fn()} />);
+    await screen.findByText("VIP memo · Acme Robotics");
+    fireEvent.click(screen.getByRole("button", { name: "Application" }));
+    expect(await screen.findByText("Problem & importance")).toBeTruthy();
+    expect(screen.queryByText("VIP memo · Acme Robotics")).toBeNull();
+    expect(screen.getByText(/Your scores/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Back to evaluation/ })).toBeNull();
+  });
+
+  it("no memo yet: keeps the application card with AI summary and no tabs", async () => {
+    api.getContent.mockResolvedValue({ ...content("other-app"), aiSummary: "AI says hello" });
+    api.getVipMemoV2.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
+    const { container } = render(<ReviewerEval track="sip" appId="other-app" onBack={vi.fn()} />);
+    expect(await screen.findByText("AI says hello")).toBeTruthy();
+    await waitFor(() => expect(api.getVipMemoV2).toHaveBeenCalled());
+    expect(container.querySelector("nav.vipnav-tabs")).toBeNull();
+    expect(screen.getByRole("button", { name: /View full application/ })).toBeTruthy();
+  });
+
   it("failed v2 download shows an inline error and keeps the memo", async () => {
     api.getContent.mockResolvedValue(content("other-app"));
     api.getVipMemoV2.mockResolvedValue(FIXTURE);
