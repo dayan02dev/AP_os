@@ -8,7 +8,7 @@ import base64
 import logging
 
 from app.services import vip_memo_v2_export
-from app.services.vip_memo_gen import extract, openrouter, research, store, writer
+from app.services.vip_memo_gen import extract, market, openrouter, research, store, writer
 from app.services.vip_memo_gen.budget import (
     Budget,
     BudgetExceeded,
@@ -197,6 +197,16 @@ def generate(client, memo_id: str, cfg: GenConfig | None = None, *, final_attemp
             if used.get("writer"):
                 models["writer_used"] = used["writer"]
         memo["source_files"] = state["source_files"]
+        # Dedicated market research + rewrite under its own ceiling; best-effort, so a
+        # failure keeps the writer's market section.
+        try:
+            refreshed = market.refresh(memo, block, cfg, market.new_budget(), runs, deadline)
+        except Exception:
+            log.warning("vip memo market refresh failed", extra={"memo_id": memo_id}, exc_info=True)
+        else:
+            memo = refreshed.memo
+            store.record_sources(client, memo_id, refreshed.sources)
+            notes += [f"market: {n}" for n in refreshed.notes]
         if notes:
             log.warning("vip memo salvaged", extra={"memo_id": memo_id, "notes": len(notes)})
         store.persist_memo(client, memo_id, memo, error=salvage_error(notes))

@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from app.services.vip_memo_gen import openrouter, pipeline, store
+from app.services.vip_memo_gen import market, openrouter, pipeline, store
 from app.services.vip_memo_gen.config import load_config
 from app.services.vip_memo_gen.inputs import FileRef
 from app.services.vip_memo_gen.openrouter import LlmResult, ModelRefusal, OpenRouterError, Usage
@@ -63,6 +63,14 @@ def chat(monkeypatch):
 
     monkeypatch.setattr(openrouter, "chat", fake)
     return log
+
+
+@pytest.fixture(autouse=True)
+def no_market_refresh(request, monkeypatch):
+    """The market step has its own tests; here it is a no-op unless a test opts in."""
+    if "real_market" not in request.keywords:
+        monkeypatch.setattr(market, "refresh",
+                            lambda memo, *a, **k: market.MarketResult(memo, [], [], "none"))
 
 
 def _blank_pdf() -> bytes:
@@ -523,3 +531,35 @@ def test_fallback_success_records_writer_used(chat, monkeypatch):
     assert seen == [cfg.writer_model, "x/fallback"]
     models = store.get_memo(c, mid)["models"]
     assert models["writer_used"] == "x/fallback" and models["writer"] == cfg.writer_model
+
+
+@pytest.mark.real_market
+def test_market_refresh_rewrites_market_and_records_sources(chat, monkeypatch):
+    written = {"market": {"rows": [{"segment": "Seg", "global_size": "$1B (2025, global)",
+                                    "slice_low_cr": 5, "slice_high_cr": 9, "slice_label": "~₹5–9 Cr/yr",
+                                    "rationale": ["AI estimate."], "source": "IMARC, 2025"}],
+                          "total": "₹5–9 Cr/yr", "beachhead": "Seg", "tam_note": ""},
+               "takeaway": "Small but real.", "source": "Research (IMARC 2025)"}
+    chat["writer_texts"] = [FAKE.read_text(), json.dumps(written)]
+    c, mid = _client()
+    _files(monkeypatch, [])
+    assert pipeline.generate(c, mid, CFG) == "ready"
+    memo = store.get_memo(c, mid)["memo_json"]
+    assert memo["sections"]["market"]["rows"][0]["segment"] == "Seg"
+    assert memo["takeaways"]["market"] == "Small but real."
+    assert "[To be confirmed]" not in json.dumps(memo)
+    steps = [r["step"] for r in c.tables["vip_memo_runs"]]
+    assert steps[-2:] == ["market_research", "market_write"]
+    sec = [r for r in c.tables["vip_memo_sections"] if r["section_key"] == "market"][0]
+    assert sec["takeaway"] == "Small but real."
+
+
+@pytest.mark.real_market
+def test_market_refresh_failure_keeps_writer_market(chat, monkeypatch):
+    chat["writer_texts"] = [FAKE.read_text(), "not json at all {"]
+    c, mid = _client()
+    _files(monkeypatch, [])
+    assert pipeline.generate(c, mid, CFG) == "ready"
+    memo = store.get_memo(c, mid)["memo_json"]
+    assert memo["sections"]["market"]["rows"][0]["segment"] == \
+        json.loads(FAKE.read_text())["sections"]["market"]["rows"][0]["segment"]

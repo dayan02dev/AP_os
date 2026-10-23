@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from urllib.parse import urlsplit
 
 import json_repair
@@ -142,14 +142,18 @@ def estimate(cfg: GenConfig, input_chars: int) -> float:
 
 
 def run(profile: dict, cfg: GenConfig, budget: Budget, runs: RunLog,
-        deadline: Deadline | None = None) -> ResearchResult:
-    messages = render_research_messages(profile, cfg.max_searches)
+        deadline: Deadline | None = None, *, messages: list[dict] | None = None,
+        max_searches: int | None = None, step: str = "research") -> ResearchResult:
+    """``messages`` / ``max_searches`` / ``step`` let the market refresh reuse this call."""
+    if max_searches is not None:
+        cfg = replace(cfg, max_searches=max_searches)
+    messages = messages or render_research_messages(profile, cfg.max_searches)
     plugin = {"id": "web", "engine": cfg.search_engine, "max_results": cfg.max_searches}
     if cfg.search_engine == "exa":  # native Google search rejects domain filters
         plugin["exclude_domains"] = list(SOCIAL_DOMAINS)
     try:
         chars = sum(len(m["content"]) for m in messages)
-        result = paid_call("research", cfg.research_model, estimate(cfg, chars), budget, runs, deadline,
+        result = paid_call(step, cfg.research_model, estimate(cfg, chars), budget, runs, deadline,
                            lambda timeout: openrouter.chat(
                                cfg.research_model, messages, max_tokens=cfg.research_max_tokens,
                                plugins=[plugin],

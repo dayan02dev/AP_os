@@ -39,6 +39,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
   "integration: tests that hit real external services (Supabase, OpenRouter). Skipped by default; run with `pytest -m integration`.",
+  "real_market: VIP memo pipeline tests that run the real market-refresh step (stubbed otherwise).",
 ]
 # Default filter: skip @pytest.mark.integration unless explicitly requested.
 addopts = "-m 'not integration' --cov=app --cov-report=term-missing --cov-fail-under=70"
