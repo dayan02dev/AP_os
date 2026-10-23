@@ -99,6 +99,18 @@ def test_db_memo_served_for_non_pilot(fake):
     assert memo is not None and memo["name"] == "Acme Robotics"
 
 
+def test_served_memo_carries_verification_tags_not_legacy_placeholder(monkeypatch):
+    memo = copy.deepcopy(FIXTURE)
+    memo["snapshot"]["ask"]["value"] = "[To be confirmed]"
+    memo["sections"]["market"]["total"] = "[To be confirmed]"
+    sb = FakeSupabase(_apps([_memo_row(NON_PILOT, memo)]))
+    monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
+    served = vip_memo_v2.get_memo_v2(NON_PILOT)
+    assert served["snapshot"]["ask"]["value"] == "[Needs founder verification]"
+    assert served["sections"]["market"]["total"] == "[Needs AI cross-verification]"
+    assert "[To be confirmed]" not in json.dumps(served)
+
+
 def test_get_memo_v2_missing_row_returns_none(fake):
     assert vip_memo_v2.get_memo_v2(OTHER_PILOT) is None
 
@@ -561,6 +573,7 @@ def test_export_has_no_recommendation_text():
 # ─── representation fixes (market cards, percents, empty questions, glyphs) ──
 
 TBC = "[To be confirmed]"
+FOUNDER = "[Needs founder verification]"  # exports retag the legacy placeholder
 
 
 def _shaped_memo() -> dict:
@@ -609,9 +622,9 @@ def test_export_percent_cells_keep_text_and_never_double_percent():
     memo = _shaped_memo()
     blocks = vip_memo_v2_export.build_blocks(memo)
     funds = next(b for b in blocks if b[0] == "table" and b[1][0] == "Category")
-    assert [r[2] for r in funds[2]] == ["~14–17%", "24%", "15%", TBC, ""]
+    assert [r[2] for r in funds[2]] == ["~14–17%", "24%", "15%", FOUNDER, ""]
     holders = next(b for b in blocks if b[0] == "table" and b[1][0] == "Holder")
-    assert [r[2] for r in holders[2]] == ["60%", TBC, "CCD", "—"]
+    assert [r[2] for r in holders[2]] == ["60%", FOUNDER, "CCD", "—"]
     for text in _both_texts(memo):
         assert "%%" not in text and "]%" not in text and "—%" not in text
         assert "14-17%" in text or "14–17%" in text

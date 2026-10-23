@@ -23,7 +23,8 @@ from xml.sax.saxutils import escape
 
 log = logging.getLogger(__name__)
 
-TBC = "[To be confirmed]"
+from .vip_memo_gen.tags import FOUNDER, TAGS, retag
+
 NAVY = "1F3864"
 BLUE = "2E75B6"
 ALT = "EEF3FA"
@@ -152,7 +153,7 @@ def _why_points(rows: list) -> list[tuple[str, Any]]:
     def combine(title: str, values: list) -> tuple[str, Any]:
         if any(isinstance(v, list) for v in values):
             return title, [i for v in values for i in _items(v)]
-        return title, " ".join(_s(v) for v in values) if values else TBC
+        return title, " ".join(_s(v) for v in values) if values else FOUNDER
 
     points = []
     matched: set[str] = set()
@@ -165,6 +166,7 @@ def _why_points(rows: list) -> list[tuple[str, Any]]:
 
 def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     """The memo as an ordered list of renderer-neutral blocks."""
+    memo, _ = retag(memo)  # memos stored before the two tags still render with them
     name = _s(memo.get("name")) if memo.get("name") else "This company"
     snap = _d(memo.get("snapshot"))
     sec = _d(memo.get("sections"))
@@ -226,7 +228,7 @@ def build_blocks(memo: dict[str, Any]) -> list[tuple]:
     for group in _l(comp.get("groups")):
         g = _d(group)
         b.append(("h2", _s(g.get("segment"))))
-        adv = "Advantage" if TBC in name else f"{name} advantage"
+        adv = "Advantage" if any(t in name for t in TAGS) else f"{name} advantage"
         b.append(("table", ["Competitor", "What they do", "Key limitation", adv, "Stage"],
                   [_row(r, 5) for r in _l(g.get("rows"))], None))
     prose(comp.get("note"), "note")

@@ -27,6 +27,7 @@ from .config import GenConfig
 from .openrouter import PRICES, LlmResult, ModelRefusal, OpenRouterError
 from .prompts import REPAIR_PROMPT, REPAIR_SYSTEM
 from .schema import MemoValidationError, memo_to_dict, parse_memo, salvage
+from .tags import retag
 
 log = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ def validate(text: str) -> tuple[dict, list[str]]:
     data = _load(text)
     _stamp(data)  # model values for these are never trusted (nor required)
     data, notes = salvage(data)
-    memo = memo_to_dict(parse_memo(data))
+    memo, _ = retag(memo_to_dict(parse_memo(data)))
     _stamp(memo)
     return memo, notes
 

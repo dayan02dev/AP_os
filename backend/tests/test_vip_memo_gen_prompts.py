@@ -65,12 +65,12 @@ def test_writer_instructions_shape_rules():
     assert '"$4.2B (2025, global)"' in w and "never a sentence" in w
     assert '"~₹230–780 Cr"' in w and "set both to 0" in w
     assert "2–4 short bullets" in w
-    assert 'source must be exactly "[To be confirmed]"' in w
+    assert 'source must be exactly "[Needs AI cross-verification]"' in w
     # funds / holders percents
     assert '"~14–17%"' in w and "never compute" in w and "approximate" in w
     # competitors, team, headline, questions
     assert "at least 2 named competitors" in w and "Indian" in w
-    assert 'Never add a row that is entirely "[To be confirmed]"' in w
+    assert 'Never add a row that is entirely "[Needs AI cross-verification]"' in w
     assert "one person per entry" in w
     assert "at most 25 words" in w
     assert "exactly 7" in w and "required" in w

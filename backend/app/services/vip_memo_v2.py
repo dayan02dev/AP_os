@@ -20,6 +20,7 @@ from ..supabase_client import get_admin_client
 from . import vip_memo_v2_export
 from .vip_memo_gen import store
 from .vip_memo_gen.schema import MemoValidationError, memo_to_dict, parse_memo
+from .vip_memo_gen.tags import retag
 
 log = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ def load_memo_v2(app_id: str) -> tuple[dict[str, Any], str | None] | None:
             continue
         memo, memo_id = found
         try:
-            return memo_to_dict(parse_memo(memo)), memo_id
+            return retag(memo_to_dict(parse_memo(memo)))[0], memo_id
         except MemoValidationError as exc:
             log.warning("vip memo v2 has an invalid shape",
                         extra={"application_id": app_id, "errors": exc.messages[:5]})
