@@ -1,6 +1,7 @@
-// TeamListAnswer — TIR basic_teammates jsonb array.
+// TeamListAnswer — TIR / VIP basic_teammates jsonb array.
 //
-// Each entry is shape { full_name | name, email, phone, current_org | org, ... }.
+// The wizard writes { fullName, email, phone, org, ... }; a few hand-patched
+// rows use full_name / name / current_org instead.
 // We render a small numbered list — name (bold) + email/org meta below.
 
 import EmptyAnswer from "./EmptyAnswer.jsx";
@@ -11,6 +12,7 @@ export default function TeamListAnswer({ value }) {
     <ul className="ans-team" role="list">
       {value.map((entry, idx) => {
         const name =
+          entry?.fullName ||
           entry?.full_name ||
           entry?.name ||
           entry?.email ||

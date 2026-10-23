@@ -383,6 +383,22 @@ export const SIP_SCHEMA = [
       },
       {
         number: "06",
+        key: "basic_has_team",
+        label: "Do you have a team?",
+        type: "choice",
+        options: ["Yes — I have co-founders", "No — going solo for now"],
+        required: true,
+      },
+      {
+        number: "07",
+        key: "basic_teammates",
+        label: "Co-founders invited to collaborate on this application.",
+        help: "Each invited teammate answers the same three onboarding questions.",
+        type: "team",
+        required: false,
+      },
+      {
+        number: "08",
         key: "sip_incorporated",
         label:
           "Is your venture incorporated as a Private Limited company in India?",
@@ -396,7 +412,7 @@ export const SIP_SCHEMA = [
         required: true,
       },
       {
-        number: "07",
+        number: "09",
         key: "sip_trl",
         label: "Where is your core IP / technology today (TRL)?",
         help: "VIP is calibrated for ventures with a working prototype or beyond.",
@@ -410,7 +426,7 @@ export const SIP_SCHEMA = [
         required: true,
       },
       {
-        number: "08",
+        number: "10",
         key: "sip_founders",
         label: "Cap table.",
         help: "Each shareholder — name (or entity), type, and % share.",
@@ -418,7 +434,7 @@ export const SIP_SCHEMA = [
         required: true,
       },
       {
-        number: "09",
+        number: "11",
         key: "basic_incubator_association",
         label:
           "Are you currently (or have you been) associated with any other incubator or accelerator?",
@@ -427,7 +443,7 @@ export const SIP_SCHEMA = [
         required: true,
       },
       {
-        number: "10",
+        number: "12",
         key: "basic_incubator_details",
         label: "Tell us more about your incubator/accelerator association.",
         help: "Names, dates, funding/grants, nature of support.",
@@ -435,7 +451,7 @@ export const SIP_SCHEMA = [
         required: false,
       },
       {
-        number: "11",
+        number: "13",
         key: "basic_hear_about",
         label: "How did you hear about ARTPARK?",
         type: "choice",
