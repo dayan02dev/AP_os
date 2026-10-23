@@ -8,7 +8,11 @@ import React, { useCallback, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import "./VipNavigatorMemo.css";
 
-const TBC = "[To be confirmed]";
+// Placeholders in memo text (backend vip_memo_gen/tags.py). The legacy one is
+// retagged server-side; it is still accepted here and shown as a founder check.
+const VERIFY = "[Needs AI cross-verification]";
+const TAG_RE = /(\[Needs founder verification\]|\[Needs AI cross-verification\]|\[To be confirmed\])/;
+const isTagged = (v) => TAG_RE.test(String(v ?? ""));
 const ORDER = ["what", "why", "product", "tech", "competitors", "market", "team", "milestones", "funds", "risks"];
 const SEQUENCE = [...ORDER, "questions"];
 const TITLES = {
@@ -55,26 +59,30 @@ function formatDate(value) {
   return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1] || m[2]} ${m[1]}`;
 }
 
-export function Pending() {
-  return (
-    <span className="m3-pending" title="Not yet confirmed — needs checking with the founders">To confirm</span>
-  );
+const CHIP = {
+  founder: { label: "Founder to verify", title: "Needs founder verification — only the startup can supply or confirm this" },
+  verify: { label: "AI cross-check", title: "Needs AI cross-verification — check against third-party sources" },
+};
+
+export function Pending({ kind = "founder" }) {
+  const c = CHIP[kind] || CHIP.founder;
+  return <span className={`m3-pending m3-${kind}`} title={c.title}>{c.label}</span>;
 }
 
-/** Text with every "[To be confirmed]" replaced by the dashed chip. A list is
+/** Text with every verification tag replaced by its dashed chip. A list is
  *  rendered as bullets (never String(list), which joins items with commas). */
 export function T({ children }) {
   if (children == null || children === "") return null;
   if (Array.isArray(children)) return <Points value={children} className={null} />;
   const text = String(children);
-  if (!text.includes(TBC)) return text;
-  const parts = text.split(TBC);
+  if (!isTagged(text)) return text;
+  // split() with a capture group keeps each tag at the odd indexes.
+  const parts = text.split(TAG_RE);
   return (
     <>
       {parts.map((part, i) => (
         <React.Fragment key={i}>
-          {part}
-          {i < parts.length - 1 && <Pending />}
+          {i % 2 ? <Pending kind={part === VERIFY ? "verify" : "founder"} /> : part}
         </React.Fragment>
       ))}
     </>
@@ -86,7 +94,7 @@ const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const scrub = (v) => (typeof v === "string" ? v.replace(EMAIL, "[email removed]") : v);
 
 /** A percent cell: a bare number (or numeric string) gets "%", anything else
- *  ("~14–17%", "[To be confirmed]", "CCD") is shown as written. */
+ *  ("~14–17%", "[Needs founder verification]", "CCD") is shown as written. */
 function pctText(v) {
   if (typeof v === "number") return Number.isFinite(v) ? `${v}%` : null;
   if (typeof v === "string" && /^\s*-?\d+(\.\d+)?\s*$/.test(v)) return `${v.trim()}%`;
@@ -204,7 +212,7 @@ const BODY = {
   },
   tech: (m, s) => <Def rows={s.rows} />,
   competitors: (m, s) => {
-    const advLabel = !m.name || String(m.name).includes(TBC) ? "Advantage" : `${m.name} advantage`;
+    const advLabel = !m.name || isTagged(m.name) ? "Advantage" : `${m.name} advantage`;
     return (
     <>
       {arr(s.groups).map(obj).map((g, gi) => (
@@ -471,7 +479,7 @@ export default function VipNavigatorMemo({ memo, appId, onDownload }) {
         <p className="m3-meta" data-testid="vipnav-meta">
           Prepared by {memo.prepared_by || "the ARTPARK venture team"} from the <b>application</b>,{" "}
           <b>{files} uploaded file{files === 1 ? "" : "s"}</b> and <b>independent research</b>
-          {memo.generated_at ? ` · ${formatDate(memo.generated_at)}` : ""}. <Pending /> marks facts to check with the founders.
+          {memo.generated_at ? ` · ${formatDate(memo.generated_at)}` : ""}. <Pending /> marks facts the founders must verify; <Pending kind="verify" /> marks outside facts to cross-check.
         </p>
         {onDownload && (
           <div className="m3-actions">

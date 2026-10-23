@@ -24,6 +24,8 @@
 
 /* quiet "to confirm" chip */
 .vipnav .m3-pending{display:inline-block;font-family:var(--font-body,inherit);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;color:var(--vn-soft);border:1px dashed var(--vn-line-strong);border-radius:2px;padding:1px 6px;line-height:1.5;vertical-align:1px;white-space:nowrap}
+.vipnav .m3-founder{color:#8a5a00;border-color:#d9a640}
+.vipnav .m3-verify{color:var(--vn-blue);border-color:var(--vn-blue)}
 .vipnav .m3-src{font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--vn-dim)}
 
 /* snapshot */

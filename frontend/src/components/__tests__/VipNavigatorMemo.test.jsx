@@ -44,8 +44,8 @@ describe("VipNavigatorMemo — header + snapshot", () => {
     expect(screen.getByText(FIXTURE.plain)).toBeTruthy();
     const meta = screen.getByTestId("vipnav-meta");
     expect(meta.textContent).toContain("Prepared by Test fixture team from the application, 3 uploaded files and independent research · 15 Jan 2026.");
-    expect(meta.textContent).toContain("marks facts to check with the founders.");
-    expect(within(meta).getByText("To confirm")).toBeTruthy();
+    expect(meta.textContent).toContain("marks facts the founders must verify; AI cross-check marks outside facts to cross-check.");
+    expect(within(meta).getByText("Founder to verify")).toBeTruthy();
   });
 
   it("renders the snapshot (ask + instrument, sector, stage, location, team)", () => {
@@ -59,7 +59,7 @@ describe("VipNavigatorMemo — header + snapshot", () => {
     expect(within(snap).getByText("TRL 4 · Active pilots")).toBeTruthy();
     expect(within(snap).getByText("Wile Coyote + 1")).toBeTruthy();
     // instrument + location are "[To be confirmed]" → chips, never raw text
-    expect(within(snap).getAllByText("To confirm").length).toBe(2);
+    expect(within(snap).getAllByText("Founder to verify").length).toBe(2);
     expect(snap.textContent).not.toContain("[To be confirmed]");
   });
 
@@ -192,20 +192,29 @@ describe("VipNavigatorMemo — section bodies", () => {
   it("renders a dashed TO CONFIRM chip wherever a value contains [To be confirmed]", () => {
     setup();
     fireEvent.click(navBtn("The product"));
-    expect(within(panel()).getByText("To confirm")).toBeTruthy();
+    expect(within(panel()).getByText("Founder to verify")).toBeTruthy();
     expect(panel().textContent).not.toContain("[To be confirmed]");
     fireEvent.click(navBtn("Competitors"));
-    expect(within(panel()).getByText("To confirm")).toBeTruthy();
+    expect(within(panel()).getByText("Founder to verify")).toBeTruthy();
     fireEvent.click(navBtn("Team and ownership"));
-    expect(within(panel()).getAllByText("To confirm").length).toBeGreaterThan(0);
+    expect(within(panel()).getAllByText("Founder to verify").length).toBeGreaterThan(0);
+  });
+
+  it("renders the two verification tags as distinct chips", () => {
+    const memo = { ...FIXTURE, headline: "Rivals [Needs AI cross-verification]; ask [Needs founder verification]" };
+    render(<VipNavigatorMemo memo={memo} appId="app-tags" />);
+    const h = document.querySelector(".m3-headline");
+    expect(h.textContent).toBe("Rivals AI cross-check; ask Founder to verify");
+    expect(within(h).getByText("AI cross-check").className).toContain("m3-verify");
+    expect(within(h).getByText("Founder to verify").className).toContain("m3-founder");
   });
 
   it("keeps the surrounding text when [To be confirmed] is embedded", () => {
     const memo = { ...FIXTURE, headline: "Sells to [To be confirmed] buyers" };
     setup({ memo });
     const h = screen.getByRole("heading", { level: 3 });
-    expect(h.textContent).toBe("Sells to To confirm buyers");
-    expect(within(h).getByText("To confirm").className).toContain("m3-pending");
+    expect(h.textContent).toBe("Sells to Founder to verify buyers");
+    expect(within(h).getByText("Founder to verify").className).toContain("m3-pending");
   });
 });
 
@@ -338,7 +347,7 @@ describe("VipNavigatorMemo — market cards", () => {
     goMarket(MARKET);
     expect(panel().textContent).not.toContain(TBCX);
     const card = panel().querySelectorAll(".m3-seg")[1];
-    expect(within(card).getAllByText("To confirm").length).toBeGreaterThanOrEqual(2);
+    expect(within(card).getAllByText("Founder to verify").length).toBeGreaterThanOrEqual(2);
     expect(within(panel()).getByText("Combined slice not stated.").tagName).toBe("LI");
     expect(within(panel()).getByText("Packhouses in Pune.").tagName).toBe("LI");
   });
