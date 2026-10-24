@@ -557,6 +557,7 @@ def test_roster_metrics(client, monkeypatch, _clear_overrides):
             {"id":"a2","reviewer_user_id":"rev-1","application_id":"app-2","application_track":"tir","declined_at":None,"reassigned_to":None,"completed_at":None,"assigned_at":"2026-06-01T00:00:00+00:00"}],
         "reviews":[{"id":"rv1","reviewer_user_id":"rev-1","application_id":"app-1","application_track":"tir","score_problem":8,"score_solution":8,"score_tech":8,"score_founders":8,"score_commitment":8,"submitted_at":"2026-06-03T00:00:00+00:00"}],
         "ai_screening":[{"application_id":"app-1","application_track":"tir","score_overall":8.5}],
+        "tir_applications":[{"id":"app-1","status":"evaluated"},{"id":"app-2","status":"under_review"}],
     })
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
     r = client.get("/admin/platform/reviewers")
@@ -822,6 +823,8 @@ def test_roster_includes_batches_grouping(client, monkeypatch, _clear_overrides)
             {"application_id": "app-2", "application_track": "tir", "batch_id": "b1"},
         ],
         "batches": [{"id": "b1", "name": "Batch A"}],
+        "batch_reviewers": [{"batch_id": "b1", "reviewer_user_id": "rev-1"}],
+        "tir_applications": [{"id": f"app-{i}", "status": "under_review"} for i in (1, 2, 3)],
     })
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
     r = client.get("/admin/platform/reviewers")
@@ -876,6 +879,8 @@ def test_roster_excludes_rejected_and_adds_unbatched_bucket(client, monkeypatch,
         {"application_id": "app-2", "application_track": "tir", "batch_id": "b1"},
     ]
     tables["batches"] = [{"id": "b1", "name": "Batch A"}]
+    tables["batch_reviewers"] = [{"batch_id": "b1", "reviewer_user_id": "rev-a"},
+                                 {"batch_id": "b1", "reviewer_user_id": "rev-b"}]
     _install_db(monkeypatch, tables)
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
 
@@ -974,6 +979,7 @@ def test_reviewer_applications_lists_active_assignments(client, monkeypatch, _cl
         "application_batches": [{"application_id": "app-1", "application_track": "tir",
                                  "batch_id": "b-1"}],
         "batches": [{"id": "b-1", "name": "Batch A"}],
+        "batch_reviewers": [{"batch_id": "b-1", "reviewer_user_id": "rev-1"}],
     })
     r = client.get("/admin/platform/reviewers/rev-1/applications")
     assert r.status_code == 200
@@ -1115,6 +1121,8 @@ def test_roster_progress_is_work_done_union(client, monkeypatch, _clear_override
          "application_track": "tir", "declined_at": None, "reassigned_to": None,
          "completed_at": None} for c in "abcd"
     ]
+    tables["tir_applications"] = [
+        {"id": f"app-{c}", "status": "under_review"} for c in "abcd"]
     tables["reviews"] = [
         {"id": "r-x", "reviewer_user_id": "rev-1", "application_id": "app-x",
          "application_track": "tir", "submitted_at": "2026-06-20T00:00:00Z"},

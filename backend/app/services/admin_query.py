@@ -204,15 +204,14 @@ def _assignment_batch_name(
     """The ONE batch a reviewer's work on an app is filed under — shared by the
     roster row's per-batch split and the Manage drawer (ADM-10).
 
-    An app may sit in many batches (migration 034). Prefer the app's batches the
-    reviewer belongs to (application_batches ∩ batch_reviewers); otherwise any
-    of the app's batches. Ties break by name so the pick never depends on row
-    order. None when the app is in no batch (UI: "Unbatched" / "Random
-    allotment").
+    An app may sit in many batches (migration 034). Work is only ever filed
+    under a batch the reviewer is a MEMBER of (application_batches ∩
+    batch_reviewers); ties break by name so the pick never depends on row
+    order. None otherwise (UI: "Unbatched" / "Random allotment") — never
+    label work with a batch the reviewer does not belong to.
     """
-    named = [b for b in app_batches or [] if b.get("name")]
-    mine = [b for b in named if b.get("id") in reviewer_batch_ids]
-    pool = mine or named
+    pool = [b for b in app_batches or []
+            if b.get("name") and b.get("id") in reviewer_batch_ids]
     if not pool:
         return None
     return min(b["name"] for b in pool)
@@ -809,28 +808,21 @@ def _fetch_all(make_query, *, page: int = _ROSTER_PAGE) -> list[dict]:
     return rows
 
 
-# App statuses in which an unreviewed assignment is still real work. An
-# assignment left on an app that already moved on (evaluated / jury_review /
-# decided) is stale — it is not "pending" and not counted as assigned (ADM-10).
-_OPEN_REVIEW_STATUSES = frozenset({"submitted", "under_review"})
-
-
 def _reviewer_work(active_keys: set, submitted_keys: set, status_of) -> tuple[set, set]:
     """THE reviewer-workload definition shared by the roster progress column,
-    its batch breakdown and the Manage-applications drawer.
+    its batch breakdown, the Manage-applications drawer and the reviewer queue.
 
     Returns ``(completed, pending)``: completed = apps the reviewer submitted a
-    review for (whether or not the assignment row survived); pending = active
-    unreviewed assignments on apps still in review (an app whose row could
-    not be read — status None — is given the benefit of the doubt). Rejected
-    apps are excluded from both. ``assigned`` = completed ∪ pending (disjoint).
+    review for (whether or not the assignment row survived), minus rejected
+    apps; pending = active unreviewed assignments whose app row exists and is
+    still open for review (reviewer_query.is_open_for_review). An app flips to
+    'evaluated' after its first review, so that is still real work for the
+    other reviewers. Missing app rows (status None) are broken keys, not work.
+    ``assigned`` = completed ∪ pending (disjoint).
     """
     completed = {k for k in submitted_keys if status_of(k) != "rejected"}
-    pending = set()
-    for k in active_keys - submitted_keys:
-        st = status_of(k)
-        if st is None or st in _OPEN_REVIEW_STATUSES:
-            pending.add(k)
+    pending = {k for k in active_keys - submitted_keys
+               if reviewer_query.is_open_for_review(status_of(k))}
     return completed, pending
 
 
@@ -955,9 +947,13 @@ def fetch_roster() -> dict[str, Any]:
         completed = len(done_keys)
         assigned = completed + len(pending_keys)
 
-        # Group the same work set by batch name; apps with no batch membership
-        # go under "Unbatched" so the breakdown sums to `assigned`.
-        batch_counts: dict[str, int] = {}
+        # Group the same work set by batch. Every batch the reviewer is a
+        # MEMBER of gets a chip (count may be 0); work in none of them goes
+        # under "Unbatched" so the breakdown sums to `assigned`.
+        batch_counts: dict[str, int] = {
+            batch_names[bid]: 0 for bid in rev_batch_ids[rid]
+            if batch_names.get(bid)
+        }
         unbatched = 0
         for key in done_keys | pending_keys:
             name = _assignment_batch_name(app_batches.get(key), rev_batch_ids[rid])
@@ -1033,8 +1029,8 @@ def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
     reviewed (even if the assignment row was since deleted) plus active
     unreviewed assignments on apps still in review. Returns
     ``{"applications": [...]}`` with each row:
-    ``{id, track, project, industry, status, batch, reviewStatus,
-    assignment_id, detached}``. ``detached`` = reviewed but no live assignment
+    ``{id, track, effective_track, display_id, project, industry, status,
+    batch, reviewStatus, assignment_id, detached}`` (track is NATIVE). ``detached`` = reviewed but no live assignment
     (``assignment_id`` is then None). ``batch`` is None when the app belongs to
     no batch (UI → "Random allotment").
     """
@@ -1112,7 +1108,9 @@ def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
             )
         out.append({
             "id":            app_id,
-            "track":         track,
+            "track":         track,  # NATIVE — writes key off it
+            "effective_track": r.get("moved_to_track") or track,
+            "display_id":    stats.compose_display_id(track, r.get("display_seq")),
             "project":       project,
             "industry":      (industries.get(key) or {}).get("label"),
             "status":        r.get("status"),

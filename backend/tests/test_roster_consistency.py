@@ -46,6 +46,7 @@ def _backend():
         "reviewer_assignments": [_asg("DONE"), _asg("OPEN"), _asg("STALE"), _asg("REJ")],
         "reviews": [_rv("DONE"), _rv("DET"), _rv("REJ")],
         "batches": [{"id": "b1", "name": "Batch 1"}],
+        "batch_reviewers": [{"batch_id": "b1", "reviewer_user_id": R}],
         "application_batches": [
             {"application_id": a, "application_track": "tir", "batch_id": "b1"}
             for a in ("DONE", "DET", "OPEN", "STALE")
@@ -71,9 +72,11 @@ def _roster_row():
 def test_roster_pending_excludes_stale_assignments(sb):
     r = _roster_row()
     assert r["completed"] == 2        # DONE + DET (REJ excluded)
-    assert r["pending"] == 1          # OPEN only — STALE's app left review
-    assert r["assigned"] == 3         # completed + pending
-    assert r["progress"] == "2 / 3"
+    # OPEN + STALE: an app flips to 'evaluated' after its FIRST review, so an
+    # unreviewed assignment on it is still real work (only DECIDED apps close).
+    assert r["pending"] == 2
+    assert r["assigned"] == 4         # completed + pending
+    assert r["progress"] == "2 / 4"
 
 
 def test_roster_batch_breakdown_sums_to_assigned(sb):
@@ -86,7 +89,7 @@ def test_drawer_lists_the_same_set_as_roster(sb):
     apps = admin_query.fetch_reviewer_applications(R)["applications"]
     assert len(apps) == r["assigned"]
     by_id = {a["id"]: a for a in apps}
-    assert set(by_id) == {"DONE", "DET", "OPEN"}
+    assert set(by_id) == {"DONE", "DET", "OPEN", "STALE"}
     assert by_id["OPEN"]["reviewStatus"] == "pending"
     assert by_id["DET"]["reviewStatus"] == "submitted"
     assert by_id["DET"]["detached"] is True
@@ -153,6 +156,7 @@ def test_roster_and_drawer_agree_per_batch_for_multi_batch_apps(multi):
     for a in apps:
         name = a["batch"] or "Unbatched"
         drawer_split[name] = drawer_split.get(name, 0) + 1
-    assert row_split == {"A": 1, "B": 2, "C": 1, "Unbatched": 1}
+    # M4 sits only in non-member batches (A, Maybe) → Unbatched, never "A".
+    assert row_split == {"B": 2, "C": 1, "Unbatched": 2}
     assert drawer_split == row_split
     assert sum(row_split.values()) == r["assigned"] == len(apps)
