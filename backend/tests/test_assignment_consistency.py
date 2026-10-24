@@ -221,3 +221,42 @@ def test_jury_review_decision_detaches_app_from_batch_and_all_reviewers(monkeypa
 
     assert store["reviewer_assignments"] == []
     assert store["application_batches"] == []
+
+
+def test_detach_returns_deleted_assignment_triples():
+    from app.services import applications_query as aq
+    store = {
+        "reviewer_assignments": [
+            {"application_id": "a1", "application_track": "tir", "reviewer_user_id": "r1"},
+            {"application_id": "a1", "application_track": "tir", "reviewer_user_id": "r2"},
+        ],
+        "application_batches": [],
+    }
+    out = aq.detach_application_from_review(_Client(store), "a1", "tir", remove_batch_link=True)
+    assert sorted(t["reviewer_user_id"] for t in out["deleted_assignments"]) == ["r1", "r2"]
+    assert all(t["application_id"] == "a1" and t["application_track"] == "tir"
+               for t in out["deleted_assignments"])
+
+
+def test_unassign_endpoint_audits_deleted_triples(client, monkeypatch, _clear_overrides):
+    from app.routers import admin_platform as ap
+
+    store = {
+        "reviewer_assignments": [
+            {"application_id": "app-1", "application_track": "tir", "reviewer_user_id": "rev-1"},
+        ],
+        "application_batches": [],
+    }
+    fake = _Client(store)
+    audits = []
+    monkeypatch.setattr(ap, "get_admin_client", lambda: fake)
+    monkeypatch.setattr(ap, "write_audit", lambda **kw: audits.append(kw))
+    app.dependency_overrides[get_current_user] = _override_user("admin-1")
+
+    r = client.post("/admin/platform/batches/unassign",
+                    json={"items": [{"track": "tir", "application_id": "app-1"}]})
+    assert r.status_code == 200, r.text
+    after = audits[-1]["after"]
+    assert after["deleted_assignments"] == [
+        {"application_id": "app-1", "application_track": "tir", "reviewer_user_id": "rev-1"}]
+    assert after["truncated"] is False

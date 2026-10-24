@@ -701,6 +701,7 @@ def detach_application_from_review(
     app is unassigned from a batch or rejected at Gate-1.
     """
     assignments_removed = 0
+    deleted: list[dict[str, Any]] = []
     try:
         res = (
             sb.table("reviewer_assignments").delete()
@@ -708,7 +709,13 @@ def detach_application_from_review(
             .eq("application_track", track)
             .execute()
         )
-        assignments_removed = len(res.data or [])
+        deleted = [
+            {"application_id": r.get("application_id") or application_id,
+             "application_track": r.get("application_track") or track,
+             "reviewer_user_id": r.get("reviewer_user_id")}
+            for r in res.data or []
+        ]
+        assignments_removed = len(deleted)
     except Exception:
         log.warning("detach: reviewer_assignments delete failed",
                     extra={"application_id": application_id, "track": track})
@@ -726,7 +733,8 @@ def detach_application_from_review(
             log.warning("detach: application_batches delete failed",
                         extra={"application_id": application_id, "track": track})
     return {"assignments_removed": assignments_removed,
-            "batch_links_removed": batch_links_removed}
+            "batch_links_removed": batch_links_removed,
+            "deleted_assignments": deleted}
 
 
 def fetch_ai_screening_for(

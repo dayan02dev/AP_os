@@ -757,12 +757,14 @@ async def unassign_applications(
     sb = get_admin_client()
     removed = 0
     assignments_removed = 0
+    deleted: list[dict] = []
     for aid, track in _native_items(body.items):
         result = applications_query.detach_application_from_review(
             sb, aid, track, remove_batch_link=True,
         )
         removed += result["batch_links_removed"]
         assignments_removed += result["assignments_removed"]
+        deleted += result.get("deleted_assignments") or []
     write_audit(
         actor_user_id=user["user_id"],
         actor_role=actor_role_of(user),
@@ -771,7 +773,8 @@ async def unassign_applications(
         target_id=None,
         after={"removed": removed, "assignments_removed": assignments_removed,
                "count": len(body.items),
-               "application_ids": [i.application_id for i in body.items][:200]},
+               "application_ids": [i.application_id for i in body.items][:200],
+               **_triples_audit(deleted)},
     )
     return {"removed": removed, "assignments_removed": assignments_removed}
 
