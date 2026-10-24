@@ -291,10 +291,9 @@ def test_full_vip_lifecycle_cross_view_consistency(w: World):
         note("S2 still assigned to someone after removal from its only batch")
     if w.pipeline()["S2"]["batches"]:
         note("pipeline S2 still shows a batch")
-    # removing the app leaves it 'under_review' with nobody assigned
-    if w.status("S2") == "under_review":
-        note("S2 is 'under_review' with 0 reviewers and no batch after removal "
-             "(status never reverts)")
+    # NOTE: S2 stays 'under_review' with nobody assigned — the state machine
+    # deliberately has no rewinds (state_machine.py "Phase 1 excludes rewinds",
+    # mirrored in lib/statusMachine.js). Product decision, not asserted here.
     problems += _cross_view_problems(w, "after removing S2")
 
     # 6. delete the batch.
@@ -458,7 +457,8 @@ def test_multibatch_shared_reviewer_survives_removal_from_one(w: World):
     # rename A: pipeline + roster chips follow
     assert w.admin.patch(f"/admin/platform/batches/{a}", json={"name": "A2"}).status_code == 200
     assert w.pipeline()["S1"]["batch"] == "A2"
-    assert [x["name"] for x in w.roster()["rev-1"]["batches"]] == ["A2"]
+    # rev-1 is still a MEMBER of B (only the app left it) → B chip with count 0
+    assert {x["name"]: x["count"] for x in w.roster()["rev-1"]["batches"]} == {"A2": 1, "B": 0}
 
 
 def test_BUG_delete_batch_leaves_assignments_and_members(w: World):
@@ -501,10 +501,9 @@ def test_moved_app_native_track_works_end_to_end(w: World):
     assert w.status("M1") == "evaluated"
 
 
-def test_PIN_evaluated_app_disappears_from_roster_but_not_queue(w: World):
-    """KNOWN: first review flips the app to 'evaluated'; reviewers 2/3's unreviewed
-    assignments then vanish from roster + drawer but stay in their queues and the
-    pipeline still counts them."""
+def test_evaluated_app_stays_in_roster_drawer_and_queue(w: World):
+    """First review flips the app to 'evaluated'; reviewers 2/3's unreviewed
+    assignments are still real work in roster, drawer AND queue."""
     w.create_batch()
     w.add_reviewers(REVIEWERS)
     w.add_apps([("S1", "sip")])
@@ -512,17 +511,17 @@ def test_PIN_evaluated_app_disappears_from_roster_but_not_queue(w: World):
     assert w.status("S1") == "evaluated"
     for rid in ("rev-2", "rev-3"):
         assert any(q["id"] == "S1" for q in w.queue(rid))
-        assert w.roster()[rid]["assigned"] == 0          # known bug
-        assert w.drawer(rid) == []                       # known bug
+        assert w.roster()[rid]["assigned"] == 1
+        assert [d["id"] for d in w.drawer(rid)] == ["S1"]
     assert w.pipeline()["S1"]["reviewers_assigned"] == 3
 
 
-def test_PIN_known_roster_ignores_prior_evaluated_apps(w: World):
+def test_roster_counts_prior_evaluated_apps(w: World):
     w.create_batch()
     w.add_reviewers(["rev-1"])
     w.add_apps([("S4", "sip")])          # already 'evaluated'
     assert any(q["id"] == "S4" for q in w.queue("rev-1"))
-    assert w.roster()["rev-1"]["assigned"] == 0
+    assert w.roster()["rev-1"]["assigned"] == 1
 
 
 def test_audit_trail_for_batch_lifecycle(w: World):
