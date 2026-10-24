@@ -11,7 +11,12 @@
 -- STEP 1 — preview (read-only)
 select 'application_batches' as tbl, count(*) from public.application_batches ab where ab.application_track = 'sip' and not exists (select 1 from public.sip_applications s where s.id = ab.application_id) and exists (select 1 from public.tir_applications t where t.id = ab.application_id)
 union all
-select 'reviewer_assignments', count(*) from public.reviewer_assignments ra where ra.application_track = 'sip' and not exists (select 1 from public.sip_applications s where s.id = ra.application_id) and exists (select 1 from public.tir_applications t where t.id = ra.application_id);
+select 'reviewer_assignments', count(*) from public.reviewer_assignments ra where ra.application_track = 'sip' and not exists (select 1 from public.sip_applications s where s.id = ra.application_id) and exists (select 1 from public.tir_applications t where t.id = ra.application_id)
+union all
+-- sanity only (expected 0; STEP 2 does not touch these — tell Claude if non-zero)
+select 'reviews (check only)', count(*) from public.reviews rv where rv.application_track = 'sip' and not exists (select 1 from public.sip_applications s where s.id = rv.application_id) and exists (select 1 from public.tir_applications t where t.id = rv.application_id)
+union all
+select 'admin_decisions (check only)', count(*) from public.admin_decisions d where d.application_track = 'sip' and not exists (select 1 from public.sip_applications s where s.id = d.application_id) and exists (select 1 from public.tir_applications t where t.id = d.application_id);
 
 -- STEP 2 — repair
 begin;
