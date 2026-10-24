@@ -336,6 +336,18 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   const reviewIdRef = useRef(reviewId);
   reviewIdRef.current = reviewId;
   const savingRef = useRef(false);
+  // Bumped when a save finishes while newer edits are pending, so the effect
+  // below re-runs and schedules a follow-up save.
+  const [flushTick, setFlushTick] = useState(0);
+
+  // Warn before leaving the page with unsaved edits.
+  useEffect(() => {
+    const onBeforeUnload = (e) => {
+      if (dirtyRef.current || savingRef.current) { e.preventDefault(); e.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
 
   useEffect(() => {
     if (!dirtyRef.current || !editable) return undefined;
@@ -358,7 +370,12 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
             evaluationToPatch(currentEval, {}),
           );
         }
-        setSaveState("saved");
+        if (dirtyRef.current) {
+          // Edited while this save was in flight → save again.
+          setFlushTick((n) => n + 1);
+        } else {
+          setSaveState("saved");
+        }
       } catch (err) {
         // A draft already exists (e.g. created in another tab) — recover its id
         // from the 409 body and switch to PATCH on the next save.
@@ -373,7 +390,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     }, 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scores, reco, notes, flags, disagreements, editable]);
+  }, [scores, reco, notes, flags, disagreements, editable, flushTick]);
 
   // ── Explicit "Save draft" ────────────────────────────────────────────
   // Flushes the current evaluation immediately using the SAME path the
@@ -416,9 +433,17 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     return !errs.notes;
   };
 
+  const [submitError, setSubmitError] = useState(null);
   const applyServerError = (err) => {
     if (LOCK_CODES[err?.code]) {
       setServerLock(LOCK_CODES[err.code]);
+    } else if (err?.code === "incomplete_review") {
+      const missing = err?.details?.missing ?? err?.details?.detail?.missing;
+      setSubmitError(
+        Array.isArray(missing) && missing.length
+          ? `Can't submit yet. Missing: ${missing.join(", ")}.`
+          : "Can't submit yet. The evaluation is incomplete (a recommendation is required).",
+      );
     } else if (err?.code === "notes_required") {
       setFieldErrors((p) => ({ ...p, notes: true }));
     } else if (err?.status === 423 || err?.code === "review_locked") {
@@ -429,6 +454,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
 
   const submitEval = async () => {
     if (!validateForSubmit()) return;
+    setSubmitError(null);
     setSaveState("saving");
     try {
       if (reviewId) {
@@ -585,12 +611,16 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
                 </button>
                 <button
                   className="os-btn"
-                  disabled={!editable || !notes.trim()}
-                  title={!notes.trim() ? "Add notes to submit" : ""}
+                  disabled={!editable || !notes.trim() || !reco}
+                  title={!notes.trim() ? "Add notes to submit" : !reco ? "Choose a recommendation to submit" : ""}
                   onClick={submitEval}
                 >
                   {submitted ? "Re-submit evaluation →" : "Submit evaluation →"}
                 </button>
+                {editable && notes.trim() && !reco && (
+                  <span className="saved" role="note">Choose a recommendation to submit</span>
+                )}
+                {submitError && <span className="inline-error" role="alert">{submitError}</span>}
               </>
             )}
           </div>
