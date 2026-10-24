@@ -61,6 +61,23 @@ def _native_track(application_id: str, hint: str) -> str:
     return found[0] if found else hint
 
 
+def _native_items(items) -> list[tuple[str, str]]:
+    """`(application_id, native_track)` for each body item, de-duplicated
+    (first occurrence wins). The UI sends the EFFECTIVE track; every child
+    table is keyed by the NATIVE one."""
+    hints = [(i.application_id, i.track) for i in items]
+    native = applications_query.resolve_native_tracks(hints)
+    return list(dict.fromkeys((aid, native.get(aid, t)) for aid, t in hints))
+
+
+def _batch_name(sb, batch_id: str) -> str | None:
+    try:
+        rows = sb.table("batches").select("name").eq("id", batch_id).limit(1).execute().data
+        return (rows[0].get("name") if rows else None) or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 @router.get(
     "/applications",
     dependencies=[Depends(require_capability("view_all_apps"))],
@@ -324,9 +341,12 @@ class BulkDecisionBody(BaseModel):
 async def bulk_decide(body: BulkDecisionBody, user: dict = Depends(get_current_user)) -> dict:
     """Bulk gate-1 decisions: per-id result dict instead of raising on individual failures."""
     caller_role = actor_role_of(user)
+    native = applications_query.resolve_native_tracks(
+        [(i.application_id, i.track) for i in body.items]
+    )
     results = [
         decisions.record_decision_safe(
-            track=i.track, application_id=i.application_id,
+            track=native.get(i.application_id, i.track), application_id=i.application_id,
             decision=i.decision, rationale=i.rationale,
             decided_by=user["user_id"],
             decided_by_role=caller_role,
@@ -544,12 +564,15 @@ async def assign_applications(
     # fan out THIS batch's reviewers (batch_reviewers) to the newly-added apps.
     from app.services import batch_membership
 
-    items = [(item.application_id, item.track) for item in body.items]
+    items = _native_items(body.items)
     result = batch_membership.add_apps_to_batch(
         sb, batch_id, items, actor=user["user_id"]
     )
+    notified = 0
     if result["created_rows"]:
-        notify_reviewers_assigned(sb, result["created_rows"])
+        notified = notify_reviewers_assigned(
+            sb, result["created_rows"], batch_name=_batch_name(sb, batch_id)
+        )
 
     write_audit(
         actor_user_id=user["user_id"],
@@ -560,13 +583,13 @@ async def assign_applications(
         after={
             "count": result["assigned"],
             "assignments_created": result["assignments_created"],
-            "reviewers_notified": result["reviewers_notified"],
+            "reviewers_notified": notified,
         },
     )
     return {
         "assigned": result["assigned"],
         "assignments_created": result["assignments_created"],
-        "reviewers_notified": result["reviewers_notified"],
+        "reviewers_notified": notified,
     }
 
 
@@ -590,9 +613,9 @@ async def remove_applications_from_batch(
 
     removed = 0
     skipped = 0
-    for item in body.items:
+    for aid, track in _native_items(body.items):
         r = batch_membership.remove_app_from_batch(
-            sb, batch_id, item.application_id, item.track, actor=user["user_id"]
+            sb, batch_id, aid, track, actor=user["user_id"]
         )
         removed += r["assignments_removed"]
         skipped += r["skipped_submitted"]
@@ -636,9 +659,9 @@ async def unassign_applications(
     sb = get_admin_client()
     removed = 0
     assignments_removed = 0
-    for item in body.items:
+    for aid, track in _native_items(body.items):
         result = applications_query.detach_application_from_review(
-            sb, item.application_id, item.track, remove_batch_link=True,
+            sb, aid, track, remove_batch_link=True,
         )
         removed += result["batch_links_removed"]
         assignments_removed += result["assignments_removed"]
@@ -688,8 +711,11 @@ async def assign_batch_reviewers(
     result = admin_query.assign_reviewers_to_batch(
         sb, batch_id, body.reviewer_user_ids, assigned_by=user["user_id"],
     )
+    notified = 0
     if result["created_rows"]:
-        notify_reviewers_assigned(sb, result["created_rows"])
+        notified = notify_reviewers_assigned(
+            sb, result["created_rows"], batch_name=_batch_name(sb, batch_id)
+        )
     created = result["created"]
 
     write_audit(
@@ -702,12 +728,14 @@ async def assign_batch_reviewers(
             "created": created,
             "reviewers": result["reviewers"],
             "applications": result["applications"],
+            "reviewer_user_ids": list(dict.fromkeys(body.reviewer_user_ids)),
         },
     )
     return {
         "created": created,
         "reviewers": result["reviewers"],
         "applications": result["applications"],
+        "reviewers_notified": notified,
     }
 
 
@@ -853,10 +881,18 @@ async def bulk_assign_reviewer_applications(
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Bulk-assign applications to one reviewer (Manage Applications drawer)."""
-    res = admin_query.bulk_assign_reviewer_apps(
-        user_id, [i.model_dump() for i in body.items], assigned_by=user["user_id"],
+    native = applications_query.resolve_native_tracks(
+        [(i.application_id, i.track) for i in body.items]
     )
-    notify_reviewers_assigned(get_admin_client(), [
+    items = list({
+        i.application_id: {"application_id": i.application_id,
+                           "track": native.get(i.application_id, i.track)}
+        for i in body.items
+    }.values())
+    res = admin_query.bulk_assign_reviewer_apps(
+        user_id, items, assigned_by=user["user_id"],
+    )
+    res["reviewers_notified"] = notify_reviewers_assigned(get_admin_client(), [
         {"reviewer_user_id": user_id, "application_id": r["application_id"], "application_track": r["track"]}
         for r in res.get("results", []) if r.get("status") == "created"
     ])
@@ -881,8 +917,13 @@ async def bulk_remove_reviewer_applications(
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Bulk-unassign applications from one reviewer (skips submitted reviews)."""
+    native = applications_query.resolve_native_tracks(
+        [(i.application_id, i.track) for i in body.items]
+    )
     res = admin_query.bulk_remove_reviewer_apps(
-        user_id, [i.model_dump() for i in body.items],
+        user_id,
+        [{"application_id": i.application_id, "track": native.get(i.application_id, i.track)}
+         for i in body.items],
     )
     write_audit(
         actor_user_id=user["user_id"],

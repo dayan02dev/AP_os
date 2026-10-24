@@ -705,7 +705,7 @@ def test_batch_reviewers_assign_creates_n_by_m(client, monkeypatch, _clear_overr
                     json={"reviewer_user_ids": ["rev-1", "rev-2"]})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body == {"created": 4, "reviewers": 2, "applications": 2}
+    assert body == {"created": 4, "reviewers": 2, "applications": 2, "reviewers_notified": 0}
     inserted = [p for (t, p) in fake.inserts if t == "reviewer_assignments"]
     assert len(inserted) == 4
     assert all(p.get("state") == "pending" for p in inserted)
@@ -731,7 +731,7 @@ def test_batch_reviewers_assign_dedupes_existing(client, monkeypatch, _clear_ove
                     json={"reviewer_user_ids": ["rev-1"]})
     assert r.status_code == 200, r.text
     # 2 apps × 1 reviewer = 2 pairs, but (app-1, tir, rev-1) already exists → 1 created.
-    assert r.json() == {"created": 1, "reviewers": 1, "applications": 2}
+    assert r.json() == {"created": 1, "reviewers": 1, "applications": 2, "reviewers_notified": 0}
     inserted = [p for (t, p) in fake.inserts if t == "reviewer_assignments"]
     assert len(inserted) == 1
     assert inserted[0]["application_id"] == "app-2"
@@ -1324,7 +1324,7 @@ def test_assign_applications_fans_out_to_batch_reviewers(client, monkeypatch, _c
     notified = {}
     monkeypatch.setattr(
         "app.routers.admin_platform.notify_reviewers_assigned",
-        lambda sb, rows: notified.update({"rows": rows}),
+        lambda sb, rows, **k: notified.update({"rows": rows}) or 1,
     )
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
 

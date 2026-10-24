@@ -339,6 +339,37 @@ def fetch_ai_scores_for(
     return out
 
 
+def resolve_native_tracks(items: list[tuple[str, str]]) -> dict[str, str]:
+    """Map application_id -> NATIVE track (the table the row lives in).
+
+    Moved apps (tir row with moved_to_track='sip') live in tir_applications, but
+    the UI sends the effective track. Children must be keyed by native track.
+    Ids not found anywhere keep their hint. Best-effort: a lookup failure keeps
+    the hint for that chunk."""
+    hints = {aid: track for aid, track in items}
+    out = dict(hints)
+    ids = list(hints)
+    try:
+        sb = get_admin_client()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("resolve_native_tracks: no client", extra={"err": str(exc)})
+        return out
+    for i in range(0, len(ids), 150):
+        chunk = ids[i : i + 150]
+        for track in ("tir", "sip"):
+            try:
+                rows = (
+                    sb.table(f"{track}_applications").select("id").in_("id", chunk).execute().data
+                ) or []
+            except Exception as exc:  # noqa: BLE001
+                log.warning("resolve_native_tracks failed", extra={"track": track, "err": str(exc)})
+                continue
+            for r in rows:
+                if r.get("id") in out:
+                    out[r["id"]] = track
+    return out
+
+
 def fetch_project_names_for(
     pairs: list[tuple[str, str]],
 ) -> dict[tuple[str, str], str | None]:

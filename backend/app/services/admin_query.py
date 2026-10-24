@@ -1643,6 +1643,16 @@ def bulk_assign_reviewer_apps(
             log.warning("bulk_assign: insert failed",
                         extra={"application_id": aid, "err": str(exc)})
             results.append({"application_id": aid, "track": track, "status": "error"})
+
+    from app.services import state_machine  # local import to avoid cycles
+    for r in results:
+        if r["status"] != "created":
+            continue
+        try:
+            state_machine.advance_to_under_review_on_assignment(r["application_id"], r["track"])
+        except Exception as exc:  # noqa: BLE001
+            log.warning("bulk_assign: advance failed",
+                        extra={"application_id": r["application_id"], "err": str(exc)})
     return {"results": results}
 
 

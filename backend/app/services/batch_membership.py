@@ -171,9 +171,30 @@ def add_apps_to_batch(
     created: list[dict] = []
     for (aid, track) in items:
         for rid in reviewers:
-            row = _ensure_assignment(sb, aid, track, rid, actor, existing)
-            if row:
-                created.append(row)
+            key = (aid, track, rid)
+            if key in existing:
+                continue
+            existing.add(key)
+            created.append(
+                {
+                    "application_id": aid,
+                    "application_track": track,
+                    "reviewer_user_id": rid,
+                    "assigned_by": actor,
+                    "assigned_at": now,
+                    "state": "pending",
+                    "due_at": None,
+                }
+            )
+    if created:
+        # ONE bulk upsert (API Lambda has a 29 s budget).
+        sb.table("reviewer_assignments").upsert(
+            created,
+            on_conflict="application_id,application_track,reviewer_user_id",
+            ignore_duplicates=True,
+        ).execute()
+    # Only apps that actually received a new assignment leave 'submitted'.
+    for (aid, track) in dict.fromkeys((r["application_id"], r["application_track"]) for r in created):
         _advance(aid, track)
     return {
         "assigned": len(items),
