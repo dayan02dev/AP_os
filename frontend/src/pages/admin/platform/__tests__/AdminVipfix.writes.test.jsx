@@ -59,6 +59,7 @@ beforeEach(() => {
 
 describe("AdminReviewers roster batch assign", () => {
   it("resolves duplicate names to the first id and reports created + emails", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<AdminReviewers decisionMode="reviewer" />);
     fireEvent.change(screen.getByLabelText("Assign a batch to Priya"), { target: { value: "Batch B" } });
     await waitFor(() => expect(adminPlatformApi.assignBatchReviewers)
@@ -66,6 +67,15 @@ describe("AdminReviewers roster batch assign", () => {
     expect(await screen.findByText("Assigned 5 application(s) · 1 email(s) sent")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Remove Batch A from Priya"));
     await waitFor(() => expect(adminPlatformApi.unassignBatchReviewer).toHaveBeenCalledWith("bid-A1", "rev-1"));
+    expect(confirmSpy).toHaveBeenCalledWith("Remove Priya from batch(es) Batch A? Their assignments on those applications are removed (submitted reviews are kept).");
+  });
+
+  it("roster chip x aborts on cancel", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<AdminReviewers decisionMode="reviewer" />);
+    fireEvent.click(screen.getByLabelText("Remove Batch A from Priya"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(adminPlatformApi.unassignBatchReviewer).not.toHaveBeenCalled();
   });
 
   it("disables the control while in flight so a double click fires once", async () => {
@@ -91,6 +101,7 @@ describe("AdminReviewers roster batch assign", () => {
 
 describe("AdminReviewers ManageDrawer persists batch chip edits", () => {
   it("assigns added and unassigns removed batches on save", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<AdminReviewers decisionMode="reviewer" />);
     fireEvent.click(screen.getByText("Edit reviewer"));
     fireEvent.click(screen.getByText("Edit details"));
@@ -101,6 +112,17 @@ describe("AdminReviewers ManageDrawer persists batch chip edits", () => {
       .toHaveBeenCalledWith("bid-C", { reviewer_user_ids: ["rev-1"] }));
     expect(adminPlatformApi.unassignBatchReviewer).toHaveBeenCalledWith("bid-A1", "rev-1");
     expect(adminPlatformApi.patchReviewer).toHaveBeenCalled();
+  });
+
+  it("save aborts when the removal confirm is cancelled", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<AdminReviewers decisionMode="reviewer" />);
+    fireEvent.click(screen.getByText("Edit reviewer"));
+    fireEvent.click(screen.getByText("Edit details"));
+    fireEvent.click(screen.getByLabelText("Drop batch Batch A"));
+    fireEvent.click(screen.getByText("Save changes"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(adminPlatformApi.unassignBatchReviewer).not.toHaveBeenCalled();
   });
 
   it("makes no batch calls when chips are untouched", async () => {
@@ -187,10 +209,32 @@ describe("round 2: batch contract in AdminPipeline", () => {
     const boxes = screen.getAllByRole("checkbox");
     fireEvent.click(boxes[1]); fireEvent.click(boxes[2]);
     fireEvent.change(screen.getByDisplayValue("Assign batch..."), { target: { value: "Batch B" } });
-    const note = await screen.findByText(/already in batch/);
-    expect(note.textContent).toMatch(/1 already in batch/);
+    const note = await screen.findByText(/closed \(rejected/);
+    expect(note.textContent).not.toMatch(/already in batch/);
     expect(note.textContent).toMatch(/2 closed \(rejected\/decided\) apps linked without reviewers/);
     expect(note.textContent).toMatch(/1 drafts skipped/);
+  });
+
+  it("counts already-in-batch as selected - assigned - drafts - unknown, and shows unknown", async () => {
+    adminPlatformApi.assignBatch.mockResolvedValue({
+      assigned: 0, assignments_created: 0, reviewers_notified: 0,
+      skipped_draft: ["x"], skipped_unknown: ["u"],
+    });
+    render(<AdminPipeline decisionMode="default" />);
+    const boxes = screen.getAllByRole("checkbox");
+    fireEvent.click(boxes[1]); fireEvent.click(boxes[2]);
+    fireEvent.change(screen.getByDisplayValue("Assign batch..."), { target: { value: "Batch B" } });
+    const note = await screen.findByText(/not found/);
+    expect(note.textContent).toMatch(/1 not found — refresh/);
+    expect(note.textContent).not.toMatch(/already in batch/);
+  });
+
+  it("refuses reserved batch names locally", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Unbatched");
+    render(<AdminPipeline decisionMode="default" />);
+    fireEvent.change(screen.getAllByDisplayValue("+ Add…")[1], { target: { value: "new" } });
+    expect(await screen.findByText(/reserved name/)).toBeTruthy();
+    expect(adminPlatformApi.createBatch).not.toHaveBeenCalled();
   });
 
   it("surfaces batch_name_exists on create", async () => {
@@ -213,6 +257,9 @@ describe("round 2: batch contract in AdminPipeline", () => {
     expect(batchErrorText({ code: "unknown_application" }, "X")).toMatch(/no longer exist/);
     expect(batchErrorText({ code: "not_a_reviewer" }, "X")).toMatch(/not a reviewer/);
     expect(batchErrorText({ status: 422, message: "name must not be blank" }, "X")).toMatch(/blank/);
+    expect(batchErrorText({ code: "draft_applications" }, "X")).toMatch(/drafts can't be batched/);
+    expect(batchErrorText({ code: "batch_name_reserved" }, "X")).toMatch(/reserved/);
+    expect(batchErrorText({ code: "lookup_failed" }, "X")).toMatch(/couldn't verify applications/);
     expect(batchErrorText(new Error("boom"), "X")).toBe("X: boom");
   });
 });
@@ -224,6 +271,15 @@ describe("round 2: reviewers + drawer", () => {
     render(<AdminReviewers decisionMode="reviewer" />);
     fireEvent.change(screen.getByLabelText("Assign a batch to Priya"), { target: { value: "Batch B" } });
     expect(await screen.findByText("That user is not a reviewer.")).toBeTruthy();
+  });
+
+  it("drawer labels a null batch 'Not via a batch'", () => {
+    useAdminData.mockImplementation((kind) => kind === "reviewerApplications"
+      ? { data: { applications: [{ id: "a", track: "tir", project: "Acme", industry: "AI", chip: "NEW", batch: null }] }, loading: false, error: null, reload: vi.fn() }
+      : { data: { startups: [] }, loading: false, error: null, reload: vi.fn() });
+    render(<ManageApplicationsDrawer reviewer={{ id: "rev-1", name: "P", batches: [] }} onClose={() => {}} />);
+    expect(screen.getByText("Not via a batch")).toBeTruthy();
+    expect(screen.queryByText("Random allotment")).toBeNull();
   });
 
   it("drawer reports skipped_closed on assign", async () => {
