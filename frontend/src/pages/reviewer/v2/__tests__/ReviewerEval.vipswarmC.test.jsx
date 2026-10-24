@@ -43,7 +43,7 @@ describe("ReviewerEval (VIP) write flows", () => {
     expect(last.assignment_id).toBe("a1");
   });
 
-  it("BUG_submit_without_recommendation_gives_no_actionable_error", async () => {
+  it("submit_is_disabled_without_recommendation_and_hint_shown", async () => {
     // Submit is enabled with only notes; server answers 422 incomplete_review. UI only shows
     // the generic "Save failed" chip, no mention that a recommendation is required.
     api.getContent.mockResolvedValue(content());
@@ -53,17 +53,16 @@ describe("ReviewerEval (VIP) write flows", () => {
     await screen.findByText(/Your scores/);
     fireEvent.change(notesBox(), { target: { value: "ok" } });
     const btn = screen.getByRole("button", { name: /Submit evaluation/ });
-    // Expected: disabled until a recommendation is chosen, OR a visible message.
-    if (!btn.disabled) {
-      fireEvent.click(btn);
-      await waitFor(() => expect(api.submitReview).toHaveBeenCalled());
-      await screen.findByText(/Save failed/);
-      expect(screen.queryByText(/(select|choose|pick|add|required).{0,40}recommendation|recommendation.{0,20}required/i)).toBeNull(); // no hint shown
-      expect(false).toBe(true); // reached: submit allowed w/o recommendation and failure is unexplained
-    }
+    expect(btn).toBeDisabled();
+    expect(screen.getByText(/Choose a recommendation to submit/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /Yes|YES/ }));
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+    await waitFor(() => expect(api.submitReview).toHaveBeenCalled());
+    await screen.findByText(/Missing: recommendation/);
   });
 
-  it("BUG_edit_made_while_autosave_in_flight_is_never_saved", async () => {
+  it("edit_made_while_autosave_in_flight_is_saved_afterwards", async () => {
     api.getContent.mockResolvedValue(content());
     let resolveFirst;
     api.submitReview.mockImplementationOnce(() => new Promise((r) => { resolveFirst = r; }));
