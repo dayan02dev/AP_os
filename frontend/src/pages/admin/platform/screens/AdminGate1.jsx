@@ -94,7 +94,7 @@ export function buildBulkItems(draftMap, rows, rationaleFor) {
       continue;
     }
     items.push({
-      track:          row.track,
+      track:          row.nativeTrack || row.track,
       application_id: row.id,
       decision,
       rationale:      rationale.trim() || undefined,
@@ -282,7 +282,7 @@ function GateReviewStack({ items, reload, goDetail }) {
     setBusy(true);
     setNote(null);
     try {
-      await adminPlatformApi.decide(s.track, s.id, {
+      await adminPlatformApi.decide(s.nativeTrack || s.track, s.id, {
         decision: wireId,
         rationale: rationale || undefined,
       });
@@ -515,7 +515,7 @@ function GateReviewBatchDecision({ items, reload, goDetail }) {
     const bulkItems = selected.map(s => {
       const wireId   = UPPER_TO_WIRE[draftDecisions[s.id]] || "on_hold";
       return {
-        track:          s.track,
+        track:          s.nativeTrack || s.track,
         application_id: s.id,
         decision:       wireId,
         // Rationale required for hold/reject; batch variant carries a generic note
@@ -723,7 +723,7 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
     setBusy(true);
     setNote(null);
     try {
-      await adminPlatformApi.decide(s.track, s.id, { decision: wireId, rationale });
+      await adminPlatformApi.decide(s.nativeTrack || s.track, s.id, { decision: wireId, rationale });
       setEditingId(null);
       await reload();
     } catch (e) {

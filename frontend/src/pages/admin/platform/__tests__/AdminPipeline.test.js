@@ -128,6 +128,7 @@ vi.mock("../ui.jsx", () => ({
 }));
 
 import { AdminPipeline, industryCountsFor } from "../screens/AdminPipeline.jsx";
+import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 
 describe("AdminPipeline screen (smoke)", () => {
   beforeEach(() => {
@@ -180,13 +181,16 @@ describe("AdminPipeline screen (smoke)", () => {
     expect(screen.queryAllByTestId("preview-badge").length).toBe(0);
   });
 
-  it("shows a 'reviewers notified' note after a per-row batch assign", async () => {
+  it("shows an 'emails sent' note after a per-row batch assign", async () => {
     render(
       React.createElement(AdminPipeline, { goDetail: vi.fn(), decisionMode: "reviewer" }),
     );
-    const select = screen.getByDisplayValue("Batch A");
+    adminPlatformApi.assignBatch.mockResolvedValue({ assigned: 1, assignments_created: 2, reviewers_notified: 2 });
+    // Per-row control is chips + a "+ Add…" select (multi-batch UI).
+    const select = screen.getByDisplayValue("+ Add…");
     fireEvent.change(select, { target: { value: "Batch B" } });
-    expect(await screen.findByText(/reviewer\(s\) notified/i)).toBeTruthy();
+    expect(await screen.findByText(/2 email\(s\) sent/i)).toBeTruthy();
+    expect(screen.getByText(/2 assignment\(s\) created/i)).toBeTruthy();
   });
 
   it("STATUS filter no longer offers an 'AI screening' option", () => {
