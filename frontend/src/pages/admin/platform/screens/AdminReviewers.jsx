@@ -59,7 +59,7 @@ export function formatLastActivity(value) {
 // ─── Manage / Edit drawer ────────────────────────────────────────────────────
 // Weight + domains + inline batch chip editor (reviewer-mode only).
 
-function ManageDrawer({ reviewer, allBatches, onClose, onSaved, onRequestDelete }) {
+function ManageDrawer({ reviewer, allBatches, batchNameToId, onClose, onSaved, onRequestDelete }) {
   const [name, setName] = useState(reviewer.name || '');
   const [email, setEmail] = useState(reviewer.email || '');
   const [weight, setWeight] = useState(typeof reviewer.weight === 'number' ? reviewer.weight : 1.0);
@@ -71,6 +71,10 @@ function ManageDrawer({ reviewer, allBatches, onClose, onSaved, onRequestDelete 
       ? reviewer.batches.map(b => (typeof b === 'string' ? b : b.name))
       : (reviewer.batch && reviewer.batch !== 'Unassigned' ? [reviewer.batch] : [])
   );
+  const originalBatches = (Array.isArray(reviewer.batches)
+    ? reviewer.batches.map(b => (typeof b === 'string' ? b : b.name))
+    : (reviewer.batch && reviewer.batch !== 'Unassigned' ? [reviewer.batch] : []))
+    .filter(n => n && n !== 'Unbatched');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
 
@@ -88,6 +92,22 @@ function ManageDrawer({ reviewer, allBatches, onClose, onSaved, onRequestDelete 
       if (name.trim() && name.trim() !== (reviewer.name || '')) body.full_name = name.trim();
       if (email.trim() && email.trim() !== (reviewer.email || '')) body.email = email.trim();
       await adminPlatformApi.patchReviewer(reviewer.id, body);
+      // Persist chip edits: diff original vs edited ("Unbatched" is a computed
+      // bucket, not a real batch).
+      const edited = batches.filter(n => n && n !== 'Unbatched');
+      const added = edited.filter(n => !originalBatches.includes(n));
+      const removed = originalBatches.filter(n => !edited.includes(n));
+      const idOf = (n) => {
+        const id = batchNameToId?.get(n);
+        if (!id) throw new Error(`Unknown batch "${n}".`);
+        return id;
+      };
+      for (const n of added) {
+        await adminPlatformApi.assignBatchReviewers(idOf(n), { reviewer_user_ids: [reviewer.id] });
+      }
+      for (const n of removed) {
+        await adminPlatformApi.unassignBatchReviewer(idOf(n), reviewer.id);
+      }
       onSaved();
     } catch (e) {
       setErr(e?.message || 'Save failed');
@@ -182,6 +202,8 @@ function ManageDrawer({ reviewer, allBatches, onClose, onSaved, onRequestDelete 
                 <span key={b} className="os-chip" style={{ background: 'var(--bg-soft)', border: '1px solid var(--line)', fontWeight: 600, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   {b}
                   <span
+                    role="button"
+                    aria-label={`Drop batch ${b}`}
                     style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 11, color: '#FF5A5F', marginLeft: 2 }}
                     onClick={() => removeBatch(b)}
                   >
@@ -191,6 +213,7 @@ function ManageDrawer({ reviewer, allBatches, onClose, onSaved, onRequestDelete 
               )) : <span className="os-text-soft" style={{ fontSize: 13 }}>None</span>}
               <select
                 className="os-select sm"
+                aria-label="Add batch"
                 style={{ padding: '0 4px', fontSize: 11, height: 26, width: 40, minWidth: 40 }}
                 value=""
                 onChange={e => { if (e.target.value) addBatch(e.target.value); }}
@@ -450,34 +473,55 @@ export function AdminReviewers() {
   const batchList = batchesData?.batches ?? [];
   const batchNameToId = useMemo(() => {
     const m = new Map();
-    for (const b of batchList) m.set(b.name, b.id);
+    // Names aren't guaranteed unique: keep the FIRST occurrence, matching
+    // AdminPipeline's batches.find(b => b.name === x).
+    for (const b of batchList) if (!m.has(b.name)) m.set(b.name, b.id);
     return m;
   }, [batchList]);
 
   // Transient error for assign/unassign calls.
   const [assignErr, setAssignErr] = useState(null);
+  const [assignNote, setAssignNote] = useState(null);
+  // Reviewer ids with an assign/unassign in flight (double-click guard: every
+  // assign fires an email).
+  const [busyIds, setBusyIds] = useState(() => new Set());
+  const setBusyFor = (id, on) => setBusyIds(prev => {
+    const n = new Set(prev); on ? n.add(id) : n.delete(id); return n;
+  });
 
   const handleAssignBatch = async (reviewerId, batchName) => {
     const batchId = batchNameToId.get(batchName);
     if (!batchId) { setAssignErr(`Unknown batch "${batchName}".`); return; }
+    if (busyIds.has(reviewerId)) return;
     setAssignErr(null);
+    setAssignNote(null);
+    setBusyFor(reviewerId, true);
     try {
-      await adminPlatformApi.assignBatchReviewers(batchId, { reviewer_user_ids: [reviewerId] });
+      const resp = await adminPlatformApi.assignBatchReviewers(batchId, { reviewer_user_ids: [reviewerId] });
+      const created = resp?.created ?? resp?.assignments_created ?? 0;
+      setAssignNote(`Assigned ${created} application(s) · ${resp?.reviewers_notified ?? 0} email(s) sent`);
       reload();
     } catch (e) {
       setAssignErr(e?.message || 'Assignment failed.');
+    } finally {
+      setBusyFor(reviewerId, false);
     }
   };
 
   const handleUnassignBatch = async (reviewerId, batchName) => {
     const batchId = batchNameToId.get(batchName);
     if (!batchId) { setAssignErr(`Unknown batch "${batchName}".`); return; }
+    if (busyIds.has(reviewerId)) return;
     setAssignErr(null);
+    setAssignNote(null);
+    setBusyFor(reviewerId, true);
     try {
       await adminPlatformApi.unassignBatchReviewer(batchId, reviewerId);
       reload();
     } catch (e) {
       setAssignErr(e?.message || 'Unassign failed.');
+    } finally {
+      setBusyFor(reviewerId, false);
     }
   };
 
@@ -585,6 +629,12 @@ export function AdminReviewers() {
           <button className="os-btn sm ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => setRemovedNote(null)}>Dismiss</button>
         </div>
       )}
+      {assignNote && (
+        <div style={{ color: 'var(--ink-soft)', fontSize: 13, padding: '8px 12px', background: 'var(--bg-soft)', borderRadius: 4, marginBottom: 16, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <span>{assignNote}</span>
+          <button className="os-btn sm ghost" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => setAssignNote(null)}>Dismiss</button>
+        </div>
+      )}
       {assignErr && (
         <div style={{ color: 'var(--bad)', fontSize: 13, fontWeight: 600, padding: '8px 12px', background: 'var(--bad-soft)', borderRadius: 4, marginBottom: 16, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           <span>{assignErr}</span>
@@ -666,6 +716,7 @@ export function AdminReviewers() {
                                   aria-label={`Remove ${b.name} from ${r.name}`}
                                   title={`Remove ${b.name}`}
                                   style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 11, color: '#FF5A5F', marginLeft: 2 }}
+                                  aria-disabled={busyIds.has(r.id) || undefined}
                                   onClick={() => handleUnassignBatch(r.id, b.name)}
                                 >
                                   &times;
@@ -679,6 +730,7 @@ export function AdminReviewers() {
                               aria-label={`Assign a batch to ${r.name}`}
                               style={{ padding: '0 4px', fontSize: 11, height: 24, width: 48, minWidth: 48 }}
                               value=""
+                              disabled={busyIds.has(r.id)}
                               onChange={e => { if (e.target.value) handleAssignBatch(r.id, e.target.value); }}
                             >
                               <option value="" disabled>+ ▾</option>
@@ -737,6 +789,7 @@ export function AdminReviewers() {
         <ManageDrawer
           reviewer={manageTarget}
           allBatches={allBatches}
+          batchNameToId={batchNameToId}
           onClose={() => setManageTarget(null)}
           onSaved={() => { setManageTarget(null); reload(); }}
           onRequestDelete={setDeleteTarget}

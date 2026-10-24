@@ -11,6 +11,7 @@
 import React, { useState, useMemo } from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
+import { trackLabel, relabelDisplayId } from "../../../../lib/trackLabel.js";
 
 const RANDOM = "Random allotment";
 
@@ -115,7 +116,7 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
   const handleAssignSelected = async () => {
     const items = candidates
       .filter(c => selAssign.has(c.id))
-      .map(c => ({ application_id: c.id, track: c.track }));
+      .map(c => ({ application_id: c.id, track: c.nativeTrack || c.track }));
     if (!items.length) return;
     setBusy(true); setErr(null); setNotice(null);
     try {
@@ -296,7 +297,13 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
                                 onChange={() => toggle(selRemove, setSelRemove, a.id)}
                               />
                             </td>
-                            <td><div className="startup">{a.project}</div></td>
+                            <td>
+                              <div className="startup">{a.project}</div>
+                              <div className="os-text-xs os-text-dim">
+                                <span className="os-chip" style={{ marginRight: 6 }}>{trackLabel(a.effective_track || a.track)}</span>
+                                {a.display_id ? relabelDisplayId(a.display_id) : null}
+                              </div>
+                            </td>
                             <td className="os-text-soft">{a.industry}</td>
                             <td><span className="os-chip">{a.chip}</span></td>
                             <td style={{ textAlign: "right" }}>
