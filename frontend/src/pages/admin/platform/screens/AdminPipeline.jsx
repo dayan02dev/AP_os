@@ -32,11 +32,16 @@ import { RecoCell, aggregateReco } from "../../../../components/RecoCell";
 // Real industry chip counts from the loaded pipeline rows, scoped to the
 // selected track. Excludes hidden/archived rows and rows without an industry
 // ("—"). Returns [{ name, count }] sorted by count desc (name tiebreak).
+const RESERVED_BATCH_NAMES = ['unassigned', 'unbatched', 'new', 'all', 'random allotment'];
+
 // Map batch-endpoint error codes to clear operator messages.
 export function batchErrorText(e, prefix) {
   const code = e?.code || e?.details?.detail?.code;
   if (code === 'batch_name_exists') return `${prefix}: a batch with that name already exists.`;
   if (code === 'unknown_application') return `${prefix}: some selected applications no longer exist. Refresh and try again.`;
+  if (code === 'draft_applications') return `${prefix}: drafts can't be batched.`;
+  if (code === 'batch_name_reserved') return `${prefix}: that name is reserved.`;
+  if (code === 'lookup_failed') return `${prefix}: couldn't verify applications, try again.`;
   if (code === 'not_a_reviewer') return `${prefix}: that user is not a reviewer.`;
   if (e?.status === 422 && /name/i.test(String(e?.message || '') + JSON.stringify(e?.details || {}))) return `${prefix}: batch name can't be blank.`;
   return `${prefix}: ${e?.message || e}`;
@@ -426,6 +431,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   const nativeOf = (r) => r.nativeTrack || r.track;
   // Batch names are not guaranteed unique: always resolve to the FIRST match.
   const findBatchByName = (name) => batches.find(b => b.name === name);
+  const batchNameReserved = (name) => RESERVED_BATCH_NAMES.includes((name || '').trim().toLowerCase());
   const batchNameTaken = (name) => {
     const n = (name || '').trim().toLowerCase();
     return !!n && batches.some(b => (b.name || '').trim().toLowerCase() === n);
@@ -435,11 +441,14 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   const assignNote = (resp, where, selected) => {
     const created = resp?.assignments_created ?? resp?.created;
     let t = `${where}${created != null ? ` · ${created} assignment(s) created` : ''} · ${resp?.reviewers_notified ?? 0} email(s) sent`;
-    if (selected != null && typeof resp?.assigned === 'number' && resp.assigned < selected) {
-      t += ` · ${selected - resp.assigned} already in batch`;
-    }
     const closed = (resp?.skipped_closed || []).length;
     const drafts = (resp?.skipped_draft || []).length;
+    const unknown = (resp?.skipped_unknown || []).length;
+    if (selected != null && typeof resp?.assigned === 'number') {
+      const already = Math.max(0, selected - resp.assigned - drafts - unknown);
+      if (already > 0) t += ` · ${already} already in batch`;
+    }
+    if (unknown) t += ` · ${unknown} not found — refresh`;
     if (closed) t += ` · ${closed} closed (rejected/decided) apps linked without reviewers`;
     if (drafts) t += ` · ${drafts} drafts skipped`;
     return t + '.';
@@ -449,6 +458,10 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     const raw = window.prompt('Enter new batch name:');
     const name = (raw || '').trim();
     if (!name) return null;
+    if (batchNameReserved(name)) {
+      setNote({ kind: 'error', text: `"${name}" is a reserved name. Pick a different name.` });
+      return null;
+    }
     if (batchNameTaken(name)) {
       setNote({ kind: 'error', text: `A batch named "${name}" already exists. Pick a different name.` });
       return null;

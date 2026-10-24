@@ -13,7 +13,7 @@ import { useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { trackLabel, relabelDisplayId } from "../../../../lib/trackLabel.js";
 
-const RANDOM = "Random allotment";
+const RANDOM = "Not via a batch";
 
 export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onRequestDelete }) {
   const apps = useAdminData("reviewerApplications", { userId: reviewer.id });

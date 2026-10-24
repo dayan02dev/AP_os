@@ -226,6 +226,7 @@ describe("AdminReviewers (reviewer-mode)", () => {
         loading: false, error: null, reload,
       };
     });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<AdminReviewers decisionMode="reviewer" />);
     // "7 of Batch A" summary text
     expect(screen.getByText(/7 of Batch A/)).toBeTruthy();

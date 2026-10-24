@@ -59,6 +59,9 @@ export function formatLastActivity(value) {
 // ─── Manage / Edit drawer ────────────────────────────────────────────────────
 // Weight + domains + inline batch chip editor (reviewer-mode only).
 
+const removeBatchConfirm = (name, list) =>
+  `Remove ${name} from batch(es) ${Array.isArray(list) ? list.join(', ') : list}? Their assignments on those applications are removed (submitted reviews are kept).`;
+
 function ManageDrawer({ reviewer, allBatches, batchNameToId, onClose, onSaved, onRequestDelete }) {
   const [name, setName] = useState(reviewer.name || '');
   const [email, setEmail] = useState(reviewer.email || '');
@@ -91,12 +94,16 @@ function ManageDrawer({ reviewer, allBatches, batchNameToId, onClose, onSaved, o
       // the auth login on the backend).
       if (name.trim() && name.trim() !== (reviewer.name || '')) body.full_name = name.trim();
       if (email.trim() && email.trim() !== (reviewer.email || '')) body.email = email.trim();
-      await adminPlatformApi.patchReviewer(reviewer.id, body);
-      // Persist chip edits: diff original vs edited ("Unbatched" is a computed
-      // bucket, not a real batch).
       const edited = batches.filter(n => n && n !== 'Unbatched');
       const added = edited.filter(n => !originalBatches.includes(n));
       const removed = originalBatches.filter(n => !edited.includes(n));
+      if (removed.length && !window.confirm(removeBatchConfirm(reviewer.name, removed))) {
+        setSaving(false);
+        return;
+      }
+      await adminPlatformApi.patchReviewer(reviewer.id, body);
+      // Persist chip edits: diff original vs edited ("Unbatched" is a computed
+      // bucket, not a real batch).
       const idOf = (n) => {
         const id = batchNameToId?.get(n);
         if (!id) throw new Error(`Unknown batch "${n}".`);
@@ -332,7 +339,7 @@ function InviteModal({ batchOptions = [], onClose, onInvited }) {
                 </div>
               )}
               {result.existing_user && (
-                <div className="os-text-xs os-text-dim" style={{ marginTop: 8 }}>This email already had an account — it's now a reviewer (other portal access removed).</div>
+                <div className="os-text-xs os-text-dim" style={{ marginTop: 8 }}>Existing account — they'll sign in with their current password. Admin, leadership and jury access is kept.</div>
               )}
               <button className="os-btn" style={{ marginTop: 20, width: '100%' }} onClick={onClose}>Done</button>
             </div>
@@ -512,6 +519,8 @@ export function AdminReviewers() {
     const batchId = batchNameToId.get(batchName);
     if (!batchId) { setAssignErr(`Unknown batch "${batchName}".`); return; }
     if (busyIds.has(reviewerId)) return;
+    const rv = liveReviewers.find(x => x.id === reviewerId);
+    if (!window.confirm(removeBatchConfirm(rv?.name || 'this reviewer', batchName))) return;
     setAssignErr(null);
     setAssignNote(null);
     setBusyFor(reviewerId, true);
