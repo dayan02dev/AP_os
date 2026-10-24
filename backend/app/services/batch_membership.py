@@ -368,7 +368,7 @@ def _other_links(
                 sb.table("application_batches")
                 .select("application_id,application_track,batch_id")
                 .in_("application_id", chunk)
-                .order("application_id")
+                .order("id")
                 .range(offset, offset + _PAGE - 1)
                 .execute()
                 .data
@@ -400,18 +400,60 @@ def _members_by_batch(sb: Any, batch_ids: set[str]) -> dict[str, set[str]]:
     return out
 
 
+def _draft_app_ids(sb: Any, reviewer_id: str, track: str, ids: list[str]) -> set[str]:
+    """Apps (among `ids`) on which the reviewer holds an UNSUBMITTED review.
+    Their assignment must stay: the reviewer queue walks assignments + submitted
+    reviews only, so a draft would otherwise vanish."""
+    out: set[str] = set()
+    for chunk in _chunks(ids):
+        rows = (
+            sb.table("reviews")
+            .select("application_id,application_track,reviewer_user_id,submitted_at,status")
+            .eq("reviewer_user_id", reviewer_id)
+            .eq("application_track", track)
+            .in_("application_id", chunk)
+            .execute()
+            .data
+        ) or []
+        for rv in rows:
+            if (
+                rv.get("application_id") in chunk
+                and rv.get("application_track") == track
+                and rv.get("reviewer_user_id") == reviewer_id
+                and not rv.get("submitted_at")
+                and rv.get("status") != "submitted"
+            ):
+                out.add(rv["application_id"])
+    return out
+
+
+def _triples(rows: list[dict], track: str | None = None) -> list[dict]:
+    return [
+        {
+            "application_id": r.get("application_id"),
+            "application_track": r.get("application_track") or track,
+            "reviewer_user_id": r.get("reviewer_user_id"),
+        }
+        for r in rows
+    ]
+
+
 def _detach_reviewers_from_apps(
     sb: Any,
     reviewer_ids: set[str],
     apps: list[tuple[str, str]],
     other_links: dict[tuple[str, str], set[str]],
     members: dict[str, set[str]],
-) -> tuple[int, list[str]]:
+) -> dict[str, Any]:
     """Delete each reviewer's assignment on each app unless another of the
-    app's batches still supplies that reviewer. Bulk (chunked `.in_`).
-    Returns (rows removed, affected application ids)."""
+    app's batches still supplies that reviewer, or the reviewer has an
+    unsubmitted draft review there (kept; counted in `kept_draft`). Bulk
+    (chunked `.in_`). Returns {removed, application_ids, deleted (triples),
+    kept_draft}."""
     removed = 0
-    touched: set[tuple[str, str]] = set()
+    kept_draft = 0
+    deleted: list[dict] = []
+    touched: set[str] = set()
     for rid in reviewer_ids:
         by_track: dict[str, list[str]] = {}
         for key in apps:
@@ -419,6 +461,9 @@ def _detach_reviewers_from_apps(
                 continue
             by_track.setdefault(key[1], []).append(key[0])
         for track, ids in by_track.items():
+            drafts = _draft_app_ids(sb, rid, track, ids)
+            kept_draft += len(drafts)
+            ids = [i for i in ids if i not in drafts]
             for chunk in _chunks(ids):
                 res = (
                     sb.table("reviewer_assignments")
@@ -428,9 +473,12 @@ def _detach_reviewers_from_apps(
                     .in_("application_id", chunk)
                     .execute()
                 )
-                removed += len(res.data or [])
-                touched |= {(a.get("application_id"), track) for a in (res.data or [])}
-    return removed, sorted({a for a, _ in touched})
+                rows = res.data or []
+                removed += len(rows)
+                deleted += _triples(rows, track)
+                touched |= {a.get("application_id") for a in rows}
+    return {"removed": removed, "application_ids": sorted(touched),
+            "deleted": deleted, "kept_draft": kept_draft}
 
 
 def remove_app_from_batch(
@@ -451,17 +499,25 @@ def remove_app_from_batch(
     remaining = set().union(*(members[b] for b in others)) if others else set()
     candidates = members[batch_id] - remaining
     removed = 0
-    if candidates:
+    kept_draft = 0
+    deleted: list[dict] = []
+    for rid in sorted(candidates):
+        if app_id in _draft_app_ids(sb, rid, track, [app_id]):
+            kept_draft += 1
+            continue
         res = (
             sb.table("reviewer_assignments")
             .delete()
             .eq("application_id", app_id)
             .eq("application_track", track)
-            .in_("reviewer_user_id", sorted(candidates))
+            .eq("reviewer_user_id", rid)
             .execute()
         )
-        removed = len(res.data or [])
-    return {"removed": 1, "assignments_removed": removed, "skipped_submitted": 0}
+        rows = res.data or []
+        removed += len(rows)
+        deleted += _triples(rows, track)
+    return {"removed": 1, "assignments_removed": removed, "skipped_submitted": 0,
+            "kept_draft": kept_draft, "deleted": deleted}
 
 
 def remove_reviewer_from_batch(
@@ -485,8 +541,10 @@ def remove_reviewer_from_batch(
     apps = apps_in_batch(sb, batch_id)
     other = _other_links(sb, batch_id, apps)
     members = _members_by_batch(sb, set().union(*other.values()) if other else set())
-    removed, ids = _detach_reviewers_from_apps(sb, {reviewer_id}, apps, other, members)
-    return {"removed": removed, "skipped_submitted": 0, "application_ids": ids}
+    d = _detach_reviewers_from_apps(sb, {reviewer_id}, apps, other, members)
+    return {"removed": d["removed"], "skipped_submitted": 0,
+            "application_ids": d["application_ids"], "kept_draft": d["kept_draft"],
+            "deleted": d["deleted"]}
 
 
 def detach_batch_for_delete(sb: Any, batch_id: str) -> dict[str, Any]:
@@ -498,6 +556,8 @@ def detach_batch_for_delete(sb: Any, batch_id: str) -> dict[str, Any]:
     apps = apps_in_batch(sb, batch_id)
     other = _other_links(sb, batch_id, apps)
     members = _members_by_batch(sb, set().union(*other.values()) if other else set())
-    removed, _ids = _detach_reviewers_from_apps(sb, reviewers, apps, other, members)
+    d = _detach_reviewers_from_apps(sb, reviewers, apps, other, members)
     sb.table("batch_reviewers").delete().eq("batch_id", batch_id).execute()
-    return {"assignments_removed": removed, "reviewers": len(reviewers), "applications": len(apps)}
+    return {"assignments_removed": d["removed"], "reviewers": len(reviewers),
+            "applications": len(apps), "kept_draft": d["kept_draft"],
+            "deleted": d["deleted"]}

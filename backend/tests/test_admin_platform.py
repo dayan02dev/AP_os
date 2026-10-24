@@ -701,6 +701,8 @@ def test_batch_reviewers_assign_creates_n_by_m(client, monkeypatch, _clear_overr
             {"application_id": "app-2", "application_track": "sip", "batch_id": "b1"},
         ],
         "reviewer_assignments": [],
+        "tir_applications": [{"id": "app-1", "status": "submitted"}],
+        "sip_applications": [{"id": "app-2", "status": "submitted"}],
         "user_roles": [{"user_id": "rev-1", "role": "reviewer"}, {"user_id": "rev-2", "role": "reviewer"}],
     })
     monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
@@ -729,6 +731,7 @@ def test_batch_reviewers_assign_dedupes_existing(client, monkeypatch, _clear_ove
              "reviewer_user_id": "rev-1", "declined_at": None, "reassigned_to": None},
         ],
         "user_roles": [{"user_id": "rev-1", "role": "reviewer"}],
+        "tir_applications": [{"id": "app-1", "status": "under_review"}, {"id": "app-2", "status": "submitted"}],
     })
     monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])

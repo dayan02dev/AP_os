@@ -127,6 +127,8 @@ def _seed_over_cap():
     """Batch b1 has appX (new for rev-1) + appDup (already assigned to rev-1).
     rev-1's appDup assignment is the 3rd row, so a capped select('*') misses it."""
     return {
+        "tir_applications": [
+            {"id": "appX", "status": "submitted"}, {"id": "appDup", "status": "under_review"}],
         "application_batches": [
             {"application_id": "appX", "application_track": "tir", "batch_id": "b1"},
             {"application_id": "appDup", "application_track": "tir", "batch_id": "b1"},

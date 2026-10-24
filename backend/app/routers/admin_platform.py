@@ -70,6 +70,30 @@ def _native_items(items) -> list[tuple[str, str]]:
     return list(dict.fromkeys((aid, native.get(aid, t)) for aid, t in hints))
 
 
+_AUDIT_TRIPLE_CAP = 2000
+
+
+def _triples_audit(triples: list[dict]) -> dict[str, Any]:
+    """Deleted assignment triples for the audit `after` (restorability)."""
+    return {
+        "deleted_assignments": triples[:_AUDIT_TRIPLE_CAP],
+        "truncated": len(triples) > _AUDIT_TRIPLE_CAP,
+    }
+
+
+_RESERVED_BATCH_NAMES = frozenset(
+    {"unassigned", "unbatched", "new", "all", "random allotment"}
+)
+
+
+def _check_batch_name_reserved(name: str) -> None:
+    if name.strip().casefold() in _RESERVED_BATCH_NAMES:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "batch_name_reserved"},
+        )
+
+
 def _batch_name(sb, batch_id: str) -> str | None:
     try:
         rows = sb.table("batches").select("name").eq("id", batch_id).limit(1).execute().data
@@ -458,6 +482,7 @@ async def list_batches() -> dict:
 async def create_batch(body: BatchCreate, user: dict = Depends(get_current_user)) -> dict:
     """Create a new batch."""
     sb = get_admin_client()
+    _check_batch_name_reserved(body.name)
     if _batch_name_taken(sb, body.name):
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
@@ -506,6 +531,8 @@ async def rename_batch(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail={"code": "batch_not_found"},
         )
+    if fields.get("name") is not None:
+        _check_batch_name_reserved(fields["name"])
     if fields.get("name") is not None and _batch_name_taken(sb, fields["name"], exclude_id=batch_id):
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
@@ -565,10 +592,13 @@ async def delete_batch(
         target_id=batch_id,
         before={"name": existing[0].get("name")},
         after={"assignments_removed": cleanup["assignments_removed"],
-               "reviewers": cleanup["reviewers"], "applications": cleanup["applications"]},
+               "reviewers": cleanup["reviewers"], "applications": cleanup["applications"],
+               "kept_draft": cleanup["kept_draft"],
+               **_triples_audit(cleanup["deleted"])},
     )
     return {"ok": True, "batch_id": batch_id,
-            "assignments_removed": cleanup["assignments_removed"]}
+            "assignments_removed": cleanup["assignments_removed"],
+            "kept_draft": cleanup["kept_draft"]}
 
 
 @router.post(
@@ -599,13 +629,21 @@ async def assign_applications(
     from app.services import batch_membership
 
     hints = [(i.application_id, i.track) for i in body.items]
-    native, missing = applications_query.resolve_native_tracks_ex(hints)
+    try:
+        native, missing, uncertain = applications_query.resolve_native_tracks_ex(hints)
+    except applications_query.NativeTrackLookupFailed:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "lookup_failed"},
+        )
     if missing:
         raise HTTPException(
             status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": "unknown_application", "ids": sorted(missing)},
         )
-    items = list(dict.fromkeys((aid, native.get(aid, t)) for aid, t in hints))
+    items = list(dict.fromkeys(
+        (aid, native.get(aid, t)) for aid, t in hints if aid not in uncertain
+    ))
     result = batch_membership.add_apps_to_batch(
         sb, batch_id, items, actor=user["user_id"]
     )
@@ -641,6 +679,7 @@ async def assign_applications(
         "reviewers_notified": notified,
         "skipped_draft": result["skipped_draft"],
         "skipped_closed": result["skipped_closed"],
+        "skipped_unknown": sorted(uncertain) + result["skipped_unknown"],
     }
 
 
@@ -664,12 +703,16 @@ async def remove_applications_from_batch(
 
     removed = 0
     skipped = 0
+    kept_draft = 0
+    deleted: list[dict] = []
     for aid, track in _native_items(body.items):
         r = batch_membership.remove_app_from_batch(
             sb, batch_id, aid, track, actor=user["user_id"]
         )
         removed += r["assignments_removed"]
         skipped += r["skipped_submitted"]
+        kept_draft += r["kept_draft"]
+        deleted += r["deleted"]
 
     write_audit(
         actor_user_id=user["user_id"],
@@ -682,12 +725,15 @@ async def remove_applications_from_batch(
             "assignments_removed": removed,
             "skipped_submitted": skipped,
             "application_ids": [i.application_id for i in body.items][:200],
+            "kept_draft": kept_draft,
+            **_triples_audit(deleted),
         },
     )
     return {
         "removed": len(body.items),
         "assignments_removed": removed,
         "skipped_submitted": skipped,
+        "kept_draft": kept_draft,
     }
 
 
@@ -847,9 +893,12 @@ async def unassign_batch_reviewer(
             "removed": result["removed"],
             "skipped_submitted": result["skipped_submitted"],
             "application_ids": result.get("application_ids", [])[:200],
+            "kept_draft": result["kept_draft"],
+            **_triples_audit(result["deleted"]),
         },
     )
-    return {"removed": result["removed"], "skipped_submitted": result["skipped_submitted"]}
+    return {"removed": result["removed"], "skipped_submitted": result["skipped_submitted"],
+            "kept_draft": result["kept_draft"]}
 
 
 @router.patch(
@@ -1220,8 +1269,11 @@ async def rebalance_reviewers(
             ignore_duplicates=True,
         ).execute()
     from app.services import batch_membership
-    for aid, atrack in dict.fromkeys((r["application_id"], r["application_track"]) for r in rows):
-        batch_membership._advance(aid, atrack, changed_by=user["user_id"])
+    batch_membership.advance_many(
+        sb,
+        list(dict.fromkeys((r["application_id"], r["application_track"]) for r in rows)),
+        changed_by=user["user_id"],
+    )
     notify_reviewers_assigned(sb, rows)
     created = len(rows)
 
