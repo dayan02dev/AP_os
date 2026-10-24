@@ -502,7 +502,7 @@ export function AdminReviewers() {
       setAssignNote(`Assigned ${created} application(s) · ${resp?.reviewers_notified ?? 0} email(s) sent`);
       reload();
     } catch (e) {
-      setAssignErr(e?.message || 'Assignment failed.');
+      setAssignErr((e?.code || e?.details?.detail?.code) === 'not_a_reviewer' ? 'That user is not a reviewer.' : (e?.message || 'Assignment failed.'));
     } finally {
       setBusyFor(reviewerId, false);
     }

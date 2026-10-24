@@ -32,6 +32,16 @@ import { RecoCell, aggregateReco } from "../../../../components/RecoCell";
 // Real industry chip counts from the loaded pipeline rows, scoped to the
 // selected track. Excludes hidden/archived rows and rows without an industry
 // ("—"). Returns [{ name, count }] sorted by count desc (name tiebreak).
+// Map batch-endpoint error codes to clear operator messages.
+export function batchErrorText(e, prefix) {
+  const code = e?.code || e?.details?.detail?.code;
+  if (code === 'batch_name_exists') return `${prefix}: a batch with that name already exists.`;
+  if (code === 'unknown_application') return `${prefix}: some selected applications no longer exist. Refresh and try again.`;
+  if (code === 'not_a_reviewer') return `${prefix}: that user is not a reviewer.`;
+  if (e?.status === 422 && /name/i.test(String(e?.message || '') + JSON.stringify(e?.details || {}))) return `${prefix}: batch name can't be blank.`;
+  return `${prefix}: ${e?.message || e}`;
+}
+
 export function industryCountsFor(rows, track) {
   const counts = new Map();
   for (const s of rows || []) {
@@ -422,9 +432,17 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   };
   const UNASSIGN_CONFIRM = (n) =>
     `Remove ${n} application(s) from every batch AND from all assigned reviewers? Submitted reviews are kept.`;
-  const assignNote = (resp, where) => {
+  const assignNote = (resp, where, selected) => {
     const created = resp?.assignments_created ?? resp?.created;
-    return `${where}${created != null ? ` · ${created} assignment(s) created` : ''} · ${resp?.reviewers_notified ?? 0} email(s) sent.`;
+    let t = `${where}${created != null ? ` · ${created} assignment(s) created` : ''} · ${resp?.reviewers_notified ?? 0} email(s) sent`;
+    if (selected != null && typeof resp?.assigned === 'number' && resp.assigned < selected) {
+      t += ` · ${selected - resp.assigned} already in batch`;
+    }
+    const closed = (resp?.skipped_closed || []).length;
+    const drafts = (resp?.skipped_draft || []).length;
+    if (closed) t += ` · ${closed} closed (rejected/decided) apps linked without reviewers`;
+    if (drafts) t += ` · ${drafts} drafts skipped`;
+    return t + '.';
   };
   // Prompts for a new batch name; null if cancelled or the name already exists.
   const promptNewBatchName = () => {
@@ -527,7 +545,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         targetBatchId = created?.id;
         await reloadBatches();
       } catch (e) {
-        setNote({ kind: 'error', text: `Create batch failed: ${e?.message || e}` });
+        setNote({ kind: 'error', text: batchErrorText(e, 'Create batch failed') });
         setBusy(false);
         return;
       }
@@ -549,9 +567,9 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       const resp = await adminPlatformApi.assignBatch(targetBatchId, {
         items: selectedRows.map((r) => ({ track: nativeOf(r), application_id: r.id })),
       });
-      await finishBulk({ kind: 'ok', text: assignNote(resp, `Assigned ${selectedRows.length} to ${targetBatchName}`) });
+      await finishBulk({ kind: 'ok', text: assignNote(resp, `Assigned ${selectedRows.length} to ${targetBatchName}`, selectedRows.length) });
     } catch (e) {
-      setNote({ kind: 'error', text: `Batch assign failed: ${e?.message || e}` });
+      setNote({ kind: 'error', text: batchErrorText(e, 'Batch assign failed') });
     } finally {
       setBusy(false);
     }
@@ -569,9 +587,9 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         });
         await reloadBatches();
         await reload();
-        setNote({ kind: 'ok', text: assignNote(resp, `Assigned to ${custom}`) });
+        setNote({ kind: 'ok', text: assignNote(resp, `Assigned to ${custom}`, 1) });
       } catch (e) {
-        setNote({ kind: 'error', text: `Batch create failed: ${e?.message || e}` });
+        setNote({ kind: 'error', text: batchErrorText(e, 'Batch create failed') });
       }
     } else {
       const found = findBatchByName(val);
@@ -581,9 +599,9 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
           items: [{ track: nativeOf(startup), application_id: startup.id }],
         });
         await reload();
-        setNote({ kind: 'ok', text: assignNote(resp, `Assigned to ${val}`) });
+        setNote({ kind: 'ok', text: assignNote(resp, `Assigned to ${val}`, 1) });
       } catch (e) {
-        setNote({ kind: 'error', text: `Batch assign failed: ${e?.message || e}` });
+        setNote({ kind: 'error', text: batchErrorText(e, 'Batch assign failed') });
       }
     }
   };
@@ -596,7 +614,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         { track: nativeOf(startup), application_id: startup.id },
       ]);
       await reload();
-      setNote({ kind: 'ok', text: 'Removed from batch.' });
+      setNote({ kind: 'ok', text: 'Removed from batch (reviews kept).' });
     } catch (e) {
       setNote({ kind: 'error', text: `Remove from batch failed: ${e?.message || e}` });
     }
@@ -614,7 +632,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       await reloadBatches();
       await reload();
     } catch (e) {
-      setNote({ kind: 'error', text: `Rename failed: ${e?.message || e}` });
+      setNote({ kind: 'error', text: batchErrorText(e, 'Rename failed') });
     }
   };
 
@@ -622,16 +640,16 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     const found = findBatchByName(name);
     if (!found) return;
     if (!window.confirm(
-      `Delete batch "${name}"? Its applications revert to Random allotment; ` +
-      `reviewer assignments and reviews are kept.`
+      `Delete batch "${name}"? Its applications return to Random allotment and its reviewers are removed from them (submitted reviews are kept).`
     )) return;
     try {
-      await adminPlatformApi.deleteBatch(found.id);
+      const delResp = await adminPlatformApi.deleteBatch(found.id);
       if (batchFilter === name) setBatchFilter('all');
       await reloadBatches();
       await reload();
+      setNote({ kind: 'ok', text: `Deleted batch "${name}"${delResp?.assignments_removed != null ? ` · ${delResp.assignments_removed} reviewer assignment(s) removed` : ''}.` });
     } catch (e) {
-      setNote({ kind: 'error', text: `Delete failed: ${e?.message || e}` });
+      setNote({ kind: 'error', text: batchErrorText(e, 'Delete failed') });
     }
   };
 
@@ -881,7 +899,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                           await adminPlatformApi.createBatch({ name });
                           await reloadBatches();
                         } catch (e) {
-                          setNote({ kind: 'error', text: `Create batch failed: ${e?.message || e}` });
+                          setNote({ kind: 'error', text: batchErrorText(e, 'Create batch failed') });
                         }
                       }
                     }}

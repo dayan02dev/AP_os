@@ -89,6 +89,7 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
     }
     const parts = [];
     if (c.created) parts.push(`assigned ${c.created}`);
+    if (c.skipped_closed) parts.push(`${c.skipped_closed} skipped (closed)`);
     if (c.already_assigned) parts.push(`${c.already_assigned} already assigned`);
     if (c.not_a_reviewer) parts.push("not a reviewer");
     if (c.invalid_track) parts.push(`${c.invalid_track} invalid`);
@@ -121,7 +122,8 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
     setBusy(true); setErr(null); setNotice(null);
     try {
       const res = await adminPlatformApi.bulkAssignReviewerApps(reviewer.id, items);
-      setNotice({ kind: "ok", text: `Assign: ${summarize(res?.results, "assign")}.` });
+      const skippedClosed = (res?.results || []).some(r => r.status === "skipped_closed");
+      setNotice({ kind: skippedClosed ? "warn" : "ok", text: `Assign: ${summarize(res?.results, "assign")}.` });
       setSelAssign(new Set());
       setSearch("");
       reload();
