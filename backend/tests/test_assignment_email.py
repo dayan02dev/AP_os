@@ -132,3 +132,22 @@ def test_template_renders_names_label_batch_and_escapes():
     svc.send_reviewer_assigned(to="r@x", reviewer_name="Rev", apps=apps, inbox_url="u")
     assert "and 5 more" in sent["text"] and "and 5 more" in sent["html"]
     assert sent["subject"] == "You've been assigned 65 applications to review — ARTPARK"
+
+
+def test_display_ids_use_vip_prefix_for_sip_and_keep_tir_for_moved(monkeypatch):
+    sb = FakeSupabase({
+        "tir_applications": [
+            {"id": "m1", "basic_full_name": "Moved", "basic_org": "MovedCo", "display_seq": 6,
+             "moved_to_track": "sip", "status": "submitted"}],
+        "sip_applications": [
+            {"id": "s1", "basic_full_name": "Vee", "basic_org": "VeeCo", "display_seq": 26668,
+             "moved_to_track": None, "status": "submitted"}],
+    })
+    monkeypatch.setattr(ae.applications_query, "fetch_project_names_for", lambda pairs: {})
+    info = ae._fetch_app_names(sb, [
+        {"application_id": "m1", "application_track": "tir"},
+        {"application_id": "s1", "application_track": "sip"},
+    ])
+    assert info[("s1", "sip")]["display_id"] == "VIP-26668"
+    assert info[("m1", "tir")]["display_id"] == "TIR-6"
+    assert info[("m1", "tir")]["track_label"] == "VIP"

@@ -1617,8 +1617,7 @@ def bulk_assign_reviewer_apps(
 
     existing: set[tuple[str, str]] = set()
     try:
-        for a in (sb.table("reviewer_assignments").select("*")
-                  .eq("reviewer_user_id", user_id).execute().data) or []:
+        for a in iter_assignment_rows(sb, reviewer_ids=[user_id]):
             if a.get("reviewer_user_id") == user_id:
                 existing.add((a.get("application_id"), a.get("application_track")))
     except Exception as exc:
@@ -1637,6 +1636,7 @@ def bulk_assign_reviewer_apps(
 
     now = datetime.now(UTC).isoformat()
     results: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for it in items:
         aid = it.get("application_id")
         track = it.get("track")
@@ -1649,33 +1649,37 @@ def bulk_assign_reviewer_apps(
         if (aid, track) in existing:
             results.append({"application_id": aid, "track": track, "status": "already_assigned"})
             continue
-        try:
-            sb.table("reviewer_assignments").insert({
-                "application_id": aid,
-                "application_track": track,
-                "reviewer_user_id": user_id,
-                "assigned_by": assigned_by,
-                "assigned_at": now,
-                "state": "pending",
-                "due_at": None,
-            }).execute()
-            existing.add((aid, track))
-            results.append({"application_id": aid, "track": track, "status": "created"})
-        except Exception as exc:
-            log.warning("bulk_assign: insert failed",
-                        extra={"application_id": aid, "err": str(exc)})
-            results.append({"application_id": aid, "track": track, "status": "error"})
+        rows.append({
+            "application_id": aid,
+            "application_track": track,
+            "reviewer_user_id": user_id,
+            "assigned_by": assigned_by,
+            "assigned_at": now,
+            "state": "pending",
+            "due_at": None,
+        })
+        existing.add((aid, track))
+        results.append({"application_id": aid, "track": track, "status": "created"})
 
-    from app.services import state_machine  # local import to avoid cycles
-    for r in results:
-        if r["status"] != "created":
-            continue
+    if rows:
         try:
-            state_machine.advance_to_under_review_on_assignment(
-                r["application_id"], r["track"], changed_by=assigned_by)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("bulk_assign: advance failed",
-                        extra={"application_id": r["application_id"], "err": str(exc)})
+            for i in range(0, len(rows), 500):
+                sb.table("reviewer_assignments").upsert(
+                    rows[i : i + 500],
+                    on_conflict="application_id,application_track,reviewer_user_id",
+                    ignore_duplicates=True,
+                ).execute()
+        except Exception as exc:
+            log.warning("bulk_assign: bulk upsert failed", extra={"err": str(exc)})
+            for r in results:
+                if r["status"] == "created":
+                    r["status"] = "error"
+            rows = []
+
+    batch_membership.advance_many(
+        sb, [(r["application_id"], r["application_track"]) for r in rows],
+        changed_by=assigned_by,
+    )
     return {"results": results}
 
 
@@ -1730,19 +1734,24 @@ def assign_reviewers_to_batch(
     Returns ``{"created", "reviewers", "applications", "created_rows"}`` so the
     caller can decide whether to notify on the newly-created rows.
     """
-    # Apps in this batch. `.eq()` narrows on real PostgREST; the fake test client
-    # no-ops `.eq()` for non-PK selects, so re-filter in Python on batch_id.
-    link_rows = (
-        sb.table("application_batches")
-        .select("application_id,application_track,batch_id")
-        .eq("batch_id", batch_id)
-        .execute()
-        .data
-    ) or []
-    apps = [
+    # Apps in this batch (paginated). Only apps whose row exists under that
+    # track, are not draft and not closed (decided/withdrawn) get new work;
+    # orphan-keyed links and closed apps keep their link but no assignment.
+    from app.services import batch_membership
+
+    links = [
+        {"application_id": aid, "application_track": track}
+        for aid, track in batch_membership.apps_in_batch(sb, batch_id)
+    ]
+    linked = [
         (r["application_id"], r["application_track"])
-        for r in staff_exclusions.visible(link_rows, key="application_id")
-        if r.get("batch_id") == batch_id and r.get("application_id") and r.get("application_track")
+        for r in staff_exclusions.visible(links, key="application_id")
+    ]
+    statuses = batch_membership.app_statuses(sb, linked)
+    closed = batch_membership.closed_statuses()
+    apps = [
+        k for k in linked
+        if k in statuses and statuses[k] != "draft" and statuses[k] not in closed
     ]
 
     reviewer_ids = list(dict.fromkeys(reviewer_user_ids))  # dedupe, keep order
@@ -1770,10 +1779,6 @@ def assign_reviewers_to_batch(
     # grew past the cap this snapshot missed existing triples and the insert
     # below re-created them → duplicate-key 500. Narrowing to reviewer_ids keeps
     # the scan small.
-    # Closed (decided/withdrawn) apps keep their batch link but get no new work.
-    from app.services import batch_membership
-    closed = batch_membership.closed_keys(sb, apps)
-    apps = [k for k in apps if k not in closed]
     app_keys = set(apps)
     reviewer_id_set = set(reviewer_ids)
     existing_pairs: set[tuple[str, str, str]] = set()

@@ -339,23 +339,34 @@ def fetch_ai_scores_for(
     return out
 
 
+class NativeTrackLookupFailed(Exception):
+    """Both `*_applications` lookups failed for a chunk: ownership is unknowable."""
+
+
 def resolve_native_tracks_ex(
     items: list[tuple[str, str]],
-) -> tuple[dict[str, str], set[str]]:
-    """Like `resolve_native_tracks` but also returns the ids found in NEITHER
-    table. If a lookup fails (or no client), the affected ids are treated as
-    found (we cannot tell) so callers never reject on an infra error."""
+) -> tuple[dict[str, str], set[str], set[str]]:
+    """Like `resolve_native_tracks` but returns `(native, missing, uncertain)`.
+
+    `missing`: ids found in NEITHER table (both lookups succeeded).
+    `uncertain`: ids not found where exactly one table lookup failed (they may
+    live in the failed table); callers must not write them.
+    Raises `NativeTrackLookupFailed` if both lookups fail for a chunk. With no
+    admin client at all (unit tests / misconfig) nothing is reported missing."""
     hints = {aid: track for aid, track in items}
     out = dict(hints)
     ids = list(hints)
-    found: set[str] = set()
+    missing: set[str] = set()
+    uncertain: set[str] = set()
     try:
         sb = get_admin_client()
     except Exception as exc:  # noqa: BLE001
         log.warning("resolve_native_tracks: no client", extra={"err": str(exc)})
-        return out, set()
+        return out, missing, uncertain
     for i in range(0, len(ids), 150):
         chunk = ids[i : i + 150]
+        found: set[str] = set()
+        failed = 0
         for track in ("tir", "sip"):
             try:
                 rows = (
@@ -363,13 +374,17 @@ def resolve_native_tracks_ex(
                 ) or []
             except Exception as exc:  # noqa: BLE001
                 log.warning("resolve_native_tracks failed", extra={"track": track, "err": str(exc)})
-                found |= set(chunk)
+                failed += 1
                 continue
             for r in rows:
-                if r.get("id") in out:
+                if r.get("id") in out and r["id"] in chunk:
                     out[r["id"]] = track
                     found.add(r["id"])
-    return out, set(ids) - found
+        if failed == 2:
+            raise NativeTrackLookupFailed()
+        rest = set(chunk) - found
+        (uncertain if failed else missing).update(rest)
+    return out, missing, uncertain
 
 
 def resolve_native_tracks(items: list[tuple[str, str]]) -> dict[str, str]:
@@ -378,7 +393,10 @@ def resolve_native_tracks(items: list[tuple[str, str]]) -> dict[str, str]:
     Moved apps (tir row with moved_to_track='sip') live in tir_applications, but
     the UI sends the effective track. Children must be keyed by native track.
     Ids not found anywhere keep their hint. Best-effort."""
-    return resolve_native_tracks_ex(items)[0]
+    try:
+        return resolve_native_tracks_ex(items)[0]
+    except NativeTrackLookupFailed:
+        return dict(items)
 
 
 def fetch_project_names_for(
@@ -403,27 +421,29 @@ def fetch_project_names_for(
     for track, ids in by_track.items():
         if not ids:
             continue
-        try:
-            res = (
-                get_admin_client()
-                .table("ai_screening")
-                .select("application_id,project_name")
-                .eq("application_track", track)
-                .in_("application_id", ids)
-                .execute()
-            )
-            for row in res.data or []:
-                aid = row.get("application_id")
-                name = row.get("project_name")
-                if aid is None:
-                    continue
-                out[(track, aid)] = name or None
-        except Exception as exc:
-            log.warning(
-                "applications_query.fetch_project_names_for failed",
-                extra={"track": track, "err": str(exc)},
-            )
-            continue
+        for i in range(0, len(ids), 150):
+            chunk = ids[i : i + 150]
+            try:
+                res = (
+                    get_admin_client()
+                    .table("ai_screening")
+                    .select("application_id,project_name")
+                    .eq("application_track", track)
+                    .in_("application_id", chunk)
+                    .execute()
+                )
+                for row in res.data or []:
+                    aid = row.get("application_id")
+                    name = row.get("project_name")
+                    if aid is None:
+                        continue
+                    out[(track, aid)] = name or None
+            except Exception as exc:
+                log.warning(
+                    "applications_query.fetch_project_names_for failed",
+                    extra={"track": track, "err": str(exc)},
+                )
+                continue
 
     return out
 

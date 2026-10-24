@@ -1315,6 +1315,8 @@ def test_reviewer_invite_valid_batch_assigns_apps_without_assignment_email(
         rows={
             "profiles": [], "user_roles": [],
             "batches": [{"id": batch_uuid, "name": "Batch A"}],
+            "tir_applications": [{"id": "app-1", "status": "submitted"}],
+            "sip_applications": [{"id": "app-2", "status": "submitted"}],
             "application_batches": [
                 {"application_id": "app-1", "application_track": "tir", "batch_id": batch_uuid},
                 {"application_id": "app-2", "application_track": "sip", "batch_id": batch_uuid},

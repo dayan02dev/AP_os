@@ -3,6 +3,7 @@ from app.routers import admin_platform
 from app.services import admin_query, applications_query, batch_membership, state_machine
 from tests.fixtures.fake_supabase import FakeSupabase
 
+_real_advance_many = batch_membership.advance_many
 USER = {"user_id": "admin", "roles": ["admin"]}
 
 
@@ -74,6 +75,7 @@ async def test_assign_applications_moved_app_keyed_native(monkeypatch):
 async def test_bulk_assign_reviewer_apps_moved_app_keyed_native(monkeypatch):
     sb = _db()
     _patch(monkeypatch, sb)
+    monkeypatch.setattr(batch_membership, "advance_many", _real_advance_many)
     monkeypatch.setattr(admin_query, "get_admin_client", lambda: sb)
     monkeypatch.setattr(admin_query, "_reviewer_user_ids", lambda: ["r1"])
     monkeypatch.setattr(state_machine, "get_admin_client", lambda: sb)
@@ -146,3 +148,99 @@ def test_invite_template_without_password():
                              temp_password=None, inbox_url="https://x")
     assert "existing ARTPARK account" in sent["html"] and "Password:" not in sent["html"]
     assert "existing ARTPARK account" in sent["text"] and "Password:" not in sent["text"]
+
+
+def _bm_db():
+    return FakeSupabase({
+        "batch_reviewers": [{"batch_id": "A", "reviewer_user_id": "r1"}],
+        "application_batches": [
+            {"application_id": a, "application_track": "sip", "batch_id": "A"} for a in ("x", "y")],
+        "reviewer_assignments": [
+            {"application_id": a, "application_track": "sip", "reviewer_user_id": "r1"} for a in ("x", "y")],
+        "reviews": [{"application_id": "x", "application_track": "sip", "reviewer_user_id": "r1",
+                     "submitted_at": None, "status": "draft"}],
+    })
+
+
+def test_remove_reviewer_keeps_draft_assignment_and_reports_triples():
+    sb = _bm_db()
+    res = batch_membership.remove_reviewer_from_batch(sb, "A", "r1", actor="adm")
+    assert res["kept_draft"] == 1 and res["removed"] == 1
+    assert res["deleted"] == [{"application_id": "y", "application_track": "sip", "reviewer_user_id": "r1"}]
+    assert [a["application_id"] for a in sb.tables["reviewer_assignments"]] == ["x"]
+
+
+def test_remove_app_keeps_draft_and_submitted_does_not_protect():
+    sb = _bm_db()
+    sb.tables["reviews"].append({"application_id": "y", "application_track": "sip",
+                                 "reviewer_user_id": "r1", "submitted_at": "t", "status": "submitted"})
+    a = batch_membership.remove_app_from_batch(sb, "A", "x", "sip", actor="adm")
+    b = batch_membership.remove_app_from_batch(sb, "A", "y", "sip", actor="adm")
+    assert a["kept_draft"] == 1 and a["assignments_removed"] == 0
+    assert b["assignments_removed"] == 1 and b["kept_draft"] == 0
+
+
+def test_delete_batch_audit_has_triples(monkeypatch):
+    import asyncio
+    sb = _bm_db()
+    sb.tables["batches"] = [{"id": "A", "name": "A"}]
+    sb.tables["reviewer_profiles"] = []
+    audits = []
+    monkeypatch.setattr(admin_platform, "get_admin_client", lambda: sb)
+    monkeypatch.setattr(admin_platform, "write_audit", lambda **k: audits.append(k))
+    asyncio.run(admin_platform.delete_batch("A", user=USER))
+    after = audits[-1]["after"]
+    assert after["kept_draft"] == 1 and after["truncated"] is False
+    assert after["deleted_assignments"] == [
+        {"application_id": "y", "application_track": "sip", "reviewer_user_id": "r1"}]
+
+
+def test_reserved_batch_names_rejected():
+    import pytest
+    from fastapi import HTTPException
+    for n in ("Unassigned", " ALL ", "Random Allotment", "new", "unbatched"):
+        with pytest.raises(HTTPException) as e:
+            admin_platform._check_batch_name_reserved(n)
+        assert e.value.detail["code"] == "batch_name_reserved"
+    admin_platform._check_batch_name_reserved("Defense")
+
+
+def test_resolve_ex_lookup_failures(monkeypatch):
+    import pytest
+    sb = _db()
+    monkeypatch.setattr(applications_query, "get_admin_client", lambda: sb)
+    orig = sb.table
+
+    def one_fails(name):
+        if name == "sip_applications":
+            raise RuntimeError("down")
+        return orig(name)
+
+    sb.table = one_fails
+    native, missing, uncertain = applications_query.resolve_native_tracks_ex(
+        [("moved1", "sip"), ("ghost", "sip")])
+    assert native["moved1"] == "tir" and uncertain == {"ghost"} and missing == set()
+
+    def both_fail(name):
+        raise RuntimeError("down")
+
+    sb.table = both_fail
+    with pytest.raises(applications_query.NativeTrackLookupFailed):
+        applications_query.resolve_native_tracks_ex([("a", "tir")])
+
+
+def test_project_names_lookup_is_chunked(monkeypatch):
+    sb = FakeSupabase({"ai_screening": []})
+    monkeypatch.setattr(applications_query, "get_admin_client", lambda: sb)
+    seen = []
+    orig = sb.table
+
+    def spy(name):
+        q = orig(name)
+        oi = q.in_
+        q.in_ = lambda c, v: (seen.append(len(v)), oi(c, v))[1]
+        return q
+
+    sb.table = spy
+    applications_query.fetch_project_names_for([("tir", f"i{n}") for n in range(400)])
+    assert seen and max(seen) <= 150

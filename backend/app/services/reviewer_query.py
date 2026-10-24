@@ -531,7 +531,9 @@ def _fetch_all(make_query) -> list[dict]:
     rows: list[dict] = []
     offset = 0
     while True:
-        chunk = (make_query().range(offset, offset + _PAGE - 1).execute().data) or []
+        chunk = (
+            make_query().order("id").range(offset, offset + _PAGE - 1).execute().data
+        ) or []
         rows.extend(chunk)
         if len(chunk) < _PAGE:
             return rows

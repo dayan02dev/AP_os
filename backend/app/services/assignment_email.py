@@ -19,6 +19,13 @@ def track_label(track: str | None) -> str:
     return {"tir": "TIR", "sip": "VIP"}.get((track or "").lower(), (track or "").upper())
 
 
+def _display_id(track: str, seq) -> str:
+    """Human id as the UI shows it: the sip track is branded VIP (SIP-1 -> VIP-1).
+    Keyed on the NATIVE track, so a TIR row moved to VIP keeps its TIR- id."""
+    ident = stats.compose_display_id(track, seq)
+    return "VIP-" + ident[4:] if ident.startswith("SIP-") else ident
+
+
 def _fetch_app_names(sb, assignments: list[dict]) -> dict[tuple[str, str], dict]:
     """Map (application_id, native track) -> {name, track_label, display_id, status}.
 
@@ -57,7 +64,7 @@ def _fetch_app_names(sb, assignments: list[dict]) -> dict[tuple[str, str], dict]
             out[(r["id"], track)] = {
                 "name": name,
                 "track_label": track_label(r.get("moved_to_track") or track),
-                "display_id": stats.compose_display_id(track, r.get("display_seq")),
+                "display_id": _display_id(track, r.get("display_seq")),
                 "status": r.get("status"),
             }
     return out
@@ -91,7 +98,7 @@ def notify_reviewers_assigned(sb, assignments: list[dict], *, batch_name: str | 
                     "applicant_name": meta.get("name") or it["application_id"][:8],
                     "track_label": meta.get("track_label") or track_label(it.get("application_track")),
                     "display_id": meta.get("display_id")
-                    or stats.compose_display_id(it.get("application_track"), None),
+                    or _display_id(it.get("application_track"), None),
                 })
             if not apps:
                 continue
