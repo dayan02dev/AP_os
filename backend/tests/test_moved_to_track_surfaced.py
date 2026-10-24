@@ -14,6 +14,7 @@ def test_fetch_queue_row_includes_moved_to_track(monkeypatch):
         def __init__(self, name): self.name = name
         def select(self, *a, **k): return self
         def eq(self, *a, **k): return self
+        def range(self, *a, **k): return self
         def in_(self, *a, **k): return self
         def execute(self):
             data = {"reviewer_assignments": ASSIGN, "tir_applications": [APP]}.get(self.name, [])

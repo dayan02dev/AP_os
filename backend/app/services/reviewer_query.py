@@ -187,7 +187,16 @@ def fetch_inbox(reviewer_user_id: str) -> list[dict]:
 
 # Statuses where the admin has already decided the app: the reviewer's form is
 # read-only and review writes are refused (409 application_decided).
-DECIDED_STATUSES = frozenset({"rejected", "jury_review", "offered", "onboarded"})
+DECIDED_STATUSES = frozenset({
+    "rejected", "jury_review", "offered", "onboarded", "withdrawn", "waitlisted",
+})
+
+
+def is_open_for_review(status: str | None) -> bool:
+    """THE shared "is this app still reviewable work" predicate (roster, admin
+    drawer, reviewer queue). A missing app row (None) is a broken key, and a
+    DECIDED app is closed to review writes."""
+    return status is not None and status not in DECIDED_STATUSES
 
 
 def _is_active_assignment(a: dict) -> bool:
@@ -477,9 +486,12 @@ def _display_id(track: str, app_row: dict) -> str:
 
 def _founder_names(track: str, app_row: dict) -> list[str]:
     names = [app_row.get("basic_full_name") or ""]
-    extra = app_row.get("basic_teammates") if track == "tir" else app_row.get("sip_founders")
-    for t in (extra or []):
-        n = (t or {}).get("name") or (t or {}).get("fullName")
+    extras = list(app_row.get("basic_teammates") or [])
+    if track != "tir":
+        extras += list(app_row.get("sip_founders") or [])
+    for t in extras:
+        t = t if isinstance(t, dict) else {}
+        n = t.get("fullName") or t.get("full_name") or t.get("name")
         if n:
             names.append(n)
     return [n for n in names if n]
@@ -575,8 +587,9 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
 
     sb = get_admin_client()
     try:
-        assignments = (sb.table("reviewer_assignments").select("*")
-                       .eq("reviewer_user_id", reviewer_user_id).execute().data) or []
+        assignments = _fetch_all(
+            lambda: sb.table("reviewer_assignments").select("*")
+            .eq("reviewer_user_id", reviewer_user_id))
     except Exception as exc:
         log.warning("queue: assignments fetch failed",
                     extra={"reviewer": reviewer_user_id, "err": str(exc)})
@@ -588,8 +601,9 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
     # so detached submitted reviews are found): {(app_id, track): row}
     rv_by_key: dict[tuple[str, str], dict] = {}
     try:
-        rv_rows = (sb.table("reviews").select("*")
-                   .eq("reviewer_user_id", reviewer_user_id).execute().data) or []
+        rv_rows = _fetch_all(
+            lambda: sb.table("reviews").select("*")
+            .eq("reviewer_user_id", reviewer_user_id))
     except Exception as exc:
         log.warning(
             "queue: reviews fetch failed",
@@ -631,8 +645,10 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
     # AI screening rows: {(application_id, application_track): row}
     ai_by_key: dict[tuple[str, str], dict] = {}
     try:
-        ai_rows = (sb.table("ai_screening").select("*")
-                   .in_("application_id", all_ids).execute().data) or []
+        ai_rows = []
+        for chunk in _chunks(all_ids):
+            ai_rows += (sb.table("ai_screening").select("*")
+                        .in_("application_id", chunk).execute().data) or []
     except Exception as exc:
         log.warning(
             "queue: ai_screening fetch failed",
@@ -660,8 +676,8 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
             continue
         my_review = rv_by_key.get((app_id, track))
         submitted = bool(my_review and my_review.get("submitted_at"))
-        closed = app_row.get("status") == "rejected"
-        if closed and not submitted:
+        closed = app_row.get("status") in DECIDED_STATUSES
+        if not submitted and not is_open_for_review(app_row.get("status")):
             continue
 
         ai_row = ai_by_key.get((app_id, track))
