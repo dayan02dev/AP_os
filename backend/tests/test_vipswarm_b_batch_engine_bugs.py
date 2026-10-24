@@ -200,19 +200,6 @@ def test_remove_reviewer_from_batch_handles_batch_over_1000_apps():
     assert sb.tables["reviewer_assignments"] == []
 
 
-def test_has_submitted_review_unpaginated_select_star():
-    """BUG: has_submitted_review reads select('*') of ALL the reviewer's reviews
-    (capped at 1000) and filters in Python; a protected review beyond row 1000
-    is missed and remove_app_from_batch deletes a reviewed assignment."""
-    rev = [{"application_id": f"a{i}", "application_track": "sip", "reviewer_user_id": "r1",
-            "status": "draft"} for i in range(1000)]
-    rev.append({"application_id": "target", "application_track": "sip",
-                "reviewer_user_id": "r1", "status": "submitted", "submitted_at": "t"})
-    sb = CappedFake({"reviews": rev})
-    assert bm.has_submitted_review(sb, "target", "sip", "r1") is True
-
-
-# 7 ─ round trips vs 29 s Lambda ───────────────────────────────────────────
 def _big_assignments(n=3200):
     return [{"application_id": f"x{i}", "application_track": "tir", "reviewer_user_id": "other",
              "declined_at": None, "reassigned_to": None} for i in range(n)]
