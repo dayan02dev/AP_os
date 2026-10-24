@@ -5,6 +5,10 @@
 <div style="font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#8a86a0;margin-bottom:10px;">New applications assigned</div>
 <div style="font-family:'Trebuchet MS','Lucida Grande',Tahoma,sans-serif;font-weight:700;font-size:22px;line-height:1.25;letter-spacing:-0.01em;color:#242424;margin:0 0 14px;">Hello {{ reviewer_name }} — {{ count }} application{{ "s" if count != 1 else "" }} {{ "are" if count != 1 else "is" }} waiting for your review.</div>
 <p style="margin:0 0 14px;">Thank you for lending ARTPARK your time and judgement. {{ count }} application{{ "s have" if count != 1 else " has" }} been added to your reviewer inbox — you can score {{ "them" if count != 1 else "it" }} whenever suits you.</p>
+{% if batch_name %}<p style="margin:0 0 14px;">These come from the <strong>{{ batch_name }}</strong> batch.</p>{% endif %}
+{% if apps %}<ul style="margin:0 0 18px;padding-left:18px;color:#242424;">
+{% for a in apps %}<li style="margin:0 0 6px;">{{ a.applicant_name }} &mdash; {{ a.track_label }} &middot; {{ a.display_id }}</li>
+{% endfor %}{% if more %}<li style="margin:0 0 6px;color:#5a5a66;">&hellip;and {{ more }} more</li>{% endif %}</ul>{% endif %}
 <p style="margin:0 0 22px;">We're grateful to have you on the panel.</p>
 <a href="{{ inbox_url }}" style="display:inline-block;background:#3213b7;color:#ffffff;text-decoration:none;font-family:'Trebuchet MS','Lucida Grande',Tahoma,sans-serif;font-weight:600;font-size:14px;padding:11px 20px;">Open reviewer inbox &nbsp;→</a>
 <p style="margin:24px 0 0;color:#5a5a66;">— The ARTPARK team</p>

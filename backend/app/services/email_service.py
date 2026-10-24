@@ -58,6 +58,7 @@ _RESEND_URL = "https://api.resend.com/emails"
 # HTTP timeout in seconds. Resend is fast — anything over ~10s is a sign
 # the connection is wedged, not a slow mail server. Fail fast.
 _HTTP_TIMEOUT_S = 10.0
+_ASSIGNED_LIST_CAP = 60
 
 
 class EmailDeliveryError(Exception):
@@ -434,16 +435,29 @@ class EmailService:
         reviewer_name: str,
         apps: list[dict],
         inbox_url: str,
+        batch_name: str | None = None,
     ) -> dict[str, str]:
-        """One batched email: the reviewer has been assigned `apps` to review."""
+        """One batched email: the reviewer has been assigned `apps` to review.
+
+        Each app dict: applicant_name, track_label, display_id. At most
+        `_ASSIGNED_LIST_CAP` rows are listed; the rest collapse to "and N more"."""
         count = len(apps)
+        shown = apps[:_ASSIGNED_LIST_CAP]
         html, text = self._render_pair(
             "reviewer_assigned",
-            {"reviewer_name": reviewer_name, "count": count, "apps": apps, "inbox_url": inbox_url},
+            {
+                "reviewer_name": reviewer_name,
+                "count": count,
+                "apps": shown,
+                "more": count - len(shown),
+                "batch_name": batch_name,
+                "inbox_url": inbox_url,
+            },
         )
+        suffix = f" ({batch_name} batch)" if batch_name else ""
         return self.send_raw(
             to=[to],
-            subject=f"You've been assigned {count} application{'s' if count != 1 else ''} to review — ARTPARK",
+            subject=f"You've been assigned {count} application{'s' if count != 1 else ''} to review{suffix} — ARTPARK",
             html=html,
             text=text,
         )
@@ -454,7 +468,7 @@ class EmailService:
         to: str,
         reviewer_name: str,
         login_email: str,
-        temp_password: str,
+        temp_password: str | None,
         inbox_url: str,
     ) -> dict[str, str]:
         """Branded reviewer invitation carrying sign-in credentials."""

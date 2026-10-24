@@ -3,11 +3,12 @@
 
 Hello {{ reviewer_name }}, the ARTPARK admin team has invited you to help review applications for the TIR and VIP programmes.
 
-Sign in with these credentials:
+{% if temp_password %}Sign in with these credentials:
   Email: {{ login_email }}
   Password: {{ temp_password }}
-
+{% else %}Sign in with your existing ARTPARK account ({{ login_email }}).
+{% endif %}
 Open your reviewer inbox: {{ inbox_url }}
 
-For your security, please change this temporary password after your first sign-in.
-— The ARTPARK team{% endblock %}
+{% if temp_password %}For your security, please change this temporary password after your first sign-in.
+{% endif %}— The ARTPARK team{% endblock %}

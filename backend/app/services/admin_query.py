@@ -1562,13 +1562,16 @@ def fetch_unassigned_apps(track: str | None = None) -> list[dict[str, Any]]:
     Used by the rebalance endpoint. `track` restricts to one track; otherwise
     both are considered. Returns ``[{"application_id", "application_track"}]``.
     """
+    from app.services.batch_membership import closed_statuses
+
     sb = get_admin_client()
     tracks = [track] if track in stats.TRACKS else list(stats.TRACKS)
+    closed = closed_statuses()
 
-    # Active-assignment keys to exclude.
+    # Active-assignment keys to exclude (paginated: the table is >1000 rows).
     assigned_keys: set[tuple[str, str]] = set()
     try:
-        for a in (sb.table("reviewer_assignments").select("*").execute().data) or []:
+        for a in iter_assignment_rows(sb):
             if a.get("declined_at") is None and a.get("reassigned_to") is None:
                 assigned_keys.add((a.get("application_id"), a.get("application_track")))
     except Exception as exc:
@@ -1578,13 +1581,14 @@ def fetch_unassigned_apps(track: str | None = None) -> list[dict[str, Any]]:
     for t in tracks:
         table = "tir_applications" if t == "tir" else "sip_applications"
         try:
-            rows = (sb.table(table).select("id,status").execute().data) or []
+            rows = _fetch_all(lambda table=table: sb.table(table).select("id,status").order("id"))
         except Exception as exc:
             log.warning("rebalance: app fetch failed",
                         extra={"track": t, "err": str(exc)})
             rows = []
         for r in staff_exclusions.visible(rows):
-            if (r.get("status") or "draft") == "draft":
+            st = r.get("status") or "draft"
+            if st == "draft" or st in closed:
                 continue
             aid = r.get("id")
             if aid is None or (aid, t) in assigned_keys:
@@ -1597,7 +1601,8 @@ def bulk_assign_reviewer_apps(
     user_id: str, items: list[dict[str, Any]], assigned_by: str,
 ) -> dict[str, Any]:
     """Assign many applications to one reviewer. Per-item status:
-    created | already_assigned | not_a_reviewer | invalid_track | error.
+    created | already_assigned | not_a_reviewer | invalid_track |
+    skipped_closed | error.
     Mirrors leadership_actions.assign_reviewers semantics in bulk.
     """
     sb = get_admin_client()
@@ -1616,6 +1621,17 @@ def bulk_assign_reviewer_apps(
     except Exception as exc:
         log.warning("bulk_assign: existing fetch failed", extra={"err": str(exc)})
 
+    from app.services import batch_membership
+
+    try:
+        closed = batch_membership.closed_keys(
+            sb, [(it.get("application_id"), it.get("track")) for it in items
+                 if it.get("track") in ("tir", "sip")]
+        )
+    except Exception as exc:
+        log.warning("bulk_assign: status lookup failed", extra={"err": str(exc)})
+        closed = set()
+
     now = datetime.now(UTC).isoformat()
     results: list[dict[str, Any]] = []
     for it in items:
@@ -1623,6 +1639,9 @@ def bulk_assign_reviewer_apps(
         track = it.get("track")
         if track not in ("tir", "sip"):
             results.append({"application_id": aid, "track": track, "status": "invalid_track"})
+            continue
+        if (aid, track) in closed:
+            results.append({"application_id": aid, "track": track, "status": "skipped_closed"})
             continue
         if (aid, track) in existing:
             results.append({"application_id": aid, "track": track, "status": "already_assigned"})
@@ -1643,6 +1662,17 @@ def bulk_assign_reviewer_apps(
             log.warning("bulk_assign: insert failed",
                         extra={"application_id": aid, "err": str(exc)})
             results.append({"application_id": aid, "track": track, "status": "error"})
+
+    from app.services import state_machine  # local import to avoid cycles
+    for r in results:
+        if r["status"] != "created":
+            continue
+        try:
+            state_machine.advance_to_under_review_on_assignment(
+                r["application_id"], r["track"], changed_by=assigned_by)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("bulk_assign: advance failed",
+                        extra={"application_id": r["application_id"], "err": str(exc)})
     return {"results": results}
 
 
@@ -1662,13 +1692,15 @@ def iter_assignment_rows(sb: Any, *, reviewer_ids=None, app_ids=None):
     offset = 0
     while True:
         q = sb.table("reviewer_assignments").select(
-            "application_id,application_track,reviewer_user_id,declined_at,reassigned_to"
+            "id,application_id,application_track,reviewer_user_id,declined_at,reassigned_to"
         )
         if reviewer_ids:
             q = q.in_("reviewer_user_id", list(reviewer_ids))
         if app_ids:
             q = q.in_("application_id", list(app_ids))
-        page = (q.range(offset, offset + _ASSIGNMENT_PAGE - 1).execute().data) or []
+        page = (
+            q.order("id").range(offset, offset + _ASSIGNMENT_PAGE - 1).execute().data
+        ) or []
         yield from page
         if len(page) < _ASSIGNMENT_PAGE:
             break
@@ -1735,6 +1767,10 @@ def assign_reviewers_to_batch(
     # grew past the cap this snapshot missed existing triples and the insert
     # below re-created them → duplicate-key 500. Narrowing to reviewer_ids keeps
     # the scan small.
+    # Closed (decided/withdrawn) apps keep their batch link but get no new work.
+    from app.services import batch_membership
+    closed = batch_membership.closed_keys(sb, apps)
+    apps = [k for k in apps if k not in closed]
     app_keys = set(apps)
     reviewer_id_set = set(reviewer_ids)
     existing_pairs: set[tuple[str, str, str]] = set()
@@ -1768,9 +1804,11 @@ def assign_reviewers_to_batch(
             ignore_duplicates=True,
         ).execute()
 
-    from app.services import state_machine  # local import to avoid cycles
-    for aid, atrack in {(r["application_id"], r["application_track"]) for r in rows}:
-        state_machine.advance_to_under_review_on_assignment(aid, atrack)
+    batch_membership.advance_many(
+        sb,
+        list(dict.fromkeys((r["application_id"], r["application_track"]) for r in rows)),
+        changed_by=assigned_by,
+    )
 
     return {
         "created": len(rows),

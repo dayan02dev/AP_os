@@ -296,7 +296,7 @@ def test_send_reviewer_assigned_batched(configured):
     assert "2 application" in payload["subject"]
     assert "2 application" in payload["html"]          # count-only template
     assert "Open reviewer inbox" in payload["html"]    # CTA present
-    assert "Acme" not in payload["html"]               # no per-app list
+    assert "Acme" in payload["html"]                   # per-app list rendered
     assert "reassign" not in payload["html"].lower()   # removed line
 
 def test_send_daily_digest(configured):

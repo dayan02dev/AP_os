@@ -3,6 +3,11 @@
 
 {{ count }} application{{ "s" if count != 1 else "" }} {{ "are" if count != 1 else "is" }} waiting for your review. Thank you for lending ARTPARK your time and judgement — you can score them whenever suits you.
 
+{% if batch_name %}From the {{ batch_name }} batch.
+
+{% endif %}{% for a in apps %}- {{ a.applicant_name }} — {{ a.track_label }} · {{ a.display_id }}
+{% endfor %}{% if more %}…and {{ more }} more
+{% endif %}
 Open your reviewer inbox: {{ inbox_url }}
 
 We're grateful to have you on the panel.

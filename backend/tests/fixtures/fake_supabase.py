@@ -108,7 +108,8 @@ class _Query:
                             existing = r
                             break
                 if existing is not None:
-                    existing.update(p)
+                    if not self._ignore_duplicates:  # DO NOTHING keeps the row
+                        existing.update(p)
                     out.append(existing)
                 else:
                     r = dict(p)
