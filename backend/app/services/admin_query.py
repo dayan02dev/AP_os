@@ -158,19 +158,21 @@ def _fetch_batches(
         if not ids:
             continue
         try:
-            res = (
-                get_admin_client()
-                .table("application_batches")
-                .select("application_id,batch_id")
-                .eq("application_track", track)
-                .in_("application_id", ids)
-                .execute()
-            )
+            link_rows: list[dict] = []
+            for chunk in reviewer_query._chunks(ids):
+                link_rows += (
+                    get_admin_client()
+                    .table("application_batches")
+                    .select("application_id,batch_id")
+                    .eq("application_track", track)
+                    .in_("application_id", chunk)
+                    .execute().data
+                ) or []
         except Exception as exc:
             log.warning("admin_query._fetch_batches links failed",
                         extra={"track": track, "err": str(exc)})
             continue
-        for row in res.data or []:
+        for row in link_rows:
             aid = row.get("application_id")
             bid = row.get("batch_id")
             if aid and bid:
@@ -180,15 +182,16 @@ def _fetch_batches(
     names: dict[str, str] = {}
     if needed:
         try:
-            res = (
-                get_admin_client()
-                .table("batches")
-                .select("id,name")
-                .in_("id", list(needed))
-                .execute()
-            )
-            for row in res.data or []:
-                names[row["id"]] = row.get("name")
+            for chunk in reviewer_query._chunks(list(needed)):
+                res = (
+                    get_admin_client()
+                    .table("batches")
+                    .select("id,name")
+                    .in_("id", chunk)
+                    .execute()
+                )
+                for row in res.data or []:
+                    names[row["id"]] = row.get("name")
         except Exception as exc:
             log.warning("admin_query._fetch_batches names failed",
                         extra={"err": str(exc)})
@@ -1070,10 +1073,12 @@ def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
         if not ids:
             continue
         try:
-            data = (
-                sb.table(applications_query.track_table(track))
-                .select("*").in_("id", ids).execute().data
-            ) or []
+            data = []
+            for chunk in reviewer_query._chunks(ids):
+                data += (
+                    sb.table(applications_query.track_table(track))
+                    .select("*").in_("id", chunk).execute().data
+                ) or []
         except Exception:
             data = []
         for r in data:

@@ -187,7 +187,9 @@ def fetch_inbox(reviewer_user_id: str) -> list[dict]:
 
 # Statuses where the admin has already decided the app: the reviewer's form is
 # read-only and review writes are refused (409 application_decided).
-DECIDED_STATUSES = frozenset({"rejected", "jury_review", "offered", "onboarded"})
+DECIDED_STATUSES = frozenset({
+    "rejected", "jury_review", "offered", "onboarded", "withdrawn", "waitlisted",
+})
 
 
 def is_open_for_review(status: str | None) -> bool:

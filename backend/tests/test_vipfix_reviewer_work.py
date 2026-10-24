@@ -125,3 +125,52 @@ def test_founder_names_include_vip_teammates():
     row = {"basic_full_name": "A", "basic_teammates": [{"fullName": "B"}, {"full_name": "C"}],
            "sip_founders": [{"name": "D"}]}
     assert reviewer_query._founder_names("sip", row) == ["A", "B", "C", "D"]
+
+
+def _mixed_backend_statuses(sb, statuses):
+    for app, st in zip(sb.tables["sip_applications"], statuses):
+        app["status"] = st
+
+
+@pytest.mark.parametrize("closed_status", ["withdrawn", "waitlisted", "jury_review"])
+def test_roster_assigned_equals_open_queue_rows_for_mixed_statuses(sb, closed_status):
+    # 40 apps: 10 evaluated, 10 under_review, 10 submitted, 10 closed.
+    _mixed_backend_statuses(sb, ["evaluated"] * 10 + ["under_review"] * 10
+                            + ["submitted"] * 10 + [closed_status] * 10)
+    roster = _rows()[R1]
+    queue = [q for q in reviewer_query.fetch_queue(R1)
+             if not q["closed"] and not q["detached"]]
+    assert roster["assigned"] == len(queue) == 30
+    assert len(admin_query.fetch_reviewer_applications(R1)["applications"]) == 30
+
+
+@pytest.mark.parametrize("st", ["withdrawn", "waitlisted"])
+def test_withdrawn_waitlisted_are_closed(sb, st):
+    assert not reviewer_query.is_open_for_review(st)
+    sb.tables["sip_applications"][0]["status"] = st
+    assert _rows()[R1]["pending"] == 39
+    assert len(reviewer_query.fetch_queue(R1)) == 39
+
+
+def test_drawer_and_batches_chunk_large_in_lists(sb, monkeypatch):
+    n = 400
+    ids = [f"L{i}" for i in range(n)]
+    sb.tables["sip_applications"] += [
+        {"id": a, "status": "evaluated", "display_seq": 900 + i, "basic_org": a}
+        for i, a in enumerate(ids)]
+    sb.tables["reviewer_assignments"] += [_asg(R1, a) for a in ids]
+    sb.tables["application_batches"] += [
+        {"application_id": a, "application_track": "sip", "batch_id": "bD"} for a in ids]
+    sizes = []
+    orig = type(sb.table("x")).in_
+
+    def spy(self, col, vals):
+        if self._name in ("application_batches", "batches", "sip_applications"):
+            sizes.append(len(list(vals)))
+        return orig(self, col, vals)
+
+    monkeypatch.setattr(type(sb.table("x")), "in_", spy)
+    apps = admin_query.fetch_reviewer_applications(R1)["applications"]
+    assert len(apps) == 40 + n
+    assert all(a["batch"] == "Defense" for a in apps)
+    assert max(sizes) <= 150

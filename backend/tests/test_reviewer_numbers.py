@@ -6,6 +6,8 @@ the services must filter/assemble in Python exactly like production code.
 """
 from __future__ import annotations
 
+import pytest
+
 from app.deps import get_current_user
 from app.main import app
 
@@ -320,6 +322,25 @@ def test_submit_409_when_application_decided(client, monkeypatch, _clear_overrid
     fake = _submit_db(monkeypatch, status="rejected")
     app.dependency_overrides[get_current_user] = _override_user("rev-a")
     r = client.post("/reviewer/reviews", json=_VALID_SUBMIT)
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "application_decided"
+    assert not [p for n, p in fake.inserts if n == "reviews"]
+
+
+@pytest.mark.parametrize("status", ["withdrawn", "waitlisted"])
+def test_submit_409_for_sip_app_withdrawn_or_waitlisted(
+    status, client, monkeypatch, _clear_overrides,
+):
+    fake = _install_db(monkeypatch, {
+        "reviewer_assignments": [{
+            "id": "a1", "reviewer_user_id": "rev-a", "application_id": "app1",
+            "application_track": "sip", "declined_at": None, "reassigned_to": None}],
+        "tir_applications": [],
+        "sip_applications": [{"id": "app1", "status": status}],
+        "reviews": [], "ai_screening": [], "application_status_log": [],
+    })
+    app.dependency_overrides[get_current_user] = _override_user("rev-a")
+    r = client.post("/reviewer/reviews", json={**_VALID_SUBMIT, "application_track": "sip"})
     assert r.status_code == 409, r.text
     assert r.json()["detail"]["code"] == "application_decided"
     assert not [p for n, p in fake.inserts if n == "reviews"]
