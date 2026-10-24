@@ -172,7 +172,9 @@ def apply_status_change(
     return from_status
 
 
-def advance_to_under_review_on_assignment(application_id: str, track: str) -> bool:
+def advance_to_under_review_on_assignment(
+    application_id: str, track: str, changed_by: str | None = None
+) -> bool:
     """Guarded submitted -> under_review, fired when a reviewer is assigned.
     No-op (returns False) unless the app is currently 'submitted'. Idempotent."""
     sb = get_admin_client()
@@ -185,6 +187,6 @@ def advance_to_under_review_on_assignment(application_id: str, track: str) -> bo
         return False
     apply_status_change(
         application_id, track,
-        to_status="under_review", changed_by=None, reason="reviewer assigned",
+        to_status="under_review", changed_by=changed_by, reason="reviewer assigned",
     )
     return True

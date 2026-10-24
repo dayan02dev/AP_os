@@ -339,21 +339,21 @@ def fetch_ai_scores_for(
     return out
 
 
-def resolve_native_tracks(items: list[tuple[str, str]]) -> dict[str, str]:
-    """Map application_id -> NATIVE track (the table the row lives in).
-
-    Moved apps (tir row with moved_to_track='sip') live in tir_applications, but
-    the UI sends the effective track. Children must be keyed by native track.
-    Ids not found anywhere keep their hint. Best-effort: a lookup failure keeps
-    the hint for that chunk."""
+def resolve_native_tracks_ex(
+    items: list[tuple[str, str]],
+) -> tuple[dict[str, str], set[str]]:
+    """Like `resolve_native_tracks` but also returns the ids found in NEITHER
+    table. If a lookup fails (or no client), the affected ids are treated as
+    found (we cannot tell) so callers never reject on an infra error."""
     hints = {aid: track for aid, track in items}
     out = dict(hints)
     ids = list(hints)
+    found: set[str] = set()
     try:
         sb = get_admin_client()
     except Exception as exc:  # noqa: BLE001
         log.warning("resolve_native_tracks: no client", extra={"err": str(exc)})
-        return out
+        return out, set()
     for i in range(0, len(ids), 150):
         chunk = ids[i : i + 150]
         for track in ("tir", "sip"):
@@ -363,11 +363,22 @@ def resolve_native_tracks(items: list[tuple[str, str]]) -> dict[str, str]:
                 ) or []
             except Exception as exc:  # noqa: BLE001
                 log.warning("resolve_native_tracks failed", extra={"track": track, "err": str(exc)})
+                found |= set(chunk)
                 continue
             for r in rows:
                 if r.get("id") in out:
                     out[r["id"]] = track
-    return out
+                    found.add(r["id"])
+    return out, set(ids) - found
+
+
+def resolve_native_tracks(items: list[tuple[str, str]]) -> dict[str, str]:
+    """Map application_id -> NATIVE track (the table the row lives in).
+
+    Moved apps (tir row with moved_to_track='sip') live in tir_applications, but
+    the UI sends the effective track. Children must be keyed by native track.
+    Ids not found anywhere keep their hint. Best-effort."""
+    return resolve_native_tracks_ex(items)[0]
 
 
 def fetch_project_names_for(

@@ -33,7 +33,7 @@ def _patch(monkeypatch, sb):
     monkeypatch.setattr(applications_query, "get_admin_client", lambda: sb)
     monkeypatch.setattr(admin_platform, "notify_reviewers_assigned", lambda *a, **k: 0)
     monkeypatch.setattr(admin_platform, "write_audit", lambda *a, **k: None)
-    monkeypatch.setattr(batch_membership, "_advance", lambda *a, **k: None)
+    monkeypatch.setattr(batch_membership, "advance_many", lambda *a, **k: [])
 
 
 def test_resolve_native_tracks(monkeypatch):
@@ -92,7 +92,7 @@ def test_add_apps_bulk_upsert_and_advance_only_assigned(monkeypatch):
     sb = _db()
     sb.tables["batches"].append({"id": "EMPTY", "name": "Empty"})
     adv = []
-    monkeypatch.setattr(batch_membership, "_advance", lambda a, t: adv.append((a, t)))
+    monkeypatch.setattr(batch_membership, "advance_many", lambda sb, keys, changed_by=None: adv.extend(keys))
     upserts = []
     orig = sb.table
 
@@ -110,3 +110,39 @@ def test_add_apps_bulk_upsert_and_advance_only_assigned(monkeypatch):
     adv.clear()
     batch_membership.add_apps_to_batch(sb, "EMPTY", [("moved1", "tir")], actor="a")
     assert adv == []  # no reviewers -> no status flip
+
+
+def test_delete_batch_detaches_members_but_keeps_other_batch_supply(monkeypatch):
+    import asyncio
+    sb = FakeSupabase({
+        "batches": [{"id": "A", "name": "A"}, {"id": "B", "name": "B"}],
+        "batch_reviewers": [{"batch_id": "A", "reviewer_user_id": "r1"},
+                            {"batch_id": "B", "reviewer_user_id": "r1"},
+                            {"batch_id": "A", "reviewer_user_id": "r2"}],
+        "application_batches": [
+            {"application_id": "x", "application_track": "sip", "batch_id": "A"},
+            {"application_id": "x", "application_track": "sip", "batch_id": "B"},
+            {"application_id": "y", "application_track": "sip", "batch_id": "A"}],
+        "reviewer_assignments": [
+            {"application_id": a, "application_track": "sip", "reviewer_user_id": r}
+            for a in ("x", "y") for r in ("r1", "r2")],
+        "reviewer_profiles": [],
+    })
+    monkeypatch.setattr(admin_platform, "get_admin_client", lambda: sb)
+    monkeypatch.setattr(admin_platform, "write_audit", lambda *a, **k: None)
+    out = asyncio.run(admin_platform.delete_batch("A", user=USER))
+    left = {(a["application_id"], a["reviewer_user_id"]) for a in sb.tables["reviewer_assignments"]}
+    assert left == {("x", "r1")}  # r1 still supplied on x by batch B
+    assert out["assignments_removed"] == 3
+    assert not [m for m in sb.tables["batch_reviewers"] if m["batch_id"] == "A"]
+
+
+def test_invite_template_without_password():
+    from app.services.email_service import EmailService
+    sent = {}
+    svc = EmailService()
+    svc.send_raw = lambda to, subject, html, text, **k: sent.update(html=html, text=text) or {}
+    svc.send_reviewer_invite(to="a@x", reviewer_name="A", login_email="a@x",
+                             temp_password=None, inbox_url="https://x")
+    assert "existing ARTPARK account" in sent["html"] and "Password:" not in sent["html"]
+    assert "existing ARTPARK account" in sent["text"] and "Password:" not in sent["text"]

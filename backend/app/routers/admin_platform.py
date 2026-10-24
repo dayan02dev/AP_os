@@ -22,12 +22,12 @@ import io
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from ..deps import get_current_user
 from ..rbac import require_capability
@@ -405,16 +405,34 @@ async def get_audit_log(
 # ─── Task 10: Batches CRUD + bulk assign ──────────────────────────────────
 
 
+_BatchName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+
+
 class BatchCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    name: str = Field(..., min_length=1)
+    name: _BatchName
     phase: str | None = None
 
 
 class BatchRename(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    name: str | None = None
+    name: _BatchName | None = None
     phase: str | None = None
+
+    @model_validator(mode="after")
+    def _name_not_null(self):
+        if "name" in self.model_fields_set and self.name is None:
+            raise ValueError("name must not be null")
+        return self
+
+
+def _batch_name_taken(sb, name: str, *, exclude_id: str | None = None) -> bool:
+    want = name.strip().casefold()
+    rows = sb.table("batches").select("id,name").execute().data or []
+    return any(
+        (r.get("name") or "").strip().casefold() == want and r.get("id") != exclude_id
+        for r in rows
+    )
 
 
 class BatchAssignItem(BaseModel):
@@ -440,6 +458,11 @@ async def list_batches() -> dict:
 async def create_batch(body: BatchCreate, user: dict = Depends(get_current_user)) -> dict:
     """Create a new batch."""
     sb = get_admin_client()
+    if _batch_name_taken(sb, body.name):
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail={"code": "batch_name_exists"},
+        )
     row: dict[str, Any] = {
         "name": body.name,
         "created_at": datetime.now(UTC).isoformat(),
@@ -483,6 +506,11 @@ async def rename_batch(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail={"code": "batch_not_found"},
         )
+    if fields.get("name") is not None and _batch_name_taken(sb, fields["name"], exclude_id=batch_id):
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail={"code": "batch_name_exists"},
+        )
     fields["updated_at"] = datetime.now(UTC).isoformat()
     sb.table("batches").update(fields).eq("id", batch_id).execute()
     write_audit(
@@ -504,12 +532,14 @@ async def delete_batch(
     batch_id: str,
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """Delete a batch (unlink-only).
+    """Delete a batch and clean up after it.
 
-    Removes the batch and its `application_batches` links (apps revert to no
-    batch → "Random allotment"), and clears any `reviewer_profiles.batch_id`
-    pointing at it. `reviewer_assignments` and `reviews` are left untouched, so
-    no scored work is orphaned.
+    Before unlinking, every member reviewer is detached from the batch's apps
+    (same rule as removing a reviewer: skipped where another batch of the app
+    still supplies them; submitted reviews are kept), the batch's
+    `batch_reviewers` rows are deleted explicitly (no reliance on FK cascade),
+    then its `application_batches` links, any `reviewer_profiles.batch_id`
+    pointer, and the batch row itself. Returns `assignments_removed`.
     """
     sb = get_admin_client()
     existing = (
@@ -520,11 +550,12 @@ async def delete_batch(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail={"code": "batch_not_found"},
         )
-    # 1. Unlink applications (revert to no batch / Random allotment).
+    from app.services import batch_membership
+
+    cleanup = batch_membership.detach_batch_for_delete(sb, batch_id)
+    # Unlink applications, clear dangling profile pointers, delete the row.
     sb.table("application_batches").delete().eq("batch_id", batch_id).execute()
-    # 2. Clear reviewer_profiles.batch_id references (avoid a dangling pointer).
     sb.table("reviewer_profiles").update({"batch_id": None}).eq("batch_id", batch_id).execute()
-    # 3. Delete the batch row.
     sb.table("batches").delete().eq("id", batch_id).execute()
     write_audit(
         actor_user_id=user["user_id"],
@@ -533,8 +564,11 @@ async def delete_batch(
         target_table="batches",
         target_id=batch_id,
         before={"name": existing[0].get("name")},
+        after={"assignments_removed": cleanup["assignments_removed"],
+               "reviewers": cleanup["reviewers"], "applications": cleanup["applications"]},
     )
-    return {"ok": True, "batch_id": batch_id}
+    return {"ok": True, "batch_id": batch_id,
+            "assignments_removed": cleanup["assignments_removed"]}
 
 
 @router.post(
@@ -564,10 +598,22 @@ async def assign_applications(
     # fan out THIS batch's reviewers (batch_reviewers) to the newly-added apps.
     from app.services import batch_membership
 
-    items = _native_items(body.items)
+    hints = [(i.application_id, i.track) for i in body.items]
+    native, missing = applications_query.resolve_native_tracks_ex(hints)
+    if missing:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "unknown_application", "ids": sorted(missing)},
+        )
+    items = list(dict.fromkeys((aid, native.get(aid, t)) for aid, t in hints))
     result = batch_membership.add_apps_to_batch(
         sb, batch_id, items, actor=user["user_id"]
     )
+    if result["skipped_draft"] and not result["linked_ids"] and len(result["skipped_draft"]) == len(items):
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "draft_applications", "ids": result["skipped_draft"]},
+        )
     notified = 0
     if result["created_rows"]:
         notified = notify_reviewers_assigned(
@@ -584,12 +630,17 @@ async def assign_applications(
             "count": result["assigned"],
             "assignments_created": result["assignments_created"],
             "reviewers_notified": notified,
+            "application_ids": [a for a, _ in items][:200],
+            "skipped_draft": result["skipped_draft"][:200],
+            "skipped_closed": result["skipped_closed"][:200],
         },
     )
     return {
         "assigned": result["assigned"],
         "assignments_created": result["assignments_created"],
         "reviewers_notified": notified,
+        "skipped_draft": result["skipped_draft"],
+        "skipped_closed": result["skipped_closed"],
     }
 
 
@@ -630,6 +681,7 @@ async def remove_applications_from_batch(
             "count": len(body.items),
             "assignments_removed": removed,
             "skipped_submitted": skipped,
+            "application_ids": [i.application_id for i in body.items][:200],
         },
     )
     return {
@@ -672,7 +724,8 @@ async def unassign_applications(
         target_table="application_batches",
         target_id=None,
         after={"removed": removed, "assignments_removed": assignments_removed,
-               "count": len(body.items)},
+               "count": len(body.items),
+               "application_ids": [i.application_id for i in body.items][:200]},
     )
     return {"removed": removed, "assignments_removed": assignments_removed}
 
@@ -706,6 +759,19 @@ async def assign_batch_reviewers(
             detail={"code": "batch_not_found"},
         )
 
+    wanted = list(dict.fromkeys(body.reviewer_user_ids))
+    ok_rows = (
+        sb.table("user_roles").select("user_id,role")
+        .eq("role", "reviewer").in_("user_id", wanted).execute().data
+    ) or []
+    ok = {r["user_id"] for r in ok_rows if r.get("role") == "reviewer"}
+    bad = [u for u in wanted if u not in ok]
+    if bad:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "not_a_reviewer", "ids": bad},
+        )
+
     # Row-creation is shared with the reviewer-invite flow (admin_query); this
     # endpoint additionally emails the newly-assigned reviewers and audits.
     result = admin_query.assign_reviewers_to_batch(
@@ -729,6 +795,7 @@ async def assign_batch_reviewers(
             "reviewers": result["reviewers"],
             "applications": result["applications"],
             "reviewer_user_ids": list(dict.fromkeys(body.reviewer_user_ids)),
+            "application_ids": list(dict.fromkeys(r["application_id"] for r in result["created_rows"]))[:200],
         },
     )
     return {
@@ -779,6 +846,7 @@ async def unassign_batch_reviewer(
             "reviewer_user_id": reviewer_user_id,
             "removed": result["removed"],
             "skipped_submitted": result["skipped_submitted"],
+            "application_ids": result.get("application_ids", [])[:200],
         },
     )
     return {"removed": result["removed"], "skipped_submitted": result["skipped_submitted"]}
@@ -1145,7 +1213,15 @@ async def rebalance_reviewers(
         }
         for i, app_ref in enumerate(apps)
     ]
-    sb.table("reviewer_assignments").insert(rows).execute()
+    for i in range(0, len(rows), 500):
+        sb.table("reviewer_assignments").upsert(
+            rows[i : i + 500],
+            on_conflict="application_id,application_track,reviewer_user_id",
+            ignore_duplicates=True,
+        ).execute()
+    from app.services import batch_membership
+    for aid, atrack in dict.fromkeys((r["application_id"], r["application_track"]) for r in rows):
+        batch_membership._advance(aid, atrack, changed_by=user["user_id"])
     notify_reviewers_assigned(sb, rows)
     created = len(rows)
 

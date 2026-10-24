@@ -73,7 +73,8 @@ def test_smart_remove_keeps_shared_reviewer_drops_exclusive():
     )
 
 
-def test_smart_remove_never_drops_submitted_reviewer():
+def test_smart_remove_detaches_even_submitted_reviewer_keeps_review():
+    """2026-07-25: a submitted review no longer protects the assignment."""
     sb = _seed()
     bm.add_apps_to_batch(sb, "B", [("app1", "tir")], actor="admin")
     sb.tables["reviews"].append(
@@ -87,8 +88,9 @@ def test_smart_remove_never_drops_submitted_reviewer():
     )
     res = bm.remove_app_from_batch(sb, "B", "app1", "tir", actor="admin")
     assigned = {a["reviewer_user_id"] for a in sb.tables["reviewer_assignments"]}
-    assert "r2" in assigned  # submitted review → protected
-    assert res["skipped_submitted"] == 1
+    assert "r2" not in assigned  # assignment detached
+    assert res["skipped_submitted"] == 0
+    assert len(sb.tables["reviews"]) == 1  # review row kept
 
 
 def test_remove_reviewer_from_batch_smart():

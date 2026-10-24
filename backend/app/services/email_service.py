@@ -468,7 +468,7 @@ class EmailService:
         to: str,
         reviewer_name: str,
         login_email: str,
-        temp_password: str,
+        temp_password: str | None,
         inbox_url: str,
     ) -> dict[str, str]:
         """Branded reviewer invitation carrying sign-in credentials."""

@@ -135,28 +135,6 @@ async def create_user(
         # preserved so a reviewer invite never strips a staff member's access.
         existing_user = True
         new_user_id = existing_id
-        try:
-            client.auth.admin.update_user_by_id(new_user_id, {"password": temp_password})
-        except Exception as exc:  # noqa: BLE001
-            msg = str(exc)
-            log.error("reviewer invite: password reset failed",
-                      extra={"email": body.email, "err": msg[:200]})
-            if "password" in msg.lower():
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={"code": "weak_password", "message": msg[:200]},
-                )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail={"code": "auth_update_failed", "message": msg[:200]},
-            )
-
-        client.table("profiles").upsert({
-            "id": new_user_id,
-            "email": body.email,
-            "full_name": body.full_name,
-            "phone": body.phone,
-        }).execute()
 
         current_roles = {
             r["role"]
@@ -165,7 +143,48 @@ async def create_user(
                 or []
             )
         }
-        keep = {"reviewer"} | (current_roles & {"admin", "leadership"})
+        # Never reset the password of an account that already holds a staff
+        # role (that would lock a working admin/juror/reviewer out). Applicant-
+        # only accounts keep the reset-and-email-credentials behaviour.
+        if current_roles & {"admin", "leadership", "jury", "reviewer"}:
+            temp_password = None
+        else:
+            try:
+                client.auth.admin.update_user_by_id(new_user_id, {"password": temp_password})
+            except Exception as exc:  # noqa: BLE001
+                msg = str(exc)
+                log.error("reviewer invite: password reset failed",
+                          extra={"email": body.email, "err": msg[:200]})
+                if "password" in msg.lower():
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={"code": "weak_password", "message": msg[:200]},
+                    )
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail={"code": "auth_update_failed", "message": msg[:200]},
+                )
+
+        # Don't blank an existing name/phone: body value wins only when
+        # non-empty; otherwise keep what is on file.
+        prev = {}
+        try:
+            prev_rows = (
+                client.table("profiles").select("full_name,phone")
+                .eq("id", new_user_id).limit(1).execute().data
+            ) or []
+            prev = prev_rows[0] if prev_rows else {}
+        except Exception:  # noqa: BLE001
+            prev = {}
+        client.table("profiles").upsert({
+            "id": new_user_id,
+            "email": body.email,
+            "full_name": (body.full_name if (body.full_name or "").strip() else None)
+            or prev.get("full_name") or body.full_name,
+            "phone": body.phone or prev.get("phone") or body.phone,
+        }).execute()
+
+        keep = {"reviewer"} | (current_roles & {"admin", "leadership", "jury"})
         for role in current_roles - keep:
             client.table("user_roles").delete().eq("user_id", new_user_id).eq("role", role).execute()
         if "reviewer" not in current_roles:
@@ -298,7 +317,7 @@ async def create_user(
         "email": body.email,
         "full_name": body.full_name,
         "roles": final_roles,
-        "temp_password": temp_password if (is_reviewer_invite or not body.send_invite) else None,
+        "temp_password": temp_password if (is_reviewer_invite or not body.send_invite) else None,  # None for existing staff
         "invite_sent": body.send_invite,
         "credentials_emailed": credentials_emailed,
         "existing_user": existing_user,

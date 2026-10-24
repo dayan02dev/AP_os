@@ -454,7 +454,9 @@ def test_batches_list_create_rename(client, monkeypatch, _clear_overrides):
 
 
 def test_batch_assign_applications(client, monkeypatch, _clear_overrides):
-    fake = _install_db(monkeypatch, {"batches":[{"id":"b1","name":"Batch A"}], "application_batches":[]})
+    fake = _install_db(monkeypatch, {"batches":[{"id":"b1","name":"Batch A"}], "application_batches":[],
+        "tir_applications":[{"id":"app-1","status":"submitted"}],
+        "sip_applications":[{"id":"app-2","status":"submitted"}]})
     monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
     r = client.post("/admin/platform/batches/b1/applications", json={"items":[
@@ -698,6 +700,7 @@ def test_batch_reviewers_assign_creates_n_by_m(client, monkeypatch, _clear_overr
             {"application_id": "app-2", "application_track": "sip", "batch_id": "b1"},
         ],
         "reviewer_assignments": [],
+        "user_roles": [{"user_id": "rev-1", "role": "reviewer"}, {"user_id": "rev-2", "role": "reviewer"}],
     })
     monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
@@ -724,6 +727,7 @@ def test_batch_reviewers_assign_dedupes_existing(client, monkeypatch, _clear_ove
             {"application_id": "app-1", "application_track": "tir",
              "reviewer_user_id": "rev-1", "declined_at": None, "reassigned_to": None},
         ],
+        "user_roles": [{"user_id": "rev-1", "role": "reviewer"}],
     })
     monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
@@ -1308,6 +1312,7 @@ def test_assign_applications_fans_out_to_batch_reviewers(client, monkeypatch, _c
     new_app = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     tables = _empty_admin_tables()
     tables["batches"] = [{"id": "b1", "name": "Batch A"}]
+    tables["tir_applications"] = [{"id": new_app, "status": "submitted"}]
     # Batch reviewers are now explicit membership rows (batch_reviewers,
     # migration 034) — the source of truth for the fan-out (no longer inferred
     # from existing assignments).
@@ -1346,6 +1351,7 @@ def test_assign_applications_skips_existing_assignment(client, monkeypatch, _cle
     new_app = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     tables = _empty_admin_tables()
     tables["batches"] = [{"id": "b1", "name": "Batch A"}]
+    tables["tir_applications"] = [{"id": new_app, "status": "submitted"}]
     tables["application_batches"] = [
         {"application_id": existing_app, "application_track": "tir", "batch_id": "b1"},
     ]
@@ -1357,7 +1363,7 @@ def test_assign_applications_skips_existing_assignment(client, monkeypatch, _cle
     ]
     _install_db(monkeypatch, tables)
     monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
-    monkeypatch.setattr("app.routers.admin_platform.notify_reviewers_assigned", lambda sb, rows: None)
+    monkeypatch.setattr("app.routers.admin_platform.notify_reviewers_assigned", lambda sb, rows, **k: 0)
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
 
     r = client.post("/admin/platform/batches/b1/applications",
@@ -1370,9 +1376,10 @@ def test_assign_applications_no_reviewers_no_fanout(client, monkeypatch, _clear_
     new_app = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     tables = _empty_admin_tables()
     tables["batches"] = [{"id": "b1", "name": "Batch A"}]
+    tables["tir_applications"] = [{"id": new_app, "status": "submitted"}]
     fake = _install_db(monkeypatch, tables)
     monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
-    monkeypatch.setattr("app.routers.admin_platform.notify_reviewers_assigned", lambda sb, rows: None)
+    monkeypatch.setattr("app.routers.admin_platform.notify_reviewers_assigned", lambda sb, rows, **k: 0)
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
 
     r = client.post("/admin/platform/batches/b1/applications",

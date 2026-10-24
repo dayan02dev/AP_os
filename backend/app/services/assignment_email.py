@@ -10,6 +10,7 @@ from .user_lookup import get_contact
 
 log = logging.getLogger(__name__)
 
+_IN_CHUNK = 100  # keep the PostgREST URL short
 _COLUMNS = "id, basic_full_name, basic_org, display_seq, moved_to_track, status"
 
 
@@ -30,14 +31,16 @@ def _fetch_app_names(sb, assignments: list[dict]) -> dict[tuple[str, str], dict]
         ))
         if not ids:
             continue
-        try:
-            rows = (
-                sb.table(f"{track}_applications").select(_COLUMNS)
-                .in_("id", ids).execute().data
-            ) or []
-        except Exception:  # noqa: BLE001
-            log.warning("_fetch_app_names failed for track %s", track, exc_info=True)
-            continue
+        rows: list[dict] = []
+        for i in range(0, len(ids), _IN_CHUNK):
+            chunk = ids[i : i + _IN_CHUNK]
+            try:
+                rows += (
+                    sb.table(f"{track}_applications").select(_COLUMNS)
+                    .in_("id", chunk).execute().data
+                ) or []
+            except Exception:  # noqa: BLE001
+                log.warning("_fetch_app_names failed for track %s", track, exc_info=True)
         projects: dict = {}
         if track == "tir":
             try:
