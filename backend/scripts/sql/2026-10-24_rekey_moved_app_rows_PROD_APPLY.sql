@@ -2,8 +2,8 @@
 -- apps moved TIR->VIP (row lives in tir_applications, moved_to_track='sip').
 -- Child tables must be keyed by the NATIVE track ('tir'). Found in prod on
 -- 2026-10-24: 5 application_batches rows + 8 reviewer_assignments rows
--- (Defense: TIR-27061/26869/26822/26080 for V. S. Rawat; Manufacturing:
--- TIR-26079 for 4 reviewers).
+-- (4 moved apps in one batch for 1 reviewer; 1 moved app in another batch
+-- for 4 reviewers).
 --
 -- Paste into Supabase Studio. Run STEP 1 alone first and check the counts
 -- (expected 5 and 8), then run STEP 2 as one block, then STEP 1 again (expect 0/0).
