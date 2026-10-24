@@ -94,9 +94,6 @@ function ManageDrawer({ reviewer, allBatches, batchNameToId, onClose, onSaved, o
       // the auth login on the backend).
       if (name.trim() && name.trim() !== (reviewer.name || '')) body.full_name = name.trim();
       if (email.trim() && email.trim() !== (reviewer.email || '')) body.email = email.trim();
-      await adminPlatformApi.patchReviewer(reviewer.id, body);
-      // Persist chip edits: diff original vs edited ("Unbatched" is a computed
-      // bucket, not a real batch).
       const edited = batches.filter(n => n && n !== 'Unbatched');
       const added = edited.filter(n => !originalBatches.includes(n));
       const removed = originalBatches.filter(n => !edited.includes(n));
@@ -104,6 +101,9 @@ function ManageDrawer({ reviewer, allBatches, batchNameToId, onClose, onSaved, o
         setSaving(false);
         return;
       }
+      await adminPlatformApi.patchReviewer(reviewer.id, body);
+      // Persist chip edits: diff original vs edited ("Unbatched" is a computed
+      // bucket, not a real batch).
       const idOf = (n) => {
         const id = batchNameToId?.get(n);
         if (!id) throw new Error(`Unknown batch "${n}".`);
@@ -328,9 +328,6 @@ function InviteModal({ batchOptions = [], onClose, onInvited }) {
               <div style={{ color: 'var(--ok)', fontWeight: 600, fontSize: 14, marginBottom: 12 }}>
                 Reviewer invited successfully.
               </div>
-              {result.existing_user && !result.temp_password && (
-                <div className="os-text-xs os-text-dim" style={{ marginBottom: 8 }}>Existing account — they'll sign in with their current password.</div>
-              )}
               {result.temp_password && (
                 <div style={{ background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: 4, padding: '10px 14px', fontFamily: 'var(--font-mono, monospace)', fontSize: 13, color: 'var(--ink)' }}>
                   Temp password: <strong>{result.temp_password}</strong>
@@ -342,7 +339,7 @@ function InviteModal({ batchOptions = [], onClose, onInvited }) {
                 </div>
               )}
               {result.existing_user && (
-                <div className="os-text-xs os-text-dim" style={{ marginTop: 8 }}>This email already had an account — it's now a reviewer (admin, leadership and jury access is kept; the password you typed is ignored and they sign in with their existing one).</div>
+                <div className="os-text-xs os-text-dim" style={{ marginTop: 8 }}>Existing account — they'll sign in with their current password. Admin, leadership and jury access is kept.</div>
               )}
               <button className="os-btn" style={{ marginTop: 20, width: '100%' }} onClick={onClose}>Done</button>
             </div>

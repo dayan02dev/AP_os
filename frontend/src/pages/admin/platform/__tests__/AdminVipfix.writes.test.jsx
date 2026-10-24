@@ -122,6 +122,7 @@ describe("AdminReviewers ManageDrawer persists batch chip edits", () => {
     fireEvent.click(screen.getByLabelText("Drop batch Batch A"));
     fireEvent.click(screen.getByText("Save changes"));
     await new Promise((r) => setTimeout(r, 20));
+    expect(adminPlatformApi.patchReviewer).not.toHaveBeenCalled();
     expect(adminPlatformApi.unassignBatchReviewer).not.toHaveBeenCalled();
   });
 
