@@ -44,9 +44,12 @@ describe("VipNavigatorMemo — header + snapshot", () => {
     expect(screen.getByText(FIXTURE.plain)).toBeTruthy();
     const meta = screen.getByTestId("vipnav-meta");
     expect(meta.textContent).toContain("Prepared by Test fixture team from the application, 3 uploaded files and independent research · 15 Jan 2026.");
-    expect(meta.textContent).toContain("marks a claim made by the founders that we still need to check, as it may be overstated.");
     expect(meta.textContent).not.toContain("AI cross-check");
-    expect(within(meta).getByText("Founder to verify")).toBeTruthy();
+    const note = screen.getByTestId("vipnav-verify-note");
+    expect(note.getAttribute("role")).toBe("note");
+    expect(within(note).getByText("Founder to verify").className).toContain("m3-founder");
+    expect(note.textContent).toContain("Claimed by the founders, not yet verified.");
+    expect(note.textContent).toContain("They may have overstated it");
   });
 
   it("renders the snapshot (ask + instrument, sector, stage, location, team)", () => {

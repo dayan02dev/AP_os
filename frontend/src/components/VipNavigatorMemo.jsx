@@ -479,7 +479,7 @@ export default function VipNavigatorMemo({ memo, appId, onDownload }) {
         <p className="m3-meta" data-testid="vipnav-meta">
           Prepared by {memo.prepared_by || "the ARTPARK venture team"} from the <b>application</b>,{" "}
           <b>{files} uploaded file{files === 1 ? "" : "s"}</b> and <b>independent research</b>
-          {memo.generated_at ? ` · ${formatDate(memo.generated_at)}` : ""}. <Pending /> marks a claim made by the founders that we still need to check, as it may be overstated.
+          {memo.generated_at ? ` · ${formatDate(memo.generated_at)}` : ""}.
         </p>
         {onDownload && (
           <div className="m3-actions">
@@ -487,6 +487,12 @@ export default function VipNavigatorMemo({ memo, appId, onDownload }) {
             <button type="button" className="m3-btn" onClick={() => onDownload("docx")}>Download DOCX</button>
           </div>
         )}
+      </div>
+      <div className="m3-verify-note" role="note" data-testid="vipnav-verify-note">
+        <Pending />
+        <span>
+          <b>Claimed by the founders, not yet verified.</b> They may have overstated it, so confirm it with them before relying on it.
+        </span>
       </div>
       <Snapshot memo={memo} />
 
