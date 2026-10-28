@@ -8,9 +8,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import "./VipNavigatorMemo.css";
 
-// Placeholders in memo text (backend vip_memo_gen/tags.py). The legacy one is
-// retagged server-side; it is still accepted here and shown as a founder check.
-const VERIFY = "[Needs AI cross-verification]";
+// Placeholders in memo text (backend vip_memo_gen/tags.py). Founder tags (and the
+// legacy one) show as a "Founder to verify" chip; AI cross-check tags are hidden.
+const VERIFY_RE = /\s*\[Needs AI cross-verification\]/g;
 const TAG_RE = /(\[Needs founder verification\]|\[Needs AI cross-verification\]|\[To be confirmed\])/;
 const isTagged = (v) => TAG_RE.test(String(v ?? ""));
 const ORDER = ["what", "why", "product", "tech", "competitors", "market", "team", "milestones", "funds", "risks"];
@@ -59,14 +59,10 @@ function formatDate(value) {
   return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1] || m[2]} ${m[1]}`;
 }
 
-const CHIP = {
-  founder: { label: "Founder to verify", title: "Needs founder verification — only the startup can supply or confirm this" },
-  verify: { label: "AI cross-check", title: "Needs AI cross-verification — check against third-party sources" },
-};
+const FOUNDER_TITLE = "A claim made by the founders that we have not verified yet — it may be overstated";
 
-export function Pending({ kind = "founder" }) {
-  const c = CHIP[kind] || CHIP.founder;
-  return <span className={`m3-pending m3-${kind}`} title={c.title}>{c.label}</span>;
+export function Pending() {
+  return <span className="m3-pending m3-founder" title={FOUNDER_TITLE}>Founder to verify</span>;
 }
 
 /** Text with every verification tag replaced by its dashed chip. A list is
@@ -74,7 +70,11 @@ export function Pending({ kind = "founder" }) {
 export function T({ children }) {
   if (children == null || children === "") return null;
   if (Array.isArray(children)) return <Points value={children} className={null} />;
-  const text = String(children);
+  const raw = String(children);
+  if (!isTagged(raw)) return raw;
+  // AI cross-check tags are not shown; a value that was only that tag reads "—".
+  const text = raw.replace(VERIFY_RE, "").trim();
+  if (!text) return "—";
   if (!isTagged(text)) return text;
   // split() with a capture group keeps each tag at the odd indexes.
   const parts = text.split(TAG_RE);
@@ -82,7 +82,7 @@ export function T({ children }) {
     <>
       {parts.map((part, i) => (
         <React.Fragment key={i}>
-          {i % 2 ? <Pending kind={part === VERIFY ? "verify" : "founder"} /> : part}
+          {i % 2 ? <Pending /> : part}
         </React.Fragment>
       ))}
     </>
@@ -479,7 +479,7 @@ export default function VipNavigatorMemo({ memo, appId, onDownload }) {
         <p className="m3-meta" data-testid="vipnav-meta">
           Prepared by {memo.prepared_by || "the ARTPARK venture team"} from the <b>application</b>,{" "}
           <b>{files} uploaded file{files === 1 ? "" : "s"}</b> and <b>independent research</b>
-          {memo.generated_at ? ` · ${formatDate(memo.generated_at)}` : ""}. <Pending /> marks facts the founders must verify; <Pending kind="verify" /> marks outside facts to cross-check.
+          {memo.generated_at ? ` · ${formatDate(memo.generated_at)}` : ""}. <Pending /> marks a claim made by the founders that we still need to check, as it may be overstated.
         </p>
         {onDownload && (
           <div className="m3-actions">

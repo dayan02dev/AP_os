@@ -44,7 +44,8 @@ describe("VipNavigatorMemo — header + snapshot", () => {
     expect(screen.getByText(FIXTURE.plain)).toBeTruthy();
     const meta = screen.getByTestId("vipnav-meta");
     expect(meta.textContent).toContain("Prepared by Test fixture team from the application, 3 uploaded files and independent research · 15 Jan 2026.");
-    expect(meta.textContent).toContain("marks facts the founders must verify; AI cross-check marks outside facts to cross-check.");
+    expect(meta.textContent).toContain("marks a claim made by the founders that we still need to check, as it may be overstated.");
+    expect(meta.textContent).not.toContain("AI cross-check");
     expect(within(meta).getByText("Founder to verify")).toBeTruthy();
   });
 
@@ -200,13 +201,20 @@ describe("VipNavigatorMemo — section bodies", () => {
     expect(within(panel()).getAllByText("Founder to verify").length).toBeGreaterThan(0);
   });
 
-  it("renders the two verification tags as distinct chips", () => {
+  it("drops AI cross-check tags and keeps the founder chip", () => {
     const memo = { ...FIXTURE, headline: "Rivals [Needs AI cross-verification]; ask [Needs founder verification]" };
     render(<VipNavigatorMemo memo={memo} appId="app-tags" />);
     const h = document.querySelector(".m3-headline");
-    expect(h.textContent).toBe("Rivals AI cross-check; ask Founder to verify");
-    expect(within(h).getByText("AI cross-check").className).toContain("m3-verify");
+    expect(h.textContent).toBe("Rivals; ask Founder to verify");
+    expect(h.querySelector(".m3-verify")).toBeNull();
     expect(within(h).getByText("Founder to verify").className).toContain("m3-founder");
+  });
+
+  it("shows a dash for a value that was only an AI cross-check tag", () => {
+    const memo = { ...FIXTURE, headline: "[Needs AI cross-verification]" };
+    render(<VipNavigatorMemo memo={memo} appId="app-tag-only" />);
+    expect(document.querySelector(".m3-headline").textContent).toBe("—");
+    expect(document.querySelector(".m3-verify")).toBeNull();
   });
 
   it("keeps the surrounding text when [To be confirmed] is embedded", () => {
