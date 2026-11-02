@@ -956,6 +956,9 @@ _AUTO_RATIONALE_RES = (
     re.compile(r"^gate[12]\s*:", re.IGNORECASE),
     re.compile(r"^batch decision\b", re.IGNORECASE),
     re.compile(r"^admin override\s*:", re.IGNORECASE),
+    # leadership_actions' default when the leadership user leaves it blank.
+    re.compile(r"^(rejected|shortlisted|on_hold|waitlisted|offered|jury_review) by leadership$",
+               re.IGNORECASE),
 )
 
 
@@ -971,14 +974,29 @@ _PANEL_REVIEW_KEYS = (
 )
 
 
-def fetch_panel_feedback(reviewer_user_id: str, application_id: str) -> dict | None:
+def _moved_to_track(sb, native: str | None, application_id: str) -> str | None:
+    if native not in ("tir", "sip"):
+        return None
+    rows = (sb.table(f"{native}_applications").select("id,moved_to_track")
+            .eq("id", application_id).execute().data) or []
+    row = next((r for r in rows if r.get("id") == application_id), None)
+    return (row or {}).get("moved_to_track")
+
+
+def fetch_panel_feedback(
+    reviewer_user_id: str, application_id: str, track: str | None = None,
+) -> dict | None:
     """Other panel reviewers' submitted feedback + human admin rationales for
     one application, as seen by `reviewer_user_id`.
 
-    None → the caller has neither an assignment nor a review on the app (the
-    route 404s). Before the caller has submitted their own review nothing is
-    revealed (``available: False``). Never returns email addresses. DB errors
-    on the access check propagate so the route fails closed."""
+    None → the caller has neither an assignment nor a review on the app, the
+    app is staff-excluded, or `track` (the route's path param) is neither the
+    app's native nor its effective (moved-to) track (the route 404s). Before
+    the caller has submitted their own review nothing is revealed
+    (``available: False``). Never returns email addresses. DB errors on the
+    access check propagate so the route fails closed."""
+    if staff_exclusions.is_excluded(application_id):
+        return None
     sb = get_admin_client()
     mine = [r for r in (sb.table("reviews").select("*")
                         .eq("application_id", application_id)
@@ -992,6 +1010,10 @@ def fetch_panel_feedback(reviewer_user_id: str, application_id: str) -> dict | N
                and a.get("reviewer_user_id") == reviewer_user_id]
     if not mine and not assigns:
         return None
+    if track is not None:
+        native = (mine or assigns)[0].get("application_track")
+        if track != native and _moved_to_track(sb, native, application_id) != track:
+            return None
     submitted = [r for r in mine if r.get("submitted_at")]
     if not submitted:
         return {"available": False, "reason": "submit_first",

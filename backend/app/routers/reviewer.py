@@ -1026,8 +1026,9 @@ async def get_panel_feedback(
 ) -> dict:
     """Contract C2 — the other panel reviewers' submitted feedback plus the
     human-written admin rationales, once the caller has submitted their own
-    review. 404 (not 403) without an assignment or review: no enumeration."""
-    payload = reviewer_query.fetch_panel_feedback(user["user_id"], application_id)
+    review. 404 (not 403) without an assignment or review, on a staff-excluded
+    app, or when `track` is neither the app's native nor effective track."""
+    payload = reviewer_query.fetch_panel_feedback(user["user_id"], application_id, track)
     if payload is None:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
                             detail={"code": "not_found"})

@@ -161,3 +161,41 @@ def test_detached_but_submitted_reviewer_still_allowed(client, db):
 def test_reviews_on_other_apps_never_leak(client, db):
     body = _get(client, ME).json()
     assert "OTHER-APP" not in repr(body)
+
+
+@pytest.mark.parametrize("decision", ["rejected", "shortlisted", "on_hold", "waitlisted", "offered"])
+def test_leadership_default_rationale_is_dropped(client, db, decision):
+    """leadership_actions writes f'{decision} by leadership' when the rationale
+    is left blank — a system default, not reviewer-facing feedback (FB-V1)."""
+    db.tables["admin_decisions"].append(
+        _decision("d-lead", f"{decision} by leadership", "2026-10-11T00:00:00Z"))
+    ids = [d["id"] for d in _get(client, ME).json()["admin_decisions"]]
+    assert "d-lead" not in ids
+    assert "d8" in ids
+
+
+def test_typed_rationale_mentioning_leadership_is_kept(client, db):
+    db.tables["admin_decisions"].append(
+        _decision("d-human", "Rejected by leadership after the IC call.", "2026-10-11T00:00:00Z"))
+    ids = [d["id"] for d in _get(client, ME).json()["admin_decisions"]]
+    assert "d-human" in ids
+
+
+def test_staff_excluded_app_is_404(client, db, monkeypatch):
+    from app.services import staff_exclusions
+    monkeypatch.setattr(staff_exclusions, "is_excluded", lambda app_id: app_id == APP)
+    assert _get(client, ME).status_code == 404
+    assert _get(client, DRAFTER).status_code == 404
+
+
+def test_mismatched_track_is_404(client, db):
+    """Path says sip, app is a (never-moved) TIR app → 404 like /content (FB-V2)."""
+    assert _get(client, ME, track="sip").status_code == 404
+    assert _get(client, DRAFTER, track="sip").status_code == 404
+
+
+def test_effective_track_of_moved_app_is_accepted(client, db):
+    """A TIR app moved to VIP: the native track and the effective track both work."""
+    next(r for r in db.tables["tir_applications"] if r["id"] == APP)["moved_to_track"] = "sip"
+    assert _get(client, ME, track="tir").json()["available"] is True
+    assert _get(client, ME, track="sip").json()["available"] is True
