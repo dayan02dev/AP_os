@@ -1,5 +1,5 @@
-// ReviewsTab — per-reviewer cards with category bars + comments + pending
-// assignments below.
+// ReviewsTab — per-reviewer cards (category bars + the reviewer's written
+// feedback), admin decisions + rationale, and pending assignments below.
 
 import {
   reviewerNameOf,
@@ -7,16 +7,17 @@ import {
   reviewerStatusOf,
 } from "../../../lib/reviewerStatus.js";
 import { weightedReviewScore } from "../../../lib/reviewScore.js";
+import ReviewerFeedback, { AdminDecisionList } from "../../../components/ReviewerFeedback.jsx";
 
 // Dimension labels mirror the reviewer portal's CRIT_LABELS (the names the
 // reviewer actually scored against). No Integrity row — reviews carry no
-// integrity score, so it was always blank.
+// integrity score, so it was always blank. No Commitment row either — removed
+// from the reviewer rubric (v3.2); historical values are ignored in the score.
 const CATEGORY_BARS = [
   { key: "score_problem",    label: "Problem Statement Impact and Importance" },
   { key: "score_solution",   label: "Completeness, Depth of Solution" },
   { key: "score_tech",       label: "Technical Depth" },
   { key: "score_founders",   label: "Professional Profile of Founder" },
-  { key: "score_commitment", label: "Commitment to be fully available" },
 ];
 
 function fmtDate(iso) {
@@ -31,7 +32,7 @@ function fmtDate(iso) {
   }
 }
 
-export default function ReviewsTab({ reviews, assignments }) {
+export default function ReviewsTab({ reviews, assignments, adminDecisions }) {
   const submittedReviews = (reviews || []).filter((r) => r.status === "submitted" || r.submitted_at);
   const totalAssignments = (assignments || []).length;
   const submittedCount = submittedReviews.length;
@@ -97,16 +98,14 @@ export default function ReviewsTab({ reviews, assignments }) {
                   );
                 })}
               </div>
-              {r.comments && (
-                <p style={{ fontSize: 14, lineHeight: 1.55, color: "var(--ink)", margin: 0 }}>
-                  {r.comments}
-                </p>
-              )}
+              <ReviewerFeedback review={r} />
             </article>
             );
           })}
         </div>
       )}
+
+      <AdminDecisionList decisions={adminDecisions} />
 
       {pending.length > 0 && (
         <div className="pending-list">

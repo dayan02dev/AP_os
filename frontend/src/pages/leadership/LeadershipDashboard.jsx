@@ -32,7 +32,7 @@ import {
   stageQuery,
 } from "./pipelineStages.js";
 import PipelineBreakdown from "./components/PipelineBreakdown.jsx";
-import { writeReviewIdList } from "./reviewNav.js";
+import { startReviewIdList, writeReviewIdList } from "./reviewNav.js";
 import "../../styles/admin.css";
 import "../../styles/leadership.css";
 
@@ -415,6 +415,13 @@ export default function LeadershipDashboard() {
     queryApplications({ base: baseParams, statusFilter, recoFilter, selectedKeys, offset })
       .then(({ rows, total }) => {
         if (cancelled) return;
+        // A sticky offset can outlive the list it paged (the total shrank):
+        // jump to the last real page instead of an empty page with no
+        // pagination to get back.
+        if (rows.length === 0 && offset > 0 && offset >= total) {
+          setOffset(total > 0 ? Math.floor((total - 1) / PAGE_SIZE) * PAGE_SIZE : 0);
+          return;
+        }
         setApps(rows);
         setAppsTotal(total);
         setAppsLoading(false);
@@ -430,14 +437,6 @@ export default function LeadershipDashboard() {
   }, [baseParams, statusFilter, recoFilter, offset, refreshNonce, // eslint-disable-line react-hooks/exhaustive-deps
       needsSelection ? selectedKeys : null]);
 
-  const filterAndShow = useCallback(
-    (setter) => (val) => {
-      setter(val);
-      setOffset(0);
-      if (val) setView("applications");
-    },
-    [],
-  );
 
   const totals = stats?.totals || {};
   const submitted = totals.apps_submitted ?? 0;
@@ -518,6 +517,27 @@ export default function LeadershipDashboard() {
   }, [stats]);
 
   const histogram = useMemo(() => buildHistogram(scoreSample || []), [scoreSample]);
+
+  // AI-score chip counts on the Applications tab. The global histogram is only
+  // right when no other filter is on; otherwise bucket the AI scores of every
+  // row matching the other filters (everything but the AI bucket itself).
+  // Fetched only while the filter panel is open; null = use the histogram.
+  const otherFiltersActive = !!(industry || statusFilter || trackFilter || search || recoFilter);
+  const [filteredAiBins, setFilteredAiBins] = useState(null);
+  useEffect(() => {
+    setFilteredAiBins(null);
+    if (view !== "applications" || !filtersOpen || !otherFiltersActive) return undefined;
+    let cancelled = false;
+    const base = { ...baseParams, ai_score_bucket: undefined, sort: undefined, order: undefined };
+    queryApplications({ base, statusFilter, recoFilter, selectedKeys, all: true })
+      .then(({ rows }) => {
+        if (!cancelled) setFilteredAiBins(buildHistogram(rows.map((r) => r.ai_score_overall)).bins);
+      })
+      .catch(() => { /* keep the global counts */ });
+    return () => { cancelled = true; };
+  }, [view, filtersOpen, otherFiltersActive, baseParams, statusFilter, recoFilter, refreshNonce, // eslint-disable-line react-hooks/exhaustive-deps
+      needsSelection ? selectedKeys : null]);
+  const aiChipBins = (otherFiltersActive && filteredAiBins) || histogram.bins;
   const scoreMean = useMemo(() => meanOf(scoreSample || []), [scoreSample]);
   const scoreMedian = useMemo(() => medianOf(scoreSample || []), [scoreSample]);
 
@@ -531,6 +551,16 @@ export default function LeadershipDashboard() {
     setSearch("");
     setOffset(0);
   }
+
+  // Dashboard-tab click-throughs: the bar/cell counts there are global, so the
+  // list shows exactly that one dimension (every other sticky filter cleared)
+  // and always opens. No toggle-off here — the Dashboard tab doesn't show which
+  // filters are active, so a second click must not silently drop one.
+  const showOnly = (setter, val) => {
+    clearAllFilters();
+    setter(val);
+    setView("applications");
+  };
 
   // Export the applications that match the CURRENT filters and sort (not
   // just the loaded page), then build + download a CSV client-side.
@@ -560,11 +590,12 @@ export default function LeadershipDashboard() {
   // matching row once fetched (the review page listens for the update).
   const openReview = useCallback((row) => {
     const entry = (r) => ({ id: r.id, track: rowNativeTrack(r), label: rowStage(r, { selectedKeys }).label });
-    writeReviewIdList(apps.map(entry));
+    const token = startReviewIdList(apps.map(entry));
     navigate(`/leadership/applications/${rowNativeTrack(row)}/${row.id}/review`);
     if (appsTotal > apps.length) {
       queryApplications({ base: baseParams, statusFilter, recoFilter, selectedKeys, all: true })
-        .then(({ rows }) => { if (rows.length) writeReviewIdList(rows.map(entry)); })
+        // Dropped if the user has since opened a review from another list.
+        .then(({ rows }) => { if (rows.length) writeReviewIdList(rows.map(entry), token); })
         .catch(() => { /* best-effort: the visible page is already stored */ });
     }
   }, [apps, appsTotal, baseParams, statusFilter, recoFilter, selectedKeys, navigate]);
@@ -819,7 +850,7 @@ export default function LeadershipDashboard() {
               <PipelineBreakdown
                 breakdown={pipeline}
                 activeStage={statusFilter}
-                onFilter={(id) => filterAndShow(setStatusFilter)(statusFilter === id ? null : id)}
+                onFilter={(id) => showOnly(setStatusFilter, id)}
               />
             )}
 
@@ -859,10 +890,7 @@ export default function LeadershipDashboard() {
                             className={`lp-hist-col lp-hist-col-btn${isEmpty ? " is-empty" : ""}`}
                             onClick={() => {
                               if (isEmpty) return;
-                              const next = isSelected ? null : i;
-                              setScoreBucket(next);
-                              setOffset(0);
-                              if (next !== null) setView("applications");
+                              showOnly(setScoreBucket, i);
                             }}
                             disabled={isEmpty}
                             aria-pressed={isSelected}
@@ -974,7 +1002,7 @@ export default function LeadershipDashboard() {
                           type="button"
                           className="lp-ind-row"
                           disabled={!clickable}
-                          onClick={() => clickable && filterAndShow(setIndustry)(industry === i.id ? null : i.id)}
+                          onClick={() => clickable && showOnly(setIndustry, i.id)}
                           style={{
                             background: "transparent",
                             border: "none",
@@ -1012,7 +1040,7 @@ export default function LeadershipDashboard() {
                         key={i.id}
                         type="button"
                         className={`lp-pill${industry === i.id ? " is-on" : ""}`}
-                        onClick={() => filterAndShow(setIndustry)(industry === i.id ? null : i.id)}
+                        onClick={() => showOnly(setIndustry, i.id)}
                       >
                         {i.label}
                       </button>
@@ -1128,7 +1156,7 @@ export default function LeadershipDashboard() {
                   All
                 </button>
                 {Array.from({ length: HISTOGRAM_BIN_COUNT }, (_, i) => {
-                  const count = histogram.bins[i]?.count ?? 0;
+                  const count = aiChipBins[i]?.count ?? 0;
                   const isActive = scoreBucket === i;
                   const isEmpty = count === 0 && !isActive;
                   return (
