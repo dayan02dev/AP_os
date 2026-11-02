@@ -266,12 +266,14 @@ export default function ReviewerPortal({ tab = "dashboard" }) {
   const queueCount = queueBadgeCount(queueAsync.data);
 
   // Refetch when the reviewer comes back to the window (admins reassign while
-  // the portal sits in a background tab).
+  // the portal sits in a background tab). Browsers fire both focus and
+  // visibilitychange on return; a background reload is skipped while one is
+  // in flight (one request per return) and keeps the current data if it fails.
   const reloadQueue = queueAsync.reload;
   useEffect(() => {
     if (!needsQueue) return undefined;
-    const onFocus = () => reloadQueue();
-    const onVisible = () => { if (document.visibilityState === "visible") reloadQueue(); };
+    const onFocus = () => reloadQueue({ background: true });
+    const onVisible = () => { if (document.visibilityState === "visible") reloadQueue({ background: true }); };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
     return () => {

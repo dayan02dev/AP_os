@@ -40,4 +40,41 @@ describe("useAsync", () => {
     await waitFor(() => expect(result.current.data).toBe(2));
     expect(fn).toHaveBeenCalledTimes(2);
   });
+
+  it("background reload keeps the previous data when it fails", async () => {
+    const fn = vi.fn().mockResolvedValueOnce("first").mockRejectedValueOnce(new Error("blip"));
+    const { result } = renderHook(() => useAsync(fn, []));
+    await waitFor(() => expect(result.current.data).toBe("first"));
+    act(() => { result.current.reload({ background: true }); });
+    await waitFor(() => expect(fn).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data).toBe("first");
+    expect(result.current.error).toBeNull();
+  });
+
+  it("background reload shows the error when there is no previous data", async () => {
+    const err = new Error("down");
+    const fn = vi.fn().mockRejectedValue(err);
+    const { result } = renderHook(() => useAsync(fn, []));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => { result.current.reload({ background: true }); });
+    await waitFor(() => expect(fn).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe(err);
+  });
+
+  it("background reload is skipped while a request is in flight", async () => {
+    let resolve;
+    const fn = vi.fn().mockImplementationOnce(() => Promise.resolve("first"))
+      .mockImplementation(() => new Promise((r) => { resolve = r; }));
+    const { result } = renderHook(() => useAsync(fn, []));
+    await waitFor(() => expect(result.current.data).toBe("first"));
+    act(() => { result.current.reload({ background: true }); });
+    await waitFor(() => expect(fn).toHaveBeenCalledTimes(2));
+    act(() => { result.current.reload({ background: true }); });
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(fn).toHaveBeenCalledTimes(2);
+    await act(async () => { resolve("second"); });
+    expect(result.current.data).toBe("second");
+  });
 });
