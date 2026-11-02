@@ -695,8 +695,10 @@ async def remove_applications_from_batch(
     """Detach applications from ONE batch (smart remove).
 
     Multi-batch aware: keeps a reviewer that another of the app's remaining
-    batches still supplies, and never removes a reviewer who already submitted a
-    review. Leaves the app's other batch memberships untouched.
+    batches still supplies. A review (draft or submitted) does NOT protect the
+    assignment: the assignment is deleted and the review row is kept.
+    ``skipped_submitted`` / ``kept_draft`` stay in the response (always 0) for
+    contract stability. Leaves the app's other batch memberships untouched.
     """
     sb = get_admin_client()
     from app.services import batch_membership
@@ -868,8 +870,10 @@ async def unassign_batch_reviewer(
     assignments on the batch's apps.
 
     Multi-batch aware: keeps the reviewer on an app that another of the app's
-    batches still supplies, and never removes a reviewer who already submitted a
-    review. Returns the number of assignments removed + submitted-skips.
+    batches still supplies. A review (draft or submitted) does NOT protect the
+    assignment: the assignment is deleted and the review row is kept. Returns
+    the number of assignments removed; ``skipped_submitted`` / ``kept_draft``
+    stay in the response (always 0) for contract stability.
     """
     sb = get_admin_client()
     existing_batch = sb.table("batches").select("id").eq("id", batch_id).limit(1).execute().data
@@ -1036,7 +1040,10 @@ async def bulk_remove_reviewer_applications(
     body: ReviewerAppsBody,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Bulk-unassign applications from one reviewer (skips submitted reviews)."""
+    """Bulk-unassign applications from one reviewer. The assignment is always
+    deleted; a submitted review is kept and the item is reported as
+    ``skipped_submitted`` (name kept for client compatibility) with
+    ``review_kept: True``."""
     native = applications_query.resolve_native_tracks(
         [(i.application_id, i.track) for i in body.items]
     )
