@@ -6,6 +6,7 @@ layer via require_capability + per-request reviewer_user_id matching.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -938,3 +939,85 @@ def fetch_my_review_for_application(
         )
         return None
     return rows[0] if rows else None
+
+
+# ─── Panel feedback (contract C2) ───────────────────────────────────────
+
+# Rationales the system writes itself (gate1/gate2 status echoes, batch and
+# override defaults) carry no human feedback, so reviewers never see them.
+_AUTO_RATIONALE_RES = (
+    re.compile(r"^gate[12]\s*:", re.IGNORECASE),
+    re.compile(r"^batch decision\b", re.IGNORECASE),
+    re.compile(r"^admin override\s*:", re.IGNORECASE),
+)
+
+
+def is_human_rationale(text: str | None) -> bool:
+    t = (text or "").strip()
+    return bool(t) and not any(rx.match(t) for rx in _AUTO_RATIONALE_RES)
+
+
+_PANEL_REVIEW_KEYS = (
+    "id", "recommendation", "quick_notes", "strengths", "concerns", "comments", "flags",
+    "disagree_with_ai", "submitted_at", "score_problem", "score_solution", "score_tech",
+    "score_founders",
+)
+
+
+def fetch_panel_feedback(reviewer_user_id: str, application_id: str) -> dict | None:
+    """Other panel reviewers' submitted feedback + human admin rationales for
+    one application, as seen by `reviewer_user_id`.
+
+    None → the caller has neither an assignment nor a review on the app (the
+    route 404s). Before the caller has submitted their own review nothing is
+    revealed (``available: False``). Never returns email addresses. DB errors
+    on the access check propagate so the route fails closed."""
+    sb = get_admin_client()
+    mine = [r for r in (sb.table("reviews").select("*")
+                        .eq("application_id", application_id)
+                        .eq("reviewer_user_id", reviewer_user_id).execute().data or [])
+            if r.get("application_id") == application_id
+            and r.get("reviewer_user_id") == reviewer_user_id]
+    assigns = [a for a in (sb.table("reviewer_assignments").select("*")
+                           .eq("application_id", application_id)
+                           .eq("reviewer_user_id", reviewer_user_id).execute().data or [])
+               if a.get("application_id") == application_id
+               and a.get("reviewer_user_id") == reviewer_user_id]
+    if not mine and not assigns:
+        return None
+    submitted = [r for r in mine if r.get("submitted_at")]
+    if not submitted:
+        return {"available": False, "reason": "submit_first",
+                "reviews": [], "admin_decisions": []}
+
+    # Children are keyed by the NATIVE track — take it from the caller's row.
+    track = submitted[0].get("application_track")
+    from . import applications_query  # local: applications_query imports nothing from here
+
+    others = [r for r in applications_query.fetch_reviews_for(application_id, track)
+              if r.get("submitted_at") and r.get("reviewer_user_id") != reviewer_user_id
+              and r.get("application_id") == application_id]
+    others.sort(key=lambda r: r.get("submitted_at") or "", reverse=True)
+
+    names: dict[str, str | None] = {}
+    uids = sorted({r["reviewer_user_id"] for r in others if r.get("reviewer_user_id")})
+    if uids:
+        try:
+            profs = (sb.table("profiles").select("id,full_name")
+                     .in_("id", uids).execute().data) or []
+            names = {p["id"]: p.get("full_name") for p in profs if p.get("id")}
+        except Exception as exc:  # noqa: BLE001
+            log.warning("panel_feedback: profile lookup failed", extra={"err": str(exc)})
+
+    reviews = [
+        {**{k: r.get(k) for k in _PANEL_REVIEW_KEYS},
+         "reviewer_name": names.get(r.get("reviewer_user_id")) or "Reviewer",
+         "overall": _weighted_overall(r)}
+        for r in others
+    ]
+    decisions = [
+        d for d in applications_query.fetch_admin_decisions_for(
+            application_id, track, email_fallback=False)
+        if is_human_rationale(d.get("rationale"))
+    ]
+    return {"available": True, "reviews": reviews, "admin_decisions": decisions}
