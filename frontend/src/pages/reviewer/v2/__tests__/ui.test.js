@@ -6,7 +6,24 @@ import {
   evaluationToPatch,
   weightedOverall,
   initialsOf,
+  DIM_KEYS,
+  AI_DIM_KEYS,
+  CRIT_LABELS,
 } from "../ui.jsx";
+
+// Rubric v3.2 (contract C3): reviewers score 4 criteria; "Commitment to be
+// fully available" is gone from the reviewer form, payloads and math. The AI
+// screening scores keep their commitment dimension (AI panel only).
+describe("rubric v3.2 dimensions", () => {
+  it("the reviewer form scores exactly the four criteria", () => {
+    expect(DIM_KEYS).toEqual(["problem", "solution", "tech", "founders"]);
+  });
+
+  it("the AI panel still shows the AI commitment score", () => {
+    expect(AI_DIM_KEYS).toEqual(["problem", "solution", "tech", "founders", "commit"]);
+    expect(CRIT_LABELS.commit).toBe("Commitment");
+  });
+});
 
 describe("reviewRowToEvaluation", () => {
   it("maps a full review row to the UI evaluation shape", () => {
@@ -27,7 +44,8 @@ describe("reviewRowToEvaluation", () => {
     const ev = reviewRowToEvaluation(row);
     expect(ev.reviewId).toBe("rev-1");
     expect(ev.status).toBe("submitted");
-    expect(ev.scores).toEqual({ problem: 8, solution: 6, tech: 7, founders: 9, commit: 5 });
+    // A historical score_commitment is not carried into the form.
+    expect(ev.scores).toEqual({ problem: 8, solution: 6, tech: 7, founders: 9 });
     expect(ev.notes).toBe("solid team");
     expect(ev.disagreements).toEqual({ problem: true });
     expect(ev.flags).toEqual(["conflict"]);
@@ -47,7 +65,7 @@ describe("reviewRowToEvaluation", () => {
     const ev = reviewRowToEvaluation(null);
     expect(ev.reviewId).toBeNull();
     expect(ev.status).toBe("not-started");
-    expect(ev.scores).toEqual({ problem: 5.0, solution: 5.0, tech: 5.0, founders: 5.0, commit: 5.0 });
+    expect(ev.scores).toEqual({ problem: 5.0, solution: 5.0, tech: 5.0, founders: 5.0 });
     expect(ev.recommendation).toBeNull();
     expect(ev.notes).toBe("");
     expect(ev.disagreements).toEqual({});
@@ -59,12 +77,14 @@ describe("reviewRowToEvaluation", () => {
     const ev = reviewRowToEvaluation({
       id: "rev-3",
       score_problem: null,
+      score_tech: "7",
       score_commitment: "7",
       flags: null,
       disagree_with_ai: null,
     });
     expect(ev.scores.problem).toBe(5.0);
-    expect(ev.scores.commit).toBe(7); // numeric string coerced
+    expect(ev.scores.tech).toBe(7); // numeric string coerced
+    expect(ev.scores).not.toHaveProperty("commit");
     expect(ev.flags).toEqual([]);
     expect(ev.disagreements).toEqual({});
   });
@@ -72,7 +92,7 @@ describe("reviewRowToEvaluation", () => {
 
 describe("evaluationToPayload", () => {
   const ev = {
-    scores: { problem: 8, solution: 6, tech: 7, founders: 9, commit: 5 },
+    scores: { problem: 8, solution: 6, tech: 7, founders: 9 },
     recommendation: "advance",
     notes: "great",
     disagreements: { tech: true },
@@ -90,7 +110,6 @@ describe("evaluationToPayload", () => {
       score_solution: 6,
       score_tech: 7,
       score_founders: 9,
-      score_commitment: 5,
       recommendation: "advance",
       quick_notes: "great",
       disagree_with_ai: { tech: true },
@@ -99,9 +118,9 @@ describe("evaluationToPayload", () => {
     });
   });
 
-  it("maps commit→score_commitment and notes→quick_notes", () => {
+  it("never sends score_commitment and maps notes→quick_notes", () => {
     const payload = evaluationToPayload(ev, { application, draft: false });
-    expect(payload.score_commitment).toBe(5);
+    expect(payload).not.toHaveProperty("score_commitment");
     expect(payload.quick_notes).toBe("great");
     expect(payload.draft).toBe(false);
   });
@@ -109,7 +128,7 @@ describe("evaluationToPayload", () => {
 
 describe("evaluationToPatch", () => {
   const ev = {
-    scores: { problem: 8, solution: 6, tech: 7, founders: 9, commit: 5 },
+    scores: { problem: 8, solution: 6, tech: 7, founders: 9 },
     recommendation: "hold",
     notes: "needs work",
     disagreements: {},
@@ -123,7 +142,6 @@ describe("evaluationToPatch", () => {
       score_solution: 6,
       score_tech: 7,
       score_founders: 9,
-      score_commitment: 5,
       recommendation: "hold",
       quick_notes: "needs work",
       disagree_with_ai: {},
@@ -137,15 +155,27 @@ describe("evaluationToPatch", () => {
   it("omits the draft flag when draft is undefined", () => {
     const patch = evaluationToPatch(ev, {});
     expect(patch).not.toHaveProperty("draft");
-    expect(patch.score_commitment).toBe(5);
+    expect(patch).not.toHaveProperty("score_commitment");
     expect(patch.quick_notes).toBe("needs work");
   });
 });
 
 describe("weightedOverall", () => {
-  it("computes the weighted mean (22/30/22/14/12)", () => {
-    const scores = { problem: 8, solution: 6, tech: 7, founders: 9, commit: 5 };
-    expect(weightedOverall(scores)).toBeCloseTo(6.96, 5);
+  it("computes the weighted mean over 4 criteria (22/30/22/14, /88)", () => {
+    const scores = { problem: 8, solution: 6, tech: 7, founders: 9 };
+    expect(weightedOverall(scores)).toBeCloseTo((8 * 22 + 6 * 30 + 7 * 22 + 9 * 14) / 88, 5);
+  });
+
+  it("ignores a stray commit score", () => {
+    const scores = { problem: 8, solution: 6, tech: 7, founders: 9, commit: 0 };
+    expect(weightedOverall(scores)).toBeCloseTo(636 / 88, 5);
+  });
+
+  it("a brand-new review's default payload carries no commitment score", () => {
+    const p = evaluationToPayload(reviewRowToEvaluation(null), {
+      application: { id: "a", track: "sip", assignmentId: "x" }, draft: false,
+    });
+    expect(p).not.toHaveProperty("score_commitment");
   });
 
   it("averages over present weights, skipping missing scores", () => {

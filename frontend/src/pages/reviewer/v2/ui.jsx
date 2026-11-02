@@ -116,19 +116,25 @@ export function Slider({ label, value, onChange, kind = "", min = 0, max = 10, s
   );
 }
 
-// Display labels for the five scoring dimensions (prototype CRIT_LABELS).
+// Display labels for the scoring dimensions (prototype CRIT_LABELS).
+// Rubric v3.2: reviewers score the first four. `commit` survives only as the
+// label for the AI screening score's Commitment bar (AI scores are unchanged).
 export const CRIT_LABELS = {
   problem: "Problem Statement Impact and Importance",
   solution: "Completeness, Depth of Solution",
   tech: "Technical Depth",
   founders: "Professional Profile of Founder",
-  commit: "Commitment to be fully available",
+  commit: "Commitment",
 };
 
-export const DIM_KEYS = ["problem", "solution", "tech", "founders", "commit"];
+// Reviewer rubric v3.2 — the criteria a reviewer scores.
+export const DIM_KEYS = ["problem", "solution", "tech", "founders"];
+// The AI baseline panel still shows the AI's commitment dimension.
+export const AI_DIM_KEYS = [...DIM_KEYS, "commit"];
 
-// Weighted overall — must match backend reviewer_query._SCORE_WEIGHTS.
-const WEIGHTS = { problem: 22, solution: 30, tech: 22, founders: 14, commit: 12 };
+// Weighted overall — must match backend reviewer_query._SCORE_WEIGHTS
+// (22/30/22/14 over 88; commitment is ignored for every review).
+const WEIGHTS = { problem: 22, solution: 30, tech: 22, founders: 14 };
 export function weightedOverall(scores) {
   let total = 0;
   let wsum = 0;
@@ -161,7 +167,7 @@ export function reviewRowToEvaluation(row) {
     return {
       reviewId: null,
       status: "not-started",
-      scores: { problem: 5.0, solution: 5.0, tech: 5.0, founders: 5.0, commit: 5.0 },
+      scores: { problem: 5.0, solution: 5.0, tech: 5.0, founders: 5.0 },
       recommendation: null,
       notes: "",
       disagreements: {},
@@ -178,7 +184,6 @@ export function reviewRowToEvaluation(row) {
       solution: num(row.score_solution),
       tech: num(row.score_tech),
       founders: num(row.score_founders),
-      commit: num(row.score_commitment),
     },
     recommendation: row.recommendation || null,
     notes: row.quick_notes || "",
@@ -189,6 +194,8 @@ export function reviewRowToEvaluation(row) {
 }
 
 // Build the API payload (prototype scores/notes/disagreements → DB columns).
+// score_commitment is never sent (rubric v3.2); PATCH is exclude_unset, so a
+// historical review's stored commitment is left untouched on edit.
 export function evaluationToPayload(ev, { application, draft }) {
   return {
     application_id: application.id,
@@ -198,7 +205,6 @@ export function evaluationToPayload(ev, { application, draft }) {
     score_solution: ev.scores.solution,
     score_tech: ev.scores.tech,
     score_founders: ev.scores.founders,
-    score_commitment: ev.scores.commit,
     recommendation: ev.recommendation,
     quick_notes: ev.notes,
     disagree_with_ai: ev.disagreements,
@@ -214,7 +220,6 @@ export function evaluationToPatch(ev, { draft }) {
     score_solution: ev.scores.solution,
     score_tech: ev.scores.tech,
     score_founders: ev.scores.founders,
-    score_commitment: ev.scores.commit,
     recommendation: ev.recommendation,
     quick_notes: ev.notes,
     disagree_with_ai: ev.disagreements,

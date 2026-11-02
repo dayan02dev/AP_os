@@ -49,6 +49,7 @@ import {
   Slider,
   CRIT_LABELS,
   DIM_KEYS,
+  AI_DIM_KEYS,
   weightedOverall,
   reviewRowToEvaluation,
   evaluationToPayload,
@@ -715,7 +716,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
                     {aiBlock.overall != null ? Number(aiBlock.overall).toFixed(1) : "—"}
                   </div>
                   <div style={{ flex: 1 }}>
-                    {DIM_KEYS.map((k) =>
+                    {AI_DIM_KEYS.map((k) =>
                       typeof aiBlock[k] === "number" ? (
                         <ScoreBar key={k} label={CRIT_LABELS[k]} kind={k} value={aiBlock[k]} />
                       ) : null,
