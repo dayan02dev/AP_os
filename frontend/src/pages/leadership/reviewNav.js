@@ -7,6 +7,11 @@
 //
 // The full list may land after the review page mounted (it is fetched in the
 // background), so each write also fires a window event the page listens for.
+//
+// Each "Review application" click starts a new list (startReviewIdList) and
+// gets a token; the background full-list write passes it back, and a write
+// whose token is no longer the latest is dropped. Otherwise a slow fetch from
+// an earlier, unfiltered open could land last and replace the filtered list.
 
 export const ID_LIST_KEY = "review_app_id_list";
 export const ID_LIST_EVENT = "leadership:review-id-list";
@@ -23,7 +28,19 @@ export function readReviewIdList() {
   }
 }
 
-export function writeReviewIdList(list) {
+let latestToken = 0;
+
+// Store the list for a new review session; returns the token later writes for
+// this session must carry.
+export function startReviewIdList(list) {
+  latestToken += 1;
+  writeReviewIdList(list, latestToken);
+  return latestToken;
+}
+
+// Returns false (and writes nothing) when `token` belongs to an older session.
+export function writeReviewIdList(list, token = latestToken) {
+  if (token !== latestToken) return false;
   try {
     sessionStorage.setItem(ID_LIST_KEY, JSON.stringify(list));
   } catch {
@@ -35,4 +52,5 @@ export function writeReviewIdList(list) {
   } catch {
     // ignore
   }
+  return true;
 }

@@ -97,7 +97,12 @@ export function stageQuery(stageId) {
   const stage = STAGE_BY_ID[stageId];
   if (!stage || SERVER_STAGES.has(stageId)) return { status: stageId || undefined, keep: null };
   const single = stage.statuses.length === 1;
-  const keepStatus = single ? null : (row) => stage.statuses.includes(rawStatus(row?.status));
+  // The backend's pipeline_stage is built from the RAW status (like the chip
+  // count); row.status carries the decision overlay, so it only stands in
+  // for rows from an older backend without pipeline_stage.
+  const keepStatus = single ? null : (row) => (row?.pipeline_stage
+    ? row.pipeline_stage === stageId
+    : stage.statuses.includes(rawStatus(row?.status)));
   const keep = stage.keep && keepStatus
     ? (row, ctx) => keepStatus(row) && stage.keep(row, ctx)
     : stage.keep || keepStatus;
