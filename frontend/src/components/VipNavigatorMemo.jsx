@@ -9,7 +9,7 @@ import { flushSync } from "react-dom";
 import "./VipNavigatorMemo.css";
 
 // Placeholders in memo text (backend vip_memo_gen/tags.py). Founder tags (and the
-// legacy one) show as a "Founder to verify" chip; AI cross-check tags are hidden.
+// legacy one) show as a "To Verify" chip; AI cross-check tags are hidden.
 const VERIFY_RE = /\s*\[Needs AI cross-verification\]/g;
 const TAG_RE = /(\[Needs founder verification\]|\[Needs AI cross-verification\]|\[To be confirmed\])/;
 const isTagged = (v) => TAG_RE.test(String(v ?? ""));
@@ -62,7 +62,7 @@ function formatDate(value) {
 const FOUNDER_TITLE = "A claim made by the founders that we have not verified yet — it may be overstated";
 
 export function Pending() {
-  return <span className="m3-pending m3-founder" title={FOUNDER_TITLE}>Founder to verify</span>;
+  return <span className="m3-pending m3-founder" title={FOUNDER_TITLE}>To Verify</span>;
 }
 
 /** Text with every verification tag replaced by its dashed chip. A list is
