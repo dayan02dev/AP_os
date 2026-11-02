@@ -48,4 +48,20 @@ describe("AdminDecisionList", () => {
     expect(isAutoRationale("Weak market evidence")).toBe(false);
     expect(isAutoRationale("")).toBe(true);
   });
+
+  it("treats the leadership default '<decision> by leadership' rationale as automatic", () => {
+    for (const d of ["shortlisted", "on_hold", "rejected", "waitlisted", "jury_review", "offered"]) {
+      expect(isAutoRationale(`${d} by leadership`)).toBe(true);
+    }
+    expect(isAutoRationale("Rejected by leadership after the panel call")).toBe(false);
+  });
+
+  it("labels every decision value admin_decisions can hold", () => {
+    const vals = ["shortlisted", "on_hold", "rejected", "waitlisted", "jury_review", "offered"];
+    const { container } = render(<AdminDecisionList decisions={vals.map((d, i) => ({
+      id: "d" + i, gate_stage: "gate1", decision: d, rationale: "Because.", decided_at: null }))} />);
+    const labels = [...container.querySelectorAll(".review-card-name")].map((n) => n.textContent);
+    expect(labels).toEqual(["Shortlisted · 1st gate", "On hold · 1st gate", "Rejected · 1st gate",
+      "Waitlisted · 1st gate", "Sent to final round · 1st gate", "Offered · 1st gate"]);
+  });
 });
