@@ -149,14 +149,17 @@ describe("ReviewerQueue fixes", () => {
     expect(screen.queryByText("Native")).not.toBeInTheDocument();
   });
 
-  it("hides closed (rejected) rows by default behind a toggle and labels detached rows", () => {
+  it("hides closed and unassigned (detached) rows by default behind one 'Show inactive' toggle", () => {
     const Q = [row({ id: "1", name: "Open", reviewStatus: "submitted", detached: true }),
-               row({ id: "2", name: "Shut", reviewStatus: "submitted", closed: true })];
+               row({ id: "2", name: "Shut", reviewStatus: "submitted", closed: true }),
+               row({ id: "3", name: "Live" })];
     render(<ReviewerQueue onOpen={vi.fn()} queueAsync={mk(Q)} />);
+    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(screen.queryByText("Open")).not.toBeInTheDocument();
+    expect(screen.queryByText("Shut")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /show inactive \(2\)/i }));
     expect(screen.getByText("Open")).toBeInTheDocument();
     expect(screen.getByText("Unassigned")).toBeInTheDocument();
-    expect(screen.queryByText("Shut")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /show closed \(1\)/i }));
     expect(screen.getByText("Shut")).toBeInTheDocument();
   });
 });
@@ -203,9 +206,9 @@ describe("history CSV export", () => {
 });
 
 describe("My Queue badge", () => {
-  it("does not count closed rows hidden by default", () => {
+  it("counts only the rows the queue shows by default (no closed or unassigned)", () => {
     expect(queueBadgeCount([row({ id: "1" }), row({ id: "2", detached: true }),
-      row({ id: "3", closed: true })])).toBe(2);
+      row({ id: "3", closed: true })])).toBe(1);
     expect(queueBadgeCount(null)).toBe(null);
   });
 });
