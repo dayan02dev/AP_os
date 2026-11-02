@@ -220,15 +220,14 @@ def _query_track_table(
                 or_parts.append(f"display_seq.eq.{digits}")
             # Also match the AI-derived project name (the "Project" column the
             # user actually sees and searches by). project_name lives on the
-            # ai_screening table, so we pre-resolve matching application ids and
-            # fold them into the OR via `id.in.(…)` — PostgREST parses the
-            # nested parens inside or(...).
+            # ai_screening table, so we pre-resolve matching application ids
+            # and fetch them in separate chunked `.in_("id", …)` queries,
+            # unioned by id below. Inlining them all into the or() (LFV-1) made
+            # a ~17 KB URL on a broad search → 414 → silently empty track.
             project_ids = fetch_app_ids_by_project_name(track, search)
-            if project_ids:
-                or_parts.append(f"id.in.({','.join(project_ids)})")
             or_filter = ",".join(or_parts)
 
-        def _make_query():
+        def _base_query():
             q = (
                 sb.table(track_table(track))
                 .select(_list_columns_for_track(track))
@@ -237,6 +236,10 @@ def _query_track_table(
             )
             if status:
                 q = q.eq("status", status)
+            return q
+
+        def _make_query():
+            q = _base_query()
             if or_filter:
                 q = q.or_(or_filter)
             return q
@@ -251,6 +254,14 @@ def _query_track_table(
             rows.extend(chunk)
             if len(chunk) < size:
                 break
+
+        if search and project_ids:
+            seen = {r["id"] for r in rows}
+            todo = [i for i in dict.fromkeys(project_ids) if i not in seen]
+            for part in _id_chunks(todo):
+                rows.extend(_base_query().in_("id", part).execute().data or [])
+            rows.sort(key=lambda r: str(r.get("id")))
+            rows = rows[:limit]
     except Exception as exc:
         log.warning(
             "applications_query._query_track_table failed",

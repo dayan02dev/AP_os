@@ -444,3 +444,103 @@ def test_track_table_read_is_paginated_past_1000_rows(monkeypatch):
     ids = [r["id"] for r in rows]
     assert len(ids) == len(set(ids)) == 2300
     assert ranges, "track-table read must page with .range()"
+
+
+# ── LFV-1: broad project-name search must not inline every id in or() ──
+
+class _UrlQuery:
+    """PostgREST-ish: honours eq/neq/in_/ilike-or/order/range, caps responses
+    at max_rows and raises (like a proxy 414) when the URL exceeds URL_LIMIT."""
+    URL_LIMIT = 8192
+    MAX_ROWS = 1000
+
+    def __init__(self, sb, name):
+        self.sb, self.name = sb, name
+        self.rows = sb.tables.get(name, [])
+        self.f, self._order, self._range, self._limit = [], None, None, None
+        self.url = len(name) + 40
+
+    def select(self, cols="*", **_k): self.url += len(cols); return self
+    def eq(self, c, v): self.f.append(lambda r: r.get(c) == v); self.url += len(c) + len(str(v)) + 5; return self
+    def neq(self, c, v): self.f.append(lambda r: r.get(c) != v); self.url += len(c) + len(str(v)) + 6; return self
+
+    def in_(self, c, vals):
+        vals = list(vals)
+        self.sb.in_sizes.append((self.name, len(vals)))
+        self.f.append(lambda r: r.get(c) in vals)
+        self.url += len(c) + sum(len(str(v)) + 1 for v in vals) + 8
+        return self
+
+    def ilike(self, c, pat):
+        needle = pat.strip("%").lower()
+        self.f.append(lambda r: needle in str(r.get(c) or "").lower()); self.url += len(pat) + len(c) + 8
+        return self
+
+    def or_(self, expr):
+        self.url += len(expr) + 6
+        parts = []
+        for p in expr.split(","):
+            col, op, val = p.split(".", 2)
+            parts.append((col, op, val.strip('"').strip("%").lower()))
+
+        def match(r):
+            for col, op, val in parts:
+                if op == "ilike" and val in str(r.get(col) or "").lower():
+                    return True
+                if op == "eq" and str(r.get(col)) == val:
+                    return True
+            return False
+        self.f.append(match)
+        return self
+
+    def order(self, col, desc=False, **_k): self._order = col; return self
+    def range(self, a, b): self._range = (a, b); return self
+    def limit(self, n): self._limit = n; return self
+
+    def execute(self):
+        from types import SimpleNamespace
+        self.sb.urls.append(self.url)
+        if self.url > self.URL_LIMIT:
+            raise RuntimeError(f"414 URI too long ({self.url}) on {self.name}")
+        data = [dict(r) for r in self.rows if all(fn(r) for fn in self.f)]
+        if self._order:
+            data.sort(key=lambda r: str(r.get(self._order)))
+        if self._range:
+            data = data[self._range[0]: self._range[1] + 1]
+        if self._limit is not None:
+            data = data[: self._limit]
+        return SimpleNamespace(data=data[: self.MAX_ROWS])
+
+
+class _UrlSB:
+    def __init__(self, tables):
+        self.tables, self.urls, self.in_sizes = tables, [], []
+
+    def table(self, name):
+        return _UrlQuery(self, name)
+
+
+def test_broad_project_name_search_is_chunked_not_inlined(monkeypatch):
+    import uuid
+    tir = [{"id": str(uuid.UUID(int=(0xA << 120) + i)), "status": "under_review",
+            "basic_org": f"Org{i}"} for i in range(450)]
+    ai = [{"application_id": r["id"], "application_track": "tir",
+           "project_name": f"Proj {i}"} for i, r in enumerate(tir)]
+    # Matches by org only (no project-name hit) — must still be in the union.
+    tir.append({"id": str(uuid.UUID(int=(0xB << 120))), "status": "under_review",
+                "basic_org": "Projective Ltd"})
+    tir.append({"id": str(uuid.UUID(int=(0xC << 120))), "status": "draft",
+                "basic_org": "Project Draft"})
+    sb = _UrlSB({"tir_applications": tir, "ai_screening": ai})
+    monkeypatch.setattr(applications_query, "get_admin_client", lambda: sb)
+    from app.services import staff_exclusions
+    monkeypatch.setattr(staff_exclusions, "visible", lambda rows, **k: rows)
+
+    rows = applications_query._query_track_table("tir", search="proj")
+    ids = [r["id"] for r in rows]
+    assert len(ids) == len(set(ids)) == 451, len(ids)
+    assert ids == sorted(ids), "union must stay ordered by id"
+    assert max(sb.urls) <= _UrlQuery.URL_LIMIT
+    assert sb.in_sizes and max(n for _t, n in sb.in_sizes) <= 150
+    # status filter still applies to the chunked id branch
+    assert applications_query._query_track_table("tir", status="evaluated", search="proj") == []
