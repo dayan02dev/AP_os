@@ -113,7 +113,47 @@ describe("queueNavigation", () => {
   it("follows the queue sort", () => {
     const n = queueNavigation(QUEUE, { ...DEFAULT_QUEUE_FILTERS, track: "sip", sortCol: "name", sortAsc: false }, "v4");
     expect(n.prev).toBeNull();
-    expect(n.next.id).toBe("v2");
+    expect(n.next.id).toBe("v1"); // v3 closed, v2 already submitted
+  });
+
+  it("RFV-1: manual Prev/Next skip already-submitted apps unless filtering on Submitted", () => {
+    const vip = { ...DEFAULT_QUEUE_FILTERS, track: "sip" };
+    expect(queueNavigation(QUEUE, vip, "v1").next.id).toBe("v4");
+    expect(queueNavigation(QUEUE, vip, "v4").prev.id).toBe("v1");
+  });
+
+  it("RFV-1: drafts and not-started apps stay in Prev/Next", () => {
+    const rows = [
+      row("a", "sip", "not-started", "Climate"),
+      row("b", "sip", "submitted", "Climate"),
+      row("c", "sip", "draft", "Climate"),
+    ];
+    const n = queueNavigation(rows, DEFAULT_QUEUE_FILTERS, "a");
+    expect(n.next.id).toBe("c");
+    expect(queueNavigation(rows, DEFAULT_QUEUE_FILTERS, "c").prev.id).toBe("a");
+  });
+
+  it("RFV-1: the Submitted filter walks submitted apps", () => {
+    const rows = [
+      row("a", "sip", "submitted", "Climate"),
+      row("b", "sip", "not-started", "Climate"),
+      row("c", "sip", "submitted", "Climate"),
+    ];
+    const f = { ...DEFAULT_QUEUE_FILTERS, status: "submitted" };
+    expect(queueNavigation(rows, f, "a").next.id).toBe("c");
+    expect(queueNavigation(rows, f, "c").prev.id).toBe("a");
+    expect(queueNavigation(rows, f, "a").browsing).toBe(true);
+  });
+
+  it("RFV-2: 'left' counts the current app while it is not yet submitted", () => {
+    expect(queueNavigation(QUEUE, VIP_NS_CLIMATE, "v1").remaining).toBe(2); // v1 + v4
+    expect(queueNavigation(QUEUE, VIP_NS_CLIMATE, "v1").browsing).toBe(false);
+  });
+
+  it("RFV-2: a My-reco filter is a browsing filter (no 'left' count)", () => {
+    const f = { ...DEFAULT_QUEUE_FILTERS, reco: "yes" };
+    expect(queueNavigation(QUEUE, f, "v2").browsing).toBe(true);
+    expect(queueNavigation(QUEUE, { ...DEFAULT_QUEUE_FILTERS, reco: "none" }, "v1").browsing).toBe(false);
   });
 
   it("anchors on the full list, so an app that no longer matches still has a Next", () => {
@@ -138,7 +178,10 @@ describe("queueNavigation", () => {
     expect(n.upNext.id).toBe("v1");
     const done = QUEUE.map((r) => (r.id === "v1" ? { ...r, reviewStatus: "submitted" } : r));
     expect(queueNavigation(done, VIP_NS_CLIMATE, "v4").upNext).toBeNull();
-    expect(queueNavigation(done, VIP_NS_CLIMATE, "v4").remaining).toBe(0);
+    // Only the current app (not yet submitted) is left; 0 once it is submitted.
+    expect(queueNavigation(done, VIP_NS_CLIMATE, "v4").remaining).toBe(1);
+    const allDone = done.map((r) => (r.id === "v4" ? { ...r, reviewStatus: "submitted" } : r));
+    expect(queueNavigation(allDone, VIP_NS_CLIMATE, "v4", { anchorRow: QUEUE[5] }).remaining).toBe(0);
   });
 
   it("uses the anchor row for position when the fresh row sorts elsewhere", () => {

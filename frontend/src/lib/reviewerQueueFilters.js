@@ -126,19 +126,24 @@ export function sortQueue(rows, sortCol, sortAsc = true) {
  * Prev/Next for the eval screen, over the queue as the reviewer filtered and
  * sorted it. The current app is located in the FULL sorted list (so an app
  * that stops matching — e.g. just submitted under "Not started" — still has a
- * valid Next); neighbours are the nearest rows that pass the filters and are
- * not closed/detached.
+ * valid Next); neighbours are the nearest rows that pass the filters, are not
+ * closed/detached and — unless the reviewer is browsing finished work (status
+ * filter "Submitted" or a My-reco filter) — are not already submitted, so
+ * Next/Prev never lands on a review the reviewer has completed.
  *
  *  - `anchorRow`: the current app's row as it was when it was opened. Used for
  *    its position, so a fresh row that now sorts elsewhere (status, my score)
  *    does not move the reviewer's place.
  *  - `upNext`: where auto-advance goes after a submit — the next row still to
  *    review (not submitted) after the current one, wrapping to earlier ones.
- *  - `remaining`: how many rows in the filter are still to review, excluding
- *    the current app.
+ *  - `remaining`: how many rows in the filter are still to review, the
+ *    current app included while it is not yet submitted.
+ *  - `browsing`: the filter selects finished work (Submitted / My reco), so a
+ *    "left to review" count means nothing there.
  */
 export function queueNavigation(rows, f, appId, { anchorRow = null } = {}) {
-  const none = { prev: null, next: null, upNext: null, remaining: 0, hasPosition: false };
+  const browsing = f.status === "submitted" || (f.reco !== "all" && f.reco !== "none");
+  const none = { prev: null, next: null, upNext: null, remaining: 0, hasPosition: false, browsing };
   if (!Array.isArray(rows)) return none;
   const id = String(appId);
   const isCurrent = (r) => String(r.id) === id;
@@ -147,16 +152,21 @@ export function queueNavigation(rows, f, appId, { anchorRow = null } = {}) {
   const sorted = sortQueue(base, f.sortCol, f.sortAsc);
   const idx = sorted.findIndex(isCurrent);
 
-  const eligible = (r) => !isCurrent(r) && !isInactive(r) && matchesQueueFilters(r, f);
-  const todo = (r) => eligible(r) && r.reviewStatus !== "submitted";
+  const inFilter = (r) => !isInactive(r) && matchesQueueFilters(r, f);
+  const unreviewed = (r) => r.reviewStatus !== "submitted";
+  const eligible = (r) => !isCurrent(r) && inFilter(r);
+  const todo = (r) => eligible(r) && unreviewed(r);
+  const walkable = browsing ? eligible : todo;
 
   let prev = null;
-  for (let i = idx - 1; i >= 0; i -= 1) if (eligible(sorted[i])) { prev = sorted[i]; break; }
+  for (let i = idx - 1; i >= 0; i -= 1) if (walkable(sorted[i])) { prev = sorted[i]; break; }
   let next = null;
-  for (let i = idx + 1; i < sorted.length; i += 1) if (eligible(sorted[i])) { next = sorted[i]; break; }
+  for (let i = idx + 1; i < sorted.length; i += 1) if (walkable(sorted[i])) { next = sorted[i]; break; }
   const upNext = sorted.slice(idx + 1).find(todo) || sorted.slice(0, idx).find(todo) || null;
+  // Fresh rows (not the anchor), so the current app drops out once submitted.
+  const remaining = rows.filter((r) => inFilter(r) && unreviewed(r)).length;
 
-  return { prev, next, upNext, remaining: sorted.filter(todo).length, hasPosition: true };
+  return { prev, next, upNext, remaining, hasPosition: true, browsing };
 }
 
 const TRACK_LABEL = { tir: "TIR", sip: "VIP" };
