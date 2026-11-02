@@ -19,6 +19,7 @@ import { loadDetail, useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 import { BUTTON_TO_DECISION, chipLabel } from "../../../../lib/adminDataAdapter";
+import { pyRound } from "../../../../lib/reviewScore.js";
 import { AdminDecisionList } from "../../../../components/ReviewerFeedback.jsx";
 import VipMemoPreview from "../../../../components/VipMemoPreview.jsx";
 import { readVipMemo, writeVipMemo } from "../../../../lib/vipMemoCache";
@@ -81,10 +82,12 @@ export function weightedReviewerScore(reviews, weightById = {}, backendScore = n
     }
     if (!complete || rv.submittedAt === null) continue;
     const w = typeof weightById[rv.reviewerId] === 'number' ? weightById[rv.reviewerId] : 1;
-    num += w * total / REVIEW_SCORE_WSUM;
+    // Same two roundings as the backend: each review to 2 dp
+    // (_weighted_overall), the weighted mean to 1 dp (reviewer_score).
+    num += w * pyRound(total / REVIEW_SCORE_WSUM, 2);
     den += w;
   }
-  return den ? Math.round((num / den) * 10) / 10 : null;
+  return den ? pyRound(num / den, 1) : null;
 }
 
 // One category's mean across submitted reviews, weighted by the same reviewer

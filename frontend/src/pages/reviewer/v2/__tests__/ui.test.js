@@ -163,12 +163,12 @@ describe("evaluationToPatch", () => {
 describe("weightedOverall", () => {
   it("computes the weighted mean over 4 criteria (22/30/22/14, /88)", () => {
     const scores = { problem: 8, solution: 6, tech: 7, founders: 9 };
-    expect(weightedOverall(scores)).toBeCloseTo((8 * 22 + 6 * 30 + 7 * 22 + 9 * 14) / 88, 5);
+    expect(weightedOverall(scores)).toBe(7.23); // 636/88 at 2 dp, like the backend (RM-1)
   });
 
   it("ignores a stray commit score", () => {
     const scores = { problem: 8, solution: 6, tech: 7, founders: 9, commit: 0 };
-    expect(weightedOverall(scores)).toBeCloseTo(636 / 88, 5);
+    expect(weightedOverall(scores)).toBe(7.23);
   });
 
   it("a brand-new review's default payload carries no commitment score", () => {

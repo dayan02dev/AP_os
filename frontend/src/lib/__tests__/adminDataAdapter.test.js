@@ -105,7 +105,8 @@ describe("adaptDetail", () => {
   it("review overall is the 4-criterion weighted score (commitment ignored, any score_overall ignored)", () => {
     const s = adaptDetail(detail);
     // (8*22 + 7.5*30 + 8.5*22 + 7.5*14) / 88
-    expect(s.reviews[0].overall).toBeCloseTo((8 * 22 + 7.5 * 30 + 8.5 * 22 + 7.5 * 14) / 88, 5);
+    // = 7.875, sent at 2 dp like backend _weighted_overall (RM-1)
+    expect(s.reviews[0].overall).toBe(7.88);
     const s2 = adaptDetail({
       ...detail,
       reviews: [{ reviewer_user_id: "r2", submitted_at: "2026-05-02T00:00:00Z",

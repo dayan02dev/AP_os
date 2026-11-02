@@ -1,4 +1,4 @@
-import { weightedReviewScore } from "./reviewScore.js";
+import { weightedReviewScore, pyRound } from "./reviewScore.js";
 
 export const STATUS_TO_CHIP = {
   submitted: "NEW", ai_screening: "PROCESSING", under_review: "IN REVIEW",
@@ -180,7 +180,8 @@ function consensusRev(reviews, backendScore, weights) {
     num += w * rv.overall;
     den += w;
   }
-  return den ? { overall: num / den } : undefined;
+  // 1 dp, like backend admin_query.reviewer_score.
+  return den ? { overall: pyRound(num / den, 1) } : undefined;
 }
 
 export const adaptReviewer = (r) => ({
