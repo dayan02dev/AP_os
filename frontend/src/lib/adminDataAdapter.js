@@ -177,6 +177,11 @@ export const adaptReviewerApplication = (a) => ({
   batch: a.batch || null,               // null → UI shows "Random allotment"
   reviewStatus: a.reviewStatus || "pending",
   assignmentId: a.assignment_id || null,
+  // Effective (display) track + display ID for the drawer row, and `detached`:
+  // a submitted review whose assignment is gone (reviewed, then unassigned).
+  effective_track: a.effective_track || null,
+  display_id: a.display_id || null,
+  detached: Boolean(a.detached),
 });
 // ─── Jury v2 ──────────────────────────────────────────────────────────────
 export function adaptJuror(r) {

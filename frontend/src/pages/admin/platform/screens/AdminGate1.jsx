@@ -486,7 +486,7 @@ export function gate1DecisionOf(s) {
 // VARIANT C · Batch decision room (prototype: GateReviewBatchDecision)
 // ══════════════════════════════════════════════════════════════════════════
 function GateReviewBatchDecision({ items, reload, goDetail }) {
-  const [selectedBatch, setSelectedBatch]     = useStickyState("admin.gate1", "batch", "All");
+  const [stickyBatch, setSelectedBatch]       = useStickyState("admin.gate1", "batch", "All");
   const [draftDecisions, setDraftDecisions]   = useState({}); // id → 'APPROVED' | 'HOLD' | 'REJECTED'
   const [busy, setBusy]                       = useState(false);
   const [note, setNote]                       = useState(null);
@@ -495,6 +495,11 @@ function GateReviewBatchDecision({ items, reload, goDetail }) {
     () => Array.from(new Set(items.flatMap(batchNamesOf))).sort(),
     [items]
   );
+  // A remembered batch that no longer has evaluated apps here (deleted,
+  // renamed, or all decided) falls back to All instead of an empty queue with
+  // no button highlighted. Derived, not reset, so the choice survives a reload
+  // that is still in flight.
+  const selectedBatch = stickyBatch === "All" || allBatches.includes(stickyBatch) ? stickyBatch : "All";
 
   const filtered = useMemo(
     () => selectedBatch === "All" ? items : items.filter(s => batchNamesOf(s).includes(selectedBatch)),
