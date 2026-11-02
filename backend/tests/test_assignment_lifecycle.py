@@ -12,14 +12,16 @@ comes back as the reviewer's draft if they are re-assigned.
 from __future__ import annotations
 
 import pytest
-
 from app.services import (
     admin_query,
     applications_query,
-    batch_membership as bm,
     reviewer_query,
     staff_exclusions,
 )
+from app.services import (
+    batch_membership as bm,
+)
+
 from tests.fixtures.fake_supabase import FakeSupabase
 
 R1, R2 = "rev-1", "rev-2"

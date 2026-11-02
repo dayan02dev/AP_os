@@ -9,9 +9,11 @@ available" (key commit / column score_commitment) is removed.
 """
 from __future__ import annotations
 
+import pytest
 from app.deps import get_current_user
 from app.main import app
 from app.services import admin_query, digest_summary, reviewer_query, rubric
+
 from tests.test_reviewer import (  # noqa: F401  (fixture import)
     _PATCH_LIVE_ASG,
     _VALID_SUBMIT,
@@ -22,6 +24,8 @@ from tests.test_reviewer import (  # noqa: F401  (fixture import)
     _seed_one_assignment,
 )
 
+pytestmark = pytest.mark.usefixtures("_clear_overrides")
+
 
 def _four_dim_submit():
     body = dict(_VALID_SUBMIT)
@@ -29,7 +33,7 @@ def _four_dim_submit():
     return body
 
 
-def test_submit_without_commitment_is_accepted(client, monkeypatch, _clear_overrides):
+def test_submit_without_commitment_is_accepted(client, monkeypatch):
     _seed_one_assignment(monkeypatch, "rev-a")
     app.dependency_overrides[get_current_user] = _override_user("rev-a")
     r = client.post("/reviewer/reviews", json=_four_dim_submit())
@@ -39,7 +43,7 @@ def test_submit_without_commitment_is_accepted(client, monkeypatch, _clear_overr
 
 
 def test_submit_with_stale_commitment_still_accepted_and_ignored(
-    client, monkeypatch, _clear_overrides,
+    client, monkeypatch,
 ):
     """Old cached FE bundles keep sending score_commitment; accept, ignore."""
     _seed_one_assignment(monkeypatch, "rev-a")
@@ -50,7 +54,7 @@ def test_submit_with_stale_commitment_still_accepted_and_ignored(
     assert r.json()["overall"] == 6.23
 
 
-def test_submit_missing_founders_reports_only_four_dims(client, monkeypatch, _clear_overrides):
+def test_submit_missing_founders_reports_only_four_dims(client, monkeypatch):
     _seed_one_assignment(monkeypatch, "rev-a")
     app.dependency_overrides[get_current_user] = _override_user("rev-a")
     body = _four_dim_submit()
@@ -75,7 +79,7 @@ def _draft_db(monkeypatch, **review):
     })
 
 
-def test_patch_flip_to_submit_without_commitment_succeeds(client, monkeypatch, _clear_overrides):
+def test_patch_flip_to_submit_without_commitment_succeeds(client, monkeypatch):
     _freeze_datetime(monkeypatch, "2026-11-03T10:00:00Z")
     _draft_db(monkeypatch)
     app.dependency_overrides[get_current_user] = _override_user("rev-a")
@@ -85,7 +89,7 @@ def test_patch_flip_to_submit_without_commitment_succeeds(client, monkeypatch, _
 
 
 def test_patch_explicitly_nulling_commitment_on_submitted_review_is_ok(
-    client, monkeypatch, _clear_overrides,
+    client, monkeypatch,
 ):
     _freeze_datetime(monkeypatch, "2026-11-03T10:00:00Z")
     _draft_db(monkeypatch, submitted_at="2026-11-03T09:50:00Z",
