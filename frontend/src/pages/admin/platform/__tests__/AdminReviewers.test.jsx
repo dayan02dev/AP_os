@@ -238,6 +238,23 @@ describe("AdminReviewers (reviewer-mode)", () => {
     });
   });
 
+  it("says how many assignments were kept because the reviewer has a draft (AF-1)", async () => {
+    useAdminData.mockImplementation((kind) => {
+      if (kind === "batches") {
+        return { data: { batches: [{ id: "bid-A", name: "Batch A" }] }, loading: false, error: null, reload: vi.fn() };
+      }
+      return {
+        data: { reviewers: [{ ...SAMPLE_REVIEWERS[0], batches: [{ name: "Batch A", count: 7 }] }] },
+        loading: false, error: null, reload: vi.fn(),
+      };
+    });
+    adminPlatformApi.unassignBatchReviewer.mockResolvedValueOnce({ deleted: 6, kept_draft: 1 });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<AdminReviewers decisionMode="reviewer" />);
+    fireEvent.click(screen.getByLabelText(/Remove Batch A from Priya Sharma/i));
+    expect(await screen.findByText(/1 assignment kept: the reviewer has a draft review/i)).toBeTruthy();
+  });
+
   it("assigns an unassigned batch via the + control", async () => {
     const reload = vi.fn();
     useAdminData.mockImplementation((kind) => {
