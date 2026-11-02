@@ -197,9 +197,13 @@ def _cross_view_problems(w: World, stage: str) -> list[str]:
     for r in REVIEWERS:
         row = roster[r]
         drawer = w.drawer(r)
+        # Roster work == the reviewer queue's default view (live, not closed;
+        # detached past reviews are History, not work — AF-10, 2026-11-03).
         pending_q = {q["id"] for q in queues[r]
-                     if q["reviewStatus"] != "submitted" and not q["closed"]}
-        done_q = {q["id"] for q in queues[r] if q["reviewStatus"] == "submitted"}
+                     if q["reviewStatus"] != "submitted" and not q["closed"]
+                     and not q["detached"]}
+        done_q = {q["id"] for q in queues[r] if q["reviewStatus"] == "submitted"
+                  and not q["closed"] and not q["detached"]}
         n_queue = len(pending_q | done_q)
         if row["assigned"] != n_queue:
             problems.append(f"[{stage}] {r}: roster.assigned={row['assigned']} but reviewer "

@@ -71,12 +71,15 @@ def _roster_row():
 
 def test_roster_pending_excludes_stale_assignments(sb):
     r = _roster_row()
-    assert r["completed"] == 2        # DONE + DET (REJ excluded)
+    # DONE only. DET (review kept, assignment removed) is a detached past
+    # review and REJ is decided/closed — neither is in the reviewer's default
+    # queue, so neither is current work (AF-10, 2026-11-03).
+    assert r["completed"] == 1
     # OPEN + STALE: an app flips to 'evaluated' after its FIRST review, so an
     # unreviewed assignment on it is still real work (only DECIDED apps close).
     assert r["pending"] == 2
-    assert r["assigned"] == 4         # completed + pending
-    assert r["progress"] == "2 / 4"
+    assert r["assigned"] == 3         # completed + pending
+    assert r["progress"] == "1 / 3"
 
 
 def test_roster_batch_breakdown_sums_to_assigned(sb):
@@ -89,11 +92,10 @@ def test_drawer_lists_the_same_set_as_roster(sb):
     apps = admin_query.fetch_reviewer_applications(R)["applications"]
     assert len(apps) == r["assigned"]
     by_id = {a["id"]: a for a in apps}
-    assert set(by_id) == {"DONE", "DET", "OPEN", "STALE"}
+    # DET (reviewed, then unassigned) is not listed, so it can be re-assigned.
+    assert set(by_id) == {"DONE", "OPEN", "STALE"}
     assert by_id["OPEN"]["reviewStatus"] == "pending"
-    assert by_id["DET"]["reviewStatus"] == "submitted"
-    assert by_id["DET"]["detached"] is True
-    assert by_id["DET"]["assignment_id"] is None
+    assert by_id["DONE"]["reviewStatus"] == "submitted"
     assert by_id["DONE"]["detached"] is False
 
 

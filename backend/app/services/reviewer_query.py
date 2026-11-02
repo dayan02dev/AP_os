@@ -584,10 +584,11 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
     """Spec §4.2 — one canonical record per active assignment. SUBMITTED reviews
     stay in the queue (status chip); AI scores included pre-submit.
 
-    Contract C5: the reviewer's SUBMITTED reviews whose assignment row was
-    deleted (batch-unassign / Gate-1 cleanup hard-delete assignments but keep
-    reviews) are appended with ``detached=True`` / ``assignmentId=None``, so the
-    dashboard's SUBMITTED tile matches History. Rejected apps are kept only when
+    Contract C4: the reviewer's SUBMITTED reviews with no live assignment
+    (deleted by any unassign path, or declined/reassigned) are returned with
+    ``detached=True`` / ``assignmentId=None`` and sorted after every live row.
+    DRAFT reviews without a live assignment are not returned at all (the row
+    stays in the DB and reappears if the reviewer is re-assigned). Rejected apps are kept only when
     the reviewer submitted a review, flagged ``closed=True`` (the queue hides
     them by default)."""
     from . import stats  # local import avoids any circular-import risk
@@ -723,7 +724,8 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
             "detached":      a is None,
             "closed":        closed,
         })
-    out.sort(key=lambda x: x.get("due") or "9999")
+    # Contract C4: live rows first, then detached ones; due date within each.
+    out.sort(key=lambda x: (x["detached"], x.get("due") or "9999"))
     return out
 
 

@@ -950,6 +950,7 @@ def test_roster_completed_counts_submitted_reviews_without_completed_at(
         {"id": "r-1", "reviewer_user_id": "rev-1", "application_id": "app-1",
          "application_track": "tir", "submitted_at": "2026-06-01T00:00:00Z"},
     ]
+    tables["tir_applications"] = [{"id": "app-1", "status": "evaluated"}]
     _install_db(monkeypatch, tables)
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
     r = client.get("/admin/platform/reviewers")
@@ -1115,10 +1116,11 @@ def test_bulk_endpoints_admin_only(client, _clear_overrides):
     assert client.post("/admin/platform/reviewers/rev-1/applications/remove", json=body).status_code == 403
 
 
-def test_roster_progress_is_work_done_union(client, monkeypatch, _clear_overrides):
-    """Progress = reviews done / |active assignments ∪ reviewed apps|.
-    A submitted review for an app the reviewer is NO LONGER assigned to still
-    counts in both numerator and denominator (the unassign churn case)."""
+def test_roster_progress_ignores_reviews_on_unassigned_apps(client, monkeypatch, _clear_overrides):
+    """Progress = reviewed live assignments / live assignments on open apps —
+    the reviewer queue's default view (AF-10, 2026-11-03). A submitted review
+    for an app the reviewer is NO LONGER assigned to is a detached past review
+    (still in History), not current work: it counts in neither number."""
     tables = _empty_admin_tables()
     tables["user_roles"] = [{"user_id": "rev-1", "role": "reviewer"}]
     tables["profiles"] = [{"id": "rev-1", "full_name": "Ramanpreet", "email": "r@x.com"}]
@@ -1141,9 +1143,9 @@ def test_roster_progress_is_work_done_union(client, monkeypatch, _clear_override
     r = client.get("/admin/platform/reviewers")
     assert r.status_code == 200, r.text
     rev = r.json()["reviewers"][0]
-    assert rev["completed"] == 2
-    assert rev["assigned"] == 6
-    assert rev["progress"] == "2 / 6"
+    assert rev["completed"] == 0
+    assert rev["assigned"] == 4
+    assert rev["progress"] == "0 / 4"
 
 
 def test_patch_reviewer_rejects_out_of_range_weight(client, monkeypatch, _clear_overrides):
@@ -1328,6 +1330,7 @@ def test_assign_applications_fans_out_to_batch_reviewers(client, monkeypatch, _c
     # migration 034) — the source of truth for the fan-out (no longer inferred
     # from existing assignments).
     tables["batch_reviewers"] = [{"batch_id": "b1", "reviewer_user_id": "rev-1"}]
+    tables["user_roles"] = [{"user_id": "rev-1", "role": "reviewer"}]
     tables["application_batches"] = [
         {"application_id": existing_app, "application_track": "tir", "batch_id": "b1"},
     ]

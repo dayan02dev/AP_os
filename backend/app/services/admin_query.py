@@ -815,18 +815,20 @@ def _reviewer_work(active_keys: set, submitted_keys: set, status_of) -> tuple[se
     """THE reviewer-workload definition shared by the roster progress column,
     its batch breakdown, the Manage-applications drawer and the reviewer queue.
 
-    Returns ``(completed, pending)``: completed = apps the reviewer submitted a
-    review for (whether or not the assignment row survived), minus rejected
-    apps; pending = active unreviewed assignments whose app row exists and is
-    still open for review (reviewer_query.is_open_for_review). An app flips to
-    'evaluated' after its first review, so that is still real work for the
-    other reviewers. Missing app rows (status None) are broken keys, not work.
+    It is exactly the set of rows the reviewer queue shows by default (and its
+    badge counts): a LIVE assignment on an app still open for review
+    (reviewer_query.is_open_for_review). Reviews whose assignment was removed
+    (queue ``detached``) and apps the admin already decided (queue ``closed``)
+    are not current work. An app flips to 'evaluated' after its first review,
+    so that is still real work for the other reviewers. Missing app rows
+    (status None) are broken keys, not work.
+
+    Returns ``(completed, pending)`` — the submitted / unsubmitted halves;
     ``assigned`` = completed ∪ pending (disjoint).
     """
-    completed = {k for k in submitted_keys if status_of(k) != "rejected"}
-    pending = {k for k in active_keys - submitted_keys
-               if reviewer_query.is_open_for_review(status_of(k))}
-    return completed, pending
+    work = {k for k in active_keys if reviewer_query.is_open_for_review(status_of(k))}
+    completed = work & set(submitted_keys)
+    return completed, work - completed
 
 
 def fetch_roster() -> dict[str, Any]:
@@ -940,11 +942,11 @@ def fetch_roster() -> dict[str, Any]:
             (r.get("application_id"), r.get("application_track"))
             for r in reviews_by_rev[rid] if r.get("submitted_at")
         }
-        # Progress = WORK DONE / WORK OWED, one definition (_reviewer_work)
-        # shared with the batch breakdown below and the Manage drawer.
-        # Counts reviews even for apps the reviewer was later unassigned from
-        # (the reassignment churn), never exceeds 100%, and ignores stale
-        # unreviewed assignments on apps that already left review.
+        # Progress = reviewed / live work, one definition (_reviewer_work)
+        # shared with the batch breakdown below, the Manage drawer and the
+        # reviewer queue's default view. Reviews on apps the reviewer was
+        # since unassigned from are past reviews (History), not work; never
+        # exceeds 100%.
         done_keys, pending_keys = _reviewer_work(
             active_keys, submitted_keys, app_status.get)
         completed = len(done_keys)
@@ -1028,9 +1030,9 @@ def fetch_roster() -> dict[str, Any]:
 
 def fetch_reviewer_applications(user_id: str) -> dict[str, Any]:
     """One reviewer's work for the admin "Manage Applications" drawer — the
-    SAME set the roster counts as ``assigned`` (_reviewer_work): apps they
-    reviewed (even if the assignment row was since deleted) plus active
-    unreviewed assignments on apps still in review. Returns
+    SAME set the roster counts as ``assigned`` (_reviewer_work): live
+    assignments on apps still in review, reviewed or not. A removed (detached)
+    reviewed app is not listed, so it can be assigned back. Returns
     ``{"applications": [...]}`` with each row:
     ``{id, track, effective_track, display_id, project, industry, status,
     batch, reviewStatus, assignment_id, detached}`` (track is NATIVE). ``detached`` = reviewed but no live assignment
@@ -1615,11 +1617,20 @@ def bulk_assign_reviewer_apps(
              "status": "not_a_reviewer"} for it in items
         ]}
 
+    # Only ACTIVE rows block a re-assign. A declined/reassigned row is
+    # invisible to the reviewer and the roster; it is revived in place (the
+    # unique key forbids a second row) instead of reporting already_assigned.
     existing: set[tuple[str, str]] = set()
+    inactive: dict[tuple[str, str], str] = {}
     try:
         for a in iter_assignment_rows(sb, reviewer_ids=[user_id]):
-            if a.get("reviewer_user_id") == user_id:
-                existing.add((a.get("application_id"), a.get("application_track")))
+            if a.get("reviewer_user_id") != user_id:
+                continue
+            key = (a.get("application_id"), a.get("application_track"))
+            if reviewer_query._is_active_assignment(a):
+                existing.add(key)
+            else:
+                inactive[key] = a.get("id")
     except Exception as exc:
         log.warning("bulk_assign: existing fetch failed", extra={"err": str(exc)})
 
@@ -1637,6 +1648,7 @@ def bulk_assign_reviewer_apps(
     now = datetime.now(UTC).isoformat()
     results: list[dict[str, Any]] = []
     rows: list[dict[str, Any]] = []
+    revived: list[tuple[str, str]] = []
     for it in items:
         aid = it.get("application_id")
         track = it.get("track")
@@ -1648,6 +1660,21 @@ def bulk_assign_reviewer_apps(
             continue
         if (aid, track) in existing:
             results.append({"application_id": aid, "track": track, "status": "already_assigned"})
+            continue
+        if (aid, track) in inactive:
+            try:
+                sb.table("reviewer_assignments").update({
+                    "declined_at": None, "decline_reason": None, "reassigned_to": None,
+                    "assigned_by": assigned_by, "assigned_at": now, "state": "pending",
+                }).eq("id", inactive[(aid, track)]).execute()
+                revived.append((aid, track))
+                status = "created"
+            except Exception as exc:
+                log.warning("bulk_assign: revive failed",
+                            extra={"application_id": aid, "err": str(exc)})
+                status = "error"
+            existing.add((aid, track))
+            results.append({"application_id": aid, "track": track, "status": status})
             continue
         rows.append({
             "application_id": aid,
@@ -1677,7 +1704,7 @@ def bulk_assign_reviewer_apps(
             rows = []
 
     batch_membership.advance_many(
-        sb, [(r["application_id"], r["application_track"]) for r in rows],
+        sb, [(r["application_id"], r["application_track"]) for r in rows] + revived,
         changed_by=assigned_by,
     )
     return {"results": results}
@@ -1832,10 +1859,12 @@ def bulk_remove_reviewer_apps(
     """Unassign many applications from one reviewer. Per-item status:
     removed | skipped_submitted | not_found | error.
 
-    The assignment is ALWAYS deleted (even if the reviewer submitted a review).
-    ``skipped_submitted`` is returned when a submitted review exists so the
-    frontend can warn the user; the deletion still happens. The review row is
-    preserved for audit purposes — only the reviewer_assignment is deleted.
+    The assignment is ALWAYS deleted (even if the reviewer has a draft or a
+    submitted review). ``skipped_submitted`` (name kept for client
+    compatibility) means "removed, and the reviewer's submitted review is
+    kept" — the item then also carries ``review_kept: True``. The review row is
+    preserved; the app leaves the reviewer's queue (shown there only as a
+    detached past review) and the drawer, and can be assigned back later.
     """
     sb = get_admin_client()
 
@@ -1867,13 +1896,14 @@ def bulk_remove_reviewer_apps(
                    .eq("reviewer_user_id", user_id)
                    .execute())
             removed = bool(res.data)
+            item: dict[str, Any] = {"application_id": aid, "track": track}
             if not removed:
-                status = "not_found"
+                item["status"] = "not_found"
             elif had_submitted:
-                status = "skipped_submitted"
+                item.update(status="skipped_submitted", review_kept=True)
             else:
-                status = "removed"
-            results.append({"application_id": aid, "track": track, "status": status})
+                item["status"] = "removed"
+            results.append(item)
         except Exception as exc:
             log.warning("bulk_remove: delete failed",
                         extra={"application_id": aid, "err": str(exc)})

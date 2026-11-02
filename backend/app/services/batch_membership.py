@@ -226,7 +226,9 @@ def add_apps_to_batch(
             ignore_duplicates=True,
         ).execute()
 
-    reviewers = batch_reviewer_ids(sb, batch_id)
+    # Only members who still hold the reviewer role get work: a role revoked
+    # outside roster delete leaves a stale batch_reviewers row behind.
+    reviewers = batch_reviewer_ids(sb, batch_id) & _reviewer_role_ids(sb)
     created: list[dict] = []
     if reviewers and assignable:
         existing = {
@@ -274,6 +276,14 @@ def add_apps_to_batch(
         "skipped_unknown": skipped_unknown,
         "linked_ids": [a for (a, t) in new_links],
     }
+
+
+def _reviewer_role_ids(sb: Any) -> set[str]:
+    """User ids currently holding the 'reviewer' role."""
+    rows = (
+        sb.table("user_roles").select("user_id,role").eq("role", "reviewer").execute().data
+    ) or []
+    return {r["user_id"] for r in rows if r.get("role") == "reviewer" and r.get("user_id")}
 
 
 def _iter_assignments(sb: Any, reviewer_ids):
@@ -328,33 +338,6 @@ def _members_by_batch(sb: Any, batch_ids: set[str]) -> dict[str, set[str]]:
     return out
 
 
-def _draft_app_ids(sb: Any, reviewer_id: str, track: str, ids: list[str]) -> set[str]:
-    """Apps (among `ids`) on which the reviewer holds an UNSUBMITTED review.
-    Their assignment must stay: the reviewer queue walks assignments + submitted
-    reviews only, so a draft would otherwise vanish."""
-    out: set[str] = set()
-    for chunk in _chunks(ids):
-        rows = (
-            sb.table("reviews")
-            .select("application_id,application_track,reviewer_user_id,submitted_at,status")
-            .eq("reviewer_user_id", reviewer_id)
-            .eq("application_track", track)
-            .in_("application_id", chunk)
-            .execute()
-            .data
-        ) or []
-        for rv in rows:
-            if (
-                rv.get("application_id") in chunk
-                and rv.get("application_track") == track
-                and rv.get("reviewer_user_id") == reviewer_id
-                and not rv.get("submitted_at")
-                and rv.get("status") != "submitted"
-            ):
-                out.add(rv["application_id"])
-    return out
-
-
 def _triples(rows: list[dict], track: str | None = None) -> list[dict]:
     return [
         {
@@ -374,12 +357,13 @@ def _detach_reviewers_from_apps(
     members: dict[str, set[str]],
 ) -> dict[str, Any]:
     """Delete each reviewer's assignment on each app unless another of the
-    app's batches still supplies that reviewer, or the reviewer has an
-    unsubmitted draft review there (kept; counted in `kept_draft`). Bulk
-    (chunked `.in_`). Returns {removed, application_ids, deleted (triples),
-    kept_draft}."""
+    app's batches still supplies that reviewer. A review (draft or submitted)
+    never protects the assignment: the review row is kept, a draft is hidden
+    from the reviewer queue and comes back if the reviewer is re-assigned
+    (same rule as every other unassign path). Bulk (chunked `.in_`). Returns
+    {removed, application_ids, deleted (triples), kept_draft (always 0, kept
+    for response-contract stability)}."""
     removed = 0
-    kept_draft = 0
     deleted: list[dict] = []
     touched: set[str] = set()
     for rid in reviewer_ids:
@@ -389,9 +373,6 @@ def _detach_reviewers_from_apps(
                 continue
             by_track.setdefault(key[1], []).append(key[0])
         for track, ids in by_track.items():
-            drafts = _draft_app_ids(sb, rid, track, ids)
-            kept_draft += len(drafts)
-            ids = [i for i in ids if i not in drafts]
             for chunk in _chunks(ids):
                 res = (
                     sb.table("reviewer_assignments")
@@ -406,7 +387,7 @@ def _detach_reviewers_from_apps(
                 deleted += _triples(rows, track)
                 touched |= {a.get("application_id") for a in rows}
     return {"removed": removed, "application_ids": sorted(touched),
-            "deleted": deleted, "kept_draft": kept_draft}
+            "deleted": deleted, "kept_draft": 0}
 
 
 def remove_app_from_batch(
@@ -415,9 +396,9 @@ def remove_app_from_batch(
     """Detach an app from ONE batch. Drop that batch's reviewers from the app
     UNLESS another of the app's remaining batches still supplies them.
 
-    Same rule as `remove_reviewer_from_batch` (2026-07-25): a submitted review
+    Same rule as `remove_reviewer_from_batch`: a review (draft or submitted)
     does NOT protect the assignment; the review row is kept. `skipped_submitted`
-    stays in the response (always 0) for contract stability."""
+    and `kept_draft` stay in the response (always 0) for contract stability."""
     sb.table("application_batches").delete().eq("application_id", app_id).eq(
         "application_track", track
     ).eq("batch_id", batch_id).execute()
@@ -427,12 +408,8 @@ def remove_app_from_batch(
     remaining = set().union(*(members[b] for b in others)) if others else set()
     candidates = members[batch_id] - remaining
     removed = 0
-    kept_draft = 0
     deleted: list[dict] = []
     for rid in sorted(candidates):
-        if app_id in _draft_app_ids(sb, rid, track, [app_id]):
-            kept_draft += 1
-            continue
         res = (
             sb.table("reviewer_assignments")
             .delete()
@@ -445,7 +422,7 @@ def remove_app_from_batch(
         removed += len(rows)
         deleted += _triples(rows, track)
     return {"removed": 1, "assignments_removed": removed, "skipped_submitted": 0,
-            "kept_draft": kept_draft, "deleted": deleted}
+            "kept_draft": 0, "deleted": deleted}
 
 
 def remove_reviewer_from_batch(
@@ -455,11 +432,12 @@ def remove_reviewer_from_batch(
     drop the reviewer's assignment UNLESS another of the app's batches still
     supplies them.
 
-    A submitted review does NOT protect the assignment (2026-07-25): the review
-    row lives in `reviews` and is kept, so the reviewer's scores/comments/reco
-    still show in every portal — but the assignment is detached so the app
-    stops counting under this reviewer's batch. `skipped_submitted` stays in
-    the response (always 0) for contract stability.
+    A review — submitted (2026-07-25) or draft (2026-11-03) — does NOT protect
+    the assignment: the review row lives in `reviews` and is kept, so the
+    reviewer's scores/comments/reco still show in every portal — but the
+    assignment is detached so the app leaves the reviewer's queue and stops
+    counting under this reviewer's batch. `skipped_submitted` and
+    `kept_draft` stay in the response (always 0) for contract stability.
 
     Bulk: O(pages + chunks) round trips regardless of batch size."""
     sb.table("batch_reviewers").delete().eq("batch_id", batch_id).eq(

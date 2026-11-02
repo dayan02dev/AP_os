@@ -21,6 +21,7 @@ def _db():
     return FakeSupabase({
         "batches": [{"id": "A", "name": "Defense"}],
         "batch_reviewers": [{"batch_id": "A", "reviewer_user_id": "r1"}],
+        "user_roles": [{"user_id": "r1", "role": "reviewer"}],
         "application_batches": [],
         "reviewer_assignments": [],
         "reviews": [],
@@ -162,21 +163,27 @@ def _bm_db():
     })
 
 
-def test_remove_reviewer_keeps_draft_assignment_and_reports_triples():
+_TRIPLE = lambda a: {"application_id": a, "application_track": "sip", "reviewer_user_id": "r1"}  # noqa: E731
+
+
+def test_remove_reviewer_draft_does_not_protect_and_reports_triples():
+    # 2026-11-03 (AF-1): a draft no longer pins the assignment; the draft
+    # review row is kept (hidden from the queue until re-assigned).
     sb = _bm_db()
     res = batch_membership.remove_reviewer_from_batch(sb, "A", "r1", actor="adm")
-    assert res["kept_draft"] == 1 and res["removed"] == 1
-    assert res["deleted"] == [{"application_id": "y", "application_track": "sip", "reviewer_user_id": "r1"}]
-    assert [a["application_id"] for a in sb.tables["reviewer_assignments"]] == ["x"]
+    assert res["kept_draft"] == 0 and res["removed"] == 2
+    assert sorted(res["deleted"], key=lambda t: t["application_id"]) == [_TRIPLE("x"), _TRIPLE("y")]
+    assert sb.tables["reviewer_assignments"] == []
+    assert len(sb.tables["reviews"]) == 1
 
 
-def test_remove_app_keeps_draft_and_submitted_does_not_protect():
+def test_remove_app_neither_draft_nor_submitted_protects():
     sb = _bm_db()
     sb.tables["reviews"].append({"application_id": "y", "application_track": "sip",
                                  "reviewer_user_id": "r1", "submitted_at": "t", "status": "submitted"})
     a = batch_membership.remove_app_from_batch(sb, "A", "x", "sip", actor="adm")
     b = batch_membership.remove_app_from_batch(sb, "A", "y", "sip", actor="adm")
-    assert a["kept_draft"] == 1 and a["assignments_removed"] == 0
+    assert a["assignments_removed"] == 1 and a["kept_draft"] == 0
     assert b["assignments_removed"] == 1 and b["kept_draft"] == 0
 
 
@@ -190,9 +197,9 @@ def test_delete_batch_audit_has_triples(monkeypatch):
     monkeypatch.setattr(admin_platform, "write_audit", lambda **k: audits.append(k))
     asyncio.run(admin_platform.delete_batch("A", user=USER))
     after = audits[-1]["after"]
-    assert after["kept_draft"] == 1 and after["truncated"] is False
-    assert after["deleted_assignments"] == [
-        {"application_id": "y", "application_track": "sip", "reviewer_user_id": "r1"}]
+    assert after["kept_draft"] == 0 and after["truncated"] is False
+    assert sorted(after["deleted_assignments"], key=lambda t: t["application_id"]) == [
+        _TRIPLE("x"), _TRIPLE("y")]
 
 
 def test_reserved_batch_names_rejected():

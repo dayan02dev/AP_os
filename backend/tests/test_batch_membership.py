@@ -21,6 +21,7 @@ def _seed():
                 {"batch_id": "B", "reviewer_user_id": "r2"},
                 {"batch_id": "B", "reviewer_user_id": "shared"},
             ],
+            "user_roles": [{"user_id": u, "role": "reviewer"} for u in ("r1", "r2", "shared")],
             "application_batches": [],
             "reviewer_assignments": [],
             "reviews": [],

@@ -71,13 +71,14 @@ def test_roster_counts_evaluated_assignments_as_pending(sb):
     assert r["batches"] == [{"name": "Defense", "count": 40}]
 
 
-def test_non_member_old_reviews_are_unbatched_not_defense(sb):
+def test_non_member_old_reviews_are_not_current_work(sb):
+    # R2/R3 reviewed Defense apps but hold no live assignment on them: those
+    # are detached past reviews, not roster work (AF-10, 2026-11-03), so no
+    # Defense chip and no phantom "Unbatched" count.
     rows = _rows()
     r2 = {b["name"]: b["count"] for b in rows[R2]["batches"]}
-    assert "Defense" not in r2
-    assert r2 == {"Manufacturing": 2, "Unbatched": 2}
-    r3 = {b["name"]: b["count"] for b in rows[R3]["batches"]}
-    assert r3 == {"Unbatched": 36}
+    assert r2 == {"Manufacturing": 2}
+    assert rows[R3]["batches"] == [] and rows[R3]["assigned"] == 0
 
 
 def test_member_batch_chip_even_with_zero_work(sb):

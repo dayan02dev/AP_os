@@ -27,6 +27,7 @@ async def test_assign_applications_appends_and_fans_out(monkeypatch):
         {
             "batches": [{"id": "A", "name": "Batch A"}],
             "batch_reviewers": [{"batch_id": "A", "reviewer_user_id": "r1"}],
+            "user_roles": [{"user_id": "r1", "role": "reviewer"}],
             "application_batches": [],
             "reviewer_assignments": [],
             "reviews": [],
@@ -51,6 +52,7 @@ async def test_assign_applications_appends_to_second_batch(monkeypatch):
                 {"batch_id": "A", "reviewer_user_id": "r1"},
                 {"batch_id": "B", "reviewer_user_id": "r2"},
             ],
+            "user_roles": [{"user_id": u, "role": "reviewer"} for u in ("r1", "r2")],
             "application_batches": [
                 {"application_id": "app1", "application_track": "tir", "batch_id": "A"}
             ],
