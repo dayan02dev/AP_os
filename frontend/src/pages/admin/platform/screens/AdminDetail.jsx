@@ -19,6 +19,7 @@ import { loadDetail, useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 import { BUTTON_TO_DECISION, chipLabel } from "../../../../lib/adminDataAdapter";
+import { AdminDecisionList } from "../../../../components/ReviewerFeedback.jsx";
 import VipMemoPreview from "../../../../components/VipMemoPreview.jsx";
 import { readVipMemo, writeVipMemo } from "../../../../lib/vipMemoCache";
 import { saveBlob, useVipMemoV2, vipMemoV2Filename } from "../../../../lib/vipMemoV2.js";
@@ -37,7 +38,7 @@ const METRICS = [
   { key: 'solution', label: 'Completeness, Depth of Solution' },
   { key: 'tech',     label: 'Technical Depth' },
   { key: 'founders', label: 'Professional Profile of Founder' },
-  { key: 'commit',   label: 'Commitment to be fully available' },
+  // Rubric v3.2: reviewer "Commitment to be fully available" was removed.
 ];
 
 // v1-only: the legacy auto-generate memo effect stays limited to the two
@@ -62,10 +63,13 @@ function getTIRSignalOverall(st) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 // Same reviewer score as the pipeline list (backend admin_query): each review's
-// overall is its category-weighted score (reviewer_query._SCORE_WEIGHTS, needs
-// all five), then the reviews are averaged weighted by reviewer weight
-// (reviewer_profiles.weight, default 1). Prefer the backend's own number.
-const REVIEW_SCORE_WEIGHTS = { problem: 22, solution: 30, tech: 22, founders: 14, commit: 12 };
+// overall is its category-weighted score (reviewer_query._SCORE_WEIGHTS, rubric
+// v3.2: four criteria, needs all four, normalised by their sum 88 — a
+// historical commitment score is ignored), then the reviews are averaged
+// weighted by reviewer weight (reviewer_profiles.weight, default 1). Prefer the
+// backend's own number.
+const REVIEW_SCORE_WEIGHTS = { problem: 22, solution: 30, tech: 22, founders: 14 };
+const REVIEW_SCORE_WSUM = Object.values(REVIEW_SCORE_WEIGHTS).reduce((a, b) => a + b, 0);
 export function weightedReviewerScore(reviews, weightById = {}, backendScore = null) {
   if (typeof backendScore === 'number') return backendScore;
   let num = 0, den = 0;
@@ -77,7 +81,7 @@ export function weightedReviewerScore(reviews, weightById = {}, backendScore = n
     }
     if (!complete || rv.submittedAt === null) continue;
     const w = typeof weightById[rv.reviewerId] === 'number' ? weightById[rv.reviewerId] : 1;
-    num += w * Math.round(total) / 100;
+    num += w * total / REVIEW_SCORE_WSUM;
     den += w;
   }
   return den ? Math.round((num / den) * 10) / 10 : null;
@@ -451,9 +455,10 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
                   signedUrl={(id, path) => leadershipApi.fileSignedUrl(id, path)}
                 />
               )}
-              {memoTab === "reviews" && (
+              {memoTab === "reviews" && (<>
                 <ComparativeReviewModel startup={s} reviewersById={reviewersById} />
-              )}
+                <AdminDecisionList decisions={s.adminDecisions} title="Decision history" />
+              </>)}
             </div>
           ) : (<>
           {/* Application Details Card (shared with the gate) */}
@@ -466,8 +471,10 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
             onDownloadMemo={downloadVipMemo}
           />
 
-          {/* Comparative review model — real reviewer evaluations */}
+          {/* Comparative review model — real reviewer evaluations — and every
+              admin decision with its rationale (open or past gate 1). */}
           <ComparativeReviewModel startup={s} reviewersById={reviewersById} />
+          <AdminDecisionList decisions={s.adminDecisions} title="Decision history" />
           </>)}
 
         </div>

@@ -262,7 +262,11 @@ function GateReviewStack({ items, reload, goDetail }) {
       });
     return () => { alive = false; };
   }, [s?.id, s?.track]); // eslint-disable-line react-hooks/exhaustive-deps
-  const sH = (s && detailCache[s.id]) ? { ...s, ...detailCache[s.id] } : s;
+  // The detail adds reviews etc. over the list row; its `rev` is the backend
+  // consensus too, but never let a detail without one blank the list's score.
+  const sH = (s && detailCache[s.id])
+    ? { ...s, ...detailCache[s.id], rev: detailCache[s.id].rev ?? s.rev }
+    : s;
   // Reviews not fetched yet for this app (settled = an entry, even `false`).
   const reviewsLoading = !!s && !(s.id in detailCache);
 

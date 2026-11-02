@@ -1,3 +1,5 @@
+import { weightedReviewScore } from "./reviewScore.js";
+
 export const STATUS_TO_CHIP = {
   submitted: "NEW", ai_screening: "PROCESSING", under_review: "IN REVIEW",
   evaluated: "EVALUATED", shortlisted: "SHORTLISTED", jury_review: "JURY REVIEW", interview: "JURY REVIEW",
@@ -131,8 +133,11 @@ const AI_CAT = { score_problem: "problem", score_completeness: "solution", score
   score_founders: "founders", score_commitment: "commit", score_integrity: "integrity" };
 // Reviews carry their OWN columns — there is NO score_completeness / score_integrity
 // on a review. The reviewer's "Solution" score lives in score_solution.
+// Rubric v3.2: reviewer "Commitment" (score_commitment) is no longer a reviewer
+// criterion — historical rows still carry it, but it is neither shown nor
+// counted. (AI_CAT above keeps commitment: that is the AI screening score.)
 const REVIEW_CAT = { score_problem: "problem", score_solution: "solution", score_tech: "tech",
-  score_founders: "founders", score_commitment: "commit" };
+  score_founders: "founders" };
 
 function adaptAi(scr) {
   if (!scr) return { overall: null };
@@ -143,21 +148,39 @@ function adaptAi(scr) {
 function adaptOneReview(rv) {
   const out = {
     reco: rv.recommendation || rv.reco || null,
-    notes: rv.quick_notes || rv.notes || rv.comment || "",
+    notes: rv.quick_notes || rv.notes || rv.comments || "",
+    strengths: rv.strengths || null,
+    concerns: rv.concerns || null,
+    comments: rv.comments || null,
+    disagreements: rv.disagree_with_ai && typeof rv.disagree_with_ai === "object" ? rv.disagree_with_ai : {},
     flags: Array.isArray(rv.flags) ? rv.flags : [],
     reviewerId: rv.reviewer_user_id || null,
     reviewerName: rv.reviewer_name || null,
     submittedAt: rv.submitted_at || null,
+    // The raw row, for the shared ReviewerFeedback renderer.
+    raw: rv,
   };
   for (const [k, v] of Object.entries(REVIEW_CAT)) if (rv[k] != null) out[v] = rv[k];
-  // Overall: explicit score_overall, else average of present category scores.
-  if (rv.score_overall != null) {
-    out.overall = rv.score_overall;
-  } else {
-    const cats = Object.values(REVIEW_CAT).map(v => out[v]).filter(n => typeof n === "number");
-    out.overall = cats.length ? Math.round((cats.reduce((a, b) => a + b, 0) / cats.length) * 10) / 10 : null;
-  }
+  // Overall: the 4-criterion weighted score (22/30/22/14 over 88) — the same
+  // number the reviewer and leadership portals show. Commitment is ignored.
+  out.overall = weightedReviewScore(rv);
   return out;
+}
+
+// Consensus reviewer score for a detail payload: the backend's weighted
+// reviewer_score when sent (the same number as the pipeline list), else the
+// reviewer-weighted mean of each review's weighted overall. Never a single
+// review's score — the Admin Review card merges this over the list row.
+function consensusRev(reviews, backendScore, weights) {
+  if (typeof backendScore === "number") return { overall: backendScore };
+  let num = 0, den = 0;
+  for (const rv of reviews) {
+    if (typeof rv.overall !== "number") continue;
+    const w = typeof weights?.[rv.reviewerId] === "number" ? weights[rv.reviewerId] : 1;
+    num += w * rv.overall;
+    den += w;
+  }
+  return den ? { overall: num / den } : undefined;
 }
 
 export const adaptReviewer = (r) => ({
@@ -218,6 +241,7 @@ export function adaptDetail(d) {
   if (d.founder?.name) founders.push(d.founder.name);
   if (d.founder?.affiliation) founders.push(d.founder.affiliation);
   const reviews = Array.isArray(d.reviews) ? d.reviews.filter(r => r.submitted_at) : [];
+  const adaptedReviews = reviews.map(adaptOneReview);
   return {
     id: d.id,
     application: d.application || null,
@@ -234,8 +258,8 @@ export function adaptDetail(d) {
     ai: adaptAi(d.ai_screening),
     aiSummary: d.ai_screening?.summary || "",
     aiSections: d.aiSections || null,
-    rev: reviews.length ? adaptOneReview(reviews[0]) : undefined,
-    reviews: reviews.map(adaptOneReview),
+    rev: consensusRev(adaptedReviews, d.reviewer_score, d.reviewer_weights),
+    reviews: adaptedReviews,
     // Backend reviewer score (weighted like the pipeline list) when sent.
     reviewerScore: d.reviewer_score ?? null,
     // Reviewer weights behind reviewerScore (same weighting for category means).
@@ -244,6 +268,8 @@ export function adaptDetail(d) {
     variance: null,
     adminDecision: d.decision?.decision ? DECISION_TO_ADMIN[d.decision.decision] : undefined,
     adminRationale: d.decision?.rationale || "",
+    // Contract C1: every admin_decisions row, newest first (absent → []).
+    adminDecisions: Array.isArray(d.admin_decisions) ? d.admin_decisions : [],
     batch: d.batch?.name || "Unassigned",
     assignedReviewers: (d.reviewer_assignments || []).map(a => a.reviewer_user_id),
     // Full enriched assignment rows (carry reviewer_name + reviewer_status from
