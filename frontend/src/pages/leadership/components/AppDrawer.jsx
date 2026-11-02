@@ -18,6 +18,7 @@ import {
   reviewerStatusLabel,
 } from "../../../lib/reviewerStatus.js";
 import AISummaryBlock from "./AISummaryBlock.jsx";
+import ReviewerFeedback from "../../../components/ReviewerFeedback.jsx";
 import AiSections from "../../../components/AiSections.jsx";
 import Collapsible from "./Collapsible.jsx";
 import { weightedReviewScore } from "../../../lib/reviewScore.js";
@@ -120,7 +121,8 @@ export default function AppDrawer({ row, onClose, stage, onReview }) {
 
   const application = detail?.application || null;
   const aiScreening = detail?.ai_screening || null;
-  const reviews = detail?.reviews || [];
+  // Submitted reviews only — a draft is the reviewer's work in progress.
+  const reviews = (detail?.reviews || []).filter((r) => r.submitted_at);
   const assignments = detail?.reviewer_assignments || [];
   const history = detail?.status_history || [];
   const rowStageInfo = stage || rowStage(row);
@@ -306,25 +308,9 @@ export default function AppDrawer({ row, onClose, stage, onReview }) {
                     {overall != null && (
                       <div style={{ marginTop: 6, fontSize: 14 }}>
                         <strong>{overall.toFixed(1)}</strong> / 10
-                        {r.recommendation && <> · {r.recommendation}</>}
                       </div>
                     )}
-                    {r.strengths && (
-                      <p style={{ margin: "var(--s-2) 0 0", fontSize: 13, lineHeight: 1.55 }}>
-                        <span style={{ color: "var(--ink-dim)", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", marginRight: 6 }}>
-                          Strengths
-                        </span>
-                        {r.strengths}
-                      </p>
-                    )}
-                    {r.concerns && (
-                      <p style={{ margin: "var(--s-2) 0 0", fontSize: 13, lineHeight: 1.55 }}>
-                        <span style={{ color: "var(--ink-dim)", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", marginRight: 6 }}>
-                          Concerns
-                        </span>
-                        {r.concerns}
-                      </p>
-                    )}
+                    <ReviewerFeedback review={r} />
                   </li>
                   );
                 })}

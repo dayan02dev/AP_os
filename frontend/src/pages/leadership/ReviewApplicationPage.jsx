@@ -148,6 +148,7 @@ export default function ReviewApplicationPage() {
   const reviews = detail?.reviews || [];
   const assignments = detail?.reviewer_assignments || [];
   const history = detail?.status_history || [];
+  const adminDecisions = detail?.admin_decisions || [];
   // Reviewer names the detail already carries, for History actors the
   // backend didn't name.
   const actorNames = useMemo(() => {
@@ -375,8 +376,16 @@ export default function ReviewApplicationPage() {
                     <VipMemoPreview memo={vipMemo} onDownload={downloadVipMemo} generating={vipMemoBusy} />
                   </div>
                 )}
+                {/* Export PDF prints the reviewers' scores + feedback and the
+                    admin decisions after the application. */}
+                {tab === "application" && pendingPrint && (
+                  <>
+                    <div className="vipnav-divider">Reviews &amp; feedback</div>
+                    <ReviewsTab reviews={reviews} assignments={assignments} adminDecisions={adminDecisions} />
+                  </>
+                )}
                 {tab === "reviews" && (
-                  <ReviewsTab reviews={reviews} assignments={assignments} />
+                  <ReviewsTab reviews={reviews} assignments={assignments} adminDecisions={adminDecisions} />
                 )}
                 {tab === "history" && !memoTabs && (
                   <HistoryTab history={history} actorNames={actorNames} />
