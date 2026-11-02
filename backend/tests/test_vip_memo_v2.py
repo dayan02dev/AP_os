@@ -456,7 +456,9 @@ def _with_storage(sb, files: dict):
     sb.storage = Storage()
 
 
-def test_stored_export_preferred(client, monkeypatch, assigned):
+def test_download_renders_live_not_stored_export(client, monkeypatch, assigned):
+    """Stored exports carry the raw verification tags, so downloads render the
+    served memo now (2026-11-03); stored_export() still reads the file."""
     rows = _apps([_memo_row(NON_PILOT)])
     rows["vip_memo_exports"] = [
         {"memo_id": f"memo-{NON_PILOT[:4]}", "format": "pdf", "bucket": "vip-memos", "path": "a/b.pdf"},
@@ -464,14 +466,14 @@ def test_stored_export_preferred(client, monkeypatch, assigned):
     sb = FakeSupabase(rows)
     _with_storage(sb, {("vip-memos", "a/b.pdf"): b"%PDF-stored"})
     monkeypatch.setattr(vip_memo_v2, "get_admin_client", lambda: sb)
-    monkeypatch.setattr(vip_memo_v2_export, "render", lambda *a, **k: pytest.fail("rendered despite stored export"))
     mid = f"memo-{NON_PILOT[:4]}"
     assert vip_memo_v2.stored_export(mid, "pdf") == b"%PDF-stored"
     assert vip_memo_v2.stored_export(mid, "docx") is None  # no docx export row
     for _surface, roles, path in ROUTES:
         _as(roles)
         r = client.post(path.format(id=NON_PILOT) + "/download?format=pdf")
-        assert r.status_code == 200 and r.content == b"%PDF-stored", path
+        assert r.status_code == 200 and r.content.startswith(b"%PDF-"), path
+        assert r.content != b"%PDF-stored", path
         assert r.headers["content-type"] == "application/pdf"
 
 
@@ -573,7 +575,6 @@ def test_export_has_no_recommendation_text():
 # ─── representation fixes (market cards, percents, empty questions, glyphs) ──
 
 TBC = "[To be confirmed]"
-FOUNDER = "[Needs founder verification]"  # exports retag the legacy placeholder
 
 
 def _shaped_memo() -> dict:
@@ -622,9 +623,10 @@ def test_export_percent_cells_keep_text_and_never_double_percent():
     memo = _shaped_memo()
     blocks = vip_memo_v2_export.build_blocks(memo)
     funds = next(b for b in blocks if b[0] == "table" and b[1][0] == "Category")
-    assert [r[2] for r in funds[2]] == ["~14–17%", "24%", "15%", FOUNDER, ""]
+    # founder tags print as "To Verify" in exports (display mapping)
+    assert [r[2] for r in funds[2]] == ["~14–17%", "24%", "15%", "To Verify", ""]
     holders = next(b for b in blocks if b[0] == "table" and b[1][0] == "Holder")
-    assert [r[2] for r in holders[2]] == ["60%", FOUNDER, "CCD", "—"]
+    assert [r[2] for r in holders[2]] == ["60%", "To Verify", "CCD", "—"]
     for text in _both_texts(memo):
         assert "%%" not in text and "]%" not in text and "—%" not in text
         assert "14-17%" in text or "14–17%" in text

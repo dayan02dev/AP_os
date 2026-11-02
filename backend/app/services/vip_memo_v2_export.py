@@ -23,7 +23,7 @@ from xml.sax.saxutils import escape
 
 log = logging.getLogger(__name__)
 
-from .vip_memo_gen.tags import FOUNDER, TAGS, retag
+from .vip_memo_gen.tags import FOUNDER, LEGACY, TAGS, VERIFY, retag
 
 NAVY = "1F3864"
 BLUE = "2E75B6"
@@ -164,8 +164,36 @@ def _why_points(rows: list) -> list[tuple[str, Any]]:
     return points
 
 
+# Display mapping of the verification tags, same as the web memo
+# (VipNavigatorMemo.jsx): founder tags print as "To Verify", AI cross-check
+# tags are dropped. Applied to the rendered blocks only — the stored memo and
+# the generation tags/prompts are unchanged.
+TO_VERIFY = "To Verify"
+_VERIFY_TAG_RE = re.compile(r"\s*" + re.escape(VERIFY))
+_FOUNDER_TAG_RE = re.compile("|".join(re.escape(t) for t in (FOUNDER, LEGACY)))
+
+
+def _display_tags(value: Any) -> Any:
+    """``value`` (a block or any part of one) with the tags display-mapped."""
+    if isinstance(value, str):
+        if VERIFY not in value and not _FOUNDER_TAG_RE.search(value):
+            return value
+        text = _VERIFY_TAG_RE.sub("", value).strip()
+        return _FOUNDER_TAG_RE.sub(TO_VERIFY, text) if text else "—"
+    if isinstance(value, tuple):
+        return tuple(_display_tags(v) for v in value)
+    if isinstance(value, list):
+        return [_display_tags(v) for v in value]
+    return value
+
+
 def build_blocks(memo: dict[str, Any]) -> list[tuple]:
-    """The memo as an ordered list of renderer-neutral blocks."""
+    """The memo as an ordered list of renderer-neutral blocks (verification
+    tags display-mapped, see ``_display_tags``)."""
+    return [_display_tags(b) for b in _build_raw_blocks(memo)]
+
+
+def _build_raw_blocks(memo: dict[str, Any]) -> list[tuple]:
     memo, _ = retag(memo)  # memos stored before the two tags still render with them
     name = _s(memo.get("name")) if memo.get("name") else "This company"
     snap = _d(memo.get("snapshot"))
@@ -694,7 +722,7 @@ def render_pdf_v2(memo: dict[str, Any]) -> bytes:
     out = io.BytesIO()
     SimpleDocTemplate(
         out, pagesize=letter, leftMargin=margin, rightMargin=margin, topMargin=margin, bottomMargin=margin,
-        title=f"{_s(memo.get('name'))} IC Memo",
+        title=f"{_display_tags(_s(memo.get('name')))} IC Memo",
     ).build(story, onFirstPage=on_page, onLaterPages=on_page)
     return out.getvalue()
 

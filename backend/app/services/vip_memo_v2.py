@@ -133,11 +133,13 @@ def stored_export(memo_id: str | None, fmt: str) -> bytes | None:
 
 
 def export_for(memo_id: str | None, memo: dict[str, Any], fmt: str) -> tuple[bytes, str]:
-    """(body, media type): the stored export if there is one, else rendered now."""
-    stored = stored_export(memo_id, fmt)
-    if stored is not None:
-        media = vip_memo_v2_export.DOCX_MEDIA if fmt == "docx" else "application/pdf"
-        return stored, media
+    """(body, media type), always rendered now from the served memo.
+
+    Pre-rendered exports in the ``vip-memos`` bucket (``stored_export``) were
+    produced with the raw verification tags; rendering on download applies the
+    current display mapping ("To Verify", AI cross-check tags hidden) without
+    rewriting any stored file. ``memo_id`` is kept for the call contract."""
+    del memo_id
     return vip_memo_v2_export.render(memo, fmt)
 
 
