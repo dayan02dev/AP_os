@@ -186,7 +186,7 @@ _STAGE_FILTERS: dict[str, str] = {
 }
 
 _RECO_RANK = {"yes": 3, "maybe": 2, "no": 1}
-_STATUS_RANK = {s: i for i, (s, _label) in enumerate(stats.PHASE_1_STATUSES)}
+_STAGE_RANK = {s: i for i, s in enumerate(stats.PIPELINE_STAGES)}
 
 
 def _latest_overall(decision_rows: list[dict]) -> dict[tuple[str, str], dict]:
@@ -357,7 +357,13 @@ async def list_applications(
         return stats.effective_status(r.get("status"), decisions.get((r["track"], r["id"])))
 
     # ─ 5. Sort (whole filtered set, nulls last) → paginate → shape ─────
+    # Every ordering ends in a (track, id) tiebreak so a page boundary never
+    # depends on the order Postgres happened to return rows in (LF-3).
+    def _tiebreak(r: dict[str, Any]) -> tuple[str, str]:
+        return (r["track"], r["id"])
+
     if sort is None:
+        rows.sort(key=_tiebreak)
         rows.sort(key=_submitted_at_sort_key, reverse=True)
     else:
         def _sort_value(r: dict[str, Any]) -> Any:
@@ -372,7 +378,9 @@ async def list_applications(
             if sort == "ai_score":
                 return scores.get(key)
             if sort == "status":
-                return _STATUS_RANK.get(_status(r))
+                # Rank by the pipeline stage the Status column displays (LF-7).
+                stage = stage_of.get(key)
+                return _STAGE_RANK.get(stage) if stage else None
             if sort == "industry":
                 return _lower((industries.get(key) or {}).get("label"))
             if sort == "reco":
@@ -387,8 +395,10 @@ async def list_applications(
                 return (rs.get("submitted", 0), rs.get("assigned", 0)) if rs else None
             return r.get("submitted_at") or None
 
+        rows.sort(key=_tiebreak)
         valued = [(_sort_value(r), r) for r in rows]
         present = [vr for vr in valued if vr[0] is not None]
+        # Stable sort over tiebreak-ordered rows: ties keep (track, id) order.
         present.sort(key=lambda vr: vr[0], reverse=(order == "desc"))
         rows = [r for _v, r in present] + [r for v, r in valued if v is None]
     page = rows[offset : offset + limit]
@@ -495,7 +505,10 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
     track, app_row = found
 
     ai_screening = applications_query.fetch_ai_screening_for(application_id, track)
-    reviews = applications_query.fetch_reviews_for(application_id, track)
+    # Submitted reviews only: a reviewer's in-progress draft is theirs alone
+    # (FD-4). Detached/assigned counts only ever looked at submitted rows.
+    reviews = [r for r in applications_query.fetch_reviews_for(application_id, track)
+               if r.get("submitted_at")]
     reviewer_assignments = applications_query.fetch_reviewer_assignments_for(
         application_id, track,
     )
@@ -564,6 +577,9 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
         "reviews":              reviews,
         "reviewer_assignments": reviewer_assignments,
         "status_history":       status_history,
+        # Full decision history with rationale (keyed by NATIVE track).
+        "admin_decisions":      applications_query.fetch_admin_decisions_for(
+                                    application_id, track),
     }
 
 @router.post(
@@ -762,27 +778,31 @@ async def get_industry_categories(
     row or a NULL category) so the bars sum to `apps_total`; it is selected
     in the list with industry=unclassified.
 
-    `track` (effective track) recounts every category over that track's
-    non-draft apps — the same rows and industry lookup the list's
-    track + industry filters use — so the Applications chips match the list.
+    Counts are always recounted over the non-draft apps of `track` (effective
+    track) or of both tracks — the same rows and industry lookup the list's
+    track + industry filters use — so the chips match the list. Raw
+    ai_screening rows (orphan / draft apps) never inflate a count (LF-8).
     """
     out = industry_categories.categories_with_counts()
-    if track:
-        rows = applications_query.fetch_apps_for_track(
-            track, limit=applications_query.FETCH_CAP)
-        inds = applications_query.fetch_industry_for_pairs(
-            [(r["track"], r["id"]) for r in rows])
-        counts: dict[str, int] = {}
-        for ind in inds.values():
-            if ind and ind.get("id"):
-                counts[ind["id"]] = counts.get(ind["id"], 0) + 1
-        out["categories"] = [
-            {**c, "count": counts.get(c["id"], 0)} for c in out.get("categories") or []
-        ]
-        out["total"] = sum(c["count"] for c in out["categories"])
-        apps_total = len(rows)
-    else:
-        apps_total = sum(stats.count_apps_total(t) for t in stats.TRACKS)
+    rows: list[dict[str, Any]] = []
+    for t in ([track] if track else list(stats.TRACKS)):
+        rows.extend(applications_query.fetch_apps_for_track(
+            t, limit=applications_query.FETCH_CAP))
+    inds = applications_query.fetch_industry_for_pairs(
+        [(r["track"], r["id"]) for r in rows])
+    counts: dict[str, int] = {}
+    for ind in inds.values():
+        if ind and ind.get("id"):
+            counts[ind["id"]] = counts.get(ind["id"], 0) + 1
+    out["categories"] = [
+        {**c, "count": counts.get(c["id"], 0)} for c in out.get("categories") or []
+    ]
+    if not track:
+        # Keep the count-desc order categories_with_counts promised (stable:
+        # its seed / id tiebreak survives).
+        out["categories"].sort(key=lambda c: -c["count"])
+    out["total"] = sum(c["count"] for c in out["categories"])
+    apps_total = len(rows)
     out["apps_total"] = apps_total
     out["unclassified"] = {
         "id": "unclassified",

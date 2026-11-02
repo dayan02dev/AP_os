@@ -684,7 +684,9 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
     app_row["resume_file"] = applications_query.resolve_resume_file(track, app_row)
 
     ai_screening = applications_query.fetch_ai_screening_for(application_id, track)
-    reviews = applications_query.fetch_reviews_for(application_id, track)
+    # Submitted reviews only — drafts stay private to their reviewer (FD-4).
+    reviews = [r for r in applications_query.fetch_reviews_for(application_id, track)
+               if r.get("submitted_at")]
     reviewer_assignments = applications_query.fetch_reviewer_assignments_for(
         application_id, track,
     )
@@ -762,6 +764,8 @@ def fetch_detail(track: str, application_id: str) -> dict[str, Any] | None:
         "status_history":       status_history,
         # Admin-portal additions.
         "decision":             decision,
+        "admin_decisions":      applications_query.fetch_admin_decisions_for(
+                                    application_id, track),
         "meta":                 meta,
         "batch":                (batch_list[0] if batch_list else None),
         "batches":              batch_list,

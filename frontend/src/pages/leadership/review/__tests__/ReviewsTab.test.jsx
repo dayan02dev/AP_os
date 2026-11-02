@@ -14,9 +14,9 @@ const review = {
 describe("ReviewsTab reviewer weighted score", () => {
   it("shows the reviewer's weighted overall on the card", () => {
     render(<ReviewsTab reviews={[review]} assignments={[{ reviewer_user_id: "u1" }]} />);
-    // weighted = 2.09 → 2.1
+    // 4-criterion rubric v3.2 (commitment ignored): 179/88 = 2.03 → 2.0
     expect(
-      screen.getByLabelText(/Reviewer weighted score 2\.1 out of 10/i),
+      screen.getByLabelText(/Reviewer weighted score 2\.0 out of 10/i),
     ).toBeInTheDocument();
   });
 

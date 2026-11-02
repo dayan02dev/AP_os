@@ -646,6 +646,16 @@ def test_industry_categories_endpoint_shape(client, _clear_overrides, monkeypatc
             "remaining_slots": 5,
         },
     )
+    # Counts are recounted over the non-draft list rows (LF-8).
+    from app.services import applications_query as aq
+    rows = {"tir": [{"id": f"t{i}", "track": "tir"} for i in range(5)], "sip": []}
+    monkeypatch.setattr(aq, "fetch_apps_for_track", lambda t, **k: rows[t])
+    monkeypatch.setattr(
+        aq, "fetch_industry_for_pairs",
+        lambda pairs: {p: ({"id": "robotics", "label": "Robotics & Automation"}
+                           if p[1] in ("t0", "t1", "t2") else {"id": "ai", "label": "AI"})
+                       for p in pairs},
+    )
     app.dependency_overrides[get_current_user] = _override_user(["leadership"])
 
     res = client.get(

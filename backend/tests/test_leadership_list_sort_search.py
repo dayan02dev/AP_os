@@ -146,6 +146,11 @@ def test_list_unclassified_industry_filter(client, _clear_overrides, monkeypatch
 
 def test_industry_categories_reports_unclassified(client, _clear_overrides, monkeypatch):
     _patch_all(monkeypatch, _sort_tables())
+    # Counts are recounted over the list's rows (LF-8): one app is "ai".
+    monkeypatch.setattr(
+        applications_query, "fetch_industry_for_pairs",
+        lambda pairs: {p: ({"id": "ai", "label": "AI"} if p[1] == "a" else None) for p in pairs},
+    )
     monkeypatch.setattr(
         lead_mod.industry_categories, "categories_with_counts",
         lambda: {"categories": [{"id": "ai", "label": "AI", "count": 1, "is_seed": True}],

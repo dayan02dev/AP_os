@@ -1013,3 +1013,22 @@ async def get_my_review(
         user["user_id"], application_id,
     )
     return {"review": row}
+
+
+@router.get(
+    "/applications/{track}/{application_id}/panel-feedback",
+    dependencies=[Depends(require_capability("view_assigned_apps"))],
+)
+async def get_panel_feedback(
+    track: Literal["tir", "sip"],
+    application_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Contract C2 — the other panel reviewers' submitted feedback plus the
+    human-written admin rationales, once the caller has submitted their own
+    review. 404 (not 403) without an assignment or review: no enumeration."""
+    payload = reviewer_query.fetch_panel_feedback(user["user_id"], application_id)
+    if payload is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                            detail={"code": "not_found"})
+    return payload

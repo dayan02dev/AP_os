@@ -78,10 +78,11 @@ def test_founder_sort_trims_and_ignores_case(client, _clear_overrides, monkeypat
 
 
 @pytest.mark.parametrize("sort,order,ids", [
-    ("stage", "asc", ["b", "a", "c", "v"]),          # Idea < Prototype, nulls last
+    # Nulls last, ordered by the (track, id) tiebreak: sip/v before tir/c (LF-3).
+    ("stage", "asc", ["b", "a", "v", "c"]),          # Idea < Prototype, nulls last
     ("reviewer_score", "asc", ["a", "b", "c", "v"]),  # all None → stable, no 422
-    ("reviewers", "desc", ["a", "b", "c", "v"]),     # a 2/3, b 1/1, rest none
-    ("reviewers", "asc", ["b", "a", "c", "v"]),
+    ("reviewers", "desc", ["a", "b", "v", "c"]),     # a 2/3, b 1/1, rest none
+    ("reviewers", "asc", ["b", "a", "v", "c"]),
 ])
 def test_new_sort_columns(client, _clear_overrides, monkeypatch, sort, order, ids):
     monkeypatch.setattr(lead_mod.stats, "derive_stage_label",

@@ -44,6 +44,9 @@ log = logging.getLogger(__name__)
 # scale is hundreds of apps; 5000 leaves four orders of magnitude of
 # headroom while still capping pathological responses.
 FETCH_CAP = 5000
+# PostgREST max_rows: one response never holds more than this, so list reads
+# page with .range() in steps of _PAGE.
+_PAGE = 1000
 
 
 def track_table(track: str) -> str:
@@ -196,15 +199,8 @@ def _query_track_table(
     filters, each stamped with its NATIVE ``track``. No track-move overlay —
     callers compose the effective-track view from these."""
     try:
-        q = (
-            get_admin_client()
-            .table(track_table(track))
-            .select(_list_columns_for_track(track))
-            .neq("status", "draft")
-            .limit(limit)
-        )
-        if status:
-            q = q.eq("status", status)
+        sb = get_admin_client()
+        or_filter: str | None = None
         search = (search or "").strip()
         if search:
             # Case-insensitive substring across the three free-text identity
@@ -230,9 +226,31 @@ def _query_track_table(
             project_ids = fetch_app_ids_by_project_name(track, search)
             if project_ids:
                 or_parts.append(f"id.in.({','.join(project_ids)})")
-            q = q.or_(",".join(or_parts))
-        res = q.execute()
-        rows = res.data or []
+            or_filter = ",".join(or_parts)
+
+        def _make_query():
+            q = (
+                sb.table(track_table(track))
+                .select(_list_columns_for_track(track))
+                .neq("status", "draft")
+                .order("id")
+            )
+            if status:
+                q = q.eq("status", status)
+            if or_filter:
+                q = q.or_(or_filter)
+            return q
+
+        # Page past PostgREST's max_rows (1000) — a bare .limit() is silently
+        # capped. Ordered by id so pages neither overlap nor skip (ADM-F7/LF-3).
+        rows: list[dict[str, Any]] = []
+        while len(rows) < limit:
+            size = min(_PAGE, limit - len(rows))
+            chunk = (_make_query().range(len(rows), len(rows) + size - 1)
+                     .execute().data) or []
+            rows.extend(chunk)
+            if len(chunk) < size:
+                break
     except Exception as exc:
         log.warning(
             "applications_query._query_track_table failed",
@@ -291,6 +309,15 @@ def effective_track(row: dict[str, Any]) -> str | None:
     return row.get("moved_to_track") or row.get("track")
 
 
+# Max ids per `in.(…)` filter: 150 uuids ≈ 6 KB of URL, well under proxy limits.
+_IN_CHUNK = 150
+
+
+def _id_chunks(ids: list[str]):
+    for i in range(0, len(ids), _IN_CHUNK):
+        yield ids[i : i + _IN_CHUNK]
+
+
 def fetch_ai_scores_for(
     pairs: list[tuple[str, str]],
 ) -> dict[tuple[str, str], float | None]:
@@ -311,30 +338,31 @@ def fetch_ai_scores_for(
             by_track[t].append(a)
 
     for track, ids in by_track.items():
-        if not ids:
-            continue
-        try:
-            res = (
-                get_admin_client()
-                .table("ai_screening")
-                .select("application_id,score_overall")
-                .eq("application_track", track)
-                .in_("application_id", ids)
-                .execute()
-            )
-            for row in res.data or []:
-                aid = row.get("application_id")
-                score = row.get("score_overall")
-                if aid is None:
-                    continue
-                out[(track, aid)] = float(score) if score is not None else None
-        except Exception as exc:
-            log.warning(
-                "applications_query.fetch_ai_scores_for failed",
-                extra={"track": track, "err": str(exc)},
-            )
-            # Leave those pairs as None — partial join is better than 500.
-            continue
+        # Chunked so the `in.(…)` URL stays ~6 KB (LF-2); a failing chunk
+        # only blanks its own ids.
+        for chunk in _id_chunks(ids):
+            try:
+                res = (
+                    get_admin_client()
+                    .table("ai_screening")
+                    .select("application_id,score_overall")
+                    .eq("application_track", track)
+                    .in_("application_id", chunk)
+                    .execute()
+                )
+                for row in res.data or []:
+                    aid = row.get("application_id")
+                    score = row.get("score_overall")
+                    if aid is None:
+                        continue
+                    out[(track, aid)] = float(score) if score is not None else None
+            except Exception as exc:
+                log.warning(
+                    "applications_query.fetch_ai_scores_for failed",
+                    extra={"track": track, "err": str(exc)},
+                )
+                # Leave those pairs as None — partial join is better than 500.
+                continue
 
     return out
 
@@ -472,27 +500,26 @@ def fetch_industry_for_pairs(
 
     raw: dict[tuple[str, str], str | None] = {}
     for track, ids in by_track.items():
-        if not ids:
-            continue
-        try:
-            res = (
-                get_admin_client()
-                .table("ai_screening")
-                .select("application_id,industry_category_id")
-                .eq("application_track", track)
-                .in_("application_id", ids)
-                .execute()
-            )
-            for row in res.data or []:
-                aid = row.get("application_id")
-                cid = row.get("industry_category_id")
-                if aid:
-                    raw[(track, aid)] = cid
-        except Exception as exc:
-            log.warning(
-                "applications_query.fetch_industry_for_pairs failed",
-                extra={"track": track, "err": str(exc)},
-            )
+        for chunk in _id_chunks(ids):  # chunked: see fetch_ai_scores_for
+            try:
+                res = (
+                    get_admin_client()
+                    .table("ai_screening")
+                    .select("application_id,industry_category_id")
+                    .eq("application_track", track)
+                    .in_("application_id", chunk)
+                    .execute()
+                )
+                for row in res.data or []:
+                    aid = row.get("application_id")
+                    cid = row.get("industry_category_id")
+                    if aid:
+                        raw[(track, aid)] = cid
+            except Exception as exc:
+                log.warning(
+                    "applications_query.fetch_industry_for_pairs failed",
+                    extra={"track": track, "err": str(exc)},
+                )
 
     needed_ids = {cid for cid in raw.values() if cid}
     labels: dict[str, str] = {}
@@ -829,6 +856,54 @@ def fetch_status_history_for(
             extra={"track": track, "id": application_id, "err": str(exc)},
         )
         return []
+
+
+_ADMIN_DECISION_KEYS = ("id", "gate_stage", "decision", "rationale", "decided_by", "decided_at")
+
+
+def fetch_admin_decisions_for(
+    application_id: str, track: str, *, email_fallback: bool = True,
+) -> list[dict[str, Any]]:
+    """Every admin_decisions row for `(application_id, NATIVE track)`, newest
+    first, each with ``decided_by_name`` (profiles.full_name, else email when
+    ``email_fallback``). Failure-tolerant: a DB error yields []."""
+    try:
+        sb = get_admin_client()
+        rows = (
+            sb.table("admin_decisions")
+            .select("*")
+            .eq("application_id", application_id)
+            .eq("application_track", track)
+            .order("decided_at", desc=True)
+            .execute()
+            .data
+        ) or []
+    except Exception as exc:
+        log.warning(
+            "applications_query.fetch_admin_decisions_for failed",
+            extra={"track": track, "id": application_id, "err": str(exc)},
+        )
+        return []
+    rows = [r for r in rows
+            if r.get("application_id") == application_id and r.get("application_track") == track]
+    rows.sort(key=lambda r: r.get("decided_at") or "", reverse=True)
+
+    ids = sorted({r["decided_by"] for r in rows if r.get("decided_by")})
+    names: dict[str, str | None] = {}
+    if ids:
+        try:
+            profs = (sb.table("profiles").select("id,full_name,email")
+                     .in_("id", ids).execute().data) or []
+            names = {p["id"]: p.get("full_name") or (p.get("email") if email_fallback else None)
+                     for p in profs if p.get("id")}
+        except Exception as exc:
+            log.warning("applications_query.fetch_admin_decisions_for names failed",
+                        extra={"err": str(exc)})
+    return [
+        {**{k: r.get(k) for k in _ADMIN_DECISION_KEYS},
+         "decided_by_name": names.get(r.get("decided_by")) if r.get("decided_by") else None}
+        for r in rows
+    ]
 
 
 def with_detached_reviewers(
