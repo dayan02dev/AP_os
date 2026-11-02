@@ -1,8 +1,10 @@
 // ManageApplicationsDrawer — admin Reviewer Roster "Manage" drawer.
 // View a reviewer's assigned applications grouped by batch, bulk-assign new
 // applications (multi-select), and bulk-remove assigned ones (select-all and
-// select-all-in-batch). Already-reviewed apps are reported skipped, never
-// silently orphaned.
+// select-all-in-batch). Removing an already-reviewed app deletes the
+// assignment and keeps the review; such apps (and any reviewed app whose
+// assignment is gone — `detached`) are listed separately as "Reviewed — no
+// longer assigned", without a Remove button, and can be assigned back.
 //
 // Reads:  GET /admin/platform/reviewers/{id}/applications (useAdminData "reviewerApplications")
 //         GET /admin/platform/applications               (useAdminData "pipeline", assign picker)
@@ -15,6 +17,14 @@ import { trackLabel, relabelDisplayId } from "../../../../lib/trackLabel.js";
 
 const RANDOM = "Not via a batch";
 
+// Pipeline chips the backend treats as closed for reviewer assignment
+// (batch_membership.closed_statuses: decided statuses + withdrawn). Bulk-assign
+// skips these as `skipped_closed`, so the picker doesn't offer them.
+const CLOSED_CHIPS = new Set(["REJECTED", "JURY REVIEW", "ACCEPTED", "ONBOARDED", "WITHDRAWN", "WAITLISTED"]);
+// Display-ID search ("TIR-27326", "vip-26255", "SIP-26255" or bare digits).
+const ID_QUERY = /^(?:(?:tir|vip|sip)-?)?(\d+)$/;
+const idDigits = (id) => String(id || "").replace(/^\D+/, "");
+
 export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onRequestDelete }) {
   const apps = useAdminData("reviewerApplications", { userId: reviewer.id });
   const pipeline = useAdminData("pipeline", {});
@@ -25,7 +35,10 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
   const [err, setErr] = useState(null);
   const [notice, setNotice] = useState(null);
 
-  const assigned = apps.data?.applications ?? [];
+  const allRows = apps.data?.applications ?? [];
+  // Live assignments vs reviewed-but-unassigned rows (no assignment left).
+  const assigned = useMemo(() => allRows.filter(a => !a.detached), [allRows]);
+  const detached = useMemo(() => allRows.filter(a => a.detached), [allRows]);
   const assignedIds = useMemo(() => new Set(assigned.map(a => a.id)), [assigned]);
   const reviewerBatches = Array.isArray(reviewer.batches)
     ? reviewer.batches.map(b => (typeof b === "string" ? b : b.name))
@@ -46,13 +59,19 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
     });
   }, [assigned]);
 
-  // Candidate apps for assignment (not already assigned), filtered by search.
+  // Candidate apps for assignment: open for review (not closed) and not
+  // already live-assigned, filtered by name / industry / founder / email /
+  // display ID.
   const candidates = useMemo(() => {
-    const all = (pipeline.data?.startups ?? []).filter(s => !assignedIds.has(s.id));
+    const all = (pipeline.data?.startups ?? []).filter(s =>
+      !assignedIds.has(s.id) && !CLOSED_CHIPS.has(String(s.chip || "").toUpperCase()));
     const q = search.trim().toLowerCase();
     if (!q) return all;
+    const idq = q.match(ID_QUERY);
     return all.filter(s =>
-      `${s.name || ""} ${s.domain || ""}`.toLowerCase().includes(q));
+      (idq && idDigits(s.applicationId) === idq[1])
+      || `${s.name || ""} ${s.domain || ""} ${(s.founders || []).join(" ")} ${s.email || ""} ${s.applicationId || ""}`
+        .toLowerCase().includes(q));
   }, [pipeline.data, assignedIds, search]);
 
   const assignCount = useMemo(
@@ -81,10 +100,14 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
     const c = {};
     for (const r of results || []) c[r.status] = (c[r.status] || 0) + 1;
     if (kind === "remove") {
+      // `skipped_submitted` (older backends) / `removed_kept_review`: the
+      // assignment WAS deleted; only the submitted review is kept.
+      const kept = (c.skipped_submitted || 0) + (c.removed_kept_review || 0);
+      const removed = (c.removed || 0) + kept;
       const parts = [];
-      if (c.removed) parts.push(`removed ${c.removed}`);
-      if (c.skipped_submitted) parts.push(`skipped ${c.skipped_submitted} (already reviewed)`);
+      if (removed) parts.push(`removed ${removed}` + (kept ? ` (${kept} already reviewed, review kept)` : ""));
       if (c.not_found) parts.push(`${c.not_found} not found`);
+      if (c.error) parts.push(`${c.error} failed`);
       return parts.join(", ") || "no changes";
     }
     const parts = [];
@@ -104,9 +127,9 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
     setBusy(true); setErr(null); setNotice(null);
     try {
       const res = await adminPlatformApi.bulkRemoveReviewerApps(reviewer.id, items);
-      const skipped = (res?.results || []).filter(r => r.status === "skipped_submitted").length;
+      const failed = (res?.results || []).filter(r => r.status === "not_found" || r.status === "error").length;
       const msg = `Remove: ${summarize(res?.results, "remove")}.`;
-      setNotice(skipped > 0 ? { kind: "warn", text: msg } : { kind: "ok", text: msg });
+      setNotice(failed > 0 ? { kind: "warn", text: msg } : { kind: "ok", text: msg });
       setSelRemove(new Set());
       reload();
     } catch (e) {
@@ -137,9 +160,9 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
     try {
       const res = await adminPlatformApi.bulkRemoveReviewerApps(
         reviewer.id, [{ application_id: a.id, track: a.track }]);
-      const skipped = (res?.results || []).filter(r => r.status === "skipped_submitted").length;
+      const failed = (res?.results || []).filter(r => r.status === "not_found" || r.status === "error").length;
       const msg = `Remove: ${summarize(res?.results, "remove")}.`;
-      setNotice(skipped > 0 ? { kind: "warn", text: msg } : { kind: "ok", text: msg });
+      setNotice(failed > 0 ? { kind: "warn", text: msg } : { kind: "ok", text: msg });
       setSelRemove(prev => { const n = new Set(prev); n.delete(a.id); return n; });
       reload();
     } catch (e) {
@@ -195,7 +218,7 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
             <input
               className="os-input"
               aria-label="Search applications to assign"
-              placeholder="Search by name or industry…"
+              placeholder="Search by name, industry or ID…"
               style={{ width: "100%", minWidth: 0, fontSize: 14, marginBottom: 8 }}
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -325,6 +348,39 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
                   </div>
                 );
               })
+            )}
+
+            {!apps.loading && !apps.error && detached.length > 0 && (
+              <div data-testid="detached-group" style={{ marginTop: 8 }}>
+                <div style={{ padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
+                  <span className="os-chip">Reviewed — no longer assigned</span>
+                  <span className="os-text-dim"> ({detached.length})</span>
+                </div>
+                <div className="os-text-xs os-text-dim" style={{ marginBottom: 6 }}>
+                  The reviewer submitted a review, then the assignment was removed. The review is kept;
+                  assign the app again from the list above if needed.
+                </div>
+                <table className="os-table">
+                  <thead>
+                    <tr><th>Project</th><th>Industry</th><th>Status</th></tr>
+                  </thead>
+                  <tbody>
+                    {detached.map(a => (
+                      <tr key={`${a.track}:${a.id}`} style={{ opacity: 0.75 }}>
+                        <td>
+                          <div className="startup">{a.project}</div>
+                          <div className="os-text-xs os-text-dim">
+                            <span className="os-chip" style={{ marginRight: 6 }}>{trackLabel(a.effective_track || a.track)}</span>
+                            {a.display_id ? relabelDisplayId(a.display_id) : null}
+                          </div>
+                        </td>
+                        <td className="os-text-soft">{a.industry}</td>
+                        <td><span className="os-chip">{a.chip}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>

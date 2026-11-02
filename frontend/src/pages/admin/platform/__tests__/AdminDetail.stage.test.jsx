@@ -28,21 +28,21 @@ const mount = (extra) => {
 };
 
 describe("ADM-09 weightedReviewerScore", () => {
-  // review overall = (22p + 30s + 22t + 14f + 12c) / 100, then mean weighted by reviewer weight.
-  const full = (v, reviewerId) => ({ reviewerId, problem: v, solution: v, tech: v, founders: v, commit: v, overall: 1 });
+  // review overall = (22p + 30s + 22t + 14f) / 88 (rubric v3.2), then mean weighted by reviewer weight.
+  const full = (v, reviewerId) => ({ reviewerId, problem: v, solution: v, tech: v, founders: v, overall: 1 });
   it("weights each review's category-weighted overall by reviewer weight", () => {
     expect(weightedReviewerScore([full(8, "r1"), full(5, "r2")], { r1: 2, r2: 1 })).toBe(7);
   });
   it("prefers the backend reviewer_score when present", () => {
     expect(weightedReviewerScore([full(8, "r1")], {}, 6.4)).toBe(6.4);
   });
-  it("is null when no review has all five scores", () => {
+  it("is null when no review has all four scores", () => {
     expect(weightedReviewerScore([{ reviewerId: "r1", problem: 8 }], {})).toBeNull();
   });
   it("detail labels the score as weighted by reviewer", async () => {
     mount({ chip: "EVALUATED", reviews: [
-      { reviewerId: "r1", problem: 8, solution: 8, tech: 8, founders: 8, commit: 8, overall: 8 },
-      { reviewerId: "r2", problem: 5, solution: 5, tech: 5, founders: 5, commit: 5, overall: 5 },
+      { reviewerId: "r1", problem: 8, solution: 8, tech: 8, founders: 8, overall: 8 },
+      { reviewerId: "r2", problem: 5, solution: 5, tech: 5, founders: 5, overall: 5 },
     ] });
     await screen.findByRole("heading", { level: 2, name: /Stage App/ });
     expect(screen.getByText(/weighted by reviewer/i)).toBeTruthy();

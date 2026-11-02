@@ -525,7 +525,13 @@ export function AdminReviewers() {
     setAssignNote(null);
     setBusyFor(reviewerId, true);
     try {
-      await adminPlatformApi.unassignBatchReviewer(batchId, reviewerId);
+      const res = await adminPlatformApi.unassignBatchReviewer(batchId, reviewerId);
+      // Older backends keep an assignment whose reviewer has an unsubmitted
+      // draft review (`kept_draft`); say so instead of implying all were removed.
+      const kept = Number(res?.kept_draft || 0);
+      if (kept > 0) {
+        setAssignNote(`${kept} assignment${kept === 1 ? '' : 's'} kept: the reviewer has a draft review on ${kept === 1 ? 'it' : 'them'}. Remove ${kept === 1 ? 'it' : 'them'} from the Manage drawer if needed.`);
+      }
       reload();
     } catch (e) {
       setAssignErr(e?.message || 'Unassign failed.');

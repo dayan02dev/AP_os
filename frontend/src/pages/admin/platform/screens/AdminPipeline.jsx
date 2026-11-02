@@ -206,32 +206,6 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   const [finalOnlyState, setFinalOnly] = useStickyState(scope, 'finalOnly', false);
   const finalOnly = isRejectedView && finalOnlyState === true;
   const gate1Only = isRejectedView && finalOnlyState === 'gate1';
-  const industries = React.useMemo(() => industryCountsFor(S, track), [S, track]);
-  const unspecifiedCount = React.useMemo(() => S.filter(s => !s.hidden && !s.archived
-    && (track === 'all' || s.track === track) && industryOf(s) === UNSPECIFIED).length, [S, track]);
-  const recoCounts = React.useMemo(() => {
-    const m = { yes: 0, maybe: 0, no: 0, single: 0, none: 0 };
-    S.forEach((s) => { m[recoBucket(s)] += 1; });
-    return m;
-  }, [S]);
-  // Status options = the statuses actually on this tab, with counts (a static
-  // list offered chips that could never match here).
-  const statusCounts = React.useMemo(() => {
-    const m = {};
-    S.forEach((s) => { if (!s.hidden && !s.archived) { const id = getStatusId(s); m[id] = (m[id] || 0) + 1; } });
-    return m;
-  }, [S]);
-  // Batch membership counts — an app can sit in several batches.
-  const batchCounts = React.useMemo(() => {
-    const m = { Unassigned: 0 };
-    S.forEach((s) => {
-      if (s.hidden || s.archived) return;
-      const names = (s.batches || []).map(b => b.name).filter(Boolean);
-      if (names.length === 0) m.Unassigned += 1;
-      names.forEach((nm) => { m[nm] = (m[nm] || 0) + 1; });
-    });
-    return m;
-  }, [S]);
   const [filtersOpen, setFiltersOpen] = useStickyState(scope, 'filtersOpen', false);
   // Row selection is deliberately NOT sticky: coming back to a pre-selected set
   // of rows makes the bulk-action bar act on a selection you no longer remember
@@ -299,57 +273,88 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     setFinalOnly(false);
   };
 
-  const filtered = React.useMemo(() => S.filter(s => {
-    if (s.archived) return false;
-    if (s.hidden) return false;
+  // One predicate per facet. The list keeps rows that pass every facet; each
+  // facet's chip counts are taken over rows that pass every OTHER facet
+  // (standard faceted counts), so a chip's number is exactly what clicking it
+  // would show given the rest of the active filters — track included.
+  const facetOk = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const idq = q ? q.match(ID_QUERY) : null;
+    return {
+      base: (s) => {
+        if (s.archived || s.hidden) return false;
+        if (decisionMode === 'jury') {
+          const c = (s.chip || '').toUpperCase();
+          if (c !== 'SHORTLISTED' && c !== 'JURY REVIEW' && c !== 'ACCEPTED' && c !== 'ONBOARDED' && c !== 'REJECTED' && c !== 'WAITLISTED') {
+            return false;
+          }
+        }
+        return true;
+      },
+      batch: (s) => {
+        if (batchFilter === 'all') return true;
+        const names = (s.batches || []).map(x => x.name);
+        return names.includes(batchFilter) || (names.length === 0 && batchFilter === 'Unassigned');
+      },
+      search: (s) => {
+        if (!q) return true;
+        const matchId = idq ? idDigits(s.applicationId) === idq[1] : false;
+        return matchId
+          || (s.name || '').toLowerCase().includes(q)
+          || (s.org || '').toLowerCase().includes(q)
+          || (s.founders || []).some(f => (f || '').toLowerCase().includes(q))
+          || (s.domain || '').toLowerCase().includes(q)
+          || (s.email || '').toLowerCase().includes(q);
+      },
+      // Track filter on the row's (effective) track.
+      track: (s) => track === 'all' || s.track === track,
+      status: (s) => status === 'all' || getStatusId(s) === status,
+      industry: (s) => industry === 'all' || industryOf(s) === industry,
+      reco: (s) => !recoFilter || recoBucket(s) === recoFilter,
+      round: (s) => !(finalOnly && !isFinalRoundReject(s)) && !(gate1Only && isFinalRoundReject(s)),
+    };
+  }, [search, track, status, industry, batchFilter, recoFilter, decisionMode, finalOnly, gate1Only]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    if (decisionMode === 'jury') {
-      const c = (s.chip || '').toUpperCase();
-      if (c !== 'SHORTLISTED' && c !== 'JURY REVIEW' && c !== 'ACCEPTED' && c !== 'ONBOARDED' && c !== 'REJECTED' && c !== 'WAITLISTED') {
-        return false;
-      }
+  // Rows passing every facet except `skip` (null = all facets → the list).
+  const rowsExcept = React.useCallback(
+    (skip) => S.filter(s => Object.entries(facetOk).every(([k, ok]) => k === skip || ok(s))),
+    [S, facetOk],
+  );
+
+  const filtered = React.useMemo(() => rowsExcept(null), [rowsExcept]);
+
+  const industries = React.useMemo(() => {
+    const list = industryCountsFor(rowsExcept('industry'), 'all');
+    // Keep the selected industry clickable even when its count drops to 0.
+    if (industry !== 'all' && industry !== UNSPECIFIED && !list.some(x => x.name === industry)) {
+      list.push({ name: industry, count: 0 });
     }
-
-    if (batchFilter !== 'all') {
-      const names = (s.batches || []).map(x => x.name);
-      const match = names.includes(batchFilter)
-        || (names.length === 0 && batchFilter === 'Unassigned');
-      if (!match) return false;
-    }
-
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      const idq = q.match(ID_QUERY);
-      const matchId = idq ? idDigits(s.applicationId) === idq[1] : false;
-      const matchName = (s.name || '').toLowerCase().includes(q);
-      const matchFounder = (s.founders || []).some(f => (f || '').toLowerCase().includes(q));
-      const matchDomain = (s.domain || '').toLowerCase().includes(q);
-      const matchEmail = (s.email || '').toLowerCase().includes(q);
-      if (!matchId && !matchName && !matchFounder && !matchDomain && !matchEmail) return false;
-    }
-
-    // Track filter: prototype used hardcoded id lists; we use s.track field instead
-    if (track === 'tir') {
-      if (s.track !== 'tir') return false;
-    } else if (track === 'sip') {
-      if (s.track !== 'sip') return false;
-    }
-
-    if (status !== 'all') {
-      if (getStatusId(s) !== status) return false;
-    }
-
-    if (industry !== 'all') {
-      if (industryOf(s) !== industry) return false;
-    }
-
-    if (recoFilter && recoBucket(s) !== recoFilter) return false;
-
-    if (finalOnly && !isFinalRoundReject(s)) return false;
-    if (gate1Only && isFinalRoundReject(s)) return false;
-
-    return true;
-  }), [S, search, track, status, industry, batchFilter, recoFilter, decisionMode, finalOnly, gate1Only]); // eslint-disable-line react-hooks/exhaustive-deps
+    return list;
+  }, [rowsExcept, industry]);
+  const unspecifiedCount = React.useMemo(
+    () => rowsExcept('industry').filter(s => industryOf(s) === UNSPECIFIED).length, [rowsExcept]);
+  const recoCounts = React.useMemo(() => {
+    const m = { yes: 0, maybe: 0, no: 0, single: 0, none: 0 };
+    rowsExcept('reco').forEach((s) => { m[recoBucket(s)] += 1; });
+    return m;
+  }, [rowsExcept]);
+  // Status options = the statuses actually on this tab, with counts (a static
+  // list offered chips that could never match here).
+  const statusCounts = React.useMemo(() => {
+    const m = {};
+    rowsExcept('status').forEach((s) => { const id = getStatusId(s); m[id] = (m[id] || 0) + 1; });
+    return m;
+  }, [rowsExcept]);
+  // Batch membership counts — an app can sit in several batches.
+  const batchCounts = React.useMemo(() => {
+    const m = { Unassigned: 0 };
+    rowsExcept('batch').forEach((s) => {
+      const names = (s.batches || []).map(b => b.name).filter(Boolean);
+      if (names.length === 0) m.Unassigned += 1;
+      names.forEach((nm) => { m[nm] = (m[nm] || 0) + 1; });
+    });
+    return m;
+  }, [rowsExcept]);
 
   const toggleAll = () => {
     if (selectedIds.length === filtered.length && filtered.length > 0) {

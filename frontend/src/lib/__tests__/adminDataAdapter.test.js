@@ -87,29 +87,64 @@ describe("adaptDetail", () => {
       founders: 7.8, commit: 8.4, integrity: 8.4 });
     expect(s.aiSummary).toBe("TL;DR…");
   });
-  it("maps reviews[] to s.rev using REAL review columns", () => {
+  it("maps each submitted review using REAL review columns (s.reviews)", () => {
     const s = adaptDetail(detail);
+    const rv = s.reviews[0];
     // score_solution → solution (NOT score_completeness), and quick_notes/flags map through.
-    expect(s.rev).toMatchObject({ overall: 7.9, problem: 8, solution: 7.5, tech: 8.5,
-      founders: 7.5, commit: 8, reco: "yes" });
-    expect(s.rev.notes).toBe("Strong founder fit.");
-    expect(s.rev.flags).toEqual(["Market competition risk"]);
-    expect(s.rev.reviewerId).toBe("r1");
-    // No integrity on a review.
-    expect(s.rev.integrity).toBeUndefined();
+    expect(rv).toMatchObject({ problem: 8, solution: 7.5, tech: 8.5, founders: 7.5, reco: "yes" });
+    expect(rv.notes).toBe("Strong founder fit.");
+    expect(rv.flags).toEqual(["Market competition risk"]);
+    expect(rv.reviewerId).toBe("r1");
+    // No integrity on a review; reviewer commitment is not a rubric criterion (v3.2).
+    expect(rv.integrity).toBeUndefined();
+    expect(rv.commit).toBeUndefined();
+    // Raw row kept for the shared ReviewerFeedback renderer.
+    expect(rv.raw).toBe(detail.reviews[0]);
     expect(s.reviews).toHaveLength(1);
   });
-  it("averages category scores when score_overall is absent", () => {
-    const s = adaptDetail({
+  it("review overall is the 4-criterion weighted score (commitment ignored, any score_overall ignored)", () => {
+    const s = adaptDetail(detail);
+    // (8*22 + 7.5*30 + 8.5*22 + 7.5*14) / 88
+    expect(s.reviews[0].overall).toBeCloseTo((8 * 22 + 7.5 * 30 + 8.5 * 22 + 7.5 * 14) / 88, 5);
+    const s2 = adaptDetail({
       ...detail,
       reviews: [{ reviewer_user_id: "r2", submitted_at: "2026-05-02T00:00:00Z",
         score_problem: 8, score_solution: 6, score_tech: 8, score_founders: 6,
-        score_commitment: 7, recommendation: "maybe" }],
+        score_commitment: 1, recommendation: "maybe" }],
     });
-    // (8+6+8+6+7)/5 = 7.0
-    expect(s.rev.overall).toBe(7.0);
-    expect(s.rev.reco).toBe("maybe");
-    expect(s.rev.flags).toEqual([]);
+    expect(s2.reviews[0].overall).toBeCloseTo((8 * 22 + 6 * 30 + 8 * 22 + 6 * 14) / 88, 5);
+    expect(s2.reviews[0].reco).toBe("maybe");
+    expect(s2.reviews[0].flags).toEqual([]);
+  });
+  it("keeps strengths / concerns / comments / disagreements / submitted date (FD-5)", () => {
+    const s = adaptDetail({ ...detail, reviews: [{
+      reviewer_user_id: "r3", reviewer_name: "Legacy Lee", submitted_at: "2026-05-03T00:00:00Z",
+      strengths: "S-TEXT", concerns: "C-TEXT", comments: "COMMENTS-TEXT",
+      disagree_with_ai: { tech: "too high" }, recommendation: null,
+    }] });
+    const rv = s.reviews[0];
+    expect(rv).toMatchObject({ strengths: "S-TEXT", concerns: "C-TEXT", comments: "COMMENTS-TEXT",
+      disagreements: { tech: "too high" }, submittedAt: "2026-05-03T00:00:00Z", reviewerName: "Legacy Lee" });
+    // notes falls back to the real `comments` column (not `comment`).
+    expect(rv.notes).toBe("COMMENTS-TEXT");
+    // A missing recommendation stays null (rendered '—'), never "maybe".
+    expect(rv.reco).toBeNull();
+    expect(rv.overall).toBeNull();
+  });
+  it("s.rev is the backend weighted consensus, not the first review (ADMPIPE-01)", () => {
+    const two = [
+      { reviewer_user_id: "r1", submitted_at: "x", score_problem: 4, score_solution: 4, score_tech: 4, score_founders: 4 },
+      { reviewer_user_id: "r2", submitted_at: "y", score_problem: 10, score_solution: 10, score_tech: 10, score_founders: 10 },
+    ];
+    expect(adaptDetail({ ...detail, reviews: two, reviewer_score: 7.0 }).rev).toEqual({ overall: 7.0 });
+    // No backend score: reviewer-weighted mean of the reviews' weighted overalls.
+    expect(adaptDetail({ ...detail, reviews: two, reviewer_weights: { r1: 1, r2: 2 } }).rev.overall).toBeCloseTo(8, 5);
+    expect(adaptDetail({ ...detail, reviews: [] }).rev).toBeUndefined();
+  });
+  it("adminDecisions passes C1 admin_decisions through (default [])", () => {
+    const rows = [{ id: "d1", gate_stage: "gate1", decision: "rejected", rationale: "Weak IP", decided_by_name: "Admin A", decided_at: "2026-07-01T00:00:00Z" }];
+    expect(adaptDetail({ ...detail, admin_decisions: rows }).adminDecisions).toEqual(rows);
+    expect(adaptDetail(detail).adminDecisions).toEqual([]);
   });
   it("maps identity, decision, batch, assignments", () => {
     const s = adaptDetail(detail);
