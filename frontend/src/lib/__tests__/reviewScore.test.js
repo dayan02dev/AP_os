@@ -2,13 +2,19 @@ import { describe, it, expect } from "vitest";
 import { weightedReviewScore } from "../reviewScore";
 
 describe("weightedReviewScore", () => {
-  it("computes the weighted overall using canonical weights", () => {
-    // 2.0*22 + 2.0*30 + 1.5*22 + 3.0*14 + 2.5*12 = 209; /100 = 2.09
+  it("computes the 4-criterion weighted overall (22/30/22/14 over 88)", () => {
+    // 2.0*22 + 2.0*30 + 1.5*22 + 3.0*14 = 179; /88 = 2.034
     const r = {
       score_problem: 2.0, score_solution: 2.0, score_tech: 1.5,
-      score_founders: 3.0, score_commitment: 2.5,
+      score_founders: 3.0,
     };
-    expect(weightedReviewScore(r)).toBeCloseTo(2.09, 2);
+    expect(weightedReviewScore(r)).toBeCloseTo(179 / 88, 4);
+  });
+
+  it("ignores a historical score_commitment (criterion removed from the rubric)", () => {
+    const base = { score_problem: 8, score_solution: 6, score_tech: 7, score_founders: 9 };
+    expect(weightedReviewScore({ ...base, score_commitment: 1 }))
+      .toBeCloseTo(weightedReviewScore(base), 6);
   });
 
   it("returns null when no dimension scores are present", () => {
