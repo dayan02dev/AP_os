@@ -64,6 +64,14 @@ export function writeStickyState(scope, field, value) {
   write(stickyKey(scope, field), value);
 }
 
+/** Read a sticky value from OUTSIDE the hook (same key format, same
+ *  sessionStorage-then-mirror lookup a `useStickyState` mount uses). The
+ *  reviewer eval screen uses it to walk the queue with the queue's own
+ *  filters while the queue itself is unmounted. */
+export function readStickyState(scope, field, initial) {
+  return read(stickyKey(scope, field), initial);
+}
+
 /** Drop every persisted filter — both the stored copy and the in-page mirror.
  *  Called on sign-out so the next person to use this tab does not inherit the
  *  previous user's view, and by the test setup for per-test isolation. */

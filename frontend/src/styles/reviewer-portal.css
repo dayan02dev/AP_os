@@ -353,8 +353,6 @@
 .rv-portal .os-slider-row.tech .os-slider-thumb { border-color: var(--cat-tech); }
 .rv-portal .os-slider-row.founders .os-slider-fill { background: var(--cat-founders); }
 .rv-portal .os-slider-row.founders .os-slider-thumb { border-color: var(--cat-founders); }
-.rv-portal .os-slider-row.commit .os-slider-fill { background: var(--cat-commit); }
-.rv-portal .os-slider-row.commit .os-slider-thumb { border-color: var(--cat-commit); }
 .rv-portal .os-slider-row.integrity .os-slider-fill { background: var(--cat-integrity); }
 .rv-portal .os-slider-row.integrity .os-slider-thumb { border-color: var(--cat-integrity); }
 

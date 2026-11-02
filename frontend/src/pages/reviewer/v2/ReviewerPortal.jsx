@@ -5,7 +5,7 @@
 // "history". Navigation is route-based (deep-linkable); the eval screen reads
 // :track/:appId from the URL. The portal stylesheet is imported once here.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 
 import "../../../styles/reviewer-portal.css";
@@ -15,6 +15,13 @@ import { useAuth } from "../../../hooks/useAuth.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
 import { displayIdText } from "../../../lib/trackLabel.js";
+import {
+  applyQueueFilters,
+  isInactive,
+  readQueueFilters,
+  sortQueue,
+  visibleQueueRows,
+} from "../../../lib/reviewerQueueFilters.js";
 import { COHORT_LABEL, initialsOf } from "./ui.jsx";
 import PortalSwitcher from "../../../components/PortalSwitcher.jsx";
 import AccountSettingsButton from "../../../components/AccountSettingsButton.jsx";
@@ -99,11 +106,21 @@ function downloadCsv(table, filename) {
   URL.revokeObjectURL(url);
 }
 
-async function exportReviewerQueueCsv() {
+const inactiveLabel = (s) => (s.closed ? "Closed" : s.detached ? "Unassigned" : "");
+
+// Queue CSV. From My Queue it is exactly what the table shows (the queue's
+// sticky filters + sort, inactive rows only when "Show inactive" is on). From
+// the dashboard it is every row, like the dashboard tiles, with inactive rows
+// marked in the last column.
+export function queueCsvRows(queue, tab) {
   const STATUS_LABEL = { submitted: "Submitted", draft: "Draft", "not-started": "Not Started" };
-  const queue = await reviewerApi.getQueue();
-  const headers = ["ID", "Project", "Founders", "Industry", "Stage", "Track", "AI Score", "Status"];
-  const rows = queue.map((s) => [
+  let rows = Array.isArray(queue) ? queue : [];
+  if (tab === "queue") {
+    const f = readQueueFilters();
+    rows = sortQueue(applyQueueFilters(visibleQueueRows(rows, f.showInactive), f), f.sortCol, f.sortAsc);
+  }
+  const headers = ["ID", "Project", "Founders", "Industry", "Stage", "Track", "AI Score", "Status", "Inactive"];
+  return [headers, ...rows.map((s) => [
     displayIdText(s.applicationId, s.movedToTrack, { csv: true }),
     s.name,
     (s.founders || []).join("; "),
@@ -112,14 +129,20 @@ async function exportReviewerQueueCsv() {
     trackName(s.movedToTrack || s.track),
     s.ai && s.ai.overall != null ? Number(s.ai.overall).toFixed(1) : "",
     STATUS_LABEL[s.reviewStatus] || "",
-  ]);
-  downloadCsv([headers, ...rows], "reviewer-queue-TIR-VIP-2026.csv");
+    inactiveLabel(s),
+  ])];
 }
 
-// My Queue badge: rows the queue shows by default — closed (rejected) rows are
-// hidden behind "Show closed", so they don't count.
+async function exportReviewerQueueCsv(tab) {
+  const queue = await reviewerApi.getQueue();
+  downloadCsv(queueCsvRows(queue, tab), "reviewer-queue-TIR-VIP-2026.csv");
+}
+
+// My Queue badge: rows the queue shows by default — closed (rejected) and
+// unassigned (detached) rows are hidden behind "Show inactive", so they don't
+// count.
 export function queueBadgeCount(rows) {
-  return Array.isArray(rows) ? rows.filter((s) => !s.closed).length : null;
+  return Array.isArray(rows) ? rows.filter((s) => !isInactive(s)).length : null;
 }
 
 // Header + one row per submitted review (GET /reviewer/history rows).
@@ -165,7 +188,7 @@ function ReviewerCohortHeader({ tab }) {
     if (exporting) return;
     setExporting(true);
     try {
-      await (tab === "history" ? exportReviewerHistoryCsv() : exportReviewerQueueCsv());
+      await (tab === "history" ? exportReviewerHistoryCsv() : exportReviewerQueueCsv(tab));
     } catch (err) {
       alert("Export failed — please try again.");
     } finally {
@@ -228,16 +251,34 @@ export default function ReviewerPortal({ tab = "dashboard" }) {
   const openEval = (track, appId) => navigate(`/reviewer/eval/${track}/${appId}`);
   const pickIndustry = (domain) => navigate("/reviewer/queue", { state: { domain } });
 
-  // Single getQueue fetch per page view, lifted into the shell. The dashboard,
+  // One getQueue fetch per tab view, lifted into the shell. The dashboard,
   // queue and the tab badge (shown on every tab with a tab bar, History
   // included) need it; the eval screen has no tab bar and reads its own data.
   // The async result is passed down so no child refetches the queue itself.
+  // All tabs render this same component instance, so `tab` must be a dep:
+  // without it a switch Dashboard -> History -> My Queue kept showing apps an
+  // admin had since removed.
   const needsQueue = tab !== "eval";
   const queueAsync = useAsync(
     () => (needsQueue ? reviewerApi.getQueue() : Promise.resolve(null)),
-    [needsQueue],
+    [needsQueue, tab],
   );
   const queueCount = queueBadgeCount(queueAsync.data);
+
+  // Refetch when the reviewer comes back to the window (admins reassign while
+  // the portal sits in a background tab).
+  const reloadQueue = queueAsync.reload;
+  useEffect(() => {
+    if (!needsQueue) return undefined;
+    const onFocus = () => reloadQueue();
+    const onVisible = () => { if (document.visibilityState === "visible") reloadQueue(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [needsQueue, reloadQueue]);
 
   return (
     <div className="rv-portal os-shell">

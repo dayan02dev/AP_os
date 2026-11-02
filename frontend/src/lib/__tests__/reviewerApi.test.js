@@ -23,4 +23,8 @@ describe("reviewerApi v2 seam", () => {
     reviewerApi.getRubric("sip");
     expect(api.get).toHaveBeenCalledWith("/reviewer/rubric?track=sip");
   });
+  it("getPanelFeedback → panel-feedback path", () => {
+    reviewerApi.getPanelFeedback("sip", "app-9");
+    expect(api.get).toHaveBeenCalledWith("/reviewer/applications/sip/app-9/panel-feedback");
+  });
 });

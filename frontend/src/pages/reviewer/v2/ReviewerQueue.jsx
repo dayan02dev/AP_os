@@ -7,7 +7,10 @@
 //   * `reviewStatus` is only not-started | draft | submitted (no in-progress)
 //   * `due` is an ISO timestamp (or null) → rendered as a short date
 //   * `detached` rows are submitted reviews whose assignment was removed;
-//     `closed` rows are reviewed apps that were rejected (hidden by default)
+//     `closed` rows are reviewed apps that were rejected. Both are "inactive"
+//     and hidden by default behind one "Show inactive (N)" toggle
+//   * filtering / sorting / facet counts live in lib/reviewerQueueFilters.js,
+//     shared with the eval screen's Prev/Next so both walk the same list
 //   * the track filter uses the EFFECTIVE track (movedToTrack || track); the
 //     native `track` is kept for the eval route
 
@@ -15,15 +18,19 @@ import { useMemo, useRef } from "react";
 import { LoadingState, ErrorState, Chip } from "./ui.jsx";
 import { relabelDisplayId, trackLabel, displayIdText } from "../../../lib/trackLabel.js";
 import { RecoBadge, RECO_LABEL } from "../../../components/RecoCell.jsx";
-import { useStickyState } from "../../../hooks/useStickyState.js";
-
-const SCOPE = "reviewer.queue";
+import { readStickyState, useStickyState, writeStickyState } from "../../../hooks/useStickyState.js";
+import {
+  QUEUE_SCOPE as SCOPE,
+  applyQueueFilters,
+  facetCounts,
+  isInactive,
+  sortQueue,
+  visibleQueueRows,
+} from "../../../lib/reviewerQueueFilters.js";
 
 // The queue is fetched once at the ReviewerPortal shell level and passed down
 // via `queueAsync` ({ data, loading, error, reload }) so the queue table and
 // the tab badge share a single getQueue request per page view.
-const effTrack = (s) => s.movedToTrack || s.track;
-const cmpText = (a, b) => String(a || "").localeCompare(String(b || ""), undefined, { sensitivity: "base", numeric: true });
 
 export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsync }) {
   const [search, setSearch] = useStickyState(SCOPE, "search", "");
@@ -33,7 +40,7 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
   const [domainFilter, setDomainFilter] = useStickyState(SCOPE, "domain", "all");
   const [recoFilter, setRecoFilter] = useStickyState(SCOPE, "reco", "all");
   const [showFilters, setShowFilters] = useStickyState(SCOPE, "showFilters", false);
-  const [showClosed, setShowClosed] = useStickyState(SCOPE, "showClosed", false);
+  const [showInactive, setShowInactive] = useStickyState(SCOPE, "showInactive", false);
 
   const [sortCol, setSortCol] = useStickyState(SCOPE, "sortCol", null);
   const [sortAsc, setSortAsc] = useStickyState(SCOPE, "sortAsc", true);
@@ -41,37 +48,33 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
   // Arriving from the dashboard's "pick an industry" tile carries a domain in
   // router state (including an explicit "all"). That is a deliberate act, so it
   // overrides — and replaces — whatever domain was remembered. `navKey` (the
-  // router location key) makes each pick apply once. Adjusting during render
-  // (rather than in an effect) keeps the remembered filter from flashing first.
-  const appliedDomainRef = useRef(null);
+  // router location key) makes each pick apply once; the applied key is kept
+  // in sticky state (not a ref) so browser Back to the same history entry —
+  // which restores the same key and state — does not re-apply an old pick.
+  // Adjusting during render (rather than in an effect) keeps the remembered
+  // filter from flashing first.
+  const appliedPickRef = useRef(undefined);
+  if (appliedPickRef.current === undefined) {
+    appliedPickRef.current = readStickyState(SCOPE, "appliedPick", null);
+  }
   const pickKey = navKey ?? initialDomain;
-  if (initialDomain !== undefined && appliedDomainRef.current !== pickKey) {
-    appliedDomainRef.current = pickKey;
+  if (initialDomain !== undefined && appliedPickRef.current !== pickKey) {
+    appliedPickRef.current = pickKey;
+    writeStickyState(SCOPE, "appliedPick", pickKey);
     if (domainFilter !== initialDomain) setDomainFilter(initialDomain);
   }
 
   const { data, loading, error, reload } = queueAsync;
   const allQueue = data || [];
-  const closedCount = allQueue.filter((s) => s.closed).length;
-  // Rows the reviewer can actually see: closed ones only when "Show closed" is
-  // on. Every count (chips, "N of total") is taken over this set.
-  const visible = showClosed ? allQueue : allQueue.filter((s) => !s.closed);
-
-  const filtered = visible.filter((s) => {
-    if (track !== "all" && effTrack(s) !== track) return false;
-    const q = (search || "").trim().toLowerCase();
-    if (q) {
-      const hay = [
-        s.name, s.industry, s.applicationId, relabelDisplayId(s.applicationId), ...(s.founders || []),
-      ].map((v) => (v || "").toLowerCase());
-      if (!hay.some((v) => v.includes(q))) return false;
-    }
-    if (statusFilter !== "all" && s.reviewStatus !== statusFilter) return false;
-    if (stageFilter !== "all" && s.stage !== stageFilter) return false;
-    if (domainFilter !== "all" && s.industry !== domainFilter) return false;
-    if (recoFilter !== "all" && (s.myReco || "none") !== recoFilter) return false;
-    return true;
-  });
+  const inactiveCount = allQueue.filter(isInactive).length;
+  // Rows the reviewer can actually see: closed/unassigned ones only when
+  // "Show inactive" is on. Every count (chips, "N of total") is over this set.
+  const visible = visibleQueueRows(allQueue, showInactive);
+  const filters = {
+    search, track, status: statusFilter, stage: stageFilter, domain: domainFilter,
+    reco: recoFilter, showInactive, sortCol, sortAsc,
+  };
+  const filtered = applyQueueFilters(visible, filters);
 
   const handleSort = (col) => {
     if (sortCol === col) {
@@ -97,55 +100,10 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
     );
   };
 
-  const sortedFiltered = useMemo(() => {
-    if (!sortCol) return filtered;
-    return [...filtered].sort((a, b) => {
-      let valA, valB;
-      if (sortCol === "name") {
-        valA = a.name || "";
-        valB = b.name || "";
-      } else if (sortCol === "founder") {
-        valA = (a.founders && a.founders[0]) || "";
-        valB = (b.founders && b.founders[0]) || "";
-      } else if (sortCol === "industry") {
-        valA = a.industry || "";
-        valB = b.industry || "";
-      } else if (sortCol === "stage") {
-        valA = a.stage || "";
-        valB = b.stage || "";
-      } else if (sortCol === "ai") {
-        valA = (a.ai && a.ai.overall != null) ? a.ai.overall : -1;
-        valB = (b.ai && b.ai.overall != null) ? b.ai.overall : -1;
-        if (valA < valB) return sortAsc ? -1 : 1;
-        if (valA > valB) return sortAsc ? 1 : -1;
-        return 0;
-      } else if (sortCol === "myScore") {
-        valA = typeof a.myScore === "number" ? a.myScore : -1;
-        valB = typeof b.myScore === "number" ? b.myScore : -1;
-        if (valA < valB) return sortAsc ? -1 : 1;
-        if (valA > valB) return sortAsc ? 1 : -1;
-        return 0;
-      } else if (sortCol === "myReco") {
-        const rank = { yes: 3, maybe: 2, no: 1 };
-        valA = rank[a.myReco] || 0;
-        valB = rank[b.myReco] || 0;
-        if (valA < valB) return sortAsc ? -1 : 1;
-        if (valA > valB) return sortAsc ? 1 : -1;
-        return 0;
-      } else if (sortCol === "status") {
-        valA = a.reviewStatus || "";
-        valB = b.reviewStatus || "";
-      } else if (sortCol === "id") {
-        valA = relabelDisplayId(a.applicationId);
-        valB = relabelDisplayId(b.applicationId);
-      } else {
-        return 0;
-      }
-      // Text columns: case-insensitive, numeric-aware ("TIR-2" < "TIR-10").
-      const c = cmpText(valA, valB);
-      return sortAsc ? c : -c;
-    });
-  }, [filtered, sortCol, sortAsc]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sortedFiltered = useMemo(
+    () => sortQueue(filtered, sortCol, sortAsc),
+    [filtered, sortCol, sortAsc], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const STATUS_DOTS = {
     submitted: "var(--ok)",
@@ -154,29 +112,22 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
   };
   const STATUS_LABELS = { submitted: "Submitted", draft: "Draft", "not-started": "Not Started" };
 
-  const countBy = (key) => {
-    const m = {};
-    visible.forEach((s) => {
-      const v = s[key] || "—";
-      m[v] = (m[v] || 0) + 1;
-    });
-    return Object.entries(m).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  // Facet chips: each count is over rows matching every OTHER active filter.
+  // A chip is listed when it has rows, or when it is the active choice.
+  const facets = facetCounts(visible, filters);
+  const chipRows = (counts, active) => {
+    const rows = Object.entries(counts);
+    if (active !== "all" && !(active in counts)) rows.push([active, 0]);
+    return rows.sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]));
   };
-  const industryRows = countBy("industry");
-  const stageRows = countBy("stage");
-  const statusCounts = visible.reduce((m, s) => {
-    m[s.reviewStatus] = (m[s.reviewStatus] || 0) + 1;
-    return m;
-  }, {});
-  const recoCounts = visible.reduce((m, s) => {
-    const k = s.myReco || "none";
-    m[k] = (m[k] || 0) + 1;
-    return m;
-  }, {});
+  const industryRows = chipRows(facets.industry, domainFilter);
+  const stageRows = chipRows(facets.stage, stageFilter);
+  const statusCounts = facets.status;
+  const recoCounts = facets.reco;
 
   const hasFilters =
     search || track !== "all" || statusFilter !== "all" || stageFilter !== "all" || domainFilter !== "all" || recoFilter !== "all" ||
-    showClosed;
+    showInactive;
   const activeFilterCount =
     (track !== "all" ? 1 : 0) +
     (statusFilter !== "all" ? 1 : 0) +
@@ -190,7 +141,7 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
     setStageFilter("all");
     setDomainFilter("all");
     setRecoFilter("all");
-    setShowClosed(false);
+    setShowInactive(false);
   };
 
   return (
@@ -222,13 +173,13 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
           {hasFilters && (
             <button className="lp-filter-btn lp-clear-btn" onClick={clearAll}>Clear filters</button>
           )}
-          {closedCount > 0 && (
+          {inactiveCount > 0 && (
             <button
-              className={`lp-filter-btn${showClosed ? " active" : ""}`}
-              title="Reviewed applications that have since been rejected"
-              onClick={() => setShowClosed((v) => !v)}
+              className={`lp-filter-btn${showInactive ? " active" : ""}`}
+              title="Reviewed applications that were rejected, or whose assignment was removed"
+              onClick={() => setShowInactive((v) => !v)}
             >
-              {showClosed ? "Hide" : "Show"} closed ({closedCount})
+              {showInactive ? "Hide" : "Show"} inactive ({inactiveCount})
             </button>
           )}
           <span className="lp-count">
@@ -408,7 +359,7 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
                 <td style={{ fontFamily: "var(--font-code)", fontSize: 11, color: "var(--ink-dim)" }}>{displayIdText(s.applicationId, s.movedToTrack)}</td>
               </tr>
             ))}
-            {loading && (
+            {loading && !data && (
               <tr>
                 <td colSpan="9" style={{ padding: "40px 0" }}>
                   <LoadingState label="Loading your queue…" />
@@ -422,7 +373,7 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
                 </td>
               </tr>
             )}
-            {!loading && !error && filtered.length === 0 && (
+            {!(loading && !data) && !error && filtered.length === 0 && (
               <tr>
                 <td colSpan="9" style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-dim)", fontSize: 13 }}>
                   {allQueue.length === 0 ? "No applications assigned." : "No startups match the current filters."}

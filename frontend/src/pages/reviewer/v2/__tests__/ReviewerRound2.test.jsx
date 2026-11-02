@@ -150,17 +150,17 @@ describe("ReviewerQueue counts with closed rows hidden", () => {
     expect(screen.queryByRole("button", { name: /^Space/ })).not.toBeInTheDocument();
   });
 
-  it("counts include closed rows once 'Show closed' is on", () => {
+  it("counts include closed rows once 'Show inactive' is on", () => {
     render(<ReviewerQueue onOpen={vi.fn()} queueAsync={mk(Q)} />);
-    fireEvent.click(screen.getByRole("button", { name: /Show closed/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Show inactive/ }));
     expect(screen.getByText("5 of 5")).toBeInTheDocument();
   });
 
-  it("'Clear filters' also turns 'Show closed' off", () => {
+  it("'Clear filters' also turns 'Show inactive' off", () => {
     render(<ReviewerQueue onOpen={vi.fn()} queueAsync={mk(Q)} />);
-    fireEvent.click(screen.getByRole("button", { name: /Show closed/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Show inactive/ }));
     fireEvent.click(screen.getByRole("button", { name: /clear filters/i }));
-    expect(screen.getByRole("button", { name: /Show closed/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Show inactive/ })).toBeInTheDocument();
     expect(screen.getByText("3 of 3")).toBeInTheDocument();
   });
 });

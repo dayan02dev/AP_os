@@ -9,13 +9,16 @@
 // SUBMITTED tile matches My History. TIR/VIP split uses the EFFECTIVE track.
 
 import { LoadingState, ErrorState, EmptyState } from "./ui.jsx";
+import { visibleQueueRows } from "../../../lib/reviewerQueueFilters.js";
 
 // The queue is fetched once at the ReviewerPortal shell level and passed down
 // via `queueAsync` ({ data, loading, error, reload }) so the dashboard and the
 // tab badge share a single getQueue request per page view.
 export default function ReviewerDashboard({ onPickIndustry, queueAsync }) {
   const { data: queue, loading, error, reload } = queueAsync;
-  if (loading) return <LoadingState label="Loading dashboard…" />;
+  // Background refetches (tab switch / window focus) keep the old numbers on
+  // screen instead of flashing a spinner.
+  if (loading && !queue) return <LoadingState label="Loading dashboard…" />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
   if (!queue || !queue.length) return <EmptyState label="No applications assigned." />;
 
@@ -61,12 +64,15 @@ export default function ReviewerDashboard({ onPickIndustry, queueAsync }) {
   const sorted = [...withAI].map((s) => s.ai.overall).sort((a, b) => a - b);
   const medianAI = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
 
-  // Industry breakdown (server field is `industry`).
+  // Industry breakdown (server field is `industry`). Over the rows My Queue
+  // shows by default (no closed / unassigned), so a tile's count is what the
+  // pre-filtered queue lists when it is clicked.
   const domainMap = {};
-  queue.forEach((s) => {
+  visibleQueueRows(queue).forEach((s) => {
     const d = s.industry || "—";
     domainMap[d] = (domainMap[d] || 0) + 1;
   });
+  const liveN = visibleQueueRows(queue).length;
   const domainRows = Object.entries(domainMap).sort((a, b) => b[1] - a[1]);
   const maxDomain = domainRows.length ? domainRows[0][1] : 1;
 
@@ -208,7 +214,7 @@ export default function ReviewerDashboard({ onPickIndustry, queueAsync }) {
                 <div className="dash-ind-bar-fill" style={{ width: (count / maxDomain) * 100 + "%" }} />
               </div>
               <div className="dash-ind-count">{count}</div>
-              <div className="dash-ind-pct">· {((count / n) * 100).toFixed(1)}%</div>
+              <div className="dash-ind-pct">· {((count / Math.max(liveN, 1)) * 100).toFixed(1)}%</div>
             </div>
           ))}
         </div>
