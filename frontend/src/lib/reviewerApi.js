@@ -47,6 +47,10 @@ export const reviewerApi = {
       `/reviewer/applications/${track}/${id}/files/signed-url?storage_path=${encodeURIComponent(storagePath)}`,
     ),
   getHistory: () => api.get("/reviewer/history"),
+  // Other reviewers' submitted feedback + human admin comments, once the
+  // caller has submitted their own review (contract C2).
+  getPanelFeedback: (track, id) =>
+    api.get(`/reviewer/applications/${track}/${id}/panel-feedback`),
   getRubric: (track) =>
     api.get(`/reviewer/rubric?track=${encodeURIComponent(track)}`),
 };
