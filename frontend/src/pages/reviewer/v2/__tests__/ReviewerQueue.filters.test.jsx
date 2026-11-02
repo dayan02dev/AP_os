@@ -4,7 +4,21 @@ import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
+vi.mock("../../../../lib/reviewerApi.js", () => ({
+  reviewerApi: {
+    getContent: (t, id) => Promise.resolve({
+      id, applicationId: "VIP-" + id, track: t, moved_to_track: null, name: "Eval " + id,
+      aiSummary: null, aiSections: [], ai: null, fields: [], sections: [], attachments: [],
+      application: {}, evaluation: null, assignment: { assignment_id: "a" },
+      read_only: false, read_only_reason: null, app_status: "under_review",
+    }),
+    getQueue: () => Promise.resolve([]),
+    getRubric: () => Promise.resolve({ dimensions: [], notes: [] }),
+  },
+}));
+
 import ReviewerQueue from "../ReviewerQueue.jsx";
+import ReviewerEval from "../ReviewerEval.jsx";
 import { writeStickyState } from "../../../../hooks/useStickyState.js";
 
 const row = (id, track, reviewStatus, industry, extra = {}) => ({
@@ -72,5 +86,17 @@ describe("ReviewerQueue filters", () => {
     render(<ReviewerQueue onOpen={vi.fn()} queueAsync={{ data: QUEUE, loading: true, error: null, reload: vi.fn() }} />);
     expect(names()).toContain("App v1");
     expect(screen.queryByText(/Loading your queue/)).not.toBeInTheDocument();
+  });
+
+  it("filters survive opening a review and coming back", async () => {
+    const q = render(<ReviewerQueue onOpen={vi.fn()} queueAsync={qa(QUEUE)} />);
+    fireEvent.click(screen.getByRole("button", { name: "VIP" }));
+    fireEvent.click(screen.getByText("App v1"));
+    q.unmount();
+    const ev = render(<ReviewerEval track="sip" appId="v1" onBack={vi.fn()} onOpen={vi.fn()} />);
+    await screen.findByText(/Your scores/);
+    ev.unmount();
+    render(<ReviewerQueue onOpen={vi.fn()} queueAsync={qa(QUEUE)} />);
+    expect(names()).toEqual(["App v1", "App v2", "App v4"]);
   });
 });
