@@ -1755,7 +1755,8 @@ def assign_reviewers_to_batch(
 ) -> dict[str, Any]:
     """Create one reviewer_assignment per (app in batch × reviewer), skipping any
     ``(application_id, application_track, reviewer_user_id)`` triple that already
-    exists.
+    has an ACTIVE row; a declined/reassigned row is revived in place (and
+    counted/returned as created).
 
     Pure data operation: it does NOT send the reviewer-assigned email and does
     NOT write an audit row — the caller owns those side effects. This is shared
@@ -1813,28 +1814,40 @@ def assign_reviewers_to_batch(
     # the scan small.
     app_keys = set(apps)
     reviewer_id_set = set(reviewer_ids)
-    existing_pairs: set[tuple[str, str, str]] = set()
-    for a in iter_assignment_rows(sb, reviewer_ids=reviewer_ids):
-        key = (a.get("application_id"), a.get("application_track"))
-        rid = a.get("reviewer_user_id")
-        if key in app_keys and rid in reviewer_id_set:
-            existing_pairs.add((a.get("application_id"), a.get("application_track"), rid))
+    # Only ACTIVE rows block; a declined/reassigned triple is revived in place.
+    existing_pairs, inactive = batch_membership.split_assignments(
+        a for a in iter_assignment_rows(sb, reviewer_ids=reviewer_ids)
+        if (a.get("application_id"), a.get("application_track")) in app_keys
+        and a.get("reviewer_user_id") in reviewer_id_set
+    )
 
     now = datetime.now(UTC).isoformat()
-    rows = [
-        {
-            "application_id": aid,
-            "application_track": track,
-            "reviewer_user_id": rid,
-            "assigned_by": assigned_by,
-            "assigned_at": now,
-            "state": "pending",
-            "due_at": None,
-        }
-        for (aid, track) in apps
-        for rid in reviewer_ids
-        if (aid, track, rid) not in existing_pairs
-    ]
+    rows: list[dict[str, Any]] = []
+    revived: list[dict[str, Any]] = []
+    for (aid, track) in apps:
+        for rid in reviewer_ids:
+            key = (aid, track, rid)
+            if key in existing_pairs:
+                continue
+            row = {
+                "application_id": aid,
+                "application_track": track,
+                "reviewer_user_id": rid,
+                "assigned_by": assigned_by,
+                "assigned_at": now,
+                "state": "pending",
+                "due_at": None,
+            }
+            if key in inactive:
+                try:
+                    batch_membership.revive_assignment(
+                        sb, inactive[key], assigned_by=assigned_by, now=now)
+                    revived.append(row)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("assign_reviewers_to_batch: revive failed",
+                                extra={"application_id": aid, "err": str(exc)})
+                continue
+            rows.append(row)
     if rows:
         # Idempotent insert: ON CONFLICT DO NOTHING so a race (or any residual
         # dedup gap) can never raise a duplicate-key 500.
@@ -1843,6 +1856,7 @@ def assign_reviewers_to_batch(
             on_conflict="application_id,application_track,reviewer_user_id",
             ignore_duplicates=True,
         ).execute()
+    rows += revived
 
     batch_membership.advance_many(
         sb,

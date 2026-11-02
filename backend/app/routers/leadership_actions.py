@@ -81,8 +81,10 @@ async def assign_reviewers(
     user: dict = Depends(get_current_user),
 ) -> dict:
     """Bulk-create reviewer assignments. Per-id result statuses:
-    created | already_assigned | not_a_reviewer. 404 if the app doesn't exist.
-    Track is server-inferred (matches the DELETE-unassign convention).
+    created | already_assigned | not_a_reviewer | skipped_closed. 404 if the
+    app doesn't exist. Track is server-inferred (matches the DELETE-unassign
+    convention). A decided/withdrawn app (batch_membership.closed_statuses)
+    gets no new work: skipped_closed, like the admin bulk-assign path.
 
     Only an ACTIVE row (declined_at and reassigned_to both NULL) counts as
     already_assigned. A declined/reassigned row is reactivated in place and
@@ -99,6 +101,9 @@ async def assign_reviewers(
         .data
     ) or []
     reviewer_ids = {r["user_id"] for r in role_rows}
+
+    from app.services import batch_membership
+    is_closed = bool(batch_membership.closed_keys(sb, [(application_id, track)]))
 
     existing_rows = (
         sb.table("reviewer_assignments")
@@ -122,6 +127,9 @@ async def assign_reviewers(
     for rid in body.reviewer_user_ids:
         if rid not in reviewer_ids:
             results.append({"reviewer_user_id": rid, "status": "not_a_reviewer"})
+            continue
+        if is_closed:
+            results.append({"reviewer_user_id": rid, "status": "skipped_closed"})
             continue
         if rid in already:
             results.append({"reviewer_user_id": rid, "status": "already_assigned"})

@@ -26,6 +26,33 @@ def closed_statuses() -> frozenset[str]:
     return frozenset(DECIDED_STATUSES) | {"withdrawn"}
 
 
+def split_assignments(rows) -> tuple[set[tuple], dict[tuple, str]]:
+    """Partition reviewer_assignments rows into ACTIVE triples
+    ``(app_id, track, reviewer_id)`` and ``{triple: row id}`` of INACTIVE
+    (declined/reassigned) ones. Only active rows block a re-assign; an inactive
+    row is revived in place, since the unique key forbids a second row."""
+    from app.services.reviewer_query import _is_active_assignment
+
+    active: set[tuple] = set()
+    inactive: dict[tuple, str] = {}
+    for a in rows:
+        key = (a.get("application_id"), a.get("application_track"), a.get("reviewer_user_id"))
+        if _is_active_assignment(a):
+            active.add(key)
+            inactive.pop(key, None)
+        elif key not in active and a.get("id"):
+            inactive[key] = a["id"]
+    return active, inactive
+
+
+def revive_assignment(sb: Any, row_id: str, *, assigned_by: str | None, now: str) -> None:
+    """Re-activate a declined/reassigned assignment row in place."""
+    sb.table("reviewer_assignments").update({
+        "declined_at": None, "decline_reason": None, "reassigned_to": None,
+        "assigned_by": assigned_by, "assigned_at": now, "state": "pending",
+    }).eq("id", row_id).execute()
+
+
 def _chunks(seq: list, n: int = _CHUNK):
     for i in range(0, len(seq), n):
         yield seq[i : i + n]
@@ -230,28 +257,34 @@ def add_apps_to_batch(
     # outside roster delete leaves a stale batch_reviewers row behind.
     reviewers = batch_reviewer_ids(sb, batch_id) & _reviewer_role_ids(sb)
     created: list[dict] = []
+    revived: list[dict] = []
     if reviewers and assignable:
-        existing = {
-            (a.get("application_id"), a.get("application_track"), a.get("reviewer_user_id"))
-            for a in _iter_assignments(sb, reviewers)
-        }
+        existing, inactive = split_assignments(_iter_assignments(sb, reviewers))
         for (aid, track) in assignable:
             for rid in reviewers:
                 key = (aid, track, rid)
                 if key in existing:
                     continue
                 existing.add(key)
-                created.append(
-                    {
-                        "application_id": aid,
-                        "application_track": track,
-                        "reviewer_user_id": rid,
-                        "assigned_by": actor,
-                        "assigned_at": now,
-                        "state": "pending",
-                        "due_at": None,
-                    }
-                )
+                row = {
+                    "application_id": aid,
+                    "application_track": track,
+                    "reviewer_user_id": rid,
+                    "assigned_by": actor,
+                    "assigned_at": now,
+                    "state": "pending",
+                    "due_at": None,
+                }
+                if key in inactive:
+                    # A declined row would otherwise keep blocking the triple.
+                    try:
+                        revive_assignment(sb, inactive[key], assigned_by=actor, now=now)
+                        revived.append(row)
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("add_apps_to_batch: revive failed",
+                                    extra={"application_id": aid, "err": str(exc)})
+                    continue
+                created.append(row)
     if created:
         # ONE bulk upsert per 500 rows (API Lambda has a 29 s budget).
         for chunk in _chunks(created, 500):
@@ -260,6 +293,7 @@ def add_apps_to_batch(
                 on_conflict="application_id,application_track,reviewer_user_id",
                 ignore_duplicates=True,
             ).execute()
+    created += revived
     # Only apps that actually received a new assignment leave 'submitted'.
     advance_many(
         sb,
