@@ -26,6 +26,7 @@ export const CHIP_META = {
   REJECTED:      { label: "Rejected",     statusId: "not-selected", tone: "red" },
   WAITLISTED:    { label: "Waitlisted",   statusId: "waitlisted",   tone: "" },
   HOLD:          { label: "Hold",         statusId: "hold",         tone: "amber" },
+  WITHDRAWN:     { label: "Withdrawn",    statusId: "withdrawn",    tone: "" },
 };
 
 // Chip → friendly label. Unknown chips fall back to the uppercased chip itself,
@@ -71,6 +72,9 @@ export function adaptPipelineRow(row) {
     // effective/display track, but move/decide calls target the native table.
     nativeTrack: row.native_track || row.track,
     name: row.name,
+    // TIR organisation (basic_org) — searched by the Applications search box.
+    // Needs the backend fetch_pipeline row to send `org`; absent → null.
+    org: row.org || null,
     founders: row.founder ? [row.founder] : [],
     email: row.email || null,
     domain: row.industry || "—",

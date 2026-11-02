@@ -14,8 +14,14 @@ import { useAdminData } from "../../../../hooks/useAdminData";
 import { writeStickyState } from "../../../../hooks/useStickyState.js";
 
 // The Applications tab (AdminPipeline scopeKey="applications") reads its
-// industry filter from this sticky key — write it, then switch tabs.
+// filters from these sticky keys. A drill-down resets every OTHER filter first
+// (a TIR / status / search left over from earlier would otherwise narrow the
+// list below what was clicked), then sets the industry and switches tabs.
+const DRILLDOWN_RESET = { search: '', track: 'all', status: 'all', batch: 'all', reco: null };
 const presetIndustry = (go, name) => {
+  for (const [field, value] of Object.entries(DRILLDOWN_RESET)) {
+    writeStickyState('admin.pipeline.applications', field, value);
+  }
   writeStickyState('admin.pipeline.applications', 'industry', name);
   go('pipeline');
 };
