@@ -538,3 +538,32 @@ def test_assign_reviewers_404_when_app_missing(client, monkeypatch, _clear_overr
     )
     assert res.status_code == 404
     assert res.json()["detail"]["code"] == "application_not_found"
+
+
+def test_assign_reviewers_revives_declined_assignment(client, monkeypatch, _clear_overrides):
+    """A declined (or reassigned) row must not block re-assignment: it is
+    reactivated in place and reported as created (same rule as the admin
+    bulk-assign path)."""
+    app_id = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+    fake = _install_db(monkeypatch, {
+        "tir_applications": [{"id": app_id, "status": "under_review"}],
+        "sip_applications": [],
+        "user_roles": [{"user_id": "rev-1", "role": "reviewer"}],
+        "reviewer_assignments": [
+            {"id": "ra-1", "reviewer_user_id": "rev-1", "application_id": app_id,
+             "application_track": "tir", "state": "declined",
+             "declined_at": "2026-10-01T00:00:00Z", "reassigned_to": None},
+        ],
+    })
+    app.dependency_overrides[get_current_user] = _override_user(["leadership"])
+
+    res = client.post(
+        f"/leadership/applications/{app_id}/reviewers",
+        json={"reviewer_user_ids": ["rev-1"]},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["results"][0]["status"] == "created"
+    revives = [(p, eqs) for name, p, eqs in fake.updates if name == "reviewer_assignments"]
+    assert revives and revives[0][0]["declined_at"] is None
+    assert [p for name, p in fake.inserts if name == "reviewer_assignments"] == []

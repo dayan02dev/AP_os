@@ -84,10 +84,9 @@ async def assign_reviewers(
     created | already_assigned | not_a_reviewer. 404 if the app doesn't exist.
     Track is server-inferred (matches the DELETE-unassign convention).
 
-    v1 treats ANY existing row for a (application_id, application_track,
-    reviewer_user_id) triple as already_assigned — including declined rows.
-    This keeps the logic simple; a future iteration can filter out declined
-    rows to allow re-assignment after a decline.
+    Only an ACTIVE row (declined_at and reassigned_to both NULL) counts as
+    already_assigned. A declined/reassigned row is reactivated in place and
+    reported as created — same rule as admin_query.bulk_assign_reviewer_apps.
     """
     track, _row = _resolve_app(application_id)
     sb = get_admin_client()
@@ -103,13 +102,20 @@ async def assign_reviewers(
 
     existing_rows = (
         sb.table("reviewer_assignments")
-        .select("reviewer_user_id")
+        .select("id,reviewer_user_id,declined_at,reassigned_to")
         .eq("application_id", application_id)
         .eq("application_track", track)
         .execute()
         .data
     ) or []
-    already = {r["reviewer_user_id"] for r in existing_rows}
+    already = {
+        r["reviewer_user_id"] for r in existing_rows
+        if r.get("declined_at") is None and r.get("reassigned_to") is None
+    }
+    inactive = {
+        r["reviewer_user_id"]: r.get("id") for r in existing_rows
+        if r["reviewer_user_id"] not in already and r.get("id")
+    }
 
     now = datetime.now(UTC).isoformat()
     results: list[dict] = []
@@ -119,6 +125,23 @@ async def assign_reviewers(
             continue
         if rid in already:
             results.append({"reviewer_user_id": rid, "status": "already_assigned"})
+            continue
+        if rid in inactive:
+            sb.table("reviewer_assignments").update({
+                "declined_at": None, "decline_reason": None, "reassigned_to": None,
+                "assigned_by": user["user_id"], "assigned_at": now,
+                "state": "pending", "due_at": body.due_at,
+            }).eq("id", inactive[rid]).execute()
+            already.add(rid)
+            write_audit(
+                actor_user_id=user["user_id"],
+                actor_role="leadership",
+                action_type="reviewer.assigned",
+                target_table="reviewer_assignments",
+                target_id=f"{application_id}:{rid}",
+                after={"application_track": track, "due_at": body.due_at, "revived": True},
+            )
+            results.append({"reviewer_user_id": rid, "status": "created"})
             continue
         row = {
             "application_id": application_id,

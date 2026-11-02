@@ -606,6 +606,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
             "track":            eff,
             "native_track":     r["track"],
             "name":             name,
+            "org":              r.get("basic_org"),
             "founder":          r.get("basic_full_name"),
             "industry":         (ind or {}).get("label"),
             "stage":            _stage_label({**r, "track": r["track"]}),

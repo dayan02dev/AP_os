@@ -127,6 +127,14 @@ def test_pipeline_row_gate1_decision_null_when_undecided(sb):
     assert b["decided_at"] is None
 
 
+def test_pipeline_row_carries_org(sb):
+    """ADM-F6: the Applications search box filters on row.org client-side,
+    so the pipeline row must carry basic_org."""
+    rows = _rows()
+    assert rows["A"]["org"] == "Acme"
+    assert all("org" in r for r in rows.values())
+
+
 def test_pipeline_row_carries_email(sb):
     assert _rows()["A"]["email"] == "asha@artpark.in"
 
