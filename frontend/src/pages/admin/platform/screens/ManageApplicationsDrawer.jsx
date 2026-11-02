@@ -2,9 +2,8 @@
 // View a reviewer's assigned applications grouped by batch, bulk-assign new
 // applications (multi-select), and bulk-remove assigned ones (select-all and
 // select-all-in-batch). Removing an already-reviewed app deletes the
-// assignment and keeps the review; such apps (and any reviewed app whose
-// assignment is gone — `detached`) are listed separately as "Reviewed — no
-// longer assigned", without a Remove button, and can be assigned back.
+// assignment and keeps the review; the backend then stops listing it here
+// (it lists live assignments only), and it can be assigned back.
 //
 // Reads:  GET /admin/platform/reviewers/{id}/applications (useAdminData "reviewerApplications")
 //         GET /admin/platform/applications               (useAdminData "pipeline", assign picker)
@@ -35,10 +34,8 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
   const [err, setErr] = useState(null);
   const [notice, setNotice] = useState(null);
 
-  const allRows = apps.data?.applications ?? [];
-  // Live assignments vs reviewed-but-unassigned rows (no assignment left).
-  const assigned = useMemo(() => allRows.filter(a => !a.detached), [allRows]);
-  const detached = useMemo(() => allRows.filter(a => a.detached), [allRows]);
+  // Live assignments only (admin_query.fetch_reviewer_applications).
+  const assigned = useMemo(() => apps.data?.applications ?? [], [apps.data]);
   const assignedIds = useMemo(() => new Set(assigned.map(a => a.id)), [assigned]);
   const reviewerBatches = Array.isArray(reviewer.batches)
     ? reviewer.batches.map(b => (typeof b === "string" ? b : b.name))
@@ -348,39 +345,6 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
                   </div>
                 );
               })
-            )}
-
-            {!apps.loading && !apps.error && detached.length > 0 && (
-              <div data-testid="detached-group" style={{ marginTop: 8 }}>
-                <div style={{ padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
-                  <span className="os-chip">Reviewed — no longer assigned</span>
-                  <span className="os-text-dim"> ({detached.length})</span>
-                </div>
-                <div className="os-text-xs os-text-dim" style={{ marginBottom: 6 }}>
-                  The reviewer submitted a review, then the assignment was removed. The review is kept;
-                  assign the app again from the list above if needed.
-                </div>
-                <table className="os-table">
-                  <thead>
-                    <tr><th>Project</th><th>Industry</th><th>Status</th></tr>
-                  </thead>
-                  <tbody>
-                    {detached.map(a => (
-                      <tr key={`${a.track}:${a.id}`} style={{ opacity: 0.75 }}>
-                        <td>
-                          <div className="startup">{a.project}</div>
-                          <div className="os-text-xs os-text-dim">
-                            <span className="os-chip" style={{ marginRight: 6 }}>{trackLabel(a.effective_track || a.track)}</span>
-                            {a.display_id ? relabelDisplayId(a.display_id) : null}
-                          </div>
-                        </td>
-                        <td className="os-text-soft">{a.industry}</td>
-                        <td><span className="os-chip">{a.chip}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             )}
           </div>
         </div>

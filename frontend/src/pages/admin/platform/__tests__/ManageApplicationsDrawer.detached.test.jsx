@@ -1,9 +1,9 @@
-// Manage Applications drawer — reviewed-but-unassigned ("detached") apps
-// (ADM-F8 / AF-3). The backend lists a reviewer's submitted reviews even when
-// the assignment is gone (`detached: true`). Those must not look like live
-// assignments: no Remove button, not counted as assigned, and the app can be
-// assigned back from the picker. Removing a reviewed app reports that the
-// assignment was removed and the review kept (the backend's
+// Manage Applications drawer — reviewed-then-unassigned apps (ADM-F8 / AF-3 /
+// DR-6). The backend (admin_query.fetch_reviewer_applications) lists only live
+// assignments, so a reviewed app whose assignment was removed is simply not in
+// the drawer list and can be assigned back from the picker; there is no
+// separate "Reviewed — no longer assigned" group. Removing a reviewed app
+// reports that the assignment was removed and the review kept (the backend's
 // `skipped_submitted` status means exactly that — the row IS deleted).
 import React from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -54,27 +54,24 @@ describe("adaptReviewerApplication", () => {
   });
 });
 
-describe("ManageApplicationsDrawer with a reviewed-but-unassigned app", () => {
+describe("ManageApplicationsDrawer after a reviewed app was unassigned", () => {
   beforeEach(() => {
+    // Backend contract: only live assignments come back.
     mockData([
-      { id: "V1", track: "sip", project: "Reviewed Co", status: "evaluated", batch: null,
-        reviewStatus: "submitted", assignment_id: null, detached: true },
       { id: "V3", track: "sip", project: "Live Co", status: "under_review", batch: null,
         reviewStatus: "pending", assignment_id: "as-3" },
     ], PIPE);
   });
 
-  it("shows the detached app in its own group, not counted as assigned, with no Remove button", () => {
+  it("lists only live assignments and has no 'no longer assigned' group", () => {
     render(<ManageApplicationsDrawer reviewer={{ id: "r1", name: "R", batches: [] }} onClose={() => {}} />);
     expect(screen.getByText("Assigned Applications (1)")).toBeTruthy();
-    const group = screen.getByTestId("detached-group");
-    expect(within(group).getByText("Reviewed Co")).toBeTruthy();
-    expect(within(group).queryByRole("button", { name: "Remove" })).toBeNull();
-    // Only the live row has a Remove button.
+    expect(screen.queryByTestId("detached-group")).toBeNull();
+    expect(screen.queryByText(/no longer assigned/)).toBeNull();
     expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(1);
   });
 
-  it("select-all removes only live assignments", async () => {
+  it("select-all removes the live assignments", async () => {
     adminPlatformApi.bulkRemoveReviewerApps.mockResolvedValue({ results: [{ status: "removed" }] });
     render(<ManageApplicationsDrawer reviewer={{ id: "r1", name: "R", batches: [] }} onClose={() => {}} />);
     fireEvent.click(screen.getByLabelText("Select all applications"));
