@@ -26,8 +26,18 @@
 // Countdown (rule 3): derived from editWindowExpiresAt (server locked_at) vs
 // Date.now(), ticking locally. Expired → fields locked, Submit disabled,
 // Re-open hidden. No review yet / draft → no lock, fields open.
+//
+// Prev/Next + auto-advance: the queue is walked exactly as the reviewer
+// filtered and sorted it in My Queue (lib/reviewerQueueFilters.js, reading
+// the queue's sticky filters), never into closed or unassigned rows. The queue
+// is refetched on every app change and after a submit; a first submit then
+// auto-opens the next app still to review in that filter.
+//
+// Panel feedback (contract C2): once the reviewer has submitted, the other
+// reviewers' feedback and the admins' comments are shown
+// (reviewerApi.getPanelFeedback); before that, only a muted note.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AiSections from "../../../components/AiSections.jsx";
 import FullApplication from "../../../components/FullApplication.jsx";
@@ -35,6 +45,12 @@ import VipMemoPreview from "../../../components/VipMemoPreview.jsx";
 import VipNavigatorMemo from "../../../components/VipNavigatorMemo.jsx";
 import { saveBlob, useVipMemoV2, vipMemoV2Filename } from "../../../lib/vipMemoV2.js";
 import ProfilePills from "../../../components/ProfilePills.jsx";
+import ReviewerFeedback, { AdminDecisionList } from "../../../components/ReviewerFeedback.jsx";
+import {
+  describeQueueFilters,
+  queueNavigation,
+  readQueueFilters,
+} from "../../../lib/reviewerQueueFilters.js";
 import ReviewTabs, { VIP_MEMO_TABS } from "../../leadership/review/ReviewTabs.jsx";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
@@ -66,12 +82,20 @@ const V1_PILOT_IDS = new Set([
 
 const MAX_FLAGS = 8;
 
-// Admin's AI Memo / Application strip, minus Reviews: reviewers never see
-// each other's reviews.
+// Admin's AI Memo / Application strip, minus Reviews: other reviewers'
+// feedback is shown only after the reviewer submits (Panel feedback below).
 const REVIEWER_MEMO_TABS = VIP_MEMO_TABS.filter((t) => t.id !== "reviews");
 
 // Server codes meaning "this review can no longer be written" (reviewer.py).
-const LOCK_CODES = { application_decided: "decided", assignment_removed: "unassigned" };
+// not_your_assignment is the 403 a write gets once the assignment row is gone.
+const LOCK_CODES = {
+  application_decided: "decided",
+  assignment_removed: "unassigned",
+  not_your_assignment: "unassigned",
+};
+
+// How long "Submitted ✓ — opening next…" stays up before moving on.
+const ADVANCE_DELAY_MS = 2500;
 
 // Fallback labels when the server sends no admin_decision bucket (e.g. a 409
 // lock discovered mid-session). Never show a raw DB status to the reviewer.
@@ -82,16 +106,18 @@ const STATUS_LABEL = {
   onboarded: "Onboarded",
 };
 
-function readOnlyBanner(reason, appStatus, adminDecision) {
+function readOnlyBanner(reason, appStatus, adminDecision, hasSubmitted) {
   if (reason === "decided") {
     const label = DECISION_LABEL[adminDecision] || STATUS_LABEL[appStatus] || "decided";
     return `Decision already made (${label}) — this evaluation is read-only.`;
   }
-  return "You are no longer assigned to this application — your submitted review is kept and shown read-only.";
+  return hasSubmitted
+    ? "This application is no longer assigned to you — your submitted review is kept and shown read-only."
+    : "This application is no longer assigned to you — it can no longer be edited.";
 }
 
 // ── Loader ─────────────────────────────────────────────────────────────
-export default function ReviewerEval({ track, appId, onBack, onOpen }) {
+export default function ReviewerEval({ track, appId, onBack, onOpen, advanceDelayMs = ADVANCE_DELAY_MS }) {
   const { data: content, loading, error, reload } = useAsync(
     () => reviewerApi.getContent(track, appId),
     [track, appId],
@@ -100,24 +126,58 @@ export default function ReviewerEval({ track, appId, onBack, onOpen }) {
   // no queue lookup, so deep links work regardless of queue membership.
   const aiBlock = content ? content.ai : null;
 
-  // Separate concern: fetch the reviewer's queue ONCE only to resolve the
-  // current app's position so the header can offer Prev/Next navigation
-  // through the ordered queue. This is intentionally NOT used for the AI block
-  // (that stays sourced from content.ai above) — queue rows carry only a
-  // summary `ai`, and a deep-linked app may not be in the queue at all.
-  const { data: queue } = useAsync(() => reviewerApi.getQueue(), []);
-  const neighbors = useMemo(() => {
-    if (!queue || !onOpen) return { prev: null, next: null, hasPosition: false };
+  // Separate concern: the reviewer's queue, only to place the current app for
+  // Prev/Next and the post-submit advance. Refetched on every app change (the
+  // component stays mounted across /eval/:a -> /eval/:b) and after a submit,
+  // so statuses and removed assignments are current. Failures are quiet: the
+  // nav simply stays hidden.
+  const [queue, setQueue] = useState(null);
+  const queueReq = useRef(0);
+  const refreshQueue = useCallback(async () => {
+    const id = ++queueReq.current;
+    try {
+      const rows = await reviewerApi.getQueue();
+      const list = Array.isArray(rows) ? rows : [];
+      if (id === queueReq.current) setQueue(list);
+      return list;
+    } catch {
+      return null;
+    }
+  }, []);
+  useEffect(() => { refreshQueue(); }, [appId, refreshQueue]);
+
+  // The current app's row as it was when it was opened: its position anchors
+  // Prev/Next, so a fresh row that now sorts elsewhere (e.g. by status after
+  // submitting) does not move the reviewer's place in the list.
+  const anchorRef = useRef({ appId: null, row: null });
+  const anchorFor = (rows) => {
+    const id = String(appId);
+    if (anchorRef.current.appId !== id) {
+      const row = (rows || []).find((q) => String(q.id) === id) || null;
+      if (!row) return null;
+      anchorRef.current = { appId: id, row };
+    }
+    return anchorRef.current.row;
+  };
+
+  const nav = useMemo(() => {
+    if (!queue || !onOpen) return { prev: null, next: null, hasPosition: false, remaining: 0, filterLabel: "" };
+    const filters = readQueueFilters();
     // Queue row click opens /reviewer/eval/{track}/{row.id}, so the route
     // appId matches row.id.
-    const idx = queue.findIndex((q) => String(q.id) === String(appId));
-    if (idx === -1) return { prev: null, next: null, hasPosition: false };
-    return {
-      prev: idx > 0 ? queue[idx - 1] : null,
-      next: idx < queue.length - 1 ? queue[idx + 1] : null,
-      hasPosition: true,
-    };
-  }, [queue, appId, onOpen]);
+    const n = queueNavigation(queue, filters, appId, { anchorRow: anchorFor(queue) });
+    return { ...n, filterLabel: describeQueueFilters(filters) };
+  }, [queue, appId, onOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After a successful first submit: refetch the queue and find the next app
+  // still to review in the reviewer's filter.
+  const findNextAfterSubmit = async () => {
+    const fresh = await refreshQueue();
+    const rows = fresh || queue;
+    const filters = readQueueFilters();
+    const n = queueNavigation(rows, filters, appId, { anchorRow: anchorFor(rows) });
+    return { ...n, filtered: Boolean(describeQueueFilters(filters)) };
+  };
 
   if (loading)
     return (
@@ -140,10 +200,62 @@ export default function ReviewerEval({ track, appId, onBack, onOpen }) {
       content={content}
       aiBlock={aiBlock}
       onBack={onBack}
-      onPrev={neighbors.prev && onOpen ? () => onOpen(neighbors.prev.track, neighbors.prev.id) : null}
-      onNext={neighbors.next && onOpen ? () => onOpen(neighbors.next.track, neighbors.next.id) : null}
-      showNav={neighbors.hasPosition}
+      onPrev={nav.prev && onOpen ? () => onOpen(nav.prev.track, nav.prev.id) : null}
+      onNext={nav.next && onOpen ? () => onOpen(nav.next.track, nav.next.id) : null}
+      showNav={nav.hasPosition}
+      navHint={nav.hasPosition && nav.filterLabel ? `Filtered: ${nav.filterLabel} — ${nav.remaining} left` : null}
+      onOpenApp={onOpen}
+      findNextAfterSubmit={onOpen ? findNextAfterSubmit : null}
+      advanceDelayMs={advanceDelayMs}
     />
+  );
+}
+
+// ── Panel feedback (other reviewers + admin comments, after submit) ─────
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function PanelFeedback({ submitted, panel }) {
+  const head = <div className="os-card-title os-mb-sm">Panel feedback</div>;
+  if (!submitted || (panel && panel.available === false)) {
+    return (
+      <div className="os-card soft">
+        {head}
+        <div className="os-text-sm os-text-dim">Visible after you submit your review.</div>
+      </div>
+    );
+  }
+  // Loading, 404 or any error: stay quiet.
+  if (!panel || panel === "error") return null;
+  const reviews = Array.isArray(panel.reviews) ? panel.reviews : [];
+  const decisions = Array.isArray(panel.admin_decisions) ? panel.admin_decisions : [];
+  return (
+    <div className="os-card soft" data-testid="panel-feedback">
+      {head}
+      {reviews.length === 0 && decisions.length === 0 && (
+        <div className="os-text-sm os-text-dim">No feedback from other reviewers or admins yet.</div>
+      )}
+      {reviews.map((r) => (
+        <article key={r.id} className="review-card" style={{ marginBottom: 12 }}>
+          <header className="os-row between" style={{ alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 600 }}>{r.reviewer_name || "Reviewer"}</span>
+            <span className="os-text-xs os-text-dim">
+              {typeof r.overall === "number" && (
+                <span style={{ fontWeight: 700, color: "var(--ink)", marginRight: 6 }}>{r.overall.toFixed(1)}</span>
+              )}
+              {fmtDate(r.submitted_at)}
+            </span>
+          </header>
+          <ReviewerFeedback review={r} />
+        </article>
+      ))}
+      <AdminDecisionList decisions={decisions} title="Admin comments" />
+    </div>
   );
 }
 
@@ -211,7 +323,10 @@ function RubricModal({ onClose, track }) {
 }
 
 // ── Eval form ───────────────────────────────────────────────────────────
-function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav }) {
+function ReviewerEvalForm({
+  content, aiBlock, onBack, onPrev, onNext, showNav, navHint,
+  onOpenApp, findNextAfterSubmit, advanceDelayMs = ADVANCE_DELAY_MS,
+}) {
   // The application object the form reads from. We adapt the content payload
   // to the fields the prototype referenced (name/track/id/assignmentId for the
   // payload; sections/attachments for the full view; ai for the baseline panel).
@@ -247,8 +362,24 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
   const [flagInput, setFlagInput] = useState("");
   const [saveState, setSaveState] = useState("idle");
   const [fieldErrors, setFieldErrors] = useState({ notes: false, dimensions: [] });
-  // Set when a write comes back 409 application_decided / assignment_removed.
+  // Set when a write comes back 409 application_decided / assignment_removed
+  // (or 403 not_your_assignment).
   const [serverLock, setServerLock] = useState(null);
+  // Post-submit auto-advance: { kind: "pending", target, filtered } while the
+  // "opening next…" banner is up, { kind: "done", filtered } when nothing is
+  // left in the filter.
+  const [advance, setAdvance] = useState(null);
+
+  // Panel feedback is fetched only once this reviewer has submitted.
+  const [panel, setPanel] = useState(null);
+  useEffect(() => {
+    if (!submitted) return undefined;
+    let live = true;
+    Promise.resolve()
+      .then(() => reviewerApi.getPanelFeedback(content.track, content.id))
+      .then((d) => { if (live) setPanel(d || "error"); }, () => { if (live) setPanel("error"); });
+    return () => { live = false; };
+  }, [submitted, content.track, content.id]);
 
   const expired = false; // edit lock removed 2026-06-29 — reviewers edit anytime
 
@@ -349,6 +480,33 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
+
+  // Auto-advance: open the next app after a short pause — but never while an
+  // autosave is still in flight (it would be dropped by the navigation).
+  // The parent's onOpen is a fresh function each render; a ref keeps the
+  // countdown from restarting when the shell re-renders.
+  const openAppRef = useRef(onOpenApp);
+  openAppRef.current = onOpenApp;
+  useEffect(() => {
+    if (!advance || advance.kind !== "pending") return undefined;
+    let t;
+    const tick = () => {
+      if (savingRef.current) { t = setTimeout(tick, 250); return; }
+      if (openAppRef.current) openAppRef.current(advance.target.track, advance.target.id);
+    };
+    t = setTimeout(tick, advanceDelayMs);
+    return () => clearTimeout(t);
+  }, [advance, advanceDelayMs]);
+
+  const startAdvance = async () => {
+    if (!findNextAfterSubmit) return;
+    let res = null;
+    try { res = await findNextAfterSubmit(); } catch { res = null; }
+    if (!res || !res.hasPosition) return;
+    setAdvance(res.upNext
+      ? { kind: "pending", target: res.upNext, filtered: res.filtered }
+      : { kind: "done", filtered: res.filtered });
+  };
 
   useEffect(() => {
     if (!dirtyRef.current || !editable) return undefined;
@@ -455,6 +613,8 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
 
   const submitEval = async () => {
     if (!validateForSubmit()) return;
+    // Only a FIRST submit moves on; re-submitting an edit stays put.
+    const firstSubmit = !submitted;
     setSubmitError(null);
     setSaveState("saving");
     try {
@@ -476,6 +636,7 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
       setReopened(false);
       setSaveState("saved");
       setFieldErrors({ notes: false, dimensions: [] });
+      if (firstSubmit) startAdvance();
     } catch (err) {
       setSaveState("error");
       // If a draft already exists, retry the submit as a PATCH on its id.
@@ -485,10 +646,12 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
         try {
           const res = await reviewerApi.patchReview(id, evaluationToPatch(currentEval, { draft: false }));
           if (res?.editWindowExpiresAt) setExpiresAt(res.editWindowExpiresAt);
+          dirtyRef.current = false;
           setSubmitted(true);
           setReopened(false);
           setSaveState("saved");
           setFieldErrors({ notes: false, dimensions: [] });
+          if (firstSubmit) startAdvance();
           return;
         } catch (err2) {
           applyServerError(err2);
@@ -499,7 +662,10 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
     }
   };
 
-  const reopenForEdit = () => setReopened(true);
+  const reopenForEdit = () => {
+    setAdvance(null);
+    setReopened(true);
+  };
 
   if (viewApp) {
     return (
@@ -575,7 +741,29 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, fontSize: 13,
                 background: "#fff4d6", border: "1px solid #e6c34d", color: "#5c4800" }}
             >
-              {readOnlyBanner(readOnlyReason, content.app_status, content.admin_decision)}
+              {readOnlyBanner(readOnlyReason, content.app_status, content.admin_decision, submitted)}
+            </div>
+          )}
+          {advance && (
+            <div
+              role="status"
+              className="rv-advance-banner"
+              style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, fontSize: 13,
+                background: "#eaf6ef", border: "1px solid #9fd3b4", color: "#1d5a37",
+                display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}
+            >
+              {advance.kind === "pending" ? (
+                <>
+                  <span>Submitted ✓ — opening next in your {advance.filtered ? "filter" : "queue"}…</span>
+                  <button className="os-btn ghost sm" onClick={() => setAdvance(null)}>Stay here</button>
+                  <a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}>Back to queue</a>
+                </>
+              ) : (
+                <>
+                  <span>Submitted ✓ — All done in this {advance.filtered ? "filter" : "queue"}.</span>
+                  <button className="os-btn sm" onClick={onBack}>Back to queue</button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -583,7 +771,8 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
           {/* Top line — navigate between applications in the queue. Hidden on
               deep links where the current app isn't in the reviewer's queue. */}
           {showNav && (
-            <div className="os-row gap-sm">
+            <div className="os-row gap-sm" style={{ alignItems: "center", flexWrap: "wrap" }}>
+              {navHint && <span className="os-text-xs os-text-dim rv-nav-hint">{navHint}</span>}
               <button className="os-btn ghost sm" onClick={onPrev} disabled={!onPrev}>
                 ← Prev application
               </button>
@@ -733,6 +922,8 @@ function ReviewerEvalForm({ content, aiBlock, onBack, onPrev, onNext, showNav })
               </div>
             </div>
           )}
+
+          <PanelFeedback submitted={submitted} panel={panel} />
         </div>
 
         {/* RIGHT — scoring */}
