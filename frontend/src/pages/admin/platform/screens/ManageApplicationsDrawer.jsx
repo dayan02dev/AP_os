@@ -60,7 +60,7 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
   }, [assigned]);
 
   // Candidate apps for assignment: open for review (not closed) and not
-  // already live-assigned, filtered by name / industry / founder / email /
+  // already live-assigned, filtered by name / org / industry / founder / email /
   // display ID.
   const candidates = useMemo(() => {
     const all = (pipeline.data?.startups ?? []).filter(s =>
@@ -70,7 +70,7 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
     const idq = q.match(ID_QUERY);
     return all.filter(s =>
       (idq && idDigits(s.applicationId) === idq[1])
-      || `${s.name || ""} ${s.domain || ""} ${(s.founders || []).join(" ")} ${s.email || ""} ${s.applicationId || ""}`
+      || `${s.name || ""} ${s.org || ""} ${s.domain || ""} ${(s.founders || []).join(" ")} ${s.email || ""} ${s.applicationId || ""}`
         .toLowerCase().includes(q));
   }, [pipeline.data, assignedIds, search]);
 
