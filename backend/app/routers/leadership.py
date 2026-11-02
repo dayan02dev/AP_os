@@ -505,7 +505,10 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
     track, app_row = found
 
     ai_screening = applications_query.fetch_ai_screening_for(application_id, track)
-    reviews = applications_query.fetch_reviews_for(application_id, track)
+    # Submitted reviews only: a reviewer's in-progress draft is theirs alone
+    # (FD-4). Detached/assigned counts only ever looked at submitted rows.
+    reviews = [r for r in applications_query.fetch_reviews_for(application_id, track)
+               if r.get("submitted_at")]
     reviewer_assignments = applications_query.fetch_reviewer_assignments_for(
         application_id, track,
     )
@@ -574,6 +577,9 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
         "reviews":              reviews,
         "reviewer_assignments": reviewer_assignments,
         "status_history":       status_history,
+        # Full decision history with rationale (keyed by NATIVE track).
+        "admin_decisions":      applications_query.fetch_admin_decisions_for(
+                                    application_id, track),
     }
 
 @router.post(

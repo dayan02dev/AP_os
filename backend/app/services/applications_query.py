@@ -858,6 +858,54 @@ def fetch_status_history_for(
         return []
 
 
+_ADMIN_DECISION_KEYS = ("id", "gate_stage", "decision", "rationale", "decided_by", "decided_at")
+
+
+def fetch_admin_decisions_for(
+    application_id: str, track: str, *, email_fallback: bool = True,
+) -> list[dict[str, Any]]:
+    """Every admin_decisions row for `(application_id, NATIVE track)`, newest
+    first, each with ``decided_by_name`` (profiles.full_name, else email when
+    ``email_fallback``). Failure-tolerant: a DB error yields []."""
+    try:
+        sb = get_admin_client()
+        rows = (
+            sb.table("admin_decisions")
+            .select("*")
+            .eq("application_id", application_id)
+            .eq("application_track", track)
+            .order("decided_at", desc=True)
+            .execute()
+            .data
+        ) or []
+    except Exception as exc:
+        log.warning(
+            "applications_query.fetch_admin_decisions_for failed",
+            extra={"track": track, "id": application_id, "err": str(exc)},
+        )
+        return []
+    rows = [r for r in rows
+            if r.get("application_id") == application_id and r.get("application_track") == track]
+    rows.sort(key=lambda r: r.get("decided_at") or "", reverse=True)
+
+    ids = sorted({r["decided_by"] for r in rows if r.get("decided_by")})
+    names: dict[str, str | None] = {}
+    if ids:
+        try:
+            profs = (sb.table("profiles").select("id,full_name,email")
+                     .in_("id", ids).execute().data) or []
+            names = {p["id"]: p.get("full_name") or (p.get("email") if email_fallback else None)
+                     for p in profs if p.get("id")}
+        except Exception as exc:
+            log.warning("applications_query.fetch_admin_decisions_for names failed",
+                        extra={"err": str(exc)})
+    return [
+        {**{k: r.get(k) for k in _ADMIN_DECISION_KEYS},
+         "decided_by_name": names.get(r.get("decided_by")) if r.get("decided_by") else None}
+        for r in rows
+    ]
+
+
 def with_detached_reviewers(
     reviewer_assignments: list[dict[str, Any]] | None,
     reviews: list[dict[str, Any]] | None,
