@@ -1,14 +1,15 @@
-"""Reviewer rubric v3.1 — single source for the modal, inline panel, and the
+"""Reviewer rubric v3.2 — single source for the modal, inline panel, and the
 scoring.md download. Weights MUST stay in lockstep with
-reviewer_query._SCORE_WEIGHTS (problem 22 / solution 30 / tech 22 / founders 14
-/ commit 12). Anchor text is transcribed verbatim from the REVIEWER-UI
+reviewer_query._SCORE_WEIGHTS (problem 22 / solution 30 / tech 22 / founders 14,
+normalised over 88). v3.2 removed the "Commitment to be fully available"
+criterion from the reviewer rubric (AI screening still scores commitment). Anchor text is transcribed verbatim from the REVIEWER-UI
 prototype's RubricModal. Dimension names match the scoring-slider labels
 (frontend reviewer/v2/ui.jsx CRIT_LABELS) so the modal and sliders agree."""
 
 import copy
 
-RUBRIC_VERSION = "v3.1"
-RUBRIC_DATE = "2026-04-01"  # Date the v3.1 rubric revision was ratified (shown in the modal header).
+RUBRIC_VERSION = "v3.2"
+RUBRIC_DATE = "2026-11-03"  # Date the v3.2 rubric revision was ratified (shown in the modal header).
 
 RUBRIC_DIMENSIONS = [
     {"key": "problem", "name": "Problem Statement Impact and Importance", "weight": 22,
@@ -39,13 +40,6 @@ RUBRIC_DIMENSIONS = [
          "6": "2 founders, some skill overlap, full-time",
          "4": "Solo founder with strong background OR co-founders with weak match",
          "2": "Solo founder, generalist, part-time"}},
-    {"key": "commit", "name": "Commitment to be fully available", "weight": 12,
-     "anchors": {
-         "10": "Quit prior job, invested own capital, 2+ years runway personal",
-         "8": "Full-time, some personal capital",
-         "6": "Full-time, no personal capital",
-         "4": "Partial commitment, \"validating\"",
-         "2": "Side project"}},
 ]
 
 RUBRIC_NOTES = [

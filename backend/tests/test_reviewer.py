@@ -631,8 +631,8 @@ def test_submit_rejects_more_than_8_flags(client, monkeypatch, _clear_overrides)
 def test_submit_response_includes_weighted_overall_and_lock(
     client, monkeypatch, _clear_overrides,
 ):
-    """Weights: problem 22 / solution 30 / tech 22 / founders 14 / commitment 12.
-    8*.22 + 6*.30 + 7*.22 + 9*.14 + 5*.12 = 6.96"""
+    """Rubric v3.2 weights: problem 22 / solution 30 / tech 22 / founders 14, /88
+    (commitment ignored). (176 + 180 + 154 + 126) / 88 = 7.23"""
     me = "rev-a"
     _seed_one_assignment(monkeypatch, me)
     app.dependency_overrides[get_current_user] = _override_user(me)
@@ -643,7 +643,7 @@ def test_submit_response_includes_weighted_overall_and_lock(
     r = client.post("/reviewer/reviews", json=body)
     assert r.status_code == 201, r.text
     payload = r.json()
-    assert payload["overall"] == 6.96
+    assert payload["overall"] == 7.23
     assert payload["editWindowExpiresAt"] is not None
 
 
@@ -912,7 +912,8 @@ def test_patch_flip_draft_to_submitted_rejects_incomplete(
     client, monkeypatch, _clear_overrides,
 ):
     """The draft → submitted flip must enforce the same completeness rule
-    that POST enforces: all 5 scores + recommendation required."""
+    that POST enforces: the 4 rubric scores + recommendation required
+    (score_commitment is optional since rubric v3.2)."""
     me = "rev-a"
     _freeze_datetime(monkeypatch, "2026-05-18T10:00:00Z")
     _install_db(monkeypatch, {
@@ -938,7 +939,7 @@ def test_patch_flip_draft_to_submitted_rejects_incomplete(
     missing = set(body["detail"]["missing"])
     assert "score_tech" in missing
     assert "score_founders" in missing
-    assert "score_commitment" in missing
+    assert "score_commitment" not in missing
     assert "recommendation" in missing
 
 
@@ -1101,9 +1102,8 @@ def test_completed_list_computes_weighted_overall(
     app.dependency_overrides[get_current_user] = _override_user(me)
     r = client.get("/reviewer/reviews?mine=true&locked=true")
     rows = r.json()["reviews"]
-    # Weights: P22 S30 T22 F14 C12 → (8*22 + 6*30 + 7*22 + 9*14 + 5*12) / 100
-    # = (176 + 180 + 154 + 126 + 60) / 100 = 696/100 = 6.96
-    assert abs(rows[0]["score_overall_mine"] - 6.96) < 0.01
+    # rubric v3.2 (commitment ignored): (176 + 180 + 154 + 126) / 88 = 7.23
+    assert abs(rows[0]["score_overall_mine"] - 7.23) < 0.01
 
 
 def test_completed_list_requires_mine_true(
@@ -1857,9 +1857,9 @@ def test_rubric_endpoint_versioned_and_weighted(client, _clear_overrides):
     r = client.get("/reviewer/rubric?track=tir")
     assert r.status_code == 200
     body = r.json()
-    assert body["version"] == "v3.1"
-    assert sum(d["weight"] for d in body["dimensions"]) == 100
-    assert [d["key"] for d in body["dimensions"]] == ["problem", "solution", "tech", "founders", "commit"]
+    assert body["version"] == "v3.2"
+    assert sum(d["weight"] for d in body["dimensions"]) == 88
+    assert [d["key"] for d in body["dimensions"]] == ["problem", "solution", "tech", "founders"]
     assert body["title"].startswith("TIR")
     # every dimension has all 5 anchor tiers
     for d in body["dimensions"]:
@@ -1885,7 +1885,6 @@ def test_rubric_weights_match_score_weights(client, _clear_overrides):
         "solution":  "score_solution",
         "tech":      "score_tech",
         "founders":  "score_founders",
-        "commit":    "score_commitment",
     }
     rubric = rubric_service.get_rubric("tir")
     for dim in rubric["dimensions"]:
@@ -1911,10 +1910,11 @@ def test_rubric_anchor_text_is_locked(client, _clear_overrides):
         "Solution maps 1:1 to problem · differentiated vs all known alternatives"
     )
 
-    # dimensions[4] is 'commit' (weight 12)
-    commit_dim = dims[4]
-    assert commit_dim["key"] == "commit"
-    assert commit_dim["anchors"]["4"] == 'Partial commitment, "validating"'
+    # dimensions[3] is 'founders' (weight 14); 'commit' was removed in v3.2.
+    founders_dim = dims[3]
+    assert founders_dim["key"] == "founders"
+    assert founders_dim["anchors"]["2"] == "Solo founder, generalist, part-time"
+    assert len(dims) == 4
 
 
 # ─── GET /reviewer/queue ──────────────────────────────────────────────────

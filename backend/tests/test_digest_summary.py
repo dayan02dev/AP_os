@@ -18,7 +18,7 @@ def test_groups_sorts_and_scores():
     r1 = groups[0]
     assert r1["count"] == 2
     assert r1["items"][0]["track_label"] == "VIP"  # sip → VIP
-    assert r1["items"][0]["overall"] == 8.64        # (9*22+9*30+8*22+8*14+9*12)/100
+    assert r1["items"][0]["overall"] == 8.59        # (9*22+9*30+8*22+8*14)/88, commitment ignored
     assert r1["items"][1]["overall"] is None         # incomplete (score_solution None)
 
 

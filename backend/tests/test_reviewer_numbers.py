@@ -402,5 +402,4 @@ def test_rubric_names_match_slider_labels():
         "solution": "Completeness, Depth of Solution",
         "tech": "Technical Depth",
         "founders": "Professional Profile of Founder",
-        "commit": "Commitment to be fully available",
-    }
+    }  # rubric v3.2: "commit" criterion removed

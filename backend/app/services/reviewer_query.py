@@ -364,26 +364,31 @@ def fetch_application_for_reviewer(
     }
 
 
-# Score weights per spec §4.3 — keep in lockstep with frontend
-# ScoreSegmentInput's display labels and the leadership AI overall calc.
+# Reviewer score weights (rubric v3.2) — keep in lockstep with rubric.py and
+# frontend lib/reviewScore.js. score_commitment was dropped from the reviewer
+# rubric on 2026-11-03: it is ignored for ALL reviews (historical included)
+# so every app is on one scale. AI screening scores are separate and still
+# include commitment.
 _SCORE_WEIGHTS = {
     "score_problem":    22,
     "score_solution":   30,
     "score_tech":       22,
     "score_founders":   14,
-    "score_commitment": 12,
 }
+_SCORE_WEIGHT_TOTAL = sum(_SCORE_WEIGHTS.values())  # 88
 
 
 def _weighted_overall(review: dict) -> float | None:
-    """Returns None iff any required score is missing."""
+    """(22*problem + 30*solution + 22*tech + 14*founders) / 88.
+
+    Returns None iff one of those four scores is missing."""
     total = 0
     for col, w in _SCORE_WEIGHTS.items():
         v = review.get(col)
         if v is None:
             return None
         total += v * w
-    return round(total / 100, 2)
+    return round(total / _SCORE_WEIGHT_TOTAL, 2)
 
 
 def fetch_completed_reviews(

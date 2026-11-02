@@ -342,13 +342,18 @@ class ReviewSubmitBody(BaseModel):
     draft: bool = False
 
 
+# Rubric v3.2: the four scores a submitted review must carry. score_commitment
+# is still ACCEPTED on the bodies (old cached bundles send it) but is never
+# required and is ignored by reviewer_query._weighted_overall.
+REQUIRED_SCORE_COLS = ("score_problem", "score_solution", "score_tech", "score_founders")
+
+
 def _validate_complete(body: ReviewSubmitBody) -> None:
-    """Non-draft submits require all 5 scores AND a recommendation."""
+    """Non-draft submits require the 4 rubric scores AND a recommendation."""
     if body.draft:
         return
     missing: list[str] = []
-    for col in ("score_problem", "score_solution", "score_tech",
-                "score_founders", "score_commitment"):
+    for col in REQUIRED_SCORE_COLS:
         if getattr(body, col) is None:
             missing.append(col)
     if body.recommendation is None:
@@ -390,7 +395,7 @@ def _validate_notes(quick_notes: str | None, draft: bool) -> None:
 
 
 # CLIENT-FACING CONTRACT: these short keys ("problem", "solution", "tech",
-# "founders", "commit") are the canonical dimension identifiers used by the
+# "founders"; "commit" was removed with rubric v3.2) are the canonical dimension identifiers used by the
 # reviewer-UI prototype's `scores` and `disagree_with_ai` objects.  The
 # `disagree_with_ai` request dict and the 422 "disagreement_reason_required"
 # `dimensions` array both use them.  Do NOT rename "commit" to "commitment" —
@@ -400,7 +405,6 @@ _DIM_MAP = [  # (short, review_col, ai_col)
     ("solution", "score_solution",   "score_completeness"),
     ("tech",     "score_tech",       "score_tech"),
     ("founders", "score_founders",   "score_founders"),
-    ("commit",   "score_commitment", "score_commitment"),
 ]
 
 # Score columns touched by a review body — used to gate the ai_screening fetch
@@ -768,8 +772,7 @@ async def patch_review(
             # key is explicitly set to null on an already-submitted review
             # we catch that in the shared null check below.
             missing: list[str] = []
-            for col in ("score_problem", "score_solution", "score_tech",
-                        "score_founders", "score_commitment"):
+            for col in REQUIRED_SCORE_COLS:
                 if final.get(col) is None:
                     missing.append(col)
             if final.get("recommendation") is None:
@@ -785,8 +788,7 @@ async def patch_review(
             # Only check columns the caller actually included in this patch
             # (exclude_unset means absent keys weren't touched).
             explicitly_nulled: list[str] = []
-            for col in ("score_problem", "score_solution", "score_tech",
-                        "score_founders", "score_commitment", "recommendation"):
+            for col in (*REQUIRED_SCORE_COLS, "recommendation"):
                 if col in patch and patch[col] is None:
                     explicitly_nulled.append(col)
             if explicitly_nulled:
