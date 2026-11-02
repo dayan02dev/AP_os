@@ -120,13 +120,30 @@ describe("Prev/Next follow the queue's filters and sort", () => {
     const { next } = await navButtons();
     await waitFor(() => expect(next).not.toBeDisabled());
     fireEvent.click(next);
-    expect(onOpen).toHaveBeenCalledWith("sip", "v2"); // v3 is closed
+    expect(onOpen).toHaveBeenCalledWith("sip", "v1"); // v3 is closed, v2 already submitted
   });
 
   it("shows which filter the flow follows and how many are left", async () => {
     filterVipNotStartedClimate();
     render(<ReviewerEval track="sip" appId="v1" onBack={vi.fn()} onOpen={vi.fn()} />);
-    expect(await screen.findByText("Filtered: VIP · Not started · Climate — 1 left")).toBeInTheDocument();
+    // v1 itself (not yet submitted) and v4.
+    expect(await screen.findByText("Filtered: VIP · Not started · Climate — 2 left")).toBeInTheDocument();
+  });
+
+  it("drops the 'left' count under the Submitted filter", async () => {
+    writeStickyState("reviewer.queue", "status", "submitted");
+    render(<ReviewerEval track="sip" appId="v2" onBack={vi.fn()} onOpen={vi.fn()} />);
+    expect(await screen.findByText("Filtered: Submitted")).toBeInTheDocument();
+  });
+
+  it("Next skips an app the reviewer already submitted (status All)", async () => {
+    writeStickyState("reviewer.queue", "track", "sip");
+    const onOpen = vi.fn();
+    render(<ReviewerEval track="sip" appId="v1" onBack={vi.fn()} onOpen={onOpen} />);
+    const { next } = await navButtons();
+    await waitFor(() => expect(next).not.toBeDisabled());
+    fireEvent.click(next);
+    expect(onOpen).toHaveBeenCalledWith("sip", "v4");
   });
 
   it("refetches the queue when moving to another app", async () => {

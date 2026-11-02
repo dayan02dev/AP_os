@@ -17,7 +17,11 @@ const DIM_LABEL = {
   commit: "Commitment",
 };
 
+// Covers every value admin_decisions.decision can hold (CHECK in mig 033:
+// shortlisted/on_hold/rejected/waitlisted/jury_review/offered) plus legacy
+// aliases.
 const DECISION_LABEL = {
+  shortlisted: "Shortlisted",
   approved: "Approved",
   advanced: "Approved",
   rejected: "Rejected",
@@ -90,9 +94,15 @@ export default function ReviewerFeedback({ review }) {
   );
 }
 
-// Rationales the backend writes automatically (decisions.py) carry no human
+// Rationales the backend writes automatically (decisions.py, and the
+// leadership_actions default f"{decision} by leadership") carry no human
 // feedback; they're hidden so only real admin comments show.
-const AUTO_RATIONALE = [/^gate[12]\s*:/i, /^batch decision\b/i, /^admin override\s*:/i];
+const AUTO_RATIONALE = [
+  /^gate[12]\s*:/i,
+  /^batch decision\b/i,
+  /^admin override\s*:/i,
+  /^(shortlisted|on_hold|rejected|waitlisted|jury_review|offered) by leadership$/i,
+];
 export function isAutoRationale(text) {
   if (!nonEmpty(text)) return true;
   return AUTO_RATIONALE.some((re) => re.test(text.trim()));

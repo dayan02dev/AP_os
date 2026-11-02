@@ -3,6 +3,7 @@
 // These were window-globals in the prototype; here they are real exports.
 
 import { useEffect, useRef } from "react";
+import { pyRound } from "../../../lib/reviewScore.js";
 
 export function LoadingState({ label = "Loading…" }) {
   return (
@@ -144,7 +145,8 @@ export function weightedOverall(scores) {
     total += v * WEIGHTS[k];
     wsum += WEIGHTS[k];
   }
-  return wsum ? total / wsum : 0;
+  // Rounded to 2 dp like backend _weighted_overall (RM-1).
+  return wsum ? pyRound(total / wsum, 2) : 0;
 }
 
 export const COHORT_LABEL = "TIR + VIP cohort 2026";

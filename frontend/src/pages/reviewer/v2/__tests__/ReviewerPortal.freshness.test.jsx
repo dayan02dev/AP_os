@@ -72,6 +72,29 @@ describe("ReviewerPortal queue freshness", () => {
     await waitFor(() => expect(rapi.getQueue).toHaveBeenCalledTimes(2));
   });
 
+  it("DR-4: returning to the tab (focus + visibilitychange, as browsers fire both) refetches once", async () => {
+    shell();
+    await waitFor(() => expect(rapi.getQueue).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange")); // jsdom visibilityState = "visible"
+      window.dispatchEvent(new Event("focus"));
+    });
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(rapi.getQueue).toHaveBeenCalledTimes(2);
+  });
+
+  it("DR-4: a failed background refetch keeps the dashboard on screen", async () => {
+    rapi.getQueue.mockResolvedValue([row("1"), row("2")]);
+    shell();
+    await screen.findByText("APPLICATIONS ASSIGNED");
+    rapi.getQueue.mockRejectedValueOnce(new Error("network blip"));
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(rapi.getQueue).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/Couldn.t load this data/)).toBeNull();
+    expect(screen.getByText("APPLICATIONS ASSIGNED")).toBeInTheDocument();
+  });
+
   it("the My Queue badge counts only live rows", async () => {
     rapi.getQueue.mockResolvedValue([row("1"), row("2", { detached: true, reviewStatus: "submitted" }),
       row("3", { closed: true, reviewStatus: "submitted" })]);

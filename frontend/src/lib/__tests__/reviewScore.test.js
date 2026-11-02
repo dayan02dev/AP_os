@@ -8,7 +8,7 @@ describe("weightedReviewScore", () => {
       score_problem: 2.0, score_solution: 2.0, score_tech: 1.5,
       score_founders: 3.0,
     };
-    expect(weightedReviewScore(r)).toBeCloseTo(179 / 88, 4);
+    expect(weightedReviewScore(r)).toBe(2.03); // 2 dp, like the backend (RM-1)
   });
 
   it("ignores a historical score_commitment (criterion removed from the rubric)", () => {

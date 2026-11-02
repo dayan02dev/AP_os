@@ -55,7 +55,7 @@ const matchesSearch = (s, q) => {
   if (!q) return true;
   const idq = q.match(ID_QUERY);
   if (idq && idDigits(s.applicationId) === idq[1]) return true;
-  return `${s.name || ""} ${s.domain || ""} ${(s.founders || []).join(" ")}`
+  return `${s.name || ""} ${s.org || ""} ${s.domain || ""} ${(s.founders || []).join(" ")} ${s.email || ""}`
     .toLowerCase().includes(q);
 };
 
@@ -609,16 +609,18 @@ export function AdminSelectedApplications({ goDetail, onChanged } = {}) {
       });
   }, [all, search, track, decision, byKey, listByKey]);
 
-  // Per-decision counts for the filter chips (within the current track).
+  // Per-decision counts for the filter chips, faceted on every other active
+  // filter (track + search) so a chip's count equals the rows it shows.
   const decisionCounts = useMemo(() => {
     const m = { all: 0, pending: 0, accepted: 0 };
-    all.filter((s) => track === "all" || s.track === track).forEach((s) => {
+    const q = search.trim().toLowerCase();
+    all.filter((s) => (track === "all" || s.track === track) && matchesSearch(s, q)).forEach((s) => {
       m.all += 1;
       const st = decisionStateOf(s, docsFor(s));
       if (st in m) m[st] += 1;
     });
     return m;
-  }, [all, track, byKey, listByKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [all, search, track, byKey, listByKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const reload = () => {
     docs.reload(); pipeline.reload(); offeredPipeline.reload();
@@ -649,7 +651,7 @@ export function AdminSelectedApplications({ goDetail, onChanged } = {}) {
         search={search}
         onSearch={setSearch}
         searchLabel="Search selected applications"
-        searchPlaceholder="Search project, founder or industry…"
+        searchPlaceholder="Search project, org, founder, email, industry or ID…"
         segments={[
           { ariaLabel: "Filter by track", value: track, onChange: setTrack,
             options: [["all", "All tracks"], ["tir", "TIR"], ["sip", "VIP"]] },

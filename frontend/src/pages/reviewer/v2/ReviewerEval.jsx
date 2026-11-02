@@ -203,7 +203,9 @@ export default function ReviewerEval({ track, appId, onBack, onOpen, advanceDela
       onPrev={nav.prev && onOpen ? () => onOpen(nav.prev.track, nav.prev.id) : null}
       onNext={nav.next && onOpen ? () => onOpen(nav.next.track, nav.next.id) : null}
       showNav={nav.hasPosition}
-      navHint={nav.hasPosition && nav.filterLabel ? `Filtered: ${nav.filterLabel} — ${nav.remaining} left` : null}
+      navHint={nav.hasPosition && nav.filterLabel
+        ? `Filtered: ${nav.filterLabel}${nav.browsing ? "" : ` — ${nav.remaining} left`}`
+        : null}
       onOpenApp={onOpen}
       findNextAfterSubmit={onOpen ? findNextAfterSubmit : null}
       advanceDelayMs={advanceDelayMs}
