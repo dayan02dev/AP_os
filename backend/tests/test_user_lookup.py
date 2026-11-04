@@ -24,7 +24,7 @@ def test_get_contact_from_profiles():
 
 def test_get_contact_missing_returns_none():
     sb = _sb_with_tables({"profiles": []})
-    sb.auth.admin.get_user.side_effect = Exception("nope")
+    sb.auth.admin.get_user_by_id.side_effect = Exception("nope")
     assert get_contact(sb, "ghost") is None
 
 
