@@ -40,7 +40,10 @@ import ListToolbar from "./ListToolbar";
 const MODAL_STYLES = `
   @keyframes osModalFadeIn { from { opacity: 0; } to { opacity: 1; } }
 `;
-const MAX_MB = 10;
+// API Gateway -> Lambda rejects request bodies over ~6 MB, and the multipart
+// upload is base64-encoded (+33%), so anything much over 4 MiB never reaches the
+// backend (whose own cap is 10 MiB). Cap here so the admin gets a clear message.
+const MAX_MB = 4;
 const keyOf = (track, id) => `${track}:${id}`;
 // IC documents are keyed by the NATIVE track (where the application row lives),
 // while a row's displayed track is the EFFECTIVE one. For a moved app those
@@ -51,10 +54,18 @@ const nativeOf = (s) => (s?.nativeTrack || s?.track);
 // "VIP-26303", "SIP-26303" or a bare "26853" all reduce to the digits.
 const ID_QUERY = /^(?:(?:tir|vip|sip)-?)?(\d+)$/;
 const idDigits = (id) => String(id || "").replace(/^\D+/, "");
+const idPrefix = (id) => (String(id || "").match(/^[A-Za-z]+/) || [""])[0].toUpperCase();
 const matchesSearch = (s, q) => {
   if (!q) return true;
   const idq = q.match(ID_QUERY);
-  if (idq && idDigits(s.applicationId) === idq[1]) return true;
+  if (idq && idDigits(s.applicationId) === idq[1]) {
+    // A typed TIR-/VIP-/SIP- prefix must match the row's track (both display-id
+    // sequences start at 26001, so the digits alone collide). VIP == SIP.
+    const typed = (q.match(/^(tir|vip|sip)/) || [])[1];
+    if (!typed) return true;
+    const norm = (p) => (p === "SIP" ? "VIP" : p);
+    return norm(typed.toUpperCase()) === norm(idPrefix(s.applicationId));
+  }
   return `${s.name || ""} ${s.org || ""} ${s.domain || ""} ${(s.founders || []).join(" ")} ${s.email || ""}`
     .toLowerCase().includes(q);
 };
@@ -117,6 +128,10 @@ function IcUploadModal({ app, existing = [], onClose, onDone, onChanged }) {
       if (!isPdf) bad.push(`${f.name}: only PDF files are accepted.`);
       else if (f.size > MAX_MB * 1024 * 1024) {
         bad.push(`${f.name} is ${(f.size / 1048576).toFixed(1)} MiB — the limit is ${MAX_MB} MiB.`);
+      } else if (f.type !== "application/pdf") {
+        // A .pdf the OS reports with an empty / octet-stream type: the backend
+        // rejects anything but application/pdf, so send it as one.
+        good.push(new File([f], f.name, { type: "application/pdf" }));
       } else good.push(f);
     }
     if (good.length) setFiles((prev) => [...prev, ...good]);
@@ -137,6 +152,7 @@ function IcUploadModal({ app, existing = [], onClose, onDone, onChanged }) {
     setSaving(true); setErr(null);
     // Uploads first: if one fails, nothing has been removed yet.
     let done = 0;
+    let removedAny = false;
     try {
       for (const f of files) {
         await icDocumentsApi.upload(nativeOf(app), app.id, f, { mode: "append" });
@@ -144,15 +160,16 @@ function IcUploadModal({ app, existing = [], onClose, onDone, onChanged }) {
       }
       for (const id of removeIds) {
         await icDocumentsApi.remove(nativeOf(app), app.id, id);
+        // A retry must not re-delete what already went (404 would stall it).
+        removedAny = true;
+        setRemoveIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
       }
       onDone();
     } catch (e) {
       const msg = e?.details?.message || e?.message || "Upload failed. Try again.";
-      if (done) {
-        // Keep only what still needs doing, and refresh the row behind the modal.
-        setFiles((prev) => prev.slice(done));
-        onChanged?.();
-      }
+      if (done) setFiles((prev) => prev.slice(done));
+      // Refresh the row behind the modal if anything already went through.
+      if (done || removedAny) onChanged?.();
       setErr(msg);
       setSaving(false);
     }
@@ -397,7 +414,7 @@ function RejectModal({ app, onClose, onDone }) {
 
 // ── Approve (sign memo) modal ──────────────────────────────────────────────────────
 
-function IcSignModal({ app, docs, defaultName, signerEmail, onClose, onDone }) {
+function IcSignModal({ app, docs, defaultName, signerEmail, onClose, onDone, onChanged }) {
   const canvasRef = useRef(null);
   const [hasDrawing, setHasDrawing] = useState(false);
   const [name, setName] = useState(defaultName || "");
@@ -428,6 +445,7 @@ function IcSignModal({ app, docs, defaultName, signerEmail, onClose, onDone }) {
       : null;
     const signedAtIso = new Date().toISOString();
     let current = null;
+    let signedAny = false;
     try {
       for (const doc of docs) {
         current = doc;
@@ -448,10 +466,13 @@ function IcSignModal({ app, docs, defaultName, signerEmail, onClose, onDone }) {
         // 3. Store the signed copy; the backend stamps the real signer identity.
         const base = (doc.file_name || "ic.pdf").replace(/\.pdf$/i, "");
         await icDocumentsApi.sign(nativeOf(app), app.id, blob, name.trim(), `${base}-signed.pdf`, doc.id);
+        signedAny = true;
       }
       onDone();
     } catch (e) {
       const msg = e?.details?.message || e?.message || "Signing failed. Try again.";
+      // Some documents may already be signed server-side: refresh the row behind the modal.
+      if (signedAny) onChanged?.();
       setErr(docs.length > 1 && current ? `${current.file_name || "A document"}: ${msg}` : msg);
       setBusy(false);
     }
@@ -675,7 +696,9 @@ export function AdminSelectedApplications({ goDetail, onChanged } = {}) {
         <ErrorState error={pipeline.error || offeredPipeline.error} onRetry={reload} />
       ) : rows.length === 0 ? (
         <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--ink-soft)", border: "1px dashed var(--line)", borderRadius: 4 }}>
-          {track === "all"
+          {(search.trim() || decision !== "all") && all.length > 0
+            ? "No selected applications match the current search or filters."
+            : track === "all"
             ? "No selected applications yet."
             : `No ${trackLabel(track)} applications in this list.`}
         </div>
@@ -747,6 +770,8 @@ export function AdminSelectedApplications({ goDetail, onChanged } = {}) {
                     <td>
                       {docs.loading && !docs.data ? (
                         <span className="os-text-soft os-text-sm">Loading…</span>
+                      ) : !docs.data && docs.error ? (
+                        <span className="os-text-sm" role="alert" style={{ color: "var(--bad)" }}>Couldn't load memo documents</span>
                       ) : !hasDocs ? (
                         <span className="os-text-soft os-text-sm">Not uploaded</span>
                       ) : (
@@ -883,6 +908,7 @@ export function AdminSelectedApplications({ goDetail, onChanged } = {}) {
           docs={docsFor(signFor)}
           defaultName={user?.full_name || user?.email || ""}
           signerEmail={user?.email || undefined}
+          onChanged={reload}
           onClose={() => setSignFor(null)}
           onDone={() => {
             setSignFor(null);

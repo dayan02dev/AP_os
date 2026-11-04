@@ -185,7 +185,19 @@ function Note({ note, onDismiss }) {
 // ══════════════════════════════════════════════════════════════════════════
 // VARIANT A · Status Stack (prototype: GateReviewStack)
 // ══════════════════════════════════════════════════════════════════════════
-function GateReviewStack({ items, reload, goDetail }) {
+// Backend error → admin-facing text. FastAPI puts the machine code under
+// details.code (older paths: details.error).
+function decideFailText(e, prefix) {
+  const code = e?.details?.code || e?.details?.error || e?.code;
+  if (code === "illegal_transition") {
+    const allowed = e?.details?.allowed || [];
+    const hint = allowed.length ? ` Allowed: ${allowed.join(", ")}.` : "";
+    return `${prefix}: that decision isn't allowed from the current status.${hint}`;
+  }
+  return `${prefix}: ${e?.message || e}`;
+}
+
+function GateReviewStack({ items, reload, goDetail, note, setNote }) {
   // Sticky, not plain state: opening an application unmounts this screen
   // entirely, and a decision remounts it via the `key` below — both used to
   // snap the reviewer back to 1/N. sessionStorage means the position survives
@@ -234,7 +246,6 @@ function GateReviewStack({ items, reload, goDetail }) {
   const [notes, setNotes]       = useState({});
   const [busy, setBusy]         = useState(false);
   const [moveBusy, setMoveBusy] = useState(false);
-  const [note, setNote]         = useState(null);
 
   const total   = items.length;
   const safeIdx = Math.min(idx, Math.max(0, total - 1));
@@ -299,11 +310,11 @@ function GateReviewStack({ items, reload, goDetail }) {
         setIdx(0);
       }
     } catch (e) {
-      const code = e?.details?.error || e?.code;
+      const code = e?.details?.code || e?.details?.error || e?.code;
       if (code === "rationale_required") {
         setNote({ kind: "error", text: "A rationale is required for that decision." });
       } else {
-        setNote({ kind: "error", text: `Decision failed: ${e?.message || e}` });
+        setNote({ kind: "error", text: decideFailText(e, "Decision failed") });
       }
     } finally {
       setBusy(false);
@@ -395,7 +406,7 @@ function GateReviewStack({ items, reload, goDetail }) {
               onViewFullApplication={() => goDetail && goDetail(s.id, s.track, "gate1", seq)}
             />
             <div style={{ marginTop: 16 }}>
-              <ComparativeReviewModel startup={sH} loading={reviewsLoading} />
+              <ComparativeReviewModel startup={sH} loading={reviewsLoading} loadFailed={detailCache[s.id] === false} />
             </div>
           </div>
         </div>
@@ -489,11 +500,10 @@ export function gate1DecisionOf(s) {
 // ══════════════════════════════════════════════════════════════════════════
 // VARIANT C · Batch decision room (prototype: GateReviewBatchDecision)
 // ══════════════════════════════════════════════════════════════════════════
-function GateReviewBatchDecision({ items, reload, goDetail }) {
+function GateReviewBatchDecision({ items, reload, goDetail, note, setNote }) {
   const [stickyBatch, setSelectedBatch]       = useStickyState("admin.gate1", "batch", "All");
   const [draftDecisions, setDraftDecisions]   = useState({}); // id → 'APPROVED' | 'HOLD' | 'REJECTED'
   const [busy, setBusy]                       = useState(false);
-  const [note, setNote]                       = useState(null);
 
   const allBatches = useMemo(
     () => Array.from(new Set(items.flatMap(batchNamesOf))).sort(),
@@ -663,10 +673,9 @@ function GateReviewBatchDecision({ items, reload, goDetail }) {
 // Uses a separate useAdminData("pipeline") with no status filter so we see
 // decided apps too; filtered locally to those with adminDecision.
 // ══════════════════════════════════════════════════════════════════════════
-function GateReviewHistory({ allStartups, reload, goDetail }) {
+function GateReviewHistory({ allStartups, reload, goDetail, note, setNote }) {
   const [editingId, setEditingId]   = useState(null);
   const [busy, setBusy]             = useState(false);
-  const [note, setNote]             = useState(null);
   const [sortCol, setSortCol]       = useStickyState("admin.gate1.history", "sortCol", null);
   const [sortAsc, setSortAsc]       = useStickyState("admin.gate1.history", "sortAsc", true);
 
@@ -736,7 +745,7 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
       setEditingId(null);
       await reload();
     } catch (e) {
-      setNote({ kind: "error", text: `Save failed: ${e?.message || e}` });
+      setNote({ kind: "error", text: decideFailText(e, "Save failed") });
     } finally {
       setBusy(false);
     }
@@ -858,7 +867,11 @@ function GateReviewHistory({ allStartups, reload, goDetail }) {
 // TAB CONTROLLER (prototype: AdminGate1)
 // ══════════════════════════════════════════════════════════════════════════
 export default function AdminGate1({ goDetail }) {
-  const [variant, setVariant] = useState("stack");
+  const [variant, setVariantRaw] = useStickyState("admin.gate1", "variant", "stack");
+  // Outcome notes live here (not in the variants): the post-action reload swaps
+  // in a loading placeholder that unmounts the variant and would wipe them.
+  const [note, setNote] = useState(null);
+  const setVariant = (v) => { setNote(null); setVariantRaw(v); };
 
   // Evaluated applications (awaiting gate-1 decision) — Variants A, B, C
   const { data: evalData, loading: evalLoading, error: evalError, reload: reloadEval } =
@@ -907,11 +920,11 @@ export default function AdminGate1({ goDetail }) {
       ) : error ? (
         <ErrorState error={error} onRetry={reload} />
       ) : variant === "stack" ? (
-        <GateReviewStack   key={"stack-"   + evalRows.length} items={evalRows} reload={reload} goDetail={goDetail} />
+        <GateReviewStack   key={"stack-"   + evalRows.length} items={evalRows} reload={reload} goDetail={goDetail} note={note} setNote={setNote} />
       ) : variant === "batch" ? (
-        <GateReviewBatchDecision key={"batch-" + evalRows.length} items={evalRows} reload={reload} goDetail={goDetail} />
+        <GateReviewBatchDecision key={"batch-" + evalRows.length} items={evalRows} reload={reload} goDetail={goDetail} note={note} setNote={setNote} />
       ) : (
-        <GateReviewHistory key={"hist-" + allRows.length} allStartups={allRows} reload={reload} goDetail={goDetail} />
+        <GateReviewHistory key={"hist-" + allRows.length} allStartups={allRows} reload={reload} goDetail={goDetail} note={note} setNote={setNote} />
       )}
     </div>
   );
