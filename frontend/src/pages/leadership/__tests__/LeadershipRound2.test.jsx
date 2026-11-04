@@ -115,7 +115,7 @@ describe("Dashboard funnel (LEAD-14)", () => {
     renderDash();
     const step = (await screen.findByText("Decided")).closest(".lp-funnel-step");
     expect(within(step).getByText("18")).toBeTruthy();
-    expect(within(step).queryByText(/offered \+ onboarded/)).toBeNull();
+    expect(within(step).getByText(/final selected \+ offered \+ onboarded/)).toBeTruthy(); // BE decided includes offered (S2-LEAD-18)
     expect(within(step).getByText(/final selected/i)).toBeTruthy();
   });
 });

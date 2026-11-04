@@ -6,7 +6,7 @@ import {
   reviewerStatusLabel,
   reviewerStatusOf,
 } from "../../../lib/reviewerStatus.js";
-import { weightedReviewScore } from "../../../lib/reviewScore.js";
+import { pyRound, weightedReviewScore } from "../../../lib/reviewScore.js";
 import ReviewerFeedback, { AdminDecisionList } from "../../../components/ReviewerFeedback.jsx";
 
 // Dimension labels mirror the reviewer portal's CRIT_LABELS (the names the
@@ -34,14 +34,20 @@ function fmtDate(iso) {
 
 export default function ReviewsTab({ reviews, assignments, adminDecisions }) {
   const submittedReviews = (reviews || []).filter((r) => r.status === "submitted" || r.submitted_at);
-  const totalAssignments = (assignments || []).length;
+  // Declined assignments don't count as assigned (matches the list's s/a).
+  const totalAssignments = (assignments || []).filter(
+    (a) => reviewerStatusOf(a) !== "declined" && !a.declined_at,
+  ).length;
   const submittedCount = submittedReviews.length;
+  // Like the backend reviewer_score: only fully-scored reviews count, and the
+  // mean is rounded half-to-even (pyRound).
   const overalls = submittedReviews
+    .filter((r) => CATEGORY_BARS.every((c) => typeof r[c.key] === "number" && Number.isFinite(r[c.key])))
     .map((r) => weightedReviewScore(r))
     .filter((s) => typeof s === "number" && Number.isFinite(s));
   const avg =
     overalls.length > 0
-      ? (overalls.reduce((a, b) => a + b, 0) / overalls.length).toFixed(1)
+      ? pyRound(overalls.reduce((a, b) => a + b, 0) / overalls.length, 1).toFixed(1)
       : null;
 
   // Only assignments whose reviewer hasn't submitted yet (derived from
@@ -77,9 +83,9 @@ export default function ReviewsTab({ reviews, assignments, adminDecisions }) {
                   {typeof overall === "number" && (
                     <span
                       className="review-card-score"
-                      aria-label={`Reviewer weighted score ${overall.toFixed(1)} out of 10`}
+                      aria-label={`Reviewer weighted score ${pyRound(overall, 1).toFixed(1)} out of 10`}
                     >
-                      {overall.toFixed(1)}<span className="of">/10</span>
+                      {pyRound(overall, 1).toFixed(1)}<span className="of">/10</span>
                     </span>
                   )}
                   <span className="review-card-when">{fmtDate(r.submitted_at)}</span>

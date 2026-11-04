@@ -154,7 +154,9 @@ function medianOf(arr) {
 // quotes (RFC 4180).
 function csvCell(v) {
   if (v == null) return "";
-  const s = String(v);
+  let s = String(v);
+  // Neutralise spreadsheet formulas (CSV injection).
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
@@ -177,7 +179,7 @@ export function buildApplicationsCsv(rows, selectedKeys = null) {
       a.ai_score_overall != null ? a.ai_score_overall.toFixed(1) : "",
       a.reviewer_score != null ? Number(a.reviewer_score).toFixed(1) : "",
       reviewersText(a.reviewers) || "",
-      RECO_LABEL[aggregateReco(a.reco)] || "",
+      RECO_LABEL[aggregateReco(a.reco)] || (a.review_count === 1 ? "1 review" : ""),
       rowStage(a, { selectedKeys }).label,
       a.submitted_at || a.created_at || "",
     ].map(csvCell).join(","));
@@ -497,7 +499,7 @@ export default function LeadershipDashboard() {
     { id: "submitted", label: "Submitted", sub: "complete" },
     { id: "in_review", label: "In review", sub: "with reviewers" },
     { id: "advanced",  label: "Advanced",  sub: "1st-gate selected" },
-    { id: "decided",   label: "Decided",   sub: "final selected + onboarded" },
+    { id: "decided",   label: "Decided",   sub: "final selected + offered + onboarded" },
   ];
   const funnelMax = Math.max(1, ...funnelOrder.map((f) => funnel[f.id] ?? 0));
 
