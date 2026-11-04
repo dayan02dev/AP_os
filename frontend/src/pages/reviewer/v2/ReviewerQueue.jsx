@@ -14,6 +14,7 @@
 //   * the track filter uses the EFFECTIVE track (movedToTrack || track); the
 //     native `track` is kept for the eval route
 
+import { pyRound } from "../../../lib/reviewScore.js";
 import { useMemo, useRef } from "react";
 import { LoadingState, ErrorState, Chip } from "./ui.jsx";
 import { relabelDisplayId, trackLabel, displayIdText } from "../../../lib/trackLabel.js";
@@ -346,7 +347,7 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
                         <span style={{ display: "block", width: Math.max(0, Math.min(100, (s.myScore / 10) * 100)) + "%", height: "100%", background: "#3213b7", borderRadius: 2 }} />
                       </span>
                       <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--ink)", flexShrink: 0, whiteSpace: "nowrap" }}>
-                        {Number(s.myScore).toFixed(1)}
+                        {pyRound(Number(s.myScore), 1).toFixed(1)}
                       </span>
                     </div>
                   ) : (

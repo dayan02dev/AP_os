@@ -65,3 +65,18 @@ describe("reviewer notes cap", () => {
     await screen.findByText(/Save failed/, {}, { timeout: 3000 });
   });
 });
+
+describe("S2-SH-10: reviewer scores round like the backend (6.25 -> 6.2)", () => {
+  it("History table and CSV use pyRound", async () => {
+    const { historyCsvRows } = await import("../ReviewerPortal.jsx");
+    const ReviewerHistory = (await import("../ReviewerHistory.jsx")).default;
+    api.getHistory.mockResolvedValue({
+      stats: { total: 1 },
+      rows: [{ reviewId: "r", name: "X", date: "2026-06-27T00:00:00Z", myScore: 6.25, reco: "yes",
+        adminDecision: null, track: "tir", appId: "i", editWindowExpiresAt: null }],
+    });
+    render(<ReviewerHistory onOpenEval={() => {}} />);
+    expect(await screen.findByText("6.2")).toBeTruthy();
+    expect(historyCsvRows([{ myScore: 6.25 }])[1][4]).toBe("6.2");
+  });
+});

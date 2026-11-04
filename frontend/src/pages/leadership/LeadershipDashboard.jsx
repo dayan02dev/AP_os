@@ -9,6 +9,7 @@
 //   - GET /leadership/stats on mount (powers Dashboard tab)
 //   - GET /leadership/applications keyed off filter state (powers Applications tab)
 
+import { pyRound } from "../../lib/reviewScore.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.jsx";
@@ -177,7 +178,7 @@ export function buildApplicationsCsv(rows, selectedKeys = null) {
       a.industry?.label || "",
       a.stage?.label || a.stage_label || "",
       a.ai_score_overall != null ? a.ai_score_overall.toFixed(1) : "",
-      a.reviewer_score != null ? Number(a.reviewer_score).toFixed(1) : "",
+      a.reviewer_score != null ? pyRound(Number(a.reviewer_score), 1).toFixed(1) : "",
       reviewersText(a.reviewers) || "",
       RECO_LABEL[aggregateReco(a.reco)] || (a.review_count === 1 ? "1 review" : ""),
       rowStage(a, { selectedKeys }).label,
@@ -1313,7 +1314,7 @@ export default function LeadershipDashboard() {
                       </td>
                       <td className="num">
                         {a.reviewer_score != null
-                          ? <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700 }}>{Number(a.reviewer_score).toFixed(1)}</span>
+                          ? <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700 }}>{pyRound(Number(a.reviewer_score), 1).toFixed(1)}</span>
                           : <span style={{ color: "var(--ink-dim)" }}>—</span>
                         }
                       </td>

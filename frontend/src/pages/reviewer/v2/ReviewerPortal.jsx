@@ -5,6 +5,7 @@
 // "history". Navigation is route-based (deep-linkable); the eval screen reads
 // :track/:appId from the URL. The portal stylesheet is imported once here.
 
+import { pyRound } from "../../../lib/reviewScore.js";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 
@@ -87,7 +88,7 @@ function ReviewerTopbar({ tab }) {
 
 // ── CSV export (queue on Dashboard/My Queue, history on My History) ─────
 const trackName = (t) => (t === "tir" ? "TIR" : "VIP");
-const num1 = (v) => (typeof v === "number" ? v.toFixed(1) : "");
+const num1 = (v) => (typeof v === "number" ? pyRound(v, 1).toFixed(1) : "");
 
 function downloadCsv(table, filename) {
   const cell = (v) => {

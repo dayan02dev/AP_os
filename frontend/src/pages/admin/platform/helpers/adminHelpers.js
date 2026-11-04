@@ -1,3 +1,4 @@
+import { pyRound } from "../../../../lib/reviewScore.js";
 // ── helpers from admin-1.jsx ──────────────────────────────────────────────────
 
 export function fieldBullets(f) {
@@ -102,7 +103,7 @@ export function downloadApplicationsCSV(rows, filename) {
       (s.founders && s.founders[0]) || '',
       s.domain || '',
       s.stage || '',
-      (s.rev && s.rev.overall != null) ? s.rev.overall.toFixed(1) : '',
+      (s.rev && s.rev.overall != null) ? pyRound(s.rev.overall, 1).toFixed(1) : '',
       (window.getFriendlyStatus ? window.getFriendlyStatus(s) : (s.chip || '')),
       s.batch || 'Unassigned',
       s.sub || '',

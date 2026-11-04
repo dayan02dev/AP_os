@@ -968,7 +968,7 @@ function ReviewerEvalForm({
                 className="os-num-big"
                 style={{ fontSize: 34, fontFamily: "var(--font-sans)", fontWeight: 800, letterSpacing: "-0.02em", color: "#3213b7" }}
               >
-                {overall.toFixed(2)}
+                {pyRound(overall, 2).toFixed(2)}
               </span>
             </div>
           </div>

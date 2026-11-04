@@ -21,7 +21,7 @@ import AISummaryBlock from "./AISummaryBlock.jsx";
 import ReviewerFeedback from "../../../components/ReviewerFeedback.jsx";
 import AiSections from "../../../components/AiSections.jsx";
 import Collapsible from "./Collapsible.jsx";
-import { weightedReviewScore } from "../../../lib/reviewScore.js";
+import { weightedReviewScore, pyRound } from "../../../lib/reviewScore.js";
 
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -307,7 +307,7 @@ export default function AppDrawer({ row, onClose, stage, onReview }) {
                     </div>
                     {overall != null && (
                       <div style={{ marginTop: 6, fontSize: 14 }}>
-                        <strong>{overall.toFixed(1)}</strong> / 10
+                        <strong>{pyRound(overall, 1).toFixed(1)}</strong> / 10
                       </div>
                     )}
                     <ReviewerFeedback review={r} />

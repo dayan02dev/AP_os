@@ -19,6 +19,7 @@
 //   createBatch: adminPlatformApi.createBatch({ name })
 //   renameBatch: adminPlatformApi.renameBatch(batchId, { name })
 
+import { pyRound } from "../../../../lib/reviewScore.js";
 import React from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
 import { useStickyState } from "../../../../hooks/useStickyState.js";
@@ -1084,7 +1085,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                 </td>
                 <td className="num">
                   {s.rev && s.rev.overall != null ? (
-                    <b>{s.rev.overall.toFixed(1)}</b>
+                    <b>{pyRound(s.rev.overall, 1).toFixed(1)}</b>
                   ) : (
                     <span className="os-text-soft">—</span>
                   )}

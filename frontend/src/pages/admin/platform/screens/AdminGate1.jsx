@@ -30,6 +30,7 @@
 //   ('APPROVED', 'HOLD', 'REJECTED') internally for UI state; they are
 //   normalised to wire ids before the API call via UPPER_TO_WIRE below.
 
+import { pyRound } from "../../../../lib/reviewScore.js";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 
 import { useAdminData, loadDetail } from "../../../../hooks/useAdminData";
@@ -424,7 +425,7 @@ function GateReviewStack({ items, reload, goDetail, note, setNote, onChanged }) 
                 </div>
               </div>
               <span className="os-num-big" style={{ fontSize: 34, fontFamily: "var(--font-serif)", fontWeight: 400, letterSpacing: "-0.01em", color: "var(--artblue)" }}>
-                {scoreVal != null ? scoreVal.toFixed(2) : "—"}
+                {scoreVal != null ? pyRound(scoreVal, 2).toFixed(2) : "—"}
               </span>
             </div>
           </div>
@@ -643,7 +644,7 @@ function GateReviewBatchDecision({ items, reload, goDetail, note, setNote }) {
                     <div style={{ color: "var(--ink-dim)", fontSize: 11, marginTop: 2 }}>{s.domain}</div>
                   </td>
                   <td className="os-mono os-text-sm">{batchNamesOf(s).join(", ")}</td>
-                  <td className="num" title="Weighted reviewer score"><b>{score != null ? score.toFixed(1) : "—"}</b></td>
+                  <td className="num" title="Weighted reviewer score"><b>{score != null ? pyRound(score, 1).toFixed(1) : "—"}</b></td>
                   <td className="num os-text-soft" title="AI screening score">{ai != null ? ai.toFixed(1) : "—"}</td>
                   <td>
                     {s.flags && s.flags.length > 0 ? (
@@ -820,7 +821,7 @@ function GateReviewHistory({ allStartups, reload, goDetail, note, setNote }) {
                   </td>
                   <td className="os-mono os-text-sm">{dateOf(s) || "—"}</td>
                   <td className="os-mono os-text-sm">{batchNamesOf(s).join(", ")}</td>
-                  <td className="num" title="Weighted reviewer score"><b>{score != null ? score.toFixed(1) : "—"}</b></td>
+                  <td className="num" title="Weighted reviewer score"><b>{score != null ? pyRound(score, 1).toFixed(1) : "—"}</b></td>
                   <td className="num os-text-soft" title="AI screening score">{ai != null ? ai.toFixed(1) : "—"}</td>
                   <td>
                     {s.flags && s.flags.length > 0 ? (

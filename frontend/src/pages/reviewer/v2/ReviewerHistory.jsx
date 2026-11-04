@@ -4,6 +4,7 @@
 // queue. "✎ Edit" only while the row's `canEdit` is true (still assigned and
 // not yet decided); otherwise "View" opens the evaluation read-only.
 
+import { pyRound } from "../../../lib/reviewScore.js";
 import { useAsync } from "../../../hooks/useAsync.js";
 import { reviewerApi } from "../../../lib/reviewerApi.js";
 import { displayIdText } from "../../../lib/trackLabel.js";
@@ -41,7 +42,7 @@ function fmtDate(iso) {
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-const fmtNum = (v, dp = 1) => (typeof v === "number" ? v.toFixed(dp) : "—");
+const fmtNum = (v, dp = 1) => (typeof v === "number" ? pyRound(v, dp).toFixed(dp) : "—");
 
 export default function ReviewerHistory({ onOpenEval }) {
   const { data, loading, error, reload } = useAsync(() => reviewerApi.getHistory(), []);
