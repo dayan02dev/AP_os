@@ -55,3 +55,17 @@ describe("tab badges refresh after admin writes", () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 });
+
+describe("Applications tab ID search respects the prefix (S2-SH-13)", () => {
+  it("VIP-26255 does not match TIR-26255", () => {
+    const mk = (id, track, applicationId) => ({ ...row, id, track, nativeTrack: track, applicationId, name: "N" + id, batches: [], batch: "" });
+    useAdminData.mockImplementation((kind) =>
+      kind === "batches"
+        ? { data: { batches: [] }, loading: false, error: null, reload: vi.fn() }
+        : { data: { startups: [mk("a", "tir", "TIR-26255"), mk("b", "sip", "VIP-26255")], total: 2 }, loading: false, error: null, reload: vi.fn() });
+    render(<AdminPipeline decisionMode="default" />);
+    fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "VIP-26255" } });
+    expect(screen.queryByText("Na")).toBeNull();
+    expect(screen.getByText("Nb")).toBeTruthy();
+  });
+});

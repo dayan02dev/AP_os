@@ -188,9 +188,10 @@ export function buildApplicationsCsv(rows, selectedKeys = null) {
   return "﻿" + lines.join("\r\n");
 }
 
-// Strip a pasted "TIR-"/"VIP-"/"SIP-" prefix so IDs hit the backend's
-// display_seq match; trim first so stray spaces don't zero the results.
-const normSearch = (v) => (v || "").trim().replace(/^(TIR|SIP|VIP)-/i, "");
+// Trim so stray spaces don't zero the results. A pasted "TIR-"/"VIP-"/"SIP-"
+// prefix is sent through: the backend (search_seq_track) matches the ID on
+// that track only, since both display-ID sequences start at 26001.
+const normSearch = (v) => (v || "").trim();
 
 // One list query for the current filters. Stages / reco buckets the API can't
 // express exactly (see pipelineStages.js) fetch every page under the coarser
@@ -383,7 +384,7 @@ export default function LeadershipDashboard() {
     return () => { cancelled = true; };
   }, [trackFilter, refreshNonce]);
 
-  // ── Search debounce — trimmed, prefix-stripped (normSearch). Only a real
+  // ── Search debounce — trimmed (normSearch). Only a real
   //   change resets the page, so a remount keeps the sticky offset.
   const searchRef = useRef(search);
   useEffect(() => {

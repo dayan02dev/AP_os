@@ -42,3 +42,15 @@ describe("AdminRoles invite result", () => {
     expect(screen.queryByText(/Temp password/)).toBeNull();
   });
 });
+
+import { matchDisplayIdQuery } from "../../helpers/adminHelpers";
+describe("display-ID search prefix (S2-SH-13)", () => {
+  it("respects a typed prefix; vip == sip; bare digits match any track", () => {
+    expect(matchDisplayIdQuery("TIR-26255", "VIP-26255")).toBe(false);
+    expect(matchDisplayIdQuery("VIP-26255", "vip-26255")).toBe(true);
+    expect(matchDisplayIdQuery("VIP-26255", "sip-26255")).toBe(true);
+    expect(matchDisplayIdQuery("TIR-26255", "tir26255")).toBe(true);
+    expect(matchDisplayIdQuery("TIR-26255", "26255")).toBe(true);
+    expect(matchDisplayIdQuery("TIR-26255", "acme")).toBe(null);
+  });
+});

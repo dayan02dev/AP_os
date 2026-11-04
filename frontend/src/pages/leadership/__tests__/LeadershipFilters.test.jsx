@@ -222,10 +222,10 @@ describe("Applications tab controls", () => {
       await waitFor(() => expect(visibleIds()).toEqual(ids));
     });
 
-  it("ok: search is debounced, trimmed, prefix-stripped and resets the page", async () => {
+  it("ok: search is debounced, trimmed, keeps the ID prefix and resets the page", async () => {
     await openApps();
     fireEvent.change(screen.getByLabelText("Search applications"), { target: { value: "  TIR-T3 " } });
-    await waitFor(() => expect(lastCall().search).toBe("T3"), { timeout: 2000 });
+    await waitFor(() => expect(lastCall().search).toBe("TIR-T3"), { timeout: 2000 });
     expect(lastCall().offset).toBe(0);
   });
 

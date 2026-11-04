@@ -153,3 +153,18 @@ export function generateBasicPassword() {
   }
   return pass;
 }
+
+// Display-ID search ("TIR-26255", "vip-26255", "26255"). A typed TIR-/VIP-/SIP-
+// prefix must match the prefix the row's displayed ID shows (the native track,
+// same as the backend's seq match; VIP == SIP) because both sequences start at
+// 26001 and the digits alone collide. Returns null when `q` is not an ID query.
+export function matchDisplayIdQuery(applicationId, q) {
+  const m = String(q || "").trim().toLowerCase().match(/^(?:(tir|vip|sip)-?)?(\d+)$/);
+  if (!m) return null;
+  const id = String(applicationId || "");
+  if (id.replace(/^\D+/, "") !== m[2]) return false;
+  if (!m[1]) return true;
+  const norm = (p) => (p === "SIP" ? "VIP" : p);
+  const shown = (id.match(/^[A-Za-z]+/) || [""])[0].toUpperCase();
+  return norm(m[1].toUpperCase()) === norm(shown);
+}

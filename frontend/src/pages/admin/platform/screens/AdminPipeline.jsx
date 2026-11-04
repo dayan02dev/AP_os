@@ -25,6 +25,7 @@ import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { Chip } from "../ui.jsx";
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
+import { matchDisplayIdQuery } from "../helpers/adminHelpers.js";
 import { relabelDisplayId, trackLabel, displayIdText } from "../../../../lib/trackLabel.js";
 import { chipLabel, chipStatusId, chipTone } from "../../../../lib/adminDataAdapter";
 import { RecoCell, aggregateReco } from "../../../../components/RecoCell";
@@ -109,9 +110,7 @@ const RECO_BUCKETS = [['yes', 'Yes'], ['maybe', 'Maybe'], ['no', 'No'], ['single
 const RECO_RANK = { yes: 0, maybe: 1, no: 2, single: 3, none: 4 };
 
 // Display-ID search: "TIR-27326", "vip-26255", "SIP-26255" or bare "27326"
-// all reduce to the digits (the UI shows SIP as VIP, so any prefix matches).
-const ID_QUERY = /^(?:(?:tir|vip|sip)-?)?(\d+)$/;
-const idDigits = (id) => String(id || '').replace(/^\D+/, '');
+// reduce to the digits; a typed prefix must match the displayed ID's prefix.
 
 // Display-ID sort key: track prefix, then the numeric sequence (so TIR-1001
 // sorts before TIR-26580), never the row UUID.
@@ -284,7 +283,6 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   // would show given the rest of the active filters — track included.
   const facetOk = React.useMemo(() => {
     const q = search.trim().toLowerCase();
-    const idq = q ? q.match(ID_QUERY) : null;
     return {
       base: (s) => {
         if (s.archived || s.hidden) return false;
@@ -303,7 +301,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       },
       search: (s) => {
         if (!q) return true;
-        const matchId = idq ? idDigits(s.applicationId) === idq[1] : false;
+        const matchId = matchDisplayIdQuery(s.applicationId, q) === true;
         return matchId
           || (s.name || '').toLowerCase().includes(q)
           || (s.org || '').toLowerCase().includes(q)
