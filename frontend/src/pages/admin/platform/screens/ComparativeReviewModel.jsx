@@ -13,6 +13,7 @@
 import React from "react";
 import { revInitials } from "../helpers/adminHelpers";
 import ReviewerFeedback from "../../../../components/ReviewerFeedback.jsx";
+import { pyRound } from "../../../../lib/reviewScore.js";
 
 function fmtDate(iso) {
   if (!iso) return "";
@@ -55,7 +56,7 @@ const CRITERIA = [
 
 // `loading` — the startup's reviews are still being fetched: show that rather
 // than the empty "No reviewer evaluations" message.
-export function ComparativeReviewModel({ startup, reviewersById = {}, loading = false }) {
+export function ComparativeReviewModel({ startup, reviewersById = {}, loading = false, loadFailed = false }) {
   const s = startup;
   if (!s) return null;
 
@@ -70,6 +71,8 @@ export function ComparativeReviewModel({ startup, reviewersById = {}, loading = 
 
       {loading && reviews.length === 0 ? (
         <p className="os-text-dim os-text-sm">Loading reviewer evaluations…</p>
+      ) : reviews.length === 0 && loadFailed ? (
+        <p className="os-text-sm" role="alert" style={{ color: '#b3262b' }}>Could not load the reviewer evaluations. Move to another application and back to retry.</p>
       ) : reviews.length === 0 ? (
         <p className="os-text-dim os-text-sm">No reviewer evaluations submitted yet.</p>
       ) : (
@@ -98,7 +101,7 @@ export function ComparativeReviewModel({ startup, reviewersById = {}, loading = 
 
                 <div className="rv-overall">
                   <span className="rv-overall-label">Weighted score</span>
-                  <span className="rv-overall-num" data-testid="rv-overall">{typeof rv.overall === 'number' ? rv.overall.toFixed(1) : '—'}</span>
+                  <span className="rv-overall-num" data-testid="rv-overall">{typeof rv.overall === 'number' ? pyRound(rv.overall, 1).toFixed(1) : '—'}</span>
                 </div>
 
                 <div className="rv-scores">

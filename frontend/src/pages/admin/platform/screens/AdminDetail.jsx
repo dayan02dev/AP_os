@@ -14,13 +14,13 @@
 //
 // IMPORTANT: Do NOT read window.OS_DATA.STARTUPS. All data comes from loadDetail.
 
-import React, { useState, useEffect, useCallback, useReducer, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useReducer, useMemo, useRef } from "react";
 import { loadDetail, useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { leadershipApi } from "../../../../lib/leadershipApi";
 import { BUTTON_TO_DECISION, chipLabel } from "../../../../lib/adminDataAdapter";
 import { pyRound } from "../../../../lib/reviewScore.js";
-import { AdminDecisionList } from "../../../../components/ReviewerFeedback.jsx";
+import { AdminDecisionList, isAutoRationale } from "../../../../components/ReviewerFeedback.jsx";
 import VipMemoPreview from "../../../../components/VipMemoPreview.jsx";
 import { readVipMemo, writeVipMemo } from "../../../../lib/vipMemoCache";
 import { saveBlob, useVipMemoV2, vipMemoV2Filename } from "../../../../lib/vipMemoV2.js";
@@ -144,25 +144,33 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
     return Object.fromEntries(list.filter(r => typeof r.weight === 'number').map(r => [r.id, r.weight]));
   }, [reviewerData]);
 
+  // Latest-request guard: a slow response for an earlier app must not overwrite
+  // the one now on screen.
+  const loadSeq = useRef(0);
   const doLoad = useCallback(async () => {
     if (!startupId || !track) return;
+    const seq = ++loadSeq.current;
     setLoading(true);
+    setError(null);
+    setBanner(null);
+    setDecisionError(null);
     setVipMemo(null);
     try {
       const d = await loadDetail(track, startupId);
+      if (seq !== loadSeq.current) return;
       setS(d);
-      // Pre-fill decision from existing adminDecision
+      // Pre-fill decision from existing adminDecision. Only Approve / Reject
+      // have buttons; a hold / waitlist decision has none to preselect.
       const ad = (d.adminDecision || '').toLowerCase();
       if (ad === 'approved') setDecision('approve');
-      else if (ad === 'hold') setDecision('hold');
       else if (ad === 'rejected') setDecision('reject');
-      else if (ad === 'waitlisted') setDecision('waitlist');
       else setDecision(null);
       setRationale(d.adminRationale || '');
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setError(e);
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [startupId, track]);
 
@@ -351,7 +359,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
         {/* Spacer offsets the fixed back bar so the first section isn't hidden. */}
         <div style={{ height: 48 }} aria-hidden="true" />
         <FullApplication
-          track={track}
+          track={s.nativeTrack || track}
           application={s.application}
           applicationId={s.id}
           signedUrl={(id, path) => leadershipApi.fileSignedUrl(id, path)}
@@ -452,7 +460,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
               )}
               {memoTab === "application" && (
                 <FullApplication
-                  track={track}
+                  track={s.nativeTrack || track}
                   application={s.application}
                   applicationId={s.id}
                   signedUrl={(id, path) => leadershipApi.fileSignedUrl(id, path)}
@@ -543,7 +551,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
                 <div className="os-text-sm" style={{ fontWeight: 600 }}>
                   {stageLabel}{isFinalRound && !isAccepted && signedKeys ? ' · IC memo not yet approved' : ''}{s.adminDecision ? ` · last admin decision: ${s.adminDecision.toLowerCase()}` : ''}
                 </div>
-                {s.adminRationale && (
+                {s.adminRationale && !isAutoRationale(s.adminRationale) && (
                   <div className="os-text-sm os-text-soft" style={{ marginTop: 6 }}>{s.adminRationale}</div>
                 )}
                 <div className="os-mt-sm" style={{ fontSize: 12, color: '#6f6f78', fontStyle: 'italic' }}>
@@ -558,7 +566,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
               {[
                 { id: 'approve', label: 'Approve', activeStyle: { background: '#3213b7', color: '#fff', borderColor: '#3213b7' } },
                 { id: 'reject',  label: 'Reject',  activeStyle: {} },
-              ].map(btn => (
+              ].filter(btn => !(btn.id === 'approve' && s.chip === 'WAITLISTED')).map(btn => (
                 <button
                   key={btn.id}
                   className={`os-reco-btn${decision === btn.id ? ` active ${btn.id === 'approve' ? 'yes' : btn.id === 'reject' ? 'no' : 'maybe'}` : ''}`}

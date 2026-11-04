@@ -45,9 +45,26 @@ function dataUrlToBytes(dataUrl) {
   return out;
 }
 
+/**
+ * Standard fonts only encode WinAnsi; drawing anything else throws and would
+ * sink the whole Approve. Fold accents to their base letter (Ā -> A) and show
+ * "?" for what has no Latin form (e.g. Devanagari). The recorded signer
+ * identity is stored server-side, so this only affects the visual stamp.
+ */
+function encodable(text, font) {
+  const ok = (ch) => { try { font.encodeText(ch); return true; } catch { return false; } };
+  let out = "";
+  for (const ch of text) {
+    if (ok(ch)) { out += ch; continue; }
+    const base = ch.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    out += base && base !== ch && [...base].every(ok) ? base : "?";
+  }
+  return out;
+}
+
 /** Trim a string to fit `maxWidth` at `size`, adding an ellipsis if cut. */
 function fit(text, font, size, maxWidth) {
-  let s = String(text || "");
+  let s = encodable(String(text || ""), font);
   if (font.widthOfTextAtSize(s, size) <= maxWidth) return s;
   while (s.length > 1 && font.widthOfTextAtSize(s + "…", size) > maxWidth) {
     s = s.slice(0, -1);
