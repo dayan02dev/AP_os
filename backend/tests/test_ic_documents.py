@@ -423,8 +423,8 @@ def test_list_filters_by_track_and_excludes_superseded(monkeypatch, _clear_overr
     assert sorted(d["file_name"] for d in every) == ["current-sip.pdf", "current-tir.pdf"]
 
 
-def test_list_degrades_to_empty_on_db_failure(monkeypatch, _clear_overrides):
-    """A data problem must never blank the screen with a 500."""
+def test_list_503s_on_db_failure(monkeypatch, _clear_overrides):
+    """A DB fault is a 503 (FE shows an error state), not a fake empty list."""
     from app.routers import ic_documents as router_mod
 
     class _Boom:
@@ -436,8 +436,7 @@ def test_list_degrades_to_empty_on_db_failure(monkeypatch, _clear_overrides):
     monkeypatch.setattr(router_mod, "get_admin_client", lambda: _Boom())
     app.dependency_overrides[get_current_user] = _override_user(["admin"])
     r = _client().get("/admin/platform/ic-documents?track=sip")
-    assert r.status_code == 200
-    assert r.json() == {"documents": []}
+    assert r.status_code == 503
 
 
 # ── 7. Multiple documents per application (mig 046) ────────────────────────

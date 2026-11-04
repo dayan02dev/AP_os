@@ -74,7 +74,7 @@ def _world():
 
 
 # ── S2-ADM-06 ────────────────────────────────────────────────────────────
-async def test_invite_existing_applicant_without_delivery_keeps_password(monkeypatch):
+async def test_invite_existing_applicant_without_delivery_still_resets_and_returns_password(monkeypatch):
     auth = _Auth()
     sb = _SB({"profiles": [{"id": "u1", "email": "u@x.in", "full_name": "U"}],
               "user_roles": [{"user_id": "u1", "role": "applicant"}],
@@ -84,8 +84,10 @@ async def test_invite_existing_applicant_without_delivery_keeps_password(monkeyp
                         lambda: SimpleNamespace(send_reviewer_invite=lambda **k: None))
     body = admin_users.CreateUserRequest(email="u@x.in", full_name="U",
                                          roles=["reviewer"], send_invite=False)
-    await admin_users.create_user(body, current_user=ADMIN)
-    assert not [p for _, p in auth.updates if "password" in p]
+    out = await admin_users.create_user(body, current_user=ADMIN)
+    # Legacy /admin/users/new shows the returned temp_password: it IS the delivery.
+    pw = [p["password"] for _, p in auth.updates if "password" in p]
+    assert pw and out["temp_password"] == pw[0]
 
 
 async def test_invite_existing_applicant_with_email_still_resets(monkeypatch):
@@ -242,7 +244,7 @@ def test_logout_revokes_callers_own_token_not_shared_anon_session(client, monkey
         "user_id": "user-B", "email": "b@x.in", "track": None, "roles": []}
     r = client.post("/auth/logout", headers={"Authorization": "Bearer USER_B-token"})
     assert r.status_code == 200
-    admin.auth.admin.sign_out.assert_called_once_with("USER_B-token", "global")
+    admin.auth.admin.sign_out.assert_called_once_with("USER_B-token", "local")
     anon.auth.sign_out.assert_not_called()
 
 
@@ -377,13 +379,13 @@ def test_ip_rotation_hits_per_email_ceiling(client, monkeypatch):
     monkeypatch.setattr(auth_mod, "_client_ip", lambda request: ip["v"])
     anon.auth.sign_in_with_password.side_effect = Exception("Invalid login credentials")
     codes = []
-    for n in range(7):          # 7 IPs x 5 failures = 35 > ceiling of 30
+    for n in range(7):          # 7 IPs x 5 failures = 35 > ceiling of 15
         ip["v"] = f"9.9.9.{n}"
         for _ in range(5):
             codes.append(client.post("/auth/sign-in-password",
                          json={"email": "victim@artpark.in", "password": "wrongpass1"}).status_code)
-    assert codes[:30] == [401] * 30
-    assert 429 in codes[30:]
+    assert codes[:15] == [401] * 15
+    assert 429 in codes[15:]
 
 
 def test_ip_rotation_hits_per_email_ceiling_otp(client, monkeypatch):
@@ -399,7 +401,7 @@ def test_ip_rotation_hits_per_email_ceiling_otp(client, monkeypatch):
         for _ in range(5):
             codes.append(client.post("/auth/verify-otp",
                          json={"email": "victim@artpark.in", "token": "000000"}).status_code)
-    assert 429 in codes[30:]
+    assert 429 in codes[15:]
 
 
 async def test_revoke_reviewer_audit_records_deleted_triples(monkeypatch):

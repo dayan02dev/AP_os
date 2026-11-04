@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..supabase_client import get_admin_client
-from . import staff_exclusions
+from . import staff_exclusions, stats
 
 log = logging.getLogger(__name__)
 
@@ -757,7 +757,11 @@ def _fetch_gate_context(sb, ids_by_track: dict[str, list[str]]) -> tuple[dict, d
             log.warning("gate ctx: admin_decisions fetch failed",
                         extra={"track": track, "err": str(exc)})
             rows = []
+        reached: set[str] = set()
         for r in rows:
+            if (r.get("application_track") == track and r.get("application_id") in idset
+                    and r.get("decision") == "jury_review"):
+                reached.add(r["application_id"])
             if (r.get("application_track") != track or r.get("application_id") not in idset
                     or r.get("gate_stage") != "gate2"):
                 continue
@@ -765,6 +769,10 @@ def _fetch_gate_context(sb, ids_by_track: dict[str, list[str]]) -> tuple[dict, d
             cur = gate2.get(key)
             if cur is None or (r.get("decided_at") or "") >= (cur.get("decided_at") or ""):
                 gate2[key] = r
+        # Same REACHED_FINAL rule as stats.pipeline_stage: flag apps that were
+        # ever decided into the final round (marker consumed by _admin_decision).
+        for aid in reached:
+            gate2[(aid, track)] = {**gate2.get((aid, track), {}), stats.REACHED_FINAL: True}
         try:
             rows = []
             for chunk in _chunks(ids):
@@ -790,9 +798,10 @@ def _admin_decision(app_status: str | None, gate2_row: dict | None,
     portal-wide pipeline breakdown (C1): final_selected = jury_review with >=1
     current IC document and every current one signed."""
     if app_status == "rejected":
-        if (gate2_row or {}).get("decision") == "rejected":
-            return "final_rejected"
-        return "gate1_rejected"
+        stage = stats.pipeline_stage(
+            "rejected", (gate2_row or {}).get("decision"), False,
+            bool((gate2_row or {}).get(stats.REACHED_FINAL)))
+        return stage  # final_rejected | gate1_rejected
     if app_status == "jury_review":
         if current_docs and all(d.get("signed_storage_path") for d in current_docs):
             return "final_selected"
