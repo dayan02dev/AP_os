@@ -326,6 +326,12 @@ function AdminApp() {
     pipelineBadges(statsData, statsPending, juryReviewCount);
   // Approve / Reject on the Accepted tab changes these counts.
   const refreshBadges = () => { reloadStats(); };
+  // Decisions / bulk actions happen on tabs that don't own the badge counts:
+  // refresh them whenever the visible page changes (not on first mount).
+  const prevPageRef = React.useRef(page);
+  React.useEffect(() => {
+    if (prevPageRef.current !== page) { prevPageRef.current = page; reloadStats(); }
+  }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
   // "Admin Review" = apps evaluated by reviewers and awaiting an admin decision.
   const evaluatedEntry = (statsData?.statusCounts || []).find(s => s.id === 'evaluated');
   const reviewBadge = statsPending ? null : (evaluatedEntry ? evaluatedEntry.n : null);
@@ -389,6 +395,7 @@ function AdminApp() {
     // sequence; otherwise a valid next application would look like "no next".
     const hasDecidedId = detailSeq.some(r => String(r.id) === String(decidedId));
     const sequenceId = hasDecidedId ? decidedId : selectedStartupId;
+    refreshBadges();
     if (goSeq(1, sequenceId)) return;
     setPage(backPage);
   };

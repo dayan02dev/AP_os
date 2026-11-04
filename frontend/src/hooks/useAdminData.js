@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { adminPlatformApi } from "../lib/adminPlatformApi";
 import { icDocumentsApi } from "../lib/icDocumentsApi";
 import {
@@ -68,16 +68,20 @@ export function useAdminData(kind, params, { retries = 0, retryDelayMs = 1500 } 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const key = JSON.stringify(params || {});
+  // Latest-request-wins: an older load that resolves after a newer one must not
+  // overwrite the newer data.
+  const reqId = useRef(0);
   const reload = useCallback(() => {
+    const myReq = ++reqId.current;
     setLoading(true);
     const attempt = (left) => LOADERS[kind](params || {}).catch((e) => {
       if (left <= 0) throw e;
       return new Promise((r) => setTimeout(r, retryDelayMs)).then(() => attempt(left - 1));
     });
-    attempt(retries)
-      .then((d) => { setData(d); setError(null); })
-      .catch((e) => setError(e))
-      .finally(() => setLoading(false));
+    return attempt(retries)
+      .then((d) => { if (myReq === reqId.current) { setData(d); setError(null); } })
+      .catch((e) => { if (myReq === reqId.current) setError(e); })
+      .finally(() => { if (myReq === reqId.current) setLoading(false); });
   }, [kind, key, retries, retryDelayMs]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { reload(); }, [reload]);
   return { data, loading, error, reload };

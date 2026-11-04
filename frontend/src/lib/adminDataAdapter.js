@@ -107,7 +107,11 @@ export function adaptPipelineRow(row) {
     // Contract C2 — absent on older backends (callers fall back to the tally).
     reviewCount: row.review_count ?? null,
     gate1_decision: row.gate1_decision,   // undefined = backend predates C2
-    decidedAt: row.decided_at || null,
+    // Gate-1 History shows the 1st-gate decision date; `decided_at` is the
+    // latest decision of ANY gate, so prefer gate1_decided_at when present.
+    decidedAt: row.gate1_decided_at || row.decided_at || null,
+    // Raw admin decision (adminDecision above collapses shortlisted/jury_review).
+    decision: row.decision || null,
   };
 }
 

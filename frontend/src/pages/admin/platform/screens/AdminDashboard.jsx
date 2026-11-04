@@ -291,9 +291,9 @@ function LegacyOverview({ data, selectedCount }) {
 
 // ─── AdminDashboard ───────────────────────────────────────────────────────────
 export function AdminDashboard({ go, selectedCount = null }) {
-  const { data, loading, error } = useAdminData('stats');
+  const { data, loading, error, reload } = useAdminData('stats');
   // Pipeline drives the real "Applications by industry" breakdown.
-  const { data: pipelineData, loading: pipelineLoading } = useAdminData('pipeline', {});
+  const { data: pipelineData, loading: pipelineLoading, error: pipelineError } = useAdminData('pipeline', {});
 
   // Group pipeline rows on their `domain` field → [{ name, count, pct }] sorted desc.
   const industries = React.useMemo(() => {
@@ -314,7 +314,12 @@ export function AdminDashboard({ go, selectedCount = null }) {
   }, [pipelineData]);
 
   if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
-  if (error) return <div style={{ padding: 24 }} className="os-banner red">Failed to load dashboard.</div>;
+  if (error) return (
+    <div style={{ padding: 24 }} className="os-banner red">
+      Failed to load dashboard.{' '}
+      <button type="button" className="lp-filter-btn" onClick={() => reload()}>Retry</button>
+    </div>
+  );
 
   const breakdown = data?.pipelineBreakdown;
   return (
@@ -335,7 +340,9 @@ export function AdminDashboard({ go, selectedCount = null }) {
             Click an industry to jump into the Applications tab pre-filtered — that tab holds only apps still in review.
           </div>
         </div>
-        {pipelineLoading && industries.length === 0
+        {pipelineError && !pipelineData
+          ? <div className="os-banner red">Failed to load applications by industry.</div>
+          : pipelineLoading && industries.length === 0
           ? <div style={{ fontSize: 13, color: 'var(--ink-dim)' }}>…</div>
           : <ApplicationsByIndustry go={go} industries={industries} />}
       </div>
