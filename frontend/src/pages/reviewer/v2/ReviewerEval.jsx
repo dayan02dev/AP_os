@@ -1001,6 +1001,7 @@ function ReviewerEvalForm({
               className="notes-area"
               placeholder="What stood out in your assessment? Key strengths, concerns, or context behind your scores."
               value={notes}
+              maxLength={10000}
               onChange={(e) => edit(setNotes)(e.target.value)}
               disabled={!editable}
               style={fieldErrors.notes ? { borderColor: "var(--bad)" } : undefined}

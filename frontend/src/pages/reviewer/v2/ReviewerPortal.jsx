@@ -164,6 +164,13 @@ export function historyCsvRows(rows) {
 
 async function exportReviewerHistoryCsv() {
   const data = await reviewerApi.getHistory();
+  // 200 {rows:[], degraded:true} is an outage, not an empty history: don't
+  // hand the reviewer a header-only file.
+  if (data && data.degraded) {
+    const e = new Error("Your review history is temporarily unavailable.");
+    e.degraded = true;
+    throw e;
+  }
   downloadCsv(historyCsvRows(data && data.rows), "reviewer-history-TIR-VIP-2026.csv");
 }
 // ── Cohort page header ─────────────────────────────────────────────────
@@ -190,7 +197,7 @@ function ReviewerCohortHeader({ tab }) {
     try {
       await (tab === "history" ? exportReviewerHistoryCsv() : exportReviewerQueueCsv(tab));
     } catch (err) {
-      alert("Export failed — please try again.");
+      alert(err && err.degraded ? err.message : "Export failed — please try again.");
     } finally {
       setExporting(false);
     }
