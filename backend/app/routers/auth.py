@@ -82,7 +82,7 @@ _PWD_SIGNIN_WINDOW_S = 15 * 60
 # Looser per-email ceiling across ALL source IPs. The per-(email, IP) bucket
 # stops a third party locking the owner out; this one still caps distributed
 # (IP-rotating) brute force, and needs 30+ requests to lock the owner out.
-_EMAIL_CEILING_MAX = 30
+_EMAIL_CEILING_MAX = 15
 _EMAIL_CEILING_WINDOW_S = 15 * 60
 
 # Set-password is per-user (Bearer-keyed) — 5/hour is plenty for the legitimate
@@ -346,7 +346,7 @@ async def logout(request: Request, current_user: dict = Depends(get_current_user
     token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else ""
     if token:
         with contextlib.suppress(Exception):
-            get_admin_client().auth.admin.sign_out(token, "global")
+            get_admin_client().auth.admin.sign_out(token, "local")
     return SimpleOK(ok=True)
 
 
