@@ -55,13 +55,16 @@ _BUCKET = "ic-documents"
 # (same incident as sip_evidence_files).
 _MAX_BYTES = 4 * 1024 * 1024
 _PDF_MIME = "application/pdf"
+# Signing a memo uploaded under the older 10 MiB cap must still work: the real
+# ceiling is the gateway/Lambda transport (~4.4 MiB decoded), not the upload cap.
+_MAX_SIGNED_BYTES = int(4.4 * 1024 * 1024)
 
 
 def _error(status_code: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code, "message": message})
 
 
-async def _read_pdf(file: UploadFile) -> bytes:
+async def _read_pdf(file: UploadFile, max_bytes: int = _MAX_BYTES) -> bytes:
     """Validate + read an uploaded PDF. Rejects non-PDF, empty and oversized."""
     mime = (file.content_type or "").lower().split(";")[0].strip()
     if mime != _PDF_MIME:
@@ -70,9 +73,9 @@ async def _read_pdf(file: UploadFile) -> bytes:
     data = await file.read()
     if not data:
         raise _error(http_status.HTTP_400_BAD_REQUEST, "empty_file", "The file is empty.")
-    if len(data) > _MAX_BYTES:
+    if len(data) > max_bytes:
         raise _error(http_status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "too_large",
-                     f"File exceeds {_MAX_BYTES // (1024 * 1024)} MiB.")
+                     f"File exceeds {max_bytes / (1024 * 1024):g} MiB.")
     # Cheap magic-byte check so a renamed .docx can't sail through on MIME alone.
     if not data.startswith(b"%PDF"):
         raise _error(http_status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "unsupported_media",
@@ -168,8 +171,8 @@ def _public_doc(row: dict | None) -> dict | None:
 async def list_ic_documents(track: str | None = Query(default=None)) -> dict[str, Any]:
     """Every current IC document, optionally narrowed to one track.
 
-    Degrades to an empty list rather than 500-ing, so a data problem can never
-    blank the whole Jury VIP screen.
+    A DB failure is a 503 (the screen shows an error state) rather than a
+    misleading empty list.
     """
     sb = get_admin_client()
     try:
@@ -179,7 +182,8 @@ async def list_ic_documents(track: str | None = Query(default=None)) -> dict[str
         rows = q.execute().data or []
     except Exception as exc:
         log.warning("ic_documents: list failed", extra={"track": track, "err": str(exc)})
-        return {"documents": []}
+        raise _error(http_status.HTTP_503_SERVICE_UNAVAILABLE, "list_unavailable",
+                     "Could not load IC documents, please retry.") from exc
     rows = [r for r in staff_exclusions.visible(rows, key="application_id")
             if r.get("superseded_at") is None
             and (not track or r.get("application_track") == track)]
@@ -299,7 +303,7 @@ async def sign_ic_document(
                          "That document is no longer current. Refresh and try again.")
         raise _error(http_status.HTTP_409_CONFLICT, "no_ic_document",
                      "Upload the IC document before signing it.")
-    data = await _read_pdf(file)
+    data = await _read_pdf(file, _MAX_SIGNED_BYTES)
 
     signed_path = f"{track}/{application_id}/{current['id']}-signed.pdf"
     try:
