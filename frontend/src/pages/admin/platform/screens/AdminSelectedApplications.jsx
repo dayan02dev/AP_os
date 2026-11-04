@@ -40,7 +40,9 @@ import ListToolbar from "./ListToolbar";
 const MODAL_STYLES = `
   @keyframes osModalFadeIn { from { opacity: 0; } to { opacity: 1; } }
 `;
-const MAX_MB = 10;
+// API Gateway -> Lambda rejects bodies over ~4.5 MB (multipart is base64-encoded),
+// so the real ceiling is below 6 MB; keep in step with ic_documents._MAX_BYTES.
+const MAX_MB = 4;
 const keyOf = (track, id) => `${track}:${id}`;
 // IC documents are keyed by the NATIVE track (where the application row lives),
 // while a row's displayed track is the EFFECTIVE one. For a moved app those

@@ -49,7 +49,11 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/platform/ic-documents", tags=["ic-documents"])
 
 _BUCKET = "ic-documents"
-_MAX_BYTES = 10 * 1024 * 1024
+# API Gateway (HTTP API) -> Lambda caps the synchronous payload at 6 MB and the
+# multipart body arrives base64-encoded (+33%), so anything over ~4.5 MB never
+# reaches this code. Cap below that so the limit is real and the error is ours
+# (same incident as sip_evidence_files).
+_MAX_BYTES = 4 * 1024 * 1024
 _PDF_MIME = "application/pdf"
 
 
@@ -117,7 +121,10 @@ def _fetch_current_all(sb: Any, track: str, application_id: str) -> list[dict]:
     except Exception as exc:
         log.warning("ic_documents: current fetch failed",
                     extra={"application_id": application_id, "track": track, "err": str(exc)})
-        return []
+        # Never pretend there is no current document: callers would answer a
+        # misleading 409 "upload first" or skip superseding on a replace.
+        raise _error(http_status.HTTP_502_BAD_GATEWAY, "lookup_failed",
+                     "Couldn't load the current IC documents. Try again.") from exc
     # Re-filter in Python: the hermetic fake honors .eq/.is_ but prod is the
     # authority, and a belt-and-braces filter costs nothing.
     rows = [r for r in rows

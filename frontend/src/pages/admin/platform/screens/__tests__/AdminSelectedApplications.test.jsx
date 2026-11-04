@@ -325,14 +325,14 @@ describe("AdminSelectedApplications — Memo Upload", () => {
     expect(icDocumentsApi.upload).not.toHaveBeenCalled();
   });
 
-  it("refuses a file over the 10 MiB cap before any network call", () => {
+  it("refuses a file over the 4 MiB cap (fits API Gateway/Lambda) before any network call", () => {
     wire();
     render(<AdminSelectedApplications />);
     fireEvent.click(screen.getAllByText("Upload Memos")[0]);
     const big = new File([new Uint8Array(2)], "big.pdf", { type: "application/pdf" });
-    Object.defineProperty(big, "size", { value: 11 * 1024 * 1024 });
+    Object.defineProperty(big, "size", { value: 6 * 1024 * 1024 });
     fireEvent.change(screen.getByLabelText("Memo PDF"), { target: { files: [big] } });
-    expect(screen.getByText(/the limit is 10 MiB/)).toBeTruthy();
+    expect(screen.getByText(/the limit is 4 MiB/)).toBeTruthy();
     expect(icDocumentsApi.upload).not.toHaveBeenCalled();
   });
 
