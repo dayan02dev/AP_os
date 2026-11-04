@@ -16,6 +16,7 @@
 //   - Backend returns {"error": {code, message, ...}} — we unwrap that here
 
 import {
+  adoptStoredSession,
   clearSession,
   getAccessToken,
   refreshSession,
@@ -114,6 +115,36 @@ function _serializeBody(body) {
   return JSON.stringify(body);
 }
 
+// Credential endpoints answer 401 for a wrong OTP/password — that is not token
+// expiry, so it must not trigger refresh/replay or wipe an existing session.
+const NO_REFRESH_PATHS = ["/auth/verify-otp", "/auth/sign-in-password", "/auth/request-otp"];
+function _isCredentialPath(path) {
+  return NO_REFRESH_PATHS.some((p) => String(path).includes(p));
+}
+
+// A refresh that failed for a transient reason (network, timeout, 429, 5xx)
+// leaves the still-valid refresh token in place.
+function _isTransientRefreshFailure(err) {
+  if (!(err instanceof ApiError)) return true; // network failure (TypeError) etc.
+  return err.status === 0 || err.status === 429 || err.status >= 500;
+}
+
+// Refresh for a 401. Returns true when the caller should retry the request,
+// false when it should give up (session wiped or left untouched as appropriate).
+async function _refreshForRetry() {
+  try {
+    await refreshSession();
+    return true;
+  } catch (err) {
+    if (_isTransientRefreshFailure(err)) return false; // keep the session
+    // Refresh token genuinely rejected. If another tab already rotated this
+    // user's tokens, use those instead of signing out.
+    if (adoptStoredSession()) return true;
+    clearSession({ onlyIfOwn: true });
+    return false;
+  }
+}
+
 async function _runRequest(path, opts) {
   const url = path.startsWith("http") ? path : `${baseUrl()}${path.startsWith("/") ? "" : "/"}${path}`;
   const controller = new AbortController();
@@ -175,18 +206,15 @@ export async function apiCall(path, opts = {}) {
     // Second consecutive 401 → the refreshed token was also rejected (or the
     // session was cleared mid-flight). Give up cleanly.
     if (opts._isRetry) {
-      clearSession();
+      clearSession({ onlyIfOwn: true });
       throw await _buildError(response);
     }
     // No token to refresh → just bubble.
-    if (!getAccessToken()) {
+    if (!getAccessToken() || _isCredentialPath(path)) {
       throw await _buildError(response);
     }
     // First 401 with a token — try to refresh, then retry the original call.
-    try {
-      await refreshSession();
-    } catch {
-      clearSession();
+    if (!(await _refreshForRetry())) {
       throw await _buildError(response);
     }
     return apiCall(path, { ...opts, _isRetry: true });
@@ -213,11 +241,17 @@ export const api = {
   put: (path, body, opts = {}) => apiCall(path, { ...opts, method: "PUT", body }),
   del: (path, opts = {}) => apiCall(path, { ...opts, method: "DELETE" }),
   download: async (path, opts = {}) => {
-    const response = await fetch(`${baseUrl()}${path}`, {
-      method: opts.method || "POST",
-      headers: _buildHeaders(opts),
-      credentials: "omit",
-    });
+    const doFetch = () =>
+      fetch(`${baseUrl()}${path}`, {
+        method: opts.method || "POST",
+        headers: _buildHeaders(opts),
+        credentials: "omit",
+      });
+    let response = await doFetch();
+    // Expired access token: refresh once and retry, like apiCall does.
+    if (response.status === 401 && getAccessToken() && !opts.headers?.Authorization) {
+      if (await _refreshForRetry()) response = await doFetch();
+    }
     if (!response.ok) throw await _buildError(response);
     return response.blob();
   },

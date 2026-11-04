@@ -24,8 +24,20 @@ export function AuthProvider({ children }) {
         if (!cancelled) setLoading(false);
         return;
       }
+      // A transient failure (network, 5xx, 429) must not look like "signed
+      // out": retry /auth/me a couple of times before giving up.
+      const transient = (e) => !e || !e.status || e.status === 429 || e.status >= 500;
       try {
-        const me = await auth.getMe();
+        let me;
+        for (let attempt = 0; ; attempt++) {
+          try {
+            me = await auth.getMe();
+            break;
+          } catch (err) {
+            if (attempt >= 2 || cancelled || !transient(err)) throw err;
+            await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          }
+        }
         if (!cancelled) setUser(me);
       } catch (err) {
         if (!cancelled) setError(err);
@@ -41,7 +53,12 @@ export function AuthProvider({ children }) {
 
   // Listen for session expiry → wipe user.
   useEffect(() => {
-    const onExpired = () => setUser(null);
+    // The session ended without the Sign out button (failed refresh, 401
+    // retry): the next person on this tab must not inherit the sticky filters.
+    const onExpired = () => {
+      clearStickyState();
+      setUser(null);
+    };
     window.addEventListener("auth:expired", onExpired);
     return () => window.removeEventListener("auth:expired", onExpired);
   }, []);

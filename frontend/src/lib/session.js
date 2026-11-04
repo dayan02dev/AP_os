@@ -46,10 +46,48 @@ export function saveSession(session) {
   window.dispatchEvent(new CustomEvent("auth:session-saved", { detail: _memorySession }));
 }
 
-export function clearSession() {
+// Identity of a session: explicit user id, else the access-token JWT `sub`.
+function _userId(s) {
+  if (!s) return null;
+  if (s.user && s.user.id) return s.user.id;
+  try {
+    const part = String(s.access_token || "").split(".")[1];
+    if (!part) return null;
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(json).sub || null;
+  } catch {
+    return null;
+  }
+}
+
+function _differentUsers(a, b) {
+  const ua = _userId(a);
+  const ub = _userId(b);
+  return !!(ua && ub && ua !== ub);
+}
+
+// Another tab may have rotated this user's tokens in shared localStorage. Adopt
+// them (same user only) so this tab does not keep refreshing with a spent token.
+// Returns true when the in-memory session changed.
+export function adoptStoredSession() {
+  const stored = _readFromStorage();
+  if (!stored || !_memorySession) return false;
+  if (stored.refresh_token === _memorySession.refresh_token) return false;
+  if (_differentUsers(stored, _memorySession)) return false;
+  _memorySession = stored;
+  return true;
+}
+
+// opts.onlyIfOwn: wipe localStorage only when it still holds THIS tab's tokens,
+// so a stale tab's failed refresh cannot sign out another tab/user.
+export function clearSession(opts = {}) {
+  const mine = _memorySession;
   _memorySession = null;
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    const stored = opts.onlyIfOwn ? _readFromStorage() : null;
+    if (!opts.onlyIfOwn || !stored || !mine || stored.refresh_token === mine.refresh_token) {
+      localStorage.removeItem(STORAGE_KEY);
+    }
   } catch {
     /* noop */
   }
@@ -84,6 +122,7 @@ export function refreshSession() {
   }
   if (_refreshPromise) return _refreshPromise;
 
+  adoptStoredSession();
   const current = loadSession();
   if (!current || !current.refresh_token) {
     _refreshPromise = Promise.reject(new Error("no refresh token"));
@@ -96,6 +135,13 @@ export function refreshSession() {
 
   _refreshPromise = _doRefreshCall(current.refresh_token)
     .then((newSession) => {
+      // A different user signed in from another tab while this refresh was in
+      // flight: keep the rotated tokens in memory only, never overwrite theirs.
+      if (_differentUsers(_readFromStorage(), current)) {
+        _memorySession = { ...newSession };
+        window.dispatchEvent(new CustomEvent("auth:session-saved", { detail: _memorySession }));
+        return newSession;
+      }
       saveSession(newSession);
       return newSession;
     })
