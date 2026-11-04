@@ -25,6 +25,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from fastapi import HTTPException
+
 from ..supabase_client import get_admin_client
 from . import applications_query, reviewer_query, staff_exclusions, stats
 from .founder_check.render import merge_sections as _merge_founder_sections
@@ -280,13 +282,21 @@ def _fetch_review_stats(
     weight_of = _reviewer_weights()
 
     try:
-        reviews = _fetch_all(lambda: sb.table("reviews").select("*"))
+        # ORDER BY id: un-ordered OFFSET paging can repeat or skip a row when an
+        # autosave moves a tuple between page reads (double-counted vote).
+        reviews = _fetch_all(lambda: sb.table("reviews").select("*").order("id"))
     except Exception as exc:
+        # Do NOT answer with {}: callers would render every app as "0 reviews /
+        # no reco / no score" as if healthy. Surface the failure instead.
         log.warning("admin_query._fetch_review_stats reviews failed",
                     extra={"err": str(exc)})
-        return {}
+        raise HTTPException(
+            status_code=503,
+            detail="Could not load review data. Please retry.",
+        ) from exc
     try:
-        assigns = _fetch_all(lambda: sb.table("reviewer_assignments").select("*"))
+        assigns = _fetch_all(
+            lambda: sb.table("reviewer_assignments").select("*").order("id"))
     except Exception as exc:
         log.warning("admin_query._fetch_review_stats assignments failed",
                     extra={"err": str(exc)})
@@ -474,16 +484,24 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     for track, ids in _by_track(pairs).items():
         if not ids:
             continue
-        try:
-            res = (
-                get_admin_client()
-                .table("reviews")
-                .select("application_id,application_track,submitted_at,flags")
-                .eq("application_track", track)
-                .in_("application_id", ids)
-                .execute()
-            )
-            for rv in res.data or []:
+        # Chunk the id list (a full-pipeline .in_() overflows the URL) and page
+        # each chunk (PostgREST caps a read at 1000 rows) — ordered so pages
+        # neither overlap nor skip.
+        for id_chunk in _flag_chunks(list(dict.fromkeys(ids))):
+            try:
+                rv_rows = _fetch_all(
+                    lambda c=id_chunk, t=track: get_admin_client()
+                    .table("reviews")
+                    .select("id,application_id,application_track,submitted_at,flags")
+                    .eq("application_track", t)
+                    .in_("application_id", c)
+                    .order("id")
+                )
+            except Exception as exc:
+                log.warning("admin_query.fetch_pipeline flags fetch failed",
+                            extra={"track": track, "err": str(exc)})
+                continue
+            for rv in rv_rows:
                 if not rv.get("submitted_at"):
                     continue
                 fl = rv.get("flags")
@@ -492,11 +510,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
                 aid = rv.get("application_id")
                 if aid is None:
                     continue
-                k = (track, aid)
-                flags_by_key.setdefault(k, []).extend(fl)
-        except Exception as exc:
-            log.warning("admin_query.fetch_pipeline flags fetch failed",
-                        extra={"track": track, "err": str(exc)})
+                flags_by_key.setdefault((track, aid), []).extend(fl)
 
     # 3. Post-fetch filters (hidden/archived/decision/batch/industry/search).
     include_hidden = bool(filters.get("include_hidden"))
@@ -507,6 +521,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     want_industry = filters.get("industry")
     needle = (search or "").strip().lower()
     needle_seq = applications_query.search_seq_digits(needle)
+    needle_seq_track = applications_query.search_seq_track(needle)
 
     # Jury recommendation filter: when set, keep only apps recommended for that
     # juror and attach the {score, reason}; the result is later sorted by score
@@ -577,7 +592,8 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
         # org / project name (the DB pass also matches project_name, so the
         # Python pass must not drop those rows).
         if needle:
-            if needle_seq and str(r.get("display_seq") or "") == needle_seq:
+            if (needle_seq and str(r.get("display_seq") or "") == needle_seq
+                    and (needle_seq_track is None or needle_seq_track == r.get("track"))):
                 pass
             else:
                 hay = " ".join([
@@ -658,7 +674,7 @@ def fetch_pipeline(filters: dict[str, Any]) -> dict[str, Any]:
     else:
         # Sort newest-submitted first (NULLs last), matching the leadership list.
         out_items.sort(
-            key=lambda i: (0, i["submitted_at"]) if i.get("submitted_at") else (1, ""),
+            key=lambda i: (1, i["submitted_at"]) if i.get("submitted_at") else (0, ""),
             reverse=True,
         )
 
@@ -816,6 +832,13 @@ def _fetch_all(make_query, *, page: int = _ROSTER_PAGE) -> list[dict]:
     return rows
 
 
+_FLAG_ID_CHUNK = 150
+
+
+def _flag_chunks(ids: list[str]) -> list[list[str]]:
+    return [ids[i:i + _FLAG_ID_CHUNK] for i in range(0, len(ids), _FLAG_ID_CHUNK)]
+
+
 def _reviewer_work(active_keys: set, submitted_keys: set, status_of) -> tuple[set, set]:
     """THE reviewer-workload definition shared by the roster progress column,
     its batch breakdown, the Manage-applications drawer and the reviewer queue.
@@ -868,7 +891,9 @@ def fetch_roster() -> dict[str, Any]:
         if not id_list:
             return []
         try:
-            return _fetch_all(lambda: sb.table(table).select("*").in_(col, id_list))
+            return _fetch_all(
+                lambda: sb.table(table).select("*").in_(col, id_list).order(
+                    "reviewer_user_id" if table == "reviewer_profiles" else "id"))
         except Exception as exc:
             log.warning("roster: fetch_in failed", extra={"table": table, "err": str(exc)})
             return []
@@ -1420,7 +1445,12 @@ def fetch_calibration() -> dict[str, Any]:
 
     def _fetch(table: str) -> list[dict]:
         try:
-            return (sb.table(table).select("*").execute().data) or []
+            def _q():
+                q = sb.table(table).select("*")
+                if table == "ai_screening":  # composite key, no `id` column
+                    return q.order("application_id").order("application_track")
+                return q.order("id")
+            return _fetch_all(_q)
         except Exception as exc:
             log.warning("calibration: fetch failed", extra={"table": table, "err": str(exc)})
             return []
@@ -1650,6 +1680,18 @@ def bulk_assign_reviewer_apps(
         log.warning("bulk_assign: status lookup failed", extra={"err": str(exc)})
         closed = set()
 
+    # Draft / non-existent apps must not get an assignment (or an email), same
+    # as add_apps_to_batch. If the lookup itself fails, don't block (old behaviour).
+    known: dict[tuple[str, str], str | None] | None
+    try:
+        known = batch_membership.app_statuses(
+            sb, [(it.get("application_id"), it.get("track")) for it in items
+                 if it.get("track") in ("tir", "sip")]
+        )
+    except Exception as exc:
+        log.warning("bulk_assign: app existence lookup failed", extra={"err": str(exc)})
+        known = None
+
     now = datetime.now(UTC).isoformat()
     results: list[dict[str, Any]] = []
     rows: list[dict[str, Any]] = []
@@ -1659,6 +1701,10 @@ def bulk_assign_reviewer_apps(
         track = it.get("track")
         if track not in ("tir", "sip"):
             results.append({"application_id": aid, "track": track, "status": "invalid_track"})
+            continue
+        if known is not None and (
+                (aid, track) not in known or known[(aid, track)] == "draft"):
+            results.append({"application_id": aid, "track": track, "status": "skipped_draft"})
             continue
         if (aid, track) in closed:
             results.append({"application_id": aid, "track": track, "status": "skipped_closed"})

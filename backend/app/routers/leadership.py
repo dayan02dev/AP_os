@@ -92,7 +92,7 @@ async def get_stats() -> dict:
 
     # AI mean — one projection query, one Python mean. Returns None if no
     # screening rows exist yet so the frontend can render "–" instead of 0.
-    scores = stats.fetch_ai_score_overalls()
+    scores = stats.fetch_ai_score_overalls({(a["track"], a["id"]) for a in non_draft})
     avg_ai_score: float | None = (sum(scores) / len(scores)) if scores else None
     ai_components = stats.fetch_ai_component_stats(
         {(a["track"], a["id"]) for a in non_draft}
@@ -245,6 +245,10 @@ async def list_applications(
     capped-fetch is simpler than a two-step PostgREST join. See FETCH_CAP
     in applications_query.py for the comment on when to revisit.
     """
+    # A fully prefixed display ID ("VIP-26255") names ONE native track; the TIR
+    # and VIP sequences overlap, so the bare digits would also match the other
+    # track's row.
+    seq_track = applications_query.search_seq_track(search)
     search = _normalize_search(search)
     if status_ in {"accepted", "rejected"}:
         db_status = None
@@ -261,6 +265,9 @@ async def list_applications(
                 limit=applications_query.FETCH_CAP,
             )
         )
+
+    if seq_track:
+        rows = [r for r in rows if r["track"] == seq_track]
 
     # ─ 2. Industry source: LLM-classified ai_screening.industry_category_id ─
     # Replaces the old keyword classifier. Apps without an ai_screening row
@@ -503,6 +510,9 @@ async def get_application_detail(application_id: str) -> dict[str, Any]:
             detail={"code": "application_not_found"},
         )
     track, app_row = found
+    # Résumé file object (admin / reviewer / jury details all attach it); the
+    # 'resume_file' schema question and Export PDF read application.resume_file.
+    app_row["resume_file"] = applications_query.resolve_resume_file(track, app_row)
 
     ai_screening = applications_query.fetch_ai_screening_for(application_id, track)
     # Submitted reviews only: a reviewer's in-progress draft is theirs alone

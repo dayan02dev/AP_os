@@ -34,6 +34,8 @@ import logging
 import re
 from typing import Any
 
+from fastapi import HTTPException
+
 from ..supabase_client import get_admin_client
 from . import staff_exclusions, stats
 
@@ -170,18 +172,32 @@ def or_ilike_value(needle: str) -> str:
     return f'"%{esc}%"'
 
 
-_DISPLAY_ID_RE = re.compile(r"^(?:tir|vip|sip)\s*-?\s*(\d+)$", re.IGNORECASE)
+_DISPLAY_ID_RE = re.compile(r"^(tir|vip|sip)\s*-?\s*(\d+)$", re.IGNORECASE)
+
+# display_seq is a Postgres INTEGER: comparing it to a larger number raises
+# 22003 and PostgREST 400s the WHOLE query (a phone-number search emptied the list).
+_INT4_MAX = 2_147_483_647
 
 
 def search_seq_digits(search: str | None) -> str | None:
     """Digits of a display-ID search (``27326``, ``TIR-27326``, ``vip-26255``,
-    ``SIP 26080``), else None."""
+    ``SIP 26080``), else None. None too when the digits cannot be a display_seq
+    (do not fit an int4, e.g. a 10-digit phone number)."""
     s = (search or "").strip()
     m = _DISPLAY_ID_RE.match(s)
-    if m:
-        return m.group(1)
-    digits = s.lstrip("-+")
-    return digits if digits.isdigit() else None
+    digits = m.group(2) if m else s.lstrip("-+")
+    if not (digits.isascii() and digits.isdigit()):
+        return None
+    return digits if int(digits) <= _INT4_MAX else None
+
+
+def search_seq_track(search: str | None) -> str | None:
+    """Native track named by a prefixed display-ID search (``TIR-…`` -> tir,
+    ``VIP-…``/``SIP-…`` -> sip); None for an un-prefixed search."""
+    m = _DISPLAY_ID_RE.match((search or "").strip())
+    if not m:
+        return None
+    return "tir" if m.group(1).lower() == "tir" else "sip"
 
 
 def _other_track(track: str) -> str:
@@ -216,7 +232,10 @@ def _query_track_table(
                 f"basic_org.ilike.{needle}",
             ]
             digits = search_seq_digits(search)
-            if digits:
+            # A prefixed ID ("VIP-26255") names ONE track; both sequences share
+            # the same range, so only match display_seq on that track's table.
+            seq_track = search_seq_track(search)
+            if digits and (seq_track is None or seq_track == track):
                 or_parts.append(f"display_seq.eq.{digits}")
             # Also match the AI-derived project name (the "Project" column the
             # user actually sees and searches by). project_name lives on the
@@ -267,7 +286,12 @@ def _query_track_table(
             "applications_query._query_track_table failed",
             extra={"track": track, "err": str(exc)},
         )
-        return []
+        # Never answer with an empty list for a failed track: the caller would
+        # render a complete-looking list with a whole track missing.
+        raise HTTPException(
+            status_code=503,
+            detail="Could not load applications. Please retry.",
+        ) from exc
 
     rows = staff_exclusions.visible(rows)
     for r in rows:

@@ -119,7 +119,7 @@ def test_categories_with_counts_payload(monkeypatch):
             # .select(...).not_.is_(col, "null").limit(N).execute()
             chain = sub.select.return_value
             not_chain = chain.not_
-            not_chain.is_.return_value.limit.return_value.execute.return_value = (
+            not_chain.is_.return_value.order.return_value.order.return_value.range.return_value.execute.return_value = (
                 SimpleNamespace(data=assignments)
             )
         return sub
@@ -170,7 +170,7 @@ def test_categories_with_counts_locks_in_zero_count_seeds(monkeypatch):
             )
         elif name == "ai_screening":
             chain = sub.select.return_value
-            chain.not_.is_.return_value.limit.return_value.execute.return_value = (
+            chain.not_.is_.return_value.order.return_value.order.return_value.range.return_value.execute.return_value = (
                 SimpleNamespace(data=assignments)
             )
         return sub

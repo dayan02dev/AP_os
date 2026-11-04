@@ -258,9 +258,14 @@ def add_apps_to_batch(
     reviewers = batch_reviewer_ids(sb, batch_id) & _reviewer_role_ids(sb)
     created: list[dict] = []
     revived: list[dict] = []
-    if reviewers and assignable:
+    # Fan out ONLY to apps newly linked to this batch. An app already in the
+    # batch keeps whatever per-app assignments exist: an admin may have removed
+    # a reviewer from it in the Manage drawer, and re-adding the app must not
+    # silently resurrect (and email) that assignment.
+    fan_out = [k for k in assignable if k not in already]
+    if reviewers and fan_out:
         existing, inactive = split_assignments(_iter_assignments(sb, reviewers))
-        for (aid, track) in assignable:
+        for (aid, track) in fan_out:
             for rid in reviewers:
                 key = (aid, track, rid)
                 if key in existing:

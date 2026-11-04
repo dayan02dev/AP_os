@@ -36,6 +36,18 @@ from app.services.stats import (
 # ─── Helper: dependency override for current user ────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _no_real_review_stats(monkeypatch):
+    """_fetch_review_stats now raises 503 on a failed read (S2-SH-11) instead of
+    returning {}; tests that don't wire a Supabase double stub it out. Tests
+    that need real stats re-patch it themselves."""
+    from app.services import admin_query as _aq
+    monkeypatch.setattr(_aq, "_fetch_review_stats", lambda pairs: {})
+    # Same for the decision / IC-document reads behind the list's stage column.
+    monkeypatch.setattr(stats, "fetch_decision_rows", lambda: [])
+    monkeypatch.setattr(stats, "fetch_ic_rows", lambda: [])
+
+
 def _override_user(roles: list[str]):
     async def _override() -> dict:
         return {"user_id": "test-user", "email": "t@example.com", "roles": roles}
@@ -396,7 +408,7 @@ def test_get_stats_funnel_and_score_sample(client, _clear_overrides, monkeypatch
     })
     monkeypatch.setattr(stats, "get_admin_client", lambda: sb)
     monkeypatch.setattr(stats, "count_profiles", lambda: 288)
-    monkeypatch.setattr(stats, "fetch_ai_score_overalls", lambda: [5.0, 6.0, 7.0])
+    monkeypatch.setattr(stats, "fetch_ai_score_overalls", lambda *a, **k: [5.0, 6.0, 7.0])
 
     app.dependency_overrides[get_current_user] = _override_user(["leadership"])
     res = client.get(

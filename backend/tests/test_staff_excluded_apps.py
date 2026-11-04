@@ -82,8 +82,8 @@ def test_leadership_stats_excludes_test_ventures(client, _clear_overrides, monke
     assert body["funnel"]["decided"] == 16
     assert body["ai_scored_count"] == 602
     # histogram: the test ventures' scores are not in the distribution
-    assert len(body["ai_score_overalls"]) == len(
-        [a for a in _prod_mix()["ai_screening"] if a["score_overall"] is not None]) - 2
+    # same non-draft population as ai_scored_count (S2-LEAD-15/29)
+    assert len(body["ai_score_overalls"]) == body["ai_scored_count"] == 602
 
 
 def test_admin_stats_excludes_test_ventures(client, _clear_overrides, monkeypatch):
