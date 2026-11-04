@@ -111,6 +111,9 @@ async def get_current_user(
         logging.getLogger(__name__).warning(
             "get_current_user: user_roles fetch failed for %s", user.id, exc_info=True
         )
+        raise HTTPException(
+            status_code=503, detail="Could not load your roles, please retry"
+        )
 
     return {"user_id": user.id, "email": user.email, "track": track, "roles": roles}
 
