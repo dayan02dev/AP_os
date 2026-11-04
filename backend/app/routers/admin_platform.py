@@ -764,7 +764,9 @@ async def unassign_applications(
         result = applications_query.detach_application_from_review(
             sb, aid, track, remove_batch_link=True,
         )
-        removed += result["batch_links_removed"]
+        # Count APPLICATIONS taken out of a batch, not application_batches rows
+        # (an app in 2 batches is 1 application).
+        removed += 1 if result["batch_links_removed"] else 0
         assignments_removed += result["assignments_removed"]
         deleted += result.get("deleted_assignments") or []
     write_audit(
