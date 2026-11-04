@@ -62,6 +62,10 @@ export default function VideoAnswer({ value }) {
       </div>
     );
   }
+  // Only http(s) URLs become links; anything else (javascript: etc.) is text.
+  if (!/^https?:\/\//i.test(url)) {
+    return <div className="ans-video-link">{url}</div>;
+  }
   return (
     <div className="ans-video-link">
       <a href={url} target="_blank" rel="noopener noreferrer">

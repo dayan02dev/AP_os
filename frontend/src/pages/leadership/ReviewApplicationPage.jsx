@@ -107,6 +107,9 @@ export default function ReviewApplicationPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    // Drop the previous app's detail so its header / AI panel / answers never
+    // show under the new id.
+    setDetail(null);
     leadershipApi.getApplication(id)
       .then((d) => { if (!cancelled) { setDetail(d); setLoading(false); } })
       .catch((err) => {
@@ -130,6 +133,7 @@ export default function ReviewApplicationPage() {
   // ─── Reset tab to Application on app change ───────────────
   useEffect(() => {
     setTab("application");
+    setVipMemo(null);
   }, [id]);
 
   // ─── Persist panel collapsed state ────────────────────────
@@ -238,20 +242,24 @@ export default function ReviewApplicationPage() {
       setVipMemo(response.memo || null);
       writeVipMemo(id, response.memo);
     } catch (err) {
-      setError(err?.message || "Could not generate VIP memo.");
+      setDownloadError(err?.message || "Could not generate VIP memo.");
     } finally {
       setVipMemoBusy(false);
     }
   }, [effectiveTrack, id]);
 
   const downloadVipMemo = useCallback(async (format) => {
-    const blob = await leadershipApi.downloadVipMemo(id, format);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `vip-memo-${id}.${format}`;
-    link.click();
-    URL.revokeObjectURL(url);
+    try {
+      const blob = await leadershipApi.downloadVipMemo(id, format);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `vip-memo-${id}.${format}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setDownloadError(err?.message || "Could not download the VIP memo.");
+    }
   }, [id]);
 
   // VIP memo v2 (Navigator) for every effective-VIP app (404 = no memo yet).
@@ -361,6 +369,7 @@ export default function ReviewApplicationPage() {
                 )}
                 {tab === "application" && (
                   <ApplicationTab
+                    key={id}
                     schema={schema}
                     application={application}
                     applicationId={id}
