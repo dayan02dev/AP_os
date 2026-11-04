@@ -574,7 +574,7 @@ def test_roster_metrics(client, monkeypatch, _clear_overrides):
 
 
 def test_roster_patch_profile(client, monkeypatch, _clear_overrides):
-    fake = _install_db(monkeypatch, {"reviewer_profiles":[]})
+    fake = _install_db(monkeypatch, {"reviewer_profiles":[], "user_roles":[{"user_id":"rev-1","role":"reviewer"}]})
     monkeypatch.setattr("app.routers.admin_platform.write_audit", lambda **k: None)
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
     r = client.patch("/admin/platform/reviewers/rev-1", json={"weight":3.0,"domains":["AI","Robotics"]})
@@ -1156,7 +1156,9 @@ def test_patch_reviewer_rejects_out_of_range_weight(client, monkeypatch, _clear_
 
 
 def test_patch_reviewer_accepts_in_range_weight(client, monkeypatch, _clear_overrides):
-    _install_db(monkeypatch, _empty_admin_tables())
+    tables = _empty_admin_tables()
+    tables["user_roles"] = [{"user_id": "rev-1", "role": "reviewer"}]
+    _install_db(monkeypatch, tables)
     app.dependency_overrides[get_current_user] = _override_user("admin-1", roles=["admin"])
     assert client.patch("/admin/platform/reviewers/rev-1", json={"weight": 7.5}).status_code == 200
 
