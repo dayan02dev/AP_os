@@ -18,6 +18,8 @@ export const DECISION_LABEL = {
   final_rejected: "Final-gate rejected",
   offered: "Offered",
   onboarded: "Onboarded",
+  waitlisted: "Waitlisted",
+  withdrawn: "Withdrawn",
 };
 const DECISION_TONE = {
   pending: "slate",
@@ -27,6 +29,8 @@ const DECISION_TONE = {
   final_rejected: "red",
   offered: "green",
   onboarded: "green",
+  waitlisted: "amber",
+  withdrawn: "slate",
 };
 export const decisionLabel = (d) => DECISION_LABEL[d] || DECISION_LABEL.pending;
 
