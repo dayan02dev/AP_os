@@ -180,7 +180,7 @@ function downloadCsv(rows) {
 // both render this component, so they need distinct scopes — otherwise
 // filtering one silently filters the other.
 export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnly = false, heading,
-  lockTrack = null, scopeKey = 'applications' }) {
+  lockTrack = null, scopeKey = 'applications', onChanged }) {
   const scope = `admin.pipeline.${scopeKey}`;
   const { data, loading, error, reload } = useAdminData("pipeline", baseFilter);
   const S = data?.startups || [];
@@ -490,10 +490,16 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     return name;
   };
 
+  // After a successful write, also refresh the portal's tab badges.
+  const reloadAndNotify = async () => {
+    await reload();
+    if (onChanged) onChanged();
+  };
+
   const finishBulk = async (resultNote) => {
     setSelectedIds([]);
     setNote(resultNote || null);
-    await reload();
+    await reloadAndNotify();
   };
 
   // Bulk Hold → on_hold; Bulk Reject → rejected; "Send to Next Level" → shortlisted
@@ -629,7 +635,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         const resp = await adminPlatformApi.assignBatch(created.id, {
           items: [{ track: nativeOf(startup), application_id: startup.id }],
         });
-        await reload();
+        await reloadAndNotify();
         setNote({ kind: 'ok', text: assignNote(resp, `Assigned to ${custom}`, 1) });
       } catch (e) {
         setNote({ kind: 'error', text: batchErrorText(e, `Batch "${custom}" was created, but assign failed`) });
@@ -641,7 +647,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         const resp = await adminPlatformApi.assignBatch(found.id, {
           items: [{ track: nativeOf(startup), application_id: startup.id }],
         });
-        await reload();
+        await reloadAndNotify();
         setNote({ kind: 'ok', text: assignNote(resp, `Assigned to ${val}`, 1) });
       } catch (e) {
         setNote({ kind: 'error', text: batchErrorText(e, 'Batch assign failed') });
@@ -656,7 +662,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       await adminPlatformApi.removeAppFromBatch(batchId, [
         { track: nativeOf(startup), application_id: startup.id },
       ]);
-      await reload();
+      await reloadAndNotify();
       setNote({ kind: 'ok', text: 'Removed from batch (reviews kept).' });
     } catch (e) {
       setNote({ kind: 'error', text: `Remove from batch failed: ${e?.message || e}` });
@@ -675,7 +681,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       await adminPlatformApi.renameBatch(found.id, { name: newName });
       if (batchFilter === oldName) setBatchFilter(newName);
       await reloadBatches();
-      await reload();
+      await reloadAndNotify();
     } catch (e) {
       setNote({ kind: 'error', text: batchErrorText(e, 'Rename failed') });
     }
@@ -691,7 +697,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       const delResp = await adminPlatformApi.deleteBatch(found.id);
       if (batchFilter === name) setBatchFilter('all');
       await reloadBatches();
-      await reload();
+      await reloadAndNotify();
       setNote({ kind: 'ok', text: `Deleted batch "${name}"${delResp?.assignments_removed != null ? ` · ${delResp.assignments_removed} reviewer assignment(s) removed` : ''}.` });
     } catch (e) {
       setNote({ kind: 'error', text: batchErrorText(e, 'Delete failed') });

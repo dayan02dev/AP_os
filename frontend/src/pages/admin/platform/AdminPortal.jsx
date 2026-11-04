@@ -428,8 +428,8 @@ function AdminApp() {
           )}
           <div className="lp-tab-content">
             {page === 'dashboard'   && <AdminDashboard go={setPage} selectedCount={jurySelectedBadge} />}
-            {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} baseFilter={{ exclude_status: 'rejected,jury_review' }} scopeKey="applications" />}
-            {page === 'rejected'    && <AdminPipeline goDetail={goDetail} baseFilter={{ status: 'rejected' }} readOnly heading="Rejected applications" scopeKey="rejected" />}
+            {page === 'pipeline'    && <AdminPipeline goDetail={goDetail} baseFilter={{ exclude_status: 'rejected,jury_review' }} scopeKey="applications" onChanged={refreshBadges} />}
+            {page === 'rejected'    && <AdminPipeline goDetail={goDetail} baseFilter={{ status: 'rejected' }} readOnly heading="Rejected applications" scopeKey="rejected" onChanged={refreshBadges} />}
             {/* Both tracks, one list. Each row carries a TRACK chip and the
                 memo upload / approve actions. */}
             {page === 'jury_selected' && <AdminSelectedApplications goDetail={goDetail} onChanged={refreshBadges} />}
@@ -446,7 +446,7 @@ function AdminApp() {
             )}
             {page === 'reviewers'   && <AdminReviewers />}
             {page === 'roles'       && <AdminRoles />}
-            {page === 'gate1'       && <AdminGate1 goDetail={goDetail} />}
+            {page === 'gate1'       && <AdminGate1 goDetail={goDetail} onChanged={refreshBadges} />}
             {page === 'psychometry' && <AdminPsychometry />}
             {page === 'aistatus'   && <AdminAIStatus />}
           </div>
