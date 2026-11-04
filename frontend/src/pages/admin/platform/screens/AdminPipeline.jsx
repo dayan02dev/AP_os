@@ -121,6 +121,8 @@ const idSortKey = (s) => {
   return m ? [m[1].toUpperCase(), Number(m[2])] : [disp || String(s.id || ''), 0];
 };
 
+const BATCHES_UNAVAILABLE = "Couldn't load the batch list, so this action can't run. Reload the page and try again.";
+
 // ─── CSV download using the exported pure helper ────────────────────────────
 
 function downloadCsv(rows) {
@@ -143,12 +145,15 @@ function downloadCsv(rows) {
       return inv[c] || 'submitted';
     })(),
     decision: s.adminDecision ? (
-      s.adminDecision === 'APPROVED' ? 'shortlisted' :
+      s.adminDecision === 'APPROVED' ? (s.decision === 'jury_review' ? 'accepted' : 'shortlisted') :
       s.adminDecision === 'HOLD' ? 'on_hold' :
       s.adminDecision === 'REJECTED' ? 'rejected' :
       s.adminDecision === 'WAITLISTED' ? 'waitlisted' : ''
     ) : '',
-    batch: s.batch && s.batch !== 'Unassigned' ? s.batch : '',
+    batch: (Array.isArray(s.batches) && s.batches.length
+      ? s.batches.map(b => b && b.name).filter(Boolean).join('; ')
+      : (s.batch && s.batch !== 'Unassigned' ? s.batch : '')),
+    moved_to_track: s.movedToTrack || null,
     submitted_at: s.sub,
   })));
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -355,6 +360,17 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     });
     return m;
   }, [rowsExcept]);
+
+  // A reload can drop rows from the filtered list (e.g. removed from the
+  // filtered batch): drop their ids so "N selected" matches what actions use.
+  React.useEffect(() => {
+    setSelectedIds(prev => {
+      if (prev.length === 0) return prev;
+      const visible = new Set(filtered.map(x => x.id));
+      const next = prev.filter(id => visible.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [filtered]);
 
   const toggleAll = () => {
     if (selectedIds.length === filtered.length && filtered.length > 0) {
@@ -598,20 +614,29 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     if (val === 'new') {
       const custom = promptNewBatchName();
       if (!custom) return;
+      let created;
       try {
-        const created = await adminPlatformApi.createBatch({ name: custom });
+        created = await adminPlatformApi.createBatch({ name: custom });
+      } catch (e) {
+        setNote({ kind: 'error', text: batchErrorText(e, 'Batch create failed') });
+        return;
+      }
+      // The batch now exists: make it visible in every picker even if assign fails.
+      try {
+        await reloadBatches();
+      } catch { /* batches list refresh is best-effort */ }
+      try {
         const resp = await adminPlatformApi.assignBatch(created.id, {
           items: [{ track: nativeOf(startup), application_id: startup.id }],
         });
-        await reloadBatches();
         await reload();
         setNote({ kind: 'ok', text: assignNote(resp, `Assigned to ${custom}`, 1) });
       } catch (e) {
-        setNote({ kind: 'error', text: batchErrorText(e, 'Batch create failed') });
+        setNote({ kind: 'error', text: batchErrorText(e, `Batch "${custom}" was created, but assign failed`) });
       }
     } else {
       const found = findBatchByName(val);
-      if (!found) return;
+      if (!found) { setNote({ kind: 'error', text: BATCHES_UNAVAILABLE }); return; }
       try {
         const resp = await adminPlatformApi.assignBatch(found.id, {
           items: [{ track: nativeOf(startup), application_id: startup.id }],
@@ -640,10 +665,12 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
 
   // Rename batch via API
   const renameBatch = async (oldName) => {
-    const newName = window.prompt(`Rename batch "${oldName}" to:`, oldName);
+    const raw = window.prompt(`Rename batch "${oldName}" to:`, oldName);
+    // The server strips surrounding whitespace; keep the sticky filter in step.
+    const newName = (raw || '').trim();
     if (!newName || newName === oldName) return;
     const found = findBatchByName(oldName);
-    if (!found) return;
+    if (!found) { setNote({ kind: 'error', text: BATCHES_UNAVAILABLE }); return; }
     try {
       await adminPlatformApi.renameBatch(found.id, { name: newName });
       if (batchFilter === oldName) setBatchFilter(newName);
@@ -656,7 +683,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
 
   const deleteBatch = async (name) => {
     const found = findBatchByName(name);
-    if (!found) return;
+    if (!found) { setNote({ kind: 'error', text: BATCHES_UNAVAILABLE }); return; }
     if (!window.confirm(
       `Delete batch "${name}"? Its applications return to Random allotment and its reviewers are removed from them (submitted reviews are kept).`
     )) return;
@@ -889,6 +916,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                       >
                         {b}<span style={{ opacity: 0.55, fontSize: 11, marginLeft: 2 }}>{batchCounts[b] || 0}</span>
                       </button>
+                      {!readOnly && (
                       <button
                         className="lp-filter-btn-dots"
                         onClick={(e) => {
@@ -898,6 +926,8 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                       >
                         ⋮
                       </button>
+                      )}
+                      {!readOnly && (
                       <button
                         className="lp-filter-btn-dots"
                         title={`Delete batch ${b}`}
@@ -905,8 +935,10 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                       >
                         ×
                       </button>
+                      )}
                     </div>
                   ))}
+                  {!readOnly && (
                   <button
                     className="lp-filter-btn"
                     style={{ borderStyle: 'dashed', borderColor: 'var(--line-strong)', color: 'var(--ink)' }}
@@ -924,6 +956,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                   >
                     + Create Batch
                   </button>
+                  )}
                 </div>
               </div>
             )}
