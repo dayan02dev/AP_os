@@ -34,6 +34,32 @@ from .audit import write_audit
 log = logging.getLogger(__name__)
 
 
+def _insert_decision_row(sb, row: dict) -> dict:
+    """Insert one admin_decisions row and return it (with its id when the
+    backend echoes it back)."""
+    res = sb.table("admin_decisions").insert(row).execute()
+    data = getattr(res, "data", None) or []
+    return data[0] if data and isinstance(data[0], dict) else row
+
+
+def _discard_decision_row(sb, inserted: dict) -> None:
+    """Best-effort compensation: remove the decision row we just wrote when the
+    status move that was meant to accompany it did not happen, so the latest
+    decision never contradicts the application's real status."""
+    try:
+        q = sb.table("admin_decisions").delete()
+        if inserted.get("id"):
+            q = q.eq("id", inserted["id"])
+        else:
+            for col in ("application_id", "application_track", "gate_stage", "decision",
+                        "decided_by", "decided_at"):
+                q = q.eq(col, inserted.get(col))
+        q.execute()
+    except Exception:  # noqa: BLE001
+        log.warning("could not discard orphan decision row",
+                    extra={"application_id": inserted.get("application_id")}, exc_info=True)
+
+
 def record_decision(*, track, application_id, decision, rationale, decided_by, decided_by_role: str | None = None) -> dict:
     """Gate-1 decision: pre-validate, write admin_decisions row, then move status.
 
@@ -58,9 +84,18 @@ def record_decision(*, track, application_id, decision, rationale, decided_by, d
     from_status = rows[0].get("status")
     state_machine.assert_legal_transition(from_status, decision)
 
+    # An already-offered application is past gate 1: overturning the offer is a
+    # gate-2 (final round) rejection, never a first-gate one.
+    if decision == "rejected" and from_status == "offered":
+        return record_gate2_decision(
+            track=track, application_id=application_id, decision=decision,
+            rationale=rationale, decided_by=decided_by,
+            decided_by_role=decided_by_role,
+        )
+
     # 2. Write the decision row. If this raises, the status has NOT moved yet,
     #    so let it propagate — the whole request is retryable.
-    sb.table("admin_decisions").insert({
+    inserted = _insert_decision_row(sb, {
         "application_id": application_id,
         "application_track": track,
         "gate_stage": "gate1",
@@ -68,14 +103,20 @@ def record_decision(*, track, application_id, decision, rationale, decided_by, d
         "rationale": rationale,
         "decided_by": decided_by,
         "decided_at": datetime.now(UTC).isoformat(),
-    }).execute()
+    })
 
-    # 3. Move the status + log (re-validates defensively — fine).
-    state_machine.apply_status_change(
-        application_id, track,
-        to_status=decision, changed_by=decided_by,
-        reason=rationale or f"gate1: {decision}",
-    )
+    # 3. Move the status + log (re-validates defensively — fine). If the move
+    #    fails (concurrent change, transient error) drop the row we just wrote
+    #    so it cannot linger as the "latest decision".
+    try:
+        state_machine.apply_status_change(
+            application_id, track,
+            to_status=decision, changed_by=decided_by,
+            reason=rationale or f"gate1: {decision}",
+        )
+    except Exception:
+        _discard_decision_row(sb, inserted)
+        raise
 
     # On rejection OR admin approval (jury_review), remove the app from the
     # batch and every reviewer so it leaves all reviewer queues. Best-effort:
@@ -198,7 +239,7 @@ def record_gate2_decision(
     state_machine.assert_legal_transition(from_status, decision)
 
     # Write the gate-2 decision row.
-    sb.table("admin_decisions").insert({
+    inserted = _insert_decision_row(sb, {
         "application_id": application_id,
         "application_track": track,
         "gate_stage": "gate2",
@@ -206,14 +247,18 @@ def record_gate2_decision(
         "rationale": rationale,
         "decided_by": decided_by,
         "decided_at": datetime.now(UTC).isoformat(),
-    }).execute()
+    })
 
-    # Move status.
-    state_machine.apply_status_change(
-        application_id, track,
-        to_status=decision, changed_by=decided_by,
-        reason=rationale or f"gate2: {decision}",
-    )
+    # Move status; on failure drop the row so no orphan decision is left.
+    try:
+        state_machine.apply_status_change(
+            application_id, track,
+            to_status=decision, changed_by=decided_by,
+            reason=rationale or f"gate2: {decision}",
+        )
+    except Exception:
+        _discard_decision_row(sb, inserted)
+        raise
 
     # Best-effort audit.
     write_audit(
@@ -263,3 +308,8 @@ def record_decision_safe(*, track, application_id, decision, rationale, decided_
         }
         return {"application_id": application_id, "track": track,
                 "status": status_map.get(code, "error")}
+    except Exception:  # noqa: BLE001
+        # A transient DB/network error on one item must not 500 the whole batch
+        # after earlier items were already decided and e-mailed.
+        log.warning("bulk decision failed for %s/%s", track, application_id, exc_info=True)
+        return {"application_id": application_id, "track": track, "status": "error"}
