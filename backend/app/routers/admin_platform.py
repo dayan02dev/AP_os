@@ -20,6 +20,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -80,6 +81,8 @@ def _triples_audit(triples: list[dict]) -> dict[str, Any]:
         "truncated": len(triples) > _AUDIT_TRIPLE_CAP,
     }
 
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 _RESERVED_BATCH_NAMES = frozenset(
     {"unassigned", "unbatched", "new", "all", "random allotment"}
@@ -920,7 +923,7 @@ async def update_meta(
     body: MetaBody,
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """Upsert hide/archive meta for an application; audited."""
+    """Upsert hide/archive meta for an application; audited. `track` must be the NATIVE track."""
     fields = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
     if not fields:
         raise HTTPException(
@@ -928,6 +931,12 @@ async def update_meta(
             detail={"code": "no_fields", "message": "Provide at least one field."},
         )
     sb = get_admin_client()
+    app_table = "tir_applications" if track == "tir" else "sip_applications"
+    if not (sb.table(app_table).select("id").eq("id", application_id).limit(1).execute().data):
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "application_not_found"},
+        )
     row = {
         "application_id": application_id,
         "application_track": track,
@@ -1028,7 +1037,9 @@ async def bulk_assign_reviewer_applications(
         action_type="reviewer.bulk_assigned",
         target_table="reviewer_assignments",
         target_id=user_id,
-        after={"count": len(body.items)},
+        after={"count": len(body.items),
+               "created": [{"application_id": r["application_id"], "track": r["track"]}
+                           for r in res.get("results", []) if r.get("status") == "created"][:_AUDIT_TRIPLE_CAP]},
     )
     return res
 
@@ -1060,7 +1071,10 @@ async def bulk_remove_reviewer_applications(
         action_type="reviewer.bulk_removed",
         target_table="reviewer_assignments",
         target_id=user_id,
-        before={"count": len(body.items)},
+        before={"count": len(body.items),
+                "removed": [{"application_id": r["application_id"], "track": r["track"]}
+                            for r in res.get("results", [])
+                            if r.get("status") in ("removed", "skipped_submitted")][:_AUDIT_TRIPLE_CAP]},
     )
     return res
 
@@ -1095,6 +1109,11 @@ async def update_reviewer_profile(
         profile_fields["full_name"] = body.full_name.strip()
     if body.email is not None:
         profile_fields["email"] = body.email.strip()
+        if not _EMAIL_RE.match(profile_fields["email"]):
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "invalid_email", "message": "Enter a valid email address."},
+            )
 
     if not fields and not profile_fields:
         raise HTTPException(
@@ -1103,6 +1122,37 @@ async def update_reviewer_profile(
         )
 
     sb = get_admin_client()
+
+    # Only roster reviewers are editable here (not admins / other accounts).
+    if not (
+        sb.table("user_roles").select("role")
+        .eq("user_id", user_id).eq("role", "reviewer").execute().data
+    ):
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_a_reviewer",
+                    "message": "That user is not on the reviewer roster."},
+        )
+
+    # Sync the auth login email FIRST: if it fails, nothing is written, so
+    # profiles.email and the login email can never diverge behind a 200.
+    if "email" in profile_fields:
+        try:
+            sb.auth.admin.update_user_by_id(
+                user_id,
+                {"email": profile_fields["email"], "email_confirm": True},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                "reviewer email auth-sync failed for %s: %s", user_id, exc
+            )
+            taken = any(w in str(exc).lower() for w in ("already", "registered", "exists"))
+            raise HTTPException(
+                status_code=http_status.HTTP_409_CONFLICT if taken else http_status.HTTP_502_BAD_GATEWAY,
+                detail={"code": "email_in_use" if taken else "auth_email_sync_failed",
+                        "message": "That email is already in use." if taken
+                        else "Could not update the login email. Nothing was changed."},
+            )
 
     if fields:
         sb.table("reviewer_profiles").upsert(
@@ -1120,18 +1170,6 @@ async def update_reviewer_profile(
         # before the ON CONFLICT update kicks in, so a name-only edit (email
         # omitted) would fail with a not-null violation.
         sb.table("profiles").update(profile_fields).eq("id", user_id).execute()
-        # Keep the auth login email in sync (best-effort — a unique-collision
-        # or auth error must not undo the profile write above).
-        if "email" in profile_fields:
-            try:
-                sb.auth.admin.update_user_by_id(
-                    user_id,
-                    {"email": profile_fields["email"], "email_confirm": True},
-                )
-            except Exception as exc:  # noqa: BLE001
-                logging.getLogger(__name__).warning(
-                    "reviewer email auth-sync failed for %s: %s", user_id, exc
-                )
 
     after = {**fields, **profile_fields}
     write_audit(

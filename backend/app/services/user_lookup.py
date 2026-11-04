@@ -18,7 +18,7 @@ def get_contact(sb, user_id: str) -> dict | None:
     except Exception:  # noqa: BLE001
         log.warning("get_contact: profiles lookup failed for %s", user_id, exc_info=True)
     try:
-        res = sb.auth.admin.get_user(user_id)
+        res = sb.auth.admin.get_user_by_id(user_id)
         u = getattr(res, "user", None) or res
         email = getattr(u, "email", None)
         if email:

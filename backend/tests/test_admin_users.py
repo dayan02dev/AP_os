@@ -558,7 +558,7 @@ def test_grant_role_requires_grant_role_capability(client, _clear_overrides):
 
 
 def test_revoke_role_success(client, monkeypatch, _clear_overrides):
-    fake = _FakeAdminClient(rows={"user_roles": []})
+    fake = _FakeAdminClient(rows={"user_roles": [{"user_id": "u-1", "role": "reviewer"}]})
     monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
     app.dependency_overrides[get_current_user] = _override_user(["admin"])
 
@@ -592,7 +592,7 @@ def test_revoke_role_invalid_role_returns_400(client, monkeypatch, _clear_overri
 
 def test_revoke_admin_when_only_one_admin_blocked(client, monkeypatch, _clear_overrides):
     fake = _FakeAdminClient(
-        rows={"user_roles": []},
+        rows={"user_roles": [{"user_id": "u-1", "role": "admin"}]},
         counts={"user_roles": 1},
     )
     monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)

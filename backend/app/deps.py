@@ -10,6 +10,7 @@ portal). The dependency is still wired into every router so re-enabling
 enforcement is a one-line edit.
 """
 
+import logging
 from typing import Annotated, Literal
 
 from fastapi import Depends, Header, HTTPException, status
@@ -105,7 +106,11 @@ async def get_current_user(
         )
         roles = [row["role"] for row in (roles_res.data or [])]
     except Exception:
-        pass
+        # Still non-fatal, but never silent: a DB fault here makes every
+        # capability route 403 with your_roles=[].
+        logging.getLogger(__name__).warning(
+            "get_current_user: user_roles fetch failed for %s", user.id, exc_info=True
+        )
 
     return {"user_id": user.id, "email": user.email, "track": track, "roles": roles}
 

@@ -134,7 +134,10 @@ def test_last_admin_protection_is_enforced(client, monkeypatch, _clear_overrides
     # handler does .eq("role", "admin").execute() and reads .count).
     from tests.test_admin_users import _FakeAdminClient
 
-    fake = _FakeAdminClient(rows={"user_roles": []}, counts={"user_roles": 1})
+    fake = _FakeAdminClient(
+        rows={"user_roles": [{"user_id": "u-only-admin", "role": "admin"}]},
+        counts={"user_roles": 1},
+    )
     monkeypatch.setattr(admin_users_router, "get_admin_client", lambda: fake)
     app.dependency_overrides[get_current_user] = _override_user(["admin"])
 

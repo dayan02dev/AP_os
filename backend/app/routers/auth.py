@@ -79,11 +79,32 @@ _VERIFY_OTP_WINDOW_S = 15 * 60   # per 15 minutes per email
 _PWD_SIGNIN_MAX = 5
 _PWD_SIGNIN_WINDOW_S = 15 * 60
 
+# Looser per-email ceiling across ALL source IPs. The per-(email, IP) bucket
+# stops a third party locking the owner out; this one still caps distributed
+# (IP-rotating) brute force, and needs 30+ requests to lock the owner out.
+_EMAIL_CEILING_MAX = 30
+_EMAIL_CEILING_WINDOW_S = 15 * 60
+
 # Set-password is per-user (Bearer-keyed) — 5/hour is plenty for the legitimate
 # "set initial password" + "change password" flows and stops a stolen-token
 # attacker from rotating credentials at speed.
 _SET_PASSWORD_MAX = 5
 _SET_PASSWORD_WINDOW_S = 60 * 60
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _attempt_key(email: str, request: Request) -> str:
+    """Per-(email, client IP) bucket key.
+
+    Keyed by email alone, anyone who knows a victim's address could burn the
+    quota from anywhere and lock the real owner out of sign-in for 15 minutes.
+    Including the caller's IP keeps brute-force protection per source while a
+    third party can no longer lock the owner out.
+    """
+    return f"{email}|{_client_ip(request)}"
 
 
 def _reset_email_rate_limits() -> None:
@@ -175,6 +196,11 @@ async def request_otp(payload: OTPRequest, request: Request):
             payload.track == "sip" and settings.sip_submissions_closed
         ):
             options["should_create_user"] = False
+    elif settings.tir_submissions_closed and settings.sip_submissions_closed:
+        # No track given (sign-in / resend screens) while BOTH intakes are
+        # closed: existing accounts still get their OTP, but no new account
+        # may be created through this back door.
+        options["should_create_user"] = False
     try:
         anon = get_anon_client()
         anon.auth.sign_in_with_otp({"email": email, "options": options})
@@ -216,7 +242,8 @@ async def verify_otp(payload: OTPVerify, request: Request):
     """Verify the 6-digit OTP, return access+refresh tokens."""
     email = payload.email.lower().strip()
     # Every verify attempt counts (brute-force defence over 6-digit code space).
-    check_and_record("verify-otp", email, _VERIFY_OTP_MAX, _VERIFY_OTP_WINDOW_S)
+    check_and_record("verify-otp", _attempt_key(email, request), _VERIFY_OTP_MAX, _VERIFY_OTP_WINDOW_S)
+    check_and_record("verify-otp-email", email, _EMAIL_CEILING_MAX, _EMAIL_CEILING_WINDOW_S)
 
     req_id = _new_request_id()
     try:
@@ -308,10 +335,18 @@ async def refresh(request: Request, payload: RefreshRequest):
     response_model=SimpleOK,
     dependencies=[Depends(per_user_rate_limit("auth-logout", 30, 60))],
 )
-async def logout(current_user: dict = Depends(get_current_user)):
-    """Best-effort sign-out. Dropping tokens client-side is what matters."""
-    with contextlib.suppress(Exception):
-        get_anon_client().auth.sign_out()
+async def logout(request: Request, current_user: dict = Depends(get_current_user)):
+    """Best-effort sign-out. Dropping tokens client-side is what matters.
+
+    Revokes the CALLER's own session (their bearer token). The shared anon
+    client is a process-wide singleton whose gotrue session belongs to whoever
+    last signed in on this container, so it must never be used to sign out.
+    """
+    auth_header = request.headers.get("authorization") or ""
+    token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else ""
+    if token:
+        with contextlib.suppress(Exception):
+            get_admin_client().auth.admin.sign_out(token, "global")
     return SimpleOK(ok=True)
 
 
@@ -398,7 +433,8 @@ async def sign_in_password(payload: PasswordSignIn, request: Request):
     # Per-email bucket — a single email being hammered with bad passwords
     # gets locked, but the limit doesn't cross-pollinate across users (so
     # one applicant's typo storm doesn't block their colleague).
-    check_and_record("sign-in-password", email, _PWD_SIGNIN_MAX, _PWD_SIGNIN_WINDOW_S)
+    check_and_record("sign-in-password", _attempt_key(email, request), _PWD_SIGNIN_MAX, _PWD_SIGNIN_WINDOW_S)
+    check_and_record("sign-in-password-email", email, _EMAIL_CEILING_MAX, _EMAIL_CEILING_WINDOW_S)
 
     req_id = _new_request_id()
     try:
@@ -505,7 +541,13 @@ async def set_password(
         msg = str(exc).lower()
         # Supabase rejects weak passwords with a 422 / "weak_password" code.
         # Translate to a 422 the frontend can show inline next to the field.
-        if "weak" in msg or "password" in msg and "must" in msg:
+        if "should be different" in msg or "same_password" in msg:
+            return _error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "same_password",
+                "New password should be different from your current password.",
+            )
+        if "weak" in msg or ("password" in msg and "must" in msg):
             return _error(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "weak_password",

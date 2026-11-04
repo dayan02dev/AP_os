@@ -111,6 +111,14 @@ async def get_jury_form(token: str) -> JuryFormView:
     return JuryFormView(name=invite["name"], email=invite["email"], status=invite["status"])
 
 
+def _holds_other_access(admin: Any, user_id: str) -> bool:
+    """True when the account already holds a staff/reviewer role. Accepting a
+    jury invite must never reset such an account's working password."""
+    rows = (admin.table("user_roles").select("role").eq("user_id", user_id)
+            .execute().data or [])
+    return any(r.get("role") in ("admin", "leadership", "reviewer") for r in rows)
+
+
 def _ensure_jury_account(
     admin: Any, invite: dict, *, reset_password: bool
 ) -> tuple[str, bool, str | None]:
@@ -128,7 +136,7 @@ def _ensure_jury_account(
     if existing:
         user_id = existing[0]["id"]
         temp_password: str | None = None
-        if reset_password:
+        if reset_password and not _holds_other_access(admin, user_id):
             temp_password = secrets.token_urlsafe(16) + "!1Aa"
             admin.auth.admin.update_user_by_id(user_id, {"password": temp_password})
         return user_id, False, temp_password

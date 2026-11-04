@@ -23,6 +23,7 @@ from ..deps import get_current_user
 from ..rbac import ROLE_CAPABILITIES, require_capability
 from ..services import admin_query, applications_query
 from ..services.audit import write_audit
+from ..services.roster_removal import _delete_where
 from ..services.email_service import (
     EmailDeliveryError,
     frontend_url,
@@ -148,6 +149,10 @@ async def create_user(
         # only accounts keep the reset-and-email-credentials behaviour.
         if current_roles & {"admin", "leadership", "jury", "reviewer"}:
             temp_password = None
+        elif not (body.send_invite or body.temp_password):
+            # No delivery channel for a new password (nothing is emailed and the
+            # admin did not choose one) -> never change a working password.
+            temp_password = None
         else:
             try:
                 client.auth.admin.update_user_by_id(new_user_id, {"password": temp_password})
@@ -184,15 +189,17 @@ async def create_user(
             "phone": body.phone or prev.get("phone") or body.phone,
         }).execute()
 
-        keep = {"reviewer"} | (current_roles & {"admin", "leadership", "jury"})
+        # Every explicitly requested role is granted too (matches the
+        # new-account branch below), not just `reviewer`.
+        keep = {"reviewer"} | (current_roles & {"admin", "leadership", "jury"}) | set(body.roles)
         for role in current_roles - keep:
             client.table("user_roles").delete().eq("user_id", new_user_id).eq("role", role).execute()
-        if "reviewer" not in current_roles:
-            client.table("user_roles").insert({
-                "user_id": new_user_id,
-                "role": "reviewer",
-                "granted_by": current_user["user_id"],
-            }).execute()
+        to_add = sorted(keep - current_roles)
+        if to_add:
+            client.table("user_roles").insert([
+                {"user_id": new_user_id, "role": r, "granted_by": current_user["user_id"]}
+                for r in to_add
+            ]).execute()
         final_roles = sorted(keep)
     else:
         try:
@@ -282,6 +289,14 @@ async def create_user(
                 admin_query.assign_reviewers_to_batch(
                     client, valid_batch_id, [new_user_id],
                     assigned_by=current_user["user_id"],
+                )
+                write_audit(
+                    actor_user_id=current_user["user_id"],
+                    actor_role="admin",
+                    action_type="reviewer.invite_batch_assigned",
+                    target_table="batches",
+                    target_id=valid_batch_id,
+                    after={"reviewer_user_id": new_user_id},
                 )
             except Exception as exc:  # noqa: BLE001
                 log.warning("reviewer invite: batch assignment failed",
@@ -605,6 +620,14 @@ async def revoke_role(
 
     client = get_admin_client()
 
+    # Revoking a role the user does not hold is a no-op (no guard, no audit row).
+    held = (
+        client.table("user_roles").select("role")
+        .eq("user_id", user_id).eq("role", role).execute().data
+    ) or []
+    if not held:
+        return {"ok": True, "role": role}
+
     # Last-admin protection: if revoking 'admin' from the only remaining
     # admin, refuse. Counts admin assignments across all users; if removing
     # this one leaves zero, block.
@@ -622,6 +645,23 @@ async def revoke_role(
                 },
             )
 
+    removed_triples: list[dict] = []
+    if role == "reviewer":
+        removed_triples = [
+            {"application_id": r["application_id"], "track": r["application_track"]}
+            for r in admin_query._fetch_all(
+                lambda: client.table("reviewer_assignments")
+                .select("application_id,application_track")
+                .eq("reviewer_user_id", user_id)
+                .order("application_id")
+            )
+        ]
+        # An ex-reviewer must not keep live assignments / batch membership (they
+        # would still count in pipeline 'assigned/active'). Submitted reviews
+        # are kept; same release as the roster Delete.
+        _delete_where(client, "reviewer_assignments", {"reviewer_user_id": user_id})
+        _delete_where(client, "batch_reviewers", {"reviewer_user_id": user_id})
+
     client.table("user_roles").delete().eq("user_id", user_id).eq("role", role).execute()
     write_audit(
         actor_user_id=current_user["user_id"],
@@ -629,7 +669,8 @@ async def revoke_role(
         action_type="role.revoked",
         target_table="user_roles",
         target_id=user_id,
-        before={"role": role},
+        before=({"role": role, "removed": removed_triples}
+                if removed_triples else {"role": role}),
     )
     return {"ok": True, "role": role}
 
@@ -683,6 +724,14 @@ async def deactivate_user(
     invalidated and future signins are refused. Reversible via a
     separate reactivate endpoint (Phase 2 if/when needed).
     """
+    if user_id == current_user["user_id"]:
+        # There is no reactivate endpoint: self-deactivation would lock the
+        # admin (possibly the only one) out for good.
+        raise HTTPException(
+            400,
+            detail={"code": "cannot_deactivate_self",
+                    "message": "You cannot deactivate your own account."},
+        )
     client = get_admin_client()
     # Confirm user exists first — gives a clean 404 instead of a Supabase
     # error wall.
