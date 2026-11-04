@@ -28,7 +28,7 @@ def move_track(*, track: str, application_id: str, actor_user_id: str,
     sb = get_admin_client()
     table = f"{track}_applications"
     rows = (
-        sb.table(table).select("id,moved_to_track").eq("id", application_id).limit(1).execute().data
+        sb.table(table).select("id,moved_to_track,status").eq("id", application_id).limit(1).execute().data
         or []
     )
     if not rows:
@@ -52,7 +52,8 @@ def move_track(*, track: str, application_id: str, actor_user_id: str,
     )
 
     # Best-effort applicant email — only when MOVED (helper no-ops on move-back).
-    if patch["moved_to_track"]:
+    # A rejected/withdrawn applicant must not be told their application "moved".
+    if patch["moved_to_track"] and rows[0].get("status") not in ("rejected", "withdrawn"):
         try:
             notify_applicant_moved(
                 sb, track=track, moved_to_track=patch["moved_to_track"],

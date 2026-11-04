@@ -52,8 +52,15 @@ def set_status(client, memo_id: str, status: str, error: str | None = None) -> N
     ).eq("id", memo_id).execute()
 
 
-def persist_memo(client, memo_id: str, memo: dict, error: str | None = None) -> None:
-    """``error`` on a ready row is a note only (e.g. "salvaged: <paths>")."""
+def persist_memo(client, memo_id: str, memo: dict, error: str | None = None) -> bool:
+    """``error`` on a ready row is a note only (e.g. "salvaged: <paths>").
+
+    Returns False (writing nothing) when the run was superseded by a forced /
+    stale regeneration: a late-finishing old run must not flip back to 'ready'
+    and become the current memo again."""
+    current = get_memo(client, memo_id)
+    if current and current.get("status") == "failed" and current.get("error") == "superseded":
+        return False
     snap = memo["snapshot"]
     rec = memo.get("recommendation") or {}
     header: dict[str, Any] = {
@@ -108,6 +115,7 @@ def persist_memo(client, memo_id: str, memo: dict, error: str | None = None) -> 
 
     set_status(client, memo_id, "ready", error)
     client.rpc("vip_memo_make_current", {"p_memo_id": memo_id}).execute()
+    return True
 
 
 def save_raw_output(client, memo_id: str, text: str, errors: list[str] | tuple = (), *,

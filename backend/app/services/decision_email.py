@@ -24,7 +24,7 @@ def notify_applicant_decided(sb, *, track: str, application_id: str, decision: s
         table = f"{track}_applications"
         rows = (
             sb.table(table)
-            .select("basic_full_name,basic_email")
+            .select("basic_full_name,basic_email,moved_to_track")
             .eq("id", application_id)
             .limit(1)
             .execute()
@@ -39,7 +39,7 @@ def notify_applicant_decided(sb, *, track: str, application_id: str, decision: s
             log.warning("notify_applicant_decided: no email for %s/%s", track, application_id)
             return
         name = rows[0].get("basic_full_name") or "there"
-        program_label = "VIP" if track == "sip" else "TIR"
+        program_label = "VIP" if (rows[0].get("moved_to_track") or track) == "sip" else "TIR"
         get_email_service().send_applicant_decision(
             to=email, applicant_name=name, outcome=outcome,
             application_ref=application_id[:8], program_label=program_label,
@@ -77,7 +77,7 @@ def notify_applicant_gate2(sb, *, track: str, application_id: str, decision: str
         table = f"{track}_applications"
         rows = (
             sb.table(table)
-            .select("basic_full_name,basic_email")
+            .select("basic_full_name,basic_email,moved_to_track")
             .eq("id", application_id)
             .limit(1)
             .execute()
@@ -97,7 +97,7 @@ def notify_applicant_gate2(sb, *, track: str, application_id: str, decision: str
             get_email_service().send_applicant_decision(
                 to=email, applicant_name=name, outcome="rejected",
                 application_ref=application_id[:8],
-                program_label="VIP" if track == "sip" else "TIR",
+                program_label="VIP" if (rows[0].get("moved_to_track") or track) == "sip" else "TIR",
             )
             return
     except Exception:  # noqa: BLE001
