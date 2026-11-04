@@ -26,6 +26,8 @@ from __future__ import annotations
 import logging
 import re
 
+from fastapi import HTTPException
+
 from ..supabase_client import get_admin_client
 from . import staff_exclusions
 
@@ -141,6 +143,13 @@ _STAGE_OF_STATUS: dict[str, str] = {
 _PAGE = 1000
 
 
+def _read_failed() -> HTTPException:
+    """503 so the dashboard shows its error state instead of serving numbers
+    computed from a failed read as if healthy."""
+    return HTTPException(status_code=503,
+                         detail="Could not load dashboard data. Please retry.")
+
+
 def _fetch_all(make_query) -> list[dict]:
     """Read every row of a query, paging past PostgREST's ~1000-row cap."""
     rows: list[dict] = []
@@ -153,14 +162,24 @@ def _fetch_all(make_query) -> list[dict]:
         offset += _PAGE
 
 
+# Synthetic gate_stage key in ``latest_decisions_by_gate``: set when the app has
+# EVER been decided into the final round (any 'jury_review' decision row).
+REACHED_FINAL = "_reached_final"
+
+
 def pipeline_stage(status: str | None, gate2_decision: str | None,
-                   ic_all_signed: bool) -> str | None:
+                   ic_all_signed: bool, reached_final: bool = False) -> str | None:
     """Stage key for one app (None for drafts). Unknown statuses fall into
-    'submitted' so the stages always sum to the total."""
+    'submitted' so the stages always sum to the total.
+
+    A reject of an app that already reached the final round is a final-round
+    reject even when it was recorded on the gate-1 path (bulk Reject / the
+    leadership decision default)."""
     if not status or status == "draft":
         return None
     if status == "rejected":
-        return "final_rejected" if gate2_decision == "rejected" else "gate1_rejected"
+        return ("final_rejected" if gate2_decision == "rejected" or reached_final
+                else "gate1_rejected")
     if status == "jury_review":
         return "final_selected" if ic_all_signed else "final_pending"
     return _STAGE_OF_STATUS.get(status, "submitted")
@@ -169,15 +188,21 @@ def pipeline_stage(status: str | None, gate2_decision: str | None,
 def latest_decisions_by_gate(rows: list[dict]) -> dict[tuple[str, str, str], str]:
     """{(native track, application_id, gate_stage): latest decision}."""
     latest: dict[tuple[str, str, str], dict] = {}
+    reached: set[tuple[str, str]] = set()
     for row in rows:
         key = (row.get("application_track"), row.get("application_id"),
                row.get("gate_stage") or "gate1")
         if not key[0] or not key[1]:
             continue
+        if row.get("decision") == "jury_review":
+            reached.add((key[0], key[1]))
         old = latest.get(key)
         if old is None or (row.get("decided_at") or "") >= (old.get("decided_at") or ""):
             latest[key] = row
-    return {k: v.get("decision") for k, v in latest.items()}
+    out = {k: v.get("decision") for k, v in latest.items()}
+    for t, i in reached:
+        out[(t, i, REACHED_FINAL)] = "jury_review"
+    return out
 
 
 def ic_all_signed_keys(rows: list[dict]) -> set[tuple[str, str]]:
@@ -197,7 +222,8 @@ def _empty_bucket() -> dict:
 
 def _finish_bucket(b: dict) -> dict:
     st = b["stages"]
-    b["gate1_selected"] = sum(st[s] for s in GATE1_SELECTED_STAGES)
+    b["gate1_selected"] = (sum(st[s] for s in GATE1_SELECTED_STAGES)
+                           + b.pop("_passed_gate1_held", 0))
     b["rejected_total"] = st["gate1_rejected"] + st["final_rejected"]
     return b
 
@@ -208,7 +234,8 @@ def stage_for_app(app: dict, decisions: dict, signed: set) -> str | None:
     key = (app.get("track"), app.get("id"))
     return pipeline_stage(app.get("status"),
                           decisions.get((key[0], key[1], "gate2")),
-                          key in signed)
+                          key in signed,
+                          (key[0], key[1], REACHED_FINAL) in decisions)
 
 
 def build_pipeline_breakdown(apps: list[dict], decision_rows: list[dict],
@@ -224,12 +251,24 @@ def build_pipeline_breakdown(apps: list[dict], decision_rows: list[dict],
         stage = stage_for_app(a, decisions, signed)
         if stage is None:
             continue
+        # A gate-2 hold / waitlist is a RAW-status stage of its own, but the app
+        # still passed the 1st gate: count it as 1st-gate selected too (a hold /
+        # waitlist at gate 1 itself has no jury_review / gate-2 decision).
+        held_passed = (
+            stage in ("on_hold", "waitlisted")
+            and ((a.get("track"), a.get("id"), REACHED_FINAL) in decisions
+                 or (a.get("track"), a.get("id"), "gate2") in decisions)
+        )
         out["total"] += 1
         out["stages"][stage] += 1
+        if held_passed:
+            out["_passed_gate1_held"] = out.get("_passed_gate1_held", 0) + 1
         eff = by_track.get(a.get("moved_to_track") or a.get("track"))
         if eff is not None:
             eff["total"] += 1
             eff["stages"][stage] += 1
+            if held_passed:
+                eff["_passed_gate1_held"] = eff.get("_passed_gate1_held", 0) + 1
     _finish_bucket(out)
     out["by_track"] = {t: _finish_bucket(b) for t, b in by_track.items()}
     return out
@@ -245,9 +284,11 @@ def fetch_app_status_rows() -> list[dict]:
             rows = _fetch_all(lambda: sb.table(_track_table(track))
                               .select("id,user_id,status,moved_to_track").order("id"))
         except Exception as exc:
+            # Never drop a whole track silently ("Applications submitted" would
+            # lose every VIP app and still answer 200).
             log.warning("stats.fetch_app_status_rows failed",
                         extra={"track": track, "err": str(exc)})
-            continue
+            raise _read_failed() from exc
         out.extend({**r, "track": track} for r in staff_exclusions.visible(rows))
     return out
 
@@ -260,7 +301,7 @@ def fetch_decision_rows() -> list[dict]:
             "application_id,application_track,gate_stage,decision,decided_at").order("id"))
     except Exception as exc:
         log.warning("stats.fetch_decision_rows failed", extra={"err": str(exc)})
-        return []
+        raise _read_failed() from exc
 
 
 def fetch_ic_rows() -> list[dict]:
@@ -271,7 +312,7 @@ def fetch_ic_rows() -> list[dict]:
             "application_id,application_track,signed_at,superseded_at").order("id"))
     except Exception as exc:
         log.warning("stats.fetch_ic_rows failed", extra={"err": str(exc)})
-        return []
+        raise _read_failed() from exc
 
 
 # ai_screening column per dashboard component (score_completeness = "solution").
@@ -787,40 +828,54 @@ def count_ai_screening_rows() -> int:
         return 0
 
 
+STAFF_ROLES: tuple[str, ...] = ("reviewer", "leadership", "admin", "jury")
+
+
 def count_profiles() -> int:
-    """count(*) of profiles — proxy for total signed-up users."""
+    """Signed-up APPLICANT profiles: every profiles row except staff accounts
+    (reviewer / leadership / admin / jury), matching the applicant-only basis of
+    every other dashboard number."""
     try:
-        res = (
-            get_admin_client()
-            .table("profiles")
-            .select("id", count="exact")
-            .execute()
-        )
-        return res.count or 0
+        sb = get_admin_client()
+        profile_ids = {
+            r.get("id") for r in _fetch_all(
+                lambda: sb.table("profiles").select("id").order("id"))
+        }
+        staff_ids = {
+            r.get("user_id") for r in _fetch_all(
+                lambda: sb.table("user_roles").select("user_id,role")
+                .in_("role", list(STAFF_ROLES)).order("user_id"))
+            if r.get("role") in STAFF_ROLES
+        }
+        return len(profile_ids - staff_ids)
     except Exception as exc:
         log.warning("stats.count_profiles failed", extra={"err": str(exc)})
-        return 0
+        raise _read_failed() from exc
 
 
 # ─── AI score aggregation ──────────────────────────────────────────────
 
 
-def fetch_ai_score_overalls() -> list[float]:
+def fetch_ai_score_overalls(
+    non_draft: set[tuple[str, str]] | None = None,
+) -> list[float]:
     """Return the populated `score_overall` values from `ai_screening`.
 
-    Single column projection; NULLs filtered server-side via PostgREST's
-    `.not_.is_(col, "null")`. The mean is computed by the caller in one line
-    — keeping the helper data-only keeps it testable.
+    Paged (PostgREST caps one read at 1000 rows). When ``non_draft`` (a set of
+    (native track, id)) is given, only those apps count — the same population as
+    ``fetch_ai_component_stats`` / ``ai_scored_count``, so the mean, histogram
+    and chip counts agree with the 'across N scored apps' figure. The mean is
+    computed by the caller in one line.
     """
     try:
-        res = (
-            get_admin_client()
-            .table("ai_screening")
-            .select("application_id,score_overall")
-            .limit(10_000)
-            .execute()
-        )
-        rows = staff_exclusions.visible(res.data, key="application_id")
+        sb = get_admin_client()
+        rows = _fetch_all(lambda: sb.table("ai_screening").select(
+            "application_id,application_track,score_overall").order(
+            "application_id").order("application_track"))
+        rows = staff_exclusions.visible(rows, key="application_id")
+        if non_draft is not None:
+            rows = [r for r in rows
+                    if (r.get("application_track"), r.get("application_id")) in non_draft]
         return [float(r["score_overall"]) for r in rows if r.get("score_overall") is not None]
     except Exception as exc:
         log.warning("stats.fetch_ai_score_overalls failed", extra={"err": str(exc)})

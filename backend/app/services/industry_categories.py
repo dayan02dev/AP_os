@@ -96,6 +96,9 @@ def create_category_if_under_cap(
         return False
 
 
+_RAW_PAGE = 1000
+
+
 def categories_with_counts() -> dict[str, Any]:
     """Compose the payload used by `GET /leadership/industry-categories`.
 
@@ -116,15 +119,26 @@ def categories_with_counts() -> dict[str, Any]:
     """
     cats = fetch_categories()
     try:
-        res = (
-            get_admin_client()
-            .table("ai_screening")
-            .select("application_id,industry_category_id")
-            .not_.is_("industry_category_id", "null")
-            .limit(50_000)
-            .execute()
-        )
-        rows = staff_exclusions.visible(res.data, key="application_id")
+        # Page past PostgREST's 1000-row cap (ordered so pages never overlap or
+        # skip): a non-seed category outside the first 1000 raw rows must still
+        # surface, else its apps vanish from the chips and show as Unclassified.
+        sb = get_admin_client()
+        raw: list[dict[str, Any]] = []
+        while True:
+            chunk = (
+                sb.table("ai_screening")
+                .select("application_id,application_track,industry_category_id")
+                .not_.is_("industry_category_id", "null")
+                .order("application_id")
+                .order("application_track")
+                .range(len(raw), len(raw) + _RAW_PAGE - 1)
+                .execute()
+                .data
+            ) or []
+            raw.extend(chunk)
+            if len(chunk) < _RAW_PAGE:
+                break
+        rows = staff_exclusions.visible(raw, key="application_id")
     except Exception as exc:
         log.warning(
             "industry_categories.categories_with_counts query failed",

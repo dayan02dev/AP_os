@@ -202,8 +202,10 @@ def _patch_leadership(monkeypatch, sb):
     from types import SimpleNamespace
 
     from app.routers import leadership as lr
+    from app.services import stats as _stats
     monkeypatch.setattr(admin_query, "get_admin_client", lambda: sb)
     monkeypatch.setattr(applications_query, "get_admin_client", lambda: sb)
+    monkeypatch.setattr(_stats, "get_admin_client", lambda: sb)
 
     # Calling the handler directly bypasses FastAPI, so every unpassed param
     # keeps its raw ``Query(...)`` object as its value (breaking truthiness /

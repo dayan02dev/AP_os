@@ -1047,6 +1047,8 @@ def test_delete_batch_requires_manage_batches(client, _clear_overrides):
 def test_bulk_assign_reviewer_apps(client, monkeypatch, _clear_overrides):
     tables = _empty_admin_tables()
     tables["user_roles"] = [{"user_id": "rev-1", "role": "reviewer"}]
+    tables["tir_applications"] = [{"id": "app-0", "status": "under_review"},
+                                  {"id": "app-1", "status": "submitted"}]
     tables["reviewer_assignments"] = [
         {"id": "as-0", "reviewer_user_id": "rev-1", "application_id": "app-0",
          "application_track": "tir", "declined_at": None, "reassigned_to": None},
