@@ -48,7 +48,10 @@ export default function AdminAddUser() {
         send_invite: sendInvite,
       });
 
-      if (sendInvite) {
+      // Reviewer invites email credentials; when that email failed, fall through
+      // to the temp-password screen so the admin can share it directly.
+      const emailFailed = sendInvite && role === "reviewer" && result?.credentials_emailed === false;
+      if (sendInvite && !emailFailed) {
         push({ kind: "info", message: `Invite sent to ${result.email}.` });
         navigate("/admin/users");
       } else {

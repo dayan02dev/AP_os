@@ -196,7 +196,7 @@ function RosterTable({ jurors, pendingInvites, onManage, onDelete, onReload }) {
       if (sortCol === "name") { va = a.name || ""; vb = b.name || ""; }
       else if (sortCol === "domain") { va = a.domain || ""; vb = b.domain || ""; }
       else if (sortCol === "picks") { va = a.picksSubmitted ?? 0; vb = b.picksSubmitted ?? 0; }
-      else if (sortCol === "weight") { va = a.weight || 1.0; vb = b.weight || 1.0; }
+      else if (sortCol === "weight") { va = typeof a.weight === "number" ? a.weight : 1.0; vb = typeof b.weight === "number" ? b.weight : 1.0; }
       else if (sortCol === "last") { va = a.last || ""; vb = b.last || ""; }
       else { va = ""; vb = ""; }
       if (va < vb) return sortAsc ? -1 : 1;

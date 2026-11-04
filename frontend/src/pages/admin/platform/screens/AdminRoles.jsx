@@ -17,7 +17,7 @@
 import React, { useState, useEffect, useMemo, useReducer } from "react";
 import { adminApi } from "../../../../lib/adminApi";
 import { useStickyState } from "../../../../hooks/useStickyState.js";
-import { generateBasicPassword } from "../helpers/adminHelpers";
+import { genStrongPassword } from "./AdminReviewers";
 import { PageHead, Chip } from "../shell/osAtoms";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -142,7 +142,7 @@ export function AdminRoles() {
       let valA, valB;
       if (sortCol === 'name')  { valA = a.name;             valB = b.name; }
       else if (sortCol === 'roles') { valA = a.roles.join(', '); valB = b.roles.join(', '); }
-      else if (sortCol === 'joined') { valA = a.joined;         valB = b.joined; }
+      else if (sortCol === 'joined') { valA = a._raw?.created_at || ''; valB = b._raw?.created_at || ''; }
       if (valA < valB) return sortAsc ? -1 : 1;
       if (valA > valB) return sortAsc ?  1 : -1;
       return 0;
@@ -193,6 +193,9 @@ export function AdminRoles() {
         full_name:   newName.trim(),
         roles:       newRoles.map(r => r.toLowerCase()),
         send_invite: false,
+        // The password shown in the modal must be the real one the account is
+        // created with (otherwise it is a fake the admin can copy and share).
+        temp_password: addPassword || undefined,
       });
       setNewName(''); setNewEmail(''); setNewRoles([]);
       setShowAddModal(false);
@@ -227,19 +230,29 @@ export function AdminRoles() {
     const newRolesLower = editRoles.map(r => r.toLowerCase());
     const toGrant  = newRolesLower.filter(r => !oldRoles.includes(r));
     const toRevoke = oldRoles.filter(r => !newRolesLower.includes(r));
-    try {
-      await Promise.all([
-        ...toGrant.map(r => adminApi.grantRole(editingUser.id, r)),
-        ...toRevoke.map(r => adminApi.revokeRole(editingUser.id, r)),
-      ]);
+    const ops = [
+      ...toGrant.map(r => ({ r, grant: true, p: adminApi.grantRole(editingUser.id, r) })),
+      ...toRevoke.map(r => ({ r, grant: false, p: adminApi.revokeRole(editingUser.id, r) })),
+    ];
+    const settled = await Promise.allSettled(ops.map(o => o.p));
+    const failed = settled.filter(x => x.status === 'rejected');
+    if (failed.length === 0) {
       setEditingUser(null);
       setEditRoles([]);
       refetch();
-    } catch (err) {
-      setEditErr(err?.message || "Couldn't update roles.");
-    } finally {
-      setEditBusy(false);
+    } else {
+      // Partial failure: reflect what DID change so a retry only re-sends the
+      // failed deltas (re-granting a held role 409s), and refresh the list.
+      let applied = [...oldRoles];
+      ops.forEach((o, i) => {
+        if (settled[i].status !== 'fulfilled') return;
+        applied = o.grant ? [...applied, o.r] : applied.filter(x => x !== o.r);
+      });
+      setEditingUser(u => ({ ...u, roles: applied.map(r => r.charAt(0).toUpperCase() + r.slice(1)) }));
+      setEditErr(failed[0].reason?.message || "Couldn't update roles.");
+      refetch();
     }
+    setEditBusy(false);
   };
 
   // ── Delete (no backend endpoint — preview no-op) ──────────────────────────
@@ -259,7 +272,7 @@ export function AdminRoles() {
             key="add"
             className="os-btn"
             onClick={() => {
-              setAddPassword(generateBasicPassword());
+              setAddPassword(genStrongPassword());
               setAddErr(null);
               setShowAddModal(true);
             }}

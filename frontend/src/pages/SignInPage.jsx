@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
-import { isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
+import { canOpenNext, isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
 import { founderApi } from "../lib/founderApi.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
@@ -88,7 +88,8 @@ export default function SignInPage() {
           nextParam.startsWith("/admin/") ||
           nextParam.startsWith("/leadership") ||
           nextParam.startsWith("/reviewer/")) &&
-        !(isApplyHiddenFor(roles) && nextParam.startsWith("/apply"));
+        !(isApplyHiddenFor(roles) && nextParam.startsWith("/apply")) &&
+        canOpenNext(roles, nextParam);
       navigate(nextAllowedByRole ? nextParam : target, { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {

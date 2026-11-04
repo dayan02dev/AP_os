@@ -1,3 +1,5 @@
+import { hasCapability } from "./rbac.js";
+
 // Post-signin / post-verify landing helper. One place owns the priority
 // so SignInPage, VerifyPage, SetPasswordPage, and the /apply gate can't
 // drift apart and leave a leadership/admin account briefly parked on the
@@ -32,4 +34,16 @@ export function landingPathFor(roles) {
 export function isApplyHiddenFor(roles) {
   const r = Array.isArray(roles) ? roles : [];
   return r.includes("leadership") || r.includes("admin");
+}
+
+// A staff ?next= is honoured only when the signing-in account can open that
+// surface (a stale next left by another role's sign-out must not land the next
+// person on an "Access denied" page). Mirrors the router's capability gates.
+export function canOpenNext(roles, next) {
+  if (next.startsWith("/leadership/applications")) return hasCapability(roles, "view_app_detail");
+  if (next.startsWith("/leadership")) return hasCapability(roles, "view_stats");
+  if (next.startsWith("/admin/users")) return hasCapability(roles, "manage_users");
+  if (next.startsWith("/admin/")) return hasCapability(roles, "view_all_apps");
+  if (next.startsWith("/reviewer/")) return hasCapability(roles, "view_assigned_apps");
+  return true;
 }

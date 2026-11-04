@@ -87,7 +87,7 @@ function ManageDrawer({ reviewer, allBatches, batchNameToId, onClose, onSaved, o
     try {
       const domainsArr = domains.split(',').map(d => d.trim()).filter(Boolean);
       const body = {
-        weight: Math.min(10, Math.max(0, parseFloat(weight) || 0)),
+        weight: (() => { const w = parseFloat(weight); return Number.isFinite(w) ? Math.min(10, Math.max(0, w)) : (typeof reviewer.weight === 'number' ? reviewer.weight : 1.0); })(),
         domains: domainsArr,
       };
       // Identity fields only sent when changed (an email change also re-syncs
@@ -338,6 +338,9 @@ function InviteModal({ batchOptions = [], onClose, onInvited }) {
                   Invite URL: {result.invite_url}
                 </div>
               )}
+              {result.credentials_emailed === false && (
+                <div style={{ marginTop: 8, color: 'var(--bad)', fontSize: 12, fontWeight: 600 }}>The credentials email could not be sent. Share the details above with the reviewer directly.</div>
+              )}
               {result.existing_user && (
                 <div className="os-text-xs os-text-dim" style={{ marginTop: 8 }}>Existing account — they'll sign in with their current password. Admin, leadership and jury access is kept.</div>
               )}
@@ -578,7 +581,7 @@ export function AdminReviewers() {
         valA = parseProg(a.progress); valB = parseProg(b.progress);
       }
       else if (sortCol === 'consistency') { valA = a.consistency || 0; valB = b.consistency || 0; }
-      else if (sortCol === 'weight') { valA = a.weight || 1.0; valB = b.weight || 1.0; }
+      else if (sortCol === 'weight') { valA = typeof a.weight === 'number' ? a.weight : 1.0; valB = typeof b.weight === 'number' ? b.weight : 1.0; }
       else if (sortCol === 'lastActivity') { valA = a.last || ''; valB = b.last || ''; }
       else { valA = ''; valB = ''; }
       if (valA < valB) return sortAsc ? -1 : 1;
@@ -597,7 +600,8 @@ export function AdminReviewers() {
         ? r.batches.map(b => (typeof b === 'string' ? b : b.name))
         : (r.batch && r.batch !== 'Unassigned' ? [r.batch] : [])
     );
-    return Array.from(new Set([...fromBatchList, ...fromReviewers].filter(Boolean))).sort();
+    // "Unbatched" is a computed bucket, not a real batch — never offer it.
+    return Array.from(new Set([...fromBatchList, ...fromReviewers].filter(b => b && b !== 'Unbatched'))).sort();
   }, [batchList, liveReviewers]);
 
   // Mutation state — reviewer mode
@@ -836,7 +840,7 @@ export function AdminReviewers() {
         <InviteModal
           batchOptions={batchList}
           onClose={() => setShowInvite(false)}
-          onInvited={() => { setShowInvite(false); reload(); }}
+          onInvited={() => { reload(); }}
         />
       )}
 

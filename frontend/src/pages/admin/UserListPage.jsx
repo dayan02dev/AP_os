@@ -66,7 +66,13 @@ export default function UserListPage() {
   const [users, setUsers] = useState([]);
   const [total, setTotal] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
+  // Paging: GET /admin/users returns one page (BE default 200). "Load more"
+  // appends the next page; any filter change starts again from offset 0.
+  const filterKey = `${search}|${roleFilter}`;
+  const [pageState, setPageState] = useState({ key: "", offset: 0 });
+  const offset = pageState.key === filterKey ? pageState.offset : 0;
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 250);
@@ -78,15 +84,18 @@ export default function UserListPage() {
     let cancelled = false;
     (async () => {
       try {
-        setLoading(true);
+        if (offset > 0) setLoadingMore(true);
+        else setLoading(true);
         setError(null);
         const params = new URLSearchParams();
         if (search) params.set("search", search);
         if (roleFilter) params.set("role", roleFilter);
+        if (offset > 0) params.set("offset", String(offset));
         const qs = params.toString();
         const data = await api.get(`/admin/users${qs ? `?${qs}` : ""}`, { signal: ctrl.signal });
         if (!cancelled) {
-          setUsers(data.users ?? []);
+          const rows = data.users ?? [];
+          setUsers((prev) => (offset > 0 ? [...prev, ...rows] : rows));
           setTotal(data.total ?? null);
         }
       } catch (err) {
@@ -99,11 +108,11 @@ export default function UserListPage() {
         setUsers([]);
         setTotal(null);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) { setLoading(false); setLoadingMore(false); }
       }
     })();
     return () => { cancelled = true; ctrl.abort(); };
-  }, [search, roleFilter]);
+  }, [search, roleFilter, offset]);
 
   const filtersActive = search !== "" || roleFilter !== "";
   const countLabel = (() => {
@@ -242,6 +251,16 @@ export default function UserListPage() {
               ))}
             </tbody>
           </table>
+          {total !== null && users.length < total && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={loadingMore}
+              onClick={() => setPageState({ key: filterKey, offset: users.length })}
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          )}
         </>
       )}
     </>
