@@ -4,6 +4,7 @@
 // per-reviewer "Reviewer Notes" list, and a "View full application →" button.
 // Self-contained: owns its Reviewer-Notes collapse state and builds the résumé
 // signed-url opener from `startup` via leadershipApi.
+import { pyRound } from "../../../../lib/reviewScore.js";
 import React, { useState } from "react";
 import AiSections from "../../../../components/AiSections.jsx";
 import VipMemoPreview from "../../../../components/VipMemoPreview.jsx";
@@ -78,7 +79,7 @@ export default function ApplicationSummaryCard({
                       onClick={() => setSecOpen(prev => ({ ...prev, [`rev-${i}`]: !open }))}>
                       <span className="ps-sec-chev">{open ? "▾" : "▸"}</span>
                       <span className="ps-sec-label">Reviewer {i + 1} · {rv.reco || "—"}</span>
-                      <span className="ps-sec-hint">{open ? "" : (rv.overall ? rv.overall.toFixed(1) : "—")}</span>
+                      <span className="ps-sec-hint">{open ? "" : (rv.overall ? pyRound(rv.overall, 1).toFixed(1) : "—")}</span>
                     </button>
                     {open && rv.notes && (
                       <ul className="ps-bullets"><li>{rv.notes}</li></ul>

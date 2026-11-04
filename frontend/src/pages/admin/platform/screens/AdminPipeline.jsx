@@ -19,12 +19,14 @@
 //   createBatch: adminPlatformApi.createBatch({ name })
 //   renameBatch: adminPlatformApi.renameBatch(batchId, { name })
 
+import { pyRound } from "../../../../lib/reviewScore.js";
 import React from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
 import { useStickyState } from "../../../../hooks/useStickyState.js";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { Chip } from "../ui.jsx";
 import { buildPipelineCsv } from "../helpers/pipelineCsv.js";
+import { matchDisplayIdQuery } from "../helpers/adminHelpers.js";
 import { relabelDisplayId, trackLabel, displayIdText } from "../../../../lib/trackLabel.js";
 import { chipLabel, chipStatusId, chipTone } from "../../../../lib/adminDataAdapter";
 import { RecoCell, aggregateReco } from "../../../../components/RecoCell";
@@ -109,9 +111,7 @@ const RECO_BUCKETS = [['yes', 'Yes'], ['maybe', 'Maybe'], ['no', 'No'], ['single
 const RECO_RANK = { yes: 0, maybe: 1, no: 2, single: 3, none: 4 };
 
 // Display-ID search: "TIR-27326", "vip-26255", "SIP-26255" or bare "27326"
-// all reduce to the digits (the UI shows SIP as VIP, so any prefix matches).
-const ID_QUERY = /^(?:(?:tir|vip|sip)-?)?(\d+)$/;
-const idDigits = (id) => String(id || '').replace(/^\D+/, '');
+// reduce to the digits; a typed prefix must match the displayed ID's prefix.
 
 // Display-ID sort key: track prefix, then the numeric sequence (so TIR-1001
 // sorts before TIR-26580), never the row UUID.
@@ -180,7 +180,7 @@ function downloadCsv(rows) {
 // both render this component, so they need distinct scopes — otherwise
 // filtering one silently filters the other.
 export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnly = false, heading,
-  lockTrack = null, scopeKey = 'applications' }) {
+  lockTrack = null, scopeKey = 'applications', onChanged }) {
   const scope = `admin.pipeline.${scopeKey}`;
   const { data, loading, error, reload } = useAdminData("pipeline", baseFilter);
   const S = data?.startups || [];
@@ -284,7 +284,6 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
   // would show given the rest of the active filters — track included.
   const facetOk = React.useMemo(() => {
     const q = search.trim().toLowerCase();
-    const idq = q ? q.match(ID_QUERY) : null;
     return {
       base: (s) => {
         if (s.archived || s.hidden) return false;
@@ -303,7 +302,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       },
       search: (s) => {
         if (!q) return true;
-        const matchId = idq ? idDigits(s.applicationId) === idq[1] : false;
+        const matchId = matchDisplayIdQuery(s.applicationId, q) === true;
         return matchId
           || (s.name || '').toLowerCase().includes(q)
           || (s.org || '').toLowerCase().includes(q)
@@ -490,10 +489,16 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
     return name;
   };
 
+  // After a successful write, also refresh the portal's tab badges.
+  const reloadAndNotify = async () => {
+    await reload();
+    if (onChanged) onChanged();
+  };
+
   const finishBulk = async (resultNote) => {
     setSelectedIds([]);
     setNote(resultNote || null);
-    await reload();
+    await reloadAndNotify();
   };
 
   // Bulk Hold → on_hold; Bulk Reject → rejected; "Send to Next Level" → shortlisted
@@ -629,7 +634,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         const resp = await adminPlatformApi.assignBatch(created.id, {
           items: [{ track: nativeOf(startup), application_id: startup.id }],
         });
-        await reload();
+        await reloadAndNotify();
         setNote({ kind: 'ok', text: assignNote(resp, `Assigned to ${custom}`, 1) });
       } catch (e) {
         setNote({ kind: 'error', text: batchErrorText(e, `Batch "${custom}" was created, but assign failed`) });
@@ -641,7 +646,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
         const resp = await adminPlatformApi.assignBatch(found.id, {
           items: [{ track: nativeOf(startup), application_id: startup.id }],
         });
-        await reload();
+        await reloadAndNotify();
         setNote({ kind: 'ok', text: assignNote(resp, `Assigned to ${val}`, 1) });
       } catch (e) {
         setNote({ kind: 'error', text: batchErrorText(e, 'Batch assign failed') });
@@ -656,7 +661,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       await adminPlatformApi.removeAppFromBatch(batchId, [
         { track: nativeOf(startup), application_id: startup.id },
       ]);
-      await reload();
+      await reloadAndNotify();
       setNote({ kind: 'ok', text: 'Removed from batch (reviews kept).' });
     } catch (e) {
       setNote({ kind: 'error', text: `Remove from batch failed: ${e?.message || e}` });
@@ -675,7 +680,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       await adminPlatformApi.renameBatch(found.id, { name: newName });
       if (batchFilter === oldName) setBatchFilter(newName);
       await reloadBatches();
-      await reload();
+      await reloadAndNotify();
     } catch (e) {
       setNote({ kind: 'error', text: batchErrorText(e, 'Rename failed') });
     }
@@ -691,7 +696,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
       const delResp = await adminPlatformApi.deleteBatch(found.id);
       if (batchFilter === name) setBatchFilter('all');
       await reloadBatches();
-      await reload();
+      await reloadAndNotify();
       setNote({ kind: 'ok', text: `Deleted batch "${name}"${delResp?.assignments_removed != null ? ` · ${delResp.assignments_removed} reviewer assignment(s) removed` : ''}.` });
     } catch (e) {
       setNote({ kind: 'error', text: batchErrorText(e, 'Delete failed') });
@@ -1080,7 +1085,7 @@ export function AdminPipeline({ goDetail, decisionMode, baseFilter = {}, readOnl
                 </td>
                 <td className="num">
                   {s.rev && s.rev.overall != null ? (
-                    <b>{s.rev.overall.toFixed(1)}</b>
+                    <b>{pyRound(s.rev.overall, 1).toFixed(1)}</b>
                   ) : (
                     <span className="os-text-soft">—</span>
                   )}

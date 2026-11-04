@@ -518,7 +518,7 @@ export function AdminDetail({ startupId, track, onBack, onPrev, onNext, onDecisi
                   <span className="os-text-soft" title="Each review's category-weighted overall, averaged by reviewer weight — the same score as the Applications list">
                     Reviewer Overall <span className="os-text-xs os-text-dim">(weighted by reviewer)</span>
                   </span>
-                  <span className="os-mono font-bold">{revOverall > 0 ? revOverall.toFixed(1) : '—'}</span>
+                  <span className="os-mono font-bold">{revOverall > 0 ? pyRound(revOverall, 1).toFixed(1) : '—'}</span>
                 </div>
                 <hr className="os-divider" style={{ margin: '4px 0', borderStyle: 'dashed' }} />
                 <div className="os-row between">

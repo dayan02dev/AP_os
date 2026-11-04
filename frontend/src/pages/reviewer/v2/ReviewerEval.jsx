@@ -968,7 +968,7 @@ function ReviewerEvalForm({
                 className="os-num-big"
                 style={{ fontSize: 34, fontFamily: "var(--font-sans)", fontWeight: 800, letterSpacing: "-0.02em", color: "#3213b7" }}
               >
-                {overall.toFixed(2)}
+                {pyRound(overall, 2).toFixed(2)}
               </span>
             </div>
           </div>
@@ -1001,6 +1001,7 @@ function ReviewerEvalForm({
               className="notes-area"
               placeholder="What stood out in your assessment? Key strengths, concerns, or context behind your scores."
               value={notes}
+              maxLength={10000}
               onChange={(e) => edit(setNotes)(e.target.value)}
               disabled={!editable}
               style={fieldErrors.notes ? { borderColor: "var(--bad)" } : undefined}

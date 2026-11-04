@@ -174,6 +174,8 @@ export function AdminRoles() {
   const [addPassword, setAddPassword]       = useState('');
   const [addErr, setAddErr]                 = useState(null);
   const [addBusy, setAddBusy]               = useState(false);
+  // What the backend actually did (password applied, existing account, ...).
+  const [addResult, setAddResult]           = useState(null);
 
   const toggleNewRole = (role) => {
     setNewRoles(prev =>
@@ -188,7 +190,7 @@ export function AdminRoles() {
     try {
       // createUser expects { email, full_name, roles: string[], send_invite: bool }
       // Roles are lowercase for the API
-      await adminApi.createUser({
+      const res = await adminApi.createUser({
         email:       newEmail.trim(),
         full_name:   newName.trim(),
         roles:       newRoles.map(r => r.toLowerCase()),
@@ -198,7 +200,7 @@ export function AdminRoles() {
         temp_password: addPassword || undefined,
       });
       setNewName(''); setNewEmail(''); setNewRoles([]);
-      setShowAddModal(false);
+      setAddResult(res || {});
       refetch();
     } catch (err) {
       const code = err?.details?.detail?.code || err?.details?.code;
@@ -274,6 +276,7 @@ export function AdminRoles() {
             onClick={() => {
               setAddPassword(genStrongPassword());
               setAddErr(null);
+              setAddResult(null);
               setShowAddModal(true);
             }}
           >
@@ -472,6 +475,26 @@ export function AdminRoles() {
               </div>
               <button className="os-close-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--ink-dim)' }} onClick={() => setShowAddModal(false)}>×</button>
             </div>
+            {addResult ? (
+            <div className="os-modal-body os-stack gap-md">
+              <div style={{ color: 'var(--ok)', fontWeight: 600, fontSize: 14 }}>
+                Member invited successfully.
+              </div>
+              {addResult.temp_password && (
+                <div style={{ background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: 4, padding: '10px 14px', fontFamily: 'var(--font-mono, monospace)', fontSize: 13, color: 'var(--ink)' }}>
+                  Temp password: <strong>{addResult.temp_password}</strong>
+                </div>
+              )}
+              {addResult.existing_user && (
+                <div className="os-text-xs os-text-dim">
+                  {addResult.temp_password
+                    ? "Existing account — its password was reset to the one above. Admin, leadership and jury access is kept."
+                    : "Existing account — they'll sign in with their current password. Admin, leadership and jury access is kept."}
+                </div>
+              )}
+              <button className="os-btn" style={{ width: '100%' }} onClick={() => setShowAddModal(false)}>Done</button>
+            </div>
+            ) : (<>
             <div className="os-modal-body os-stack gap-md">
               <div>
                 <label className="os-label">FULL NAME</label>
@@ -539,6 +562,7 @@ export function AdminRoles() {
                 {addBusy ? 'Inviting…' : 'Invite Member'}
               </button>
             </div>
+            </>)}
           </div>
         </div>
       )}

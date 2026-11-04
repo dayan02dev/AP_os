@@ -13,6 +13,7 @@ import React, { useState, useMemo } from "react";
 import { useAdminData } from "../../../../hooks/useAdminData";
 import { adminPlatformApi } from "../../../../lib/adminPlatformApi";
 import { trackLabel, relabelDisplayId } from "../../../../lib/trackLabel.js";
+import { matchDisplayIdQuery } from "../helpers/adminHelpers.js";
 
 const RANDOM = "Not via a batch";
 
@@ -21,8 +22,6 @@ const RANDOM = "Not via a batch";
 // skips these as `skipped_closed`, so the picker doesn't offer them.
 const CLOSED_CHIPS = new Set(["REJECTED", "JURY REVIEW", "ACCEPTED", "ONBOARDED", "WITHDRAWN", "WAITLISTED"]);
 // Display-ID search ("TIR-27326", "vip-26255", "SIP-26255" or bare digits).
-const ID_QUERY = /^(?:(?:tir|vip|sip)-?)?(\d+)$/;
-const idDigits = (id) => String(id || "").replace(/^\D+/, "");
 
 export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onRequestDelete }) {
   const apps = useAdminData("reviewerApplications", { userId: reviewer.id });
@@ -64,9 +63,8 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
       !assignedIds.has(s.id) && !CLOSED_CHIPS.has(String(s.chip || "").toUpperCase()));
     const q = search.trim().toLowerCase();
     if (!q) return all;
-    const idq = q.match(ID_QUERY);
     return all.filter(s =>
-      (idq && idDigits(s.applicationId) === idq[1])
+      matchDisplayIdQuery(s.applicationId, q) === true
       || `${s.name || ""} ${s.org || ""} ${s.domain || ""} ${(s.founders || []).join(" ")} ${s.email || ""} ${s.applicationId || ""}`
         .toLowerCase().includes(q));
   }, [pipeline.data, assignedIds, search]);

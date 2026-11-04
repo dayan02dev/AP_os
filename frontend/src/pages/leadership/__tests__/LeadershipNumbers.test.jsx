@@ -249,7 +249,7 @@ describe("buildApplicationsCsv", () => {
     expect(header).toContain("Reviewers");
     expect(header).toContain("Reco");
     expect(line).toContain("Final rejected");
-    expect(line).toContain("6.3");
+    expect(line).toContain("6.2");
     expect(line).toContain("2 / 3");
     expect(line).toContain("YES");
   });

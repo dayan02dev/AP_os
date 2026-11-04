@@ -30,6 +30,7 @@
 //   ('APPROVED', 'HOLD', 'REJECTED') internally for UI state; they are
 //   normalised to wire ids before the API call via UPPER_TO_WIRE below.
 
+import { pyRound } from "../../../../lib/reviewScore.js";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 
 import { useAdminData, loadDetail } from "../../../../hooks/useAdminData";
@@ -197,7 +198,7 @@ function decideFailText(e, prefix) {
   return `${prefix}: ${e?.message || e}`;
 }
 
-function GateReviewStack({ items, reload, goDetail, note, setNote }) {
+function GateReviewStack({ items, reload, goDetail, note, setNote, onChanged }) {
   // Sticky, not plain state: opening an application unmounts this screen
   // entirely, and a decision remounts it via the `key` below — both used to
   // snap the reviewer back to 1/N. sessionStorage means the position survives
@@ -302,6 +303,7 @@ function GateReviewStack({ items, reload, goDetail, note, setNote }) {
         rationale: rationale || undefined,
       });
       setDecisions(prev => ({ ...prev, [s.id]: btn }));
+      if (onChanged) onChanged();
       if (safeIdx < total - 1) {
         setTimeout(() => goto(safeIdx + 1), 200);
       } else {
@@ -423,7 +425,7 @@ function GateReviewStack({ items, reload, goDetail, note, setNote }) {
                 </div>
               </div>
               <span className="os-num-big" style={{ fontSize: 34, fontFamily: "var(--font-serif)", fontWeight: 400, letterSpacing: "-0.01em", color: "var(--artblue)" }}>
-                {scoreVal != null ? scoreVal.toFixed(2) : "—"}
+                {scoreVal != null ? pyRound(scoreVal, 2).toFixed(2) : "—"}
               </span>
             </div>
           </div>
@@ -642,7 +644,7 @@ function GateReviewBatchDecision({ items, reload, goDetail, note, setNote }) {
                     <div style={{ color: "var(--ink-dim)", fontSize: 11, marginTop: 2 }}>{s.domain}</div>
                   </td>
                   <td className="os-mono os-text-sm">{batchNamesOf(s).join(", ")}</td>
-                  <td className="num" title="Weighted reviewer score"><b>{score != null ? score.toFixed(1) : "—"}</b></td>
+                  <td className="num" title="Weighted reviewer score"><b>{score != null ? pyRound(score, 1).toFixed(1) : "—"}</b></td>
                   <td className="num os-text-soft" title="AI screening score">{ai != null ? ai.toFixed(1) : "—"}</td>
                   <td>
                     {s.flags && s.flags.length > 0 ? (
@@ -819,7 +821,7 @@ function GateReviewHistory({ allStartups, reload, goDetail, note, setNote }) {
                   </td>
                   <td className="os-mono os-text-sm">{dateOf(s) || "—"}</td>
                   <td className="os-mono os-text-sm">{batchNamesOf(s).join(", ")}</td>
-                  <td className="num" title="Weighted reviewer score"><b>{score != null ? score.toFixed(1) : "—"}</b></td>
+                  <td className="num" title="Weighted reviewer score"><b>{score != null ? pyRound(score, 1).toFixed(1) : "—"}</b></td>
                   <td className="num os-text-soft" title="AI screening score">{ai != null ? ai.toFixed(1) : "—"}</td>
                   <td>
                     {s.flags && s.flags.length > 0 ? (
@@ -866,7 +868,7 @@ function GateReviewHistory({ allStartups, reload, goDetail, note, setNote }) {
 // ══════════════════════════════════════════════════════════════════════════
 // TAB CONTROLLER (prototype: AdminGate1)
 // ══════════════════════════════════════════════════════════════════════════
-export default function AdminGate1({ goDetail }) {
+export default function AdminGate1({ goDetail, onChanged }) {
   const [variant, setVariantRaw] = useStickyState("admin.gate1", "variant", "stack");
   // Outcome notes live here (not in the variants): the post-action reload swaps
   // in a loading placeholder that unmounts the variant and would wipe them.
@@ -886,7 +888,9 @@ export default function AdminGate1({ goDetail }) {
 
   const reload = useCallback(async () => {
     await Promise.all([reloadEval(), reloadAll()]);
-  }, [reloadEval, reloadAll]);
+    // Decisions / pushes / overrides move the tab badges too.
+    if (onChanged) onChanged();
+  }, [reloadEval, reloadAll, onChanged]);
 
   const loading = variant === "history" ? allLoading  : evalLoading;
   const error   = variant === "history" ? allError    : evalError;
@@ -920,7 +924,7 @@ export default function AdminGate1({ goDetail }) {
       ) : error ? (
         <ErrorState error={error} onRetry={reload} />
       ) : variant === "stack" ? (
-        <GateReviewStack   key={"stack-"   + evalRows.length} items={evalRows} reload={reload} goDetail={goDetail} note={note} setNote={setNote} />
+        <GateReviewStack   key={"stack-"   + evalRows.length} items={evalRows} reload={reload} onChanged={onChanged} goDetail={goDetail} note={note} setNote={setNote} />
       ) : variant === "batch" ? (
         <GateReviewBatchDecision key={"batch-" + evalRows.length} items={evalRows} reload={reload} goDetail={goDetail} note={note} setNote={setNote} />
       ) : (
