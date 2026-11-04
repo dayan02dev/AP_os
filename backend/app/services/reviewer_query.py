@@ -571,9 +571,11 @@ def _fetch_apps_by_key(sb, ids_by_track: dict[str, list[str]], log_ctx: str,
                 app_rows += (sb.table(table).select(columns).in_("id", chunk)
                              .execute().data) or []
         except Exception as exc:
+            # Fail loudly: swallowing this silently dropped every row of the
+            # track (queue) or blanked its names/status (history).
             log.warning(f"{log_ctx}: app fetch failed",
                         extra={"track": track, "err": str(exc)})
-            app_rows = []
+            raise
         for row in app_rows:
             rid = row.get("id")
             if rid is not None:
@@ -602,7 +604,7 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
     except Exception as exc:
         log.warning("queue: assignments fetch failed",
                     extra={"reviewer": reviewer_user_id, "err": str(exc)})
-        return []
+        raise  # a DB error must not read as "No applications assigned"
     assignments = [a for a in staff_exclusions.visible(assignments, key="application_id")
                    if _is_active_assignment(a)]
 
@@ -618,7 +620,7 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
             "queue: reviews fetch failed",
             extra={"reviewer": reviewer_user_id, "err": str(exc)},
         )
-        rv_rows = []
+        raise  # not []: that would show every submitted app as "Not started"
     for row in staff_exclusions.visible(rv_rows, key="application_id"):
         if row.get("reviewer_user_id") != reviewer_user_id:
             continue  # fake .in_/.eq don't filter; enforce ownership here
@@ -716,7 +718,9 @@ def fetch_queue(reviewer_user_id: str) -> list[dict]:
             "due":           a.get("due_at") if a else None,
             "ai":            _ai_block(ai_row),
             "reviewStatus":  _review_status(my_review),
-            "myScore":       _weighted_overall(my_review) if my_review else None,
+            # Only a SUBMITTED review has a score: a draft's sliders hold the
+            # untouched 5.0 defaults, not something the reviewer scored.
+            "myScore":       _weighted_overall(my_review) if submitted else None,
             # Only a SUBMITTED recommendation counts; a draft's is separate.
             "myReco":        (my_review or {}).get("recommendation") if submitted else None,
             "myDraftReco":   (None if submitted
@@ -797,6 +801,10 @@ def _admin_decision(app_status: str | None, gate2_row: dict | None,
         return app_status
     if app_status in _LEGACY_GATE1_SELECTED:
         return "gate1_selected"
+    if app_status in ("waitlisted", "withdrawn"):
+        # Decided (read-only) states, not "Awaiting admin". Additive bucket
+        # value; clients fall back to the app status / their default label.
+        return app_status
     return "pending"
 
 
@@ -1023,7 +1031,8 @@ def fetch_panel_feedback(
     track = submitted[0].get("application_track")
     from . import applications_query  # local: applications_query imports nothing from here
 
-    others = [r for r in applications_query.fetch_reviews_for(application_id, track)
+    others = [r for r in applications_query.fetch_reviews_for(
+                  application_id, track, raise_on_error=True)
               if r.get("submitted_at") and r.get("reviewer_user_id") != reviewer_user_id
               and r.get("application_id") == application_id]
     others.sort(key=lambda r: r.get("submitted_at") or "", reverse=True)
@@ -1046,7 +1055,7 @@ def fetch_panel_feedback(
     ]
     decisions = [
         d for d in applications_query.fetch_admin_decisions_for(
-            application_id, track, email_fallback=False)
+            application_id, track, email_fallback=False, raise_on_error=True)
         if is_human_rationale(d.get("rationale"))
     ]
     return {"available": True, "reviews": reviews, "admin_decisions": decisions}

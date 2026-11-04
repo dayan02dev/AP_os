@@ -800,7 +800,7 @@ def fetch_ai_screening_for(
 
 
 def fetch_reviews_for(
-    application_id: str, track: str,
+    application_id: str, track: str, *, raise_on_error: bool = False,
 ) -> list[dict[str, Any]]:
     """Return reviews for `(application_id, track)` ordered submitted_at desc."""
     try:
@@ -819,6 +819,8 @@ def fetch_reviews_for(
             "applications_query.fetch_reviews_for failed",
             extra={"track": track, "id": application_id, "err": str(exc)},
         )
+        if raise_on_error:
+            raise
         return []
 
 
@@ -874,6 +876,7 @@ _ADMIN_DECISION_KEYS = ("id", "gate_stage", "decision", "rationale", "decided_by
 
 def fetch_admin_decisions_for(
     application_id: str, track: str, *, email_fallback: bool = True,
+    raise_on_error: bool = False,
 ) -> list[dict[str, Any]]:
     """Every admin_decisions row for `(application_id, NATIVE track)`, newest
     first, each with ``decided_by_name`` (profiles.full_name, else email when
@@ -894,6 +897,8 @@ def fetch_admin_decisions_for(
             "applications_query.fetch_admin_decisions_for failed",
             extra={"track": track, "id": application_id, "err": str(exc)},
         )
+        if raise_on_error:
+            raise
         return []
     rows = [r for r in rows
             if r.get("application_id") == application_id and r.get("application_track") == track]
