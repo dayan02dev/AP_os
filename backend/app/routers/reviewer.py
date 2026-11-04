@@ -315,6 +315,10 @@ async def get_application_for_reviewer(
 # multiple_of=0.5 rejects values Postgres would otherwise silently round.
 Score = Annotated[float, Field(ge=0, le=10, multiple_of=0.5)] | None
 
+# Reviewer notes cap (generous: the FE textarea has no maxLength, so this only
+# stops absurd payloads, not a long legitimate note).
+_NOTES_MAX = 10000
+
 
 class ReviewSubmitBody(BaseModel):
     """Payload for submit (or save-as-draft).
@@ -336,7 +340,7 @@ class ReviewSubmitBody(BaseModel):
     recommendation:   Literal["yes", "maybe", "no"] | None = None
     strengths:   str | None = None
     concerns:    str | None = None
-    quick_notes: str | None = None
+    quick_notes: str | None = Field(default=None, max_length=_NOTES_MAX)
     flags: list[str] | None = None
     disagree_with_ai: dict[str, str] | None = None
     draft: bool = False
@@ -450,6 +454,34 @@ def _fetch_ai_screening_row(sb, application_id: str, application_track: str) -> 
                    "err": str(exc)},
         )
         return None
+
+
+def _is_duplicate_key_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "23505" in msg or "duplicate key" in msg or "unique constraint" in msg
+
+
+def _existing_review_id(sb, application_id: str, track: str, reviewer_id: str):
+    try:
+        rows = (sb.table("reviews").select("id")
+                .eq("application_id", application_id)
+                .eq("application_track", track)
+                .eq("reviewer_user_id", reviewer_id).limit(1).execute().data) or []
+        return rows[0]["id"] if rows else None
+    except Exception:  # noqa: BLE001 - best effort, the 409 is what matters
+        return None
+
+
+def _auto_transition_best_effort(application_id: str, track: str) -> None:
+    """The review is already committed when this runs; a failed status bump
+    (race with an admin decision, DB blip) must not turn a saved submit into a
+    422/500 that a retry then 409s. The next submit/admin action re-evaluates."""
+    try:
+        state_machine.auto_transition_to_evaluated_on_first_review(application_id, track)
+    except Exception as exc:  # noqa: BLE001 - incl. HTTPException from the state machine
+        log.warning("review submit: auto-transition failed after commit; ignored",
+                    extra={"application_id": application_id, "track": track,
+                           "err": str(exc)})
 
 
 def _reject_if_decided(sb, track: str, application_id: str) -> None:
@@ -599,6 +631,17 @@ async def submit_review(
                    "reviewer_user_id": user["user_id"],
                    "err": str(exc)},
         )
+        if _is_duplicate_key_error(exc):
+            # Lost the race against a concurrent POST (autosave vs Submit):
+            # same recoverable 409 as the pre-check so the FE PATCHes instead.
+            raise HTTPException(
+                status_code=http_status.HTTP_409_CONFLICT,
+                detail={"code": "review_already_exists",
+                        "message": "You already have a review for this application. Use PATCH to edit it.",
+                        "review_id": _existing_review_id(
+                            sb, body.application_id, body.application_track,
+                            user["user_id"])},
+            ) from exc
         raise HTTPException(
             status_code=http_status.HTTP_502_BAD_GATEWAY,
             detail={"code": "review_insert_failed"},
@@ -633,10 +676,7 @@ async def submit_review(
 
         # Auto-transition (closes spec §14.4): the FIRST submitted review
         # flips the application straight to evaluated.
-        state_machine.auto_transition_to_evaluated_on_first_review(
-            body.application_id,
-            body.application_track,
-        )
+        _auto_transition_best_effort(body.application_id, body.application_track)
 
     return {
         "review": review_row,
@@ -664,7 +704,7 @@ class ReviewPatchBody(BaseModel):
     recommendation:   Literal["yes", "maybe", "no"] | None = None
     strengths:   str | None = None
     concerns:    str | None = None
-    quick_notes: str | None = None
+    quick_notes: str | None = Field(default=None, max_length=_NOTES_MAX)
     flags: list[str] | None = None
     disagree_with_ai: dict[str, str] | None = None
     draft: bool | None = None  # flip draft → submitted (stamps submitted_at/locked_at)
@@ -710,7 +750,7 @@ async def patch_review(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail={"code": "review_not_found"},
         )
-    existing = rows[0]
+    existing = dict(rows[0])
     if existing["reviewer_user_id"] != user["user_id"]:
         raise HTTPException(
             status_code=http_status.HTTP_403_FORBIDDEN,
@@ -831,9 +871,24 @@ async def patch_review(
         # Same post-submit fan-out as POST /reviews (assignment hygiene + audit
         # + auto-transition). Best-effort on the assignment update.
         try:
-            sb.table("reviewer_assignments").update(
-                {"completed_at": now.isoformat()},
-            ).eq("id", existing["assignment_id"]).execute()
+            # The draft may predate an unassign + re-assign, so its stored
+            # assignment_id can be dead (or NULL): complete the LIVE rows.
+            live_ids = [
+                a["id"] for a in (
+                    sb.table("reviewer_assignments").select("*")
+                    .eq("application_id", existing["application_id"])
+                    .eq("application_track", existing["application_track"])
+                    .eq("reviewer_user_id", user["user_id"]).execute().data or [])
+                if a.get("reviewer_user_id") == user["user_id"]
+                and a.get("application_id") == existing["application_id"]
+                and a.get("application_track") == existing["application_track"]
+                and reviewer_query._is_active_assignment(a)
+            ] or [existing.get("assignment_id")]
+            for asg_id in live_ids:
+                if asg_id:
+                    sb.table("reviewer_assignments").update(
+                        {"completed_at": now.isoformat()},
+                    ).eq("id", asg_id).execute()
         except Exception as exc:
             log.warning(
                 "patch_review: assignment completed_at update failed",
@@ -854,10 +909,23 @@ async def patch_review(
             target_id=review_id,
             after={"recommendation": final_rec},
         )
-        state_machine.auto_transition_to_evaluated_on_first_review(
-            existing["application_id"],
-            existing["application_track"],
-        )
+        _auto_transition_best_effort(existing["application_id"], existing["application_track"])
+
+    if existing.get("submitted_at") is not None and not flipping_to_submitted:
+        # Edits to an already-submitted review change what admin/leadership
+        # aggregate; leave a trail of the recommendation/score changes.
+        watched = ("recommendation", *_SCORE_COLS)
+        changed = {k: patch[k] for k in watched if k in patch and patch[k] != existing.get(k)}
+        if changed:
+            write_audit(
+                actor_user_id=user["user_id"],
+                actor_role="reviewer",
+                action_type="edit_submitted_review",
+                target_table="reviews",
+                target_id=review_id,
+                before={k: existing.get(k) for k in changed},
+                after=changed,
+            )
 
     final_row = {**existing, **patch}
     return {
@@ -908,6 +976,21 @@ async def decline_assignment(
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
             detail={"code": "already_declined"},
+        )
+    # A submitted review or a decided app can't be walked away from: declining
+    # would detach the review and leave an "Unassigned" row (reviewer.py PATCH
+    # then 409s assignment_removed).
+    _reject_if_decided(sb, assignment["application_track"], assignment["application_id"])
+    mine = (sb.table("reviews").select("*")
+            .eq("application_id", assignment["application_id"])
+            .eq("application_track", assignment["application_track"])
+            .eq("reviewer_user_id", user["user_id"]).execute().data) or []
+    if any(r.get("submitted_at") and r.get("reviewer_user_id") == user["user_id"]
+           and r.get("application_id") == assignment["application_id"] for r in mine):
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail={"code": "review_already_submitted",
+                    "message": "You have already submitted a review for this application."},
         )
 
     now = datetime.now(UTC).isoformat()

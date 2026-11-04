@@ -219,12 +219,18 @@ async def decide_application(
     # decision is "offered" (offered is a gate-2-only outcome; accepting it on
     # the gate-1 path would record the wrong gate_stage in admin_decisions).
     is_gate2 = (body.gate_stage == "gate2") or (body.decision == "offered")
-    if is_gate2:
+    # Rejecting an app that is already past gate 1 (offered) is a gate-2
+    # rejection (stats classify the app as final_rejected, like the admin
+    # Accepted-tab Reject); recording it as gate1 miscounts it.
+    reject_offered = (body.decision == "rejected"
+                      and (_row or {}).get("status") == "offered")
+    if is_gate2 or reject_offered:
         return decisions.record_gate2_decision(
             track=track,
             application_id=application_id,
             decision=body.decision,
-            rationale=body.rationale,
+            rationale=(body.rationale if is_gate2
+                       else ((body.rationale or "").strip() or "rejected by leadership")),
             decided_by=user["user_id"],
             decided_by_role="leadership",
         )
