@@ -149,10 +149,6 @@ async def create_user(
         # only accounts keep the reset-and-email-credentials behaviour.
         if current_roles & {"admin", "leadership", "jury", "reviewer"}:
             temp_password = None
-        elif not (body.send_invite or body.temp_password):
-            # No delivery channel for a new password (nothing is emailed and the
-            # admin did not choose one) -> never change a working password.
-            temp_password = None
         else:
             try:
                 client.auth.admin.update_user_by_id(new_user_id, {"password": temp_password})
