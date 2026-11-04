@@ -91,7 +91,34 @@ export function Slider({ label, value, onChange, kind = "", min = 0, max = 10, s
       <div
         ref={trackRef}
         className="os-slider-track"
-        style={disabled ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
+        role="slider"
+        tabIndex={disabled ? -1 : 0}
+        aria-label={typeof label === "string" ? label : undefined}
+        aria-valuemin={min}
+        aria-valuemax={max}
+        aria-valuenow={value}
+        aria-disabled={disabled}
+        onKeyDown={(e) => {
+          if (disabled) return;
+          const k = e.key;
+          let v = null;
+          if (k === "ArrowRight" || k === "ArrowUp") v = value + step;
+          else if (k === "ArrowLeft" || k === "ArrowDown") v = value - step;
+          else if (k === "Home") v = min;
+          else if (k === "End") v = max;
+          if (v === null) return;
+          e.preventDefault();
+          onChange(Math.max(min, Math.min(max, v)));
+        }}
+        onTouchStart={(e) => {
+          if (disabled || !e.touches[0]) return;
+          handle(e.touches[0].clientX);
+        }}
+        onTouchMove={(e) => {
+          if (disabled || !e.touches[0]) return;
+          handle(e.touches[0].clientX);
+        }}
+        style={disabled ? { opacity: 0.55, cursor: "not-allowed", touchAction: "none" } : { touchAction: "none" }}
         onMouseDown={(e) => {
           if (disabled) return;
           handle(e.clientX);

@@ -41,6 +41,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AiSections from "../../../components/AiSections.jsx";
 import FullApplication from "../../../components/FullApplication.jsx";
+import { pyRound } from "../../../lib/reviewScore.js";
 import VipMemoPreview from "../../../components/VipMemoPreview.jsx";
 import VipNavigatorMemo from "../../../components/VipNavigatorMemo.jsx";
 import { saveBlob, useVipMemoV2, vipMemoV2Filename } from "../../../lib/vipMemoV2.js";
@@ -248,7 +249,7 @@ function PanelFeedback({ submitted, panel }) {
             <span style={{ fontWeight: 600 }}>{r.reviewer_name || "Reviewer"}</span>
             <span className="os-text-xs os-text-dim">
               {typeof r.overall === "number" && (
-                <span style={{ fontWeight: 700, color: "var(--ink)", marginRight: 6 }}>{r.overall.toFixed(1)}</span>
+                <span style={{ fontWeight: 700, color: "var(--ink)", marginRight: 6 }}>{pyRound(r.overall, 1).toFixed(1)}</span>
               )}
               {fmtDate(r.submitted_at)}
             </span>
@@ -493,17 +494,22 @@ function ReviewerEvalForm({
     if (!advance || advance.kind !== "pending") return undefined;
     let t;
     const tick = () => {
-      if (savingRef.current) { t = setTimeout(tick, 250); return; }
+      if (savingRef.current || dirtyRef.current) { t = setTimeout(tick, 250); return; }
       if (openAppRef.current) openAppRef.current(advance.target.track, advance.target.id);
     };
     t = setTimeout(tick, advanceDelayMs);
     return () => clearTimeout(t);
   }, [advance, advanceDelayMs]);
 
+  // Bumped by "Re-open to edit" so a queue lookup still in flight cannot start
+  // an advance for a review the reviewer has since re-opened.
+  const advanceGenRef = useRef(0);
   const startAdvance = async () => {
     if (!findNextAfterSubmit) return;
+    const gen = advanceGenRef.current;
     let res = null;
     try { res = await findNextAfterSubmit(); } catch { res = null; }
+    if (gen !== advanceGenRef.current) return;
     if (!res || !res.hasPosition) return;
     setAdvance(res.upNext
       ? { kind: "pending", target: res.upNext, filtered: res.filtered }
@@ -541,6 +547,7 @@ function ReviewerEvalForm({
         // A draft already exists (e.g. created in another tab) — recover its id
         // from the 409 body and switch to PATCH on the next save.
         if (LOCK_CODES[err?.code]) setServerLock(LOCK_CODES[err.code]);
+        if (err?.code === "notes_required") setFieldErrors((p) => ({ ...p, notes: true }));
         if (err?.status === 409 && err?.details?.review_id) {
           setReviewId(err.details.review_id);
         }
@@ -619,10 +626,14 @@ function ReviewerEvalForm({
     const firstSubmit = !submitted;
     setSubmitError(null);
     setSaveState("saving");
+    // Never run two writes on the same review at once: let an in-flight
+    // autosave land first so it cannot overwrite the submitted content.
+    while (savingRef.current) await new Promise((r) => setTimeout(r, 50));
+    const rid = reviewIdRef.current;
     try {
-      if (reviewId) {
+      if (rid) {
         const res = await reviewerApi.patchReview(
-          reviewId,
+          rid,
           evaluationToPatch(currentEval, { draft: false }),
         );
         if (res?.editWindowExpiresAt) setExpiresAt(res.editWindowExpiresAt);
@@ -665,6 +676,7 @@ function ReviewerEvalForm({
   };
 
   const reopenForEdit = () => {
+    advanceGenRef.current += 1;
     setAdvance(null);
     setReopened(true);
   };

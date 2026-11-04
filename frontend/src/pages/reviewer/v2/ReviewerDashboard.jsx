@@ -46,7 +46,7 @@ export default function ReviewerDashboard({ onPickIndustry, queueAsync }) {
   const maxStatus = Math.max(...STATUS_ROWS.map((r) => r.count), 1);
 
   const BINS = ["0-1", "1-2", "2-3", "3-4", "4-5", "5-6", "6-7", "7-8", "8-9", "9-10"];
-  const binCounts = BINS.map((_, i) => withAI.filter((s) => s.ai.overall >= i && s.ai.overall < i + 1).length);
+  const binCounts = BINS.map((_, i) => withAI.filter((s) => s.ai.overall >= i && (i === 9 ? s.ai.overall <= 10 : s.ai.overall < i + 1)).length);
   const maxBin = Math.max(...binCounts, 1);
 
   const COMPS = [
@@ -56,13 +56,19 @@ export default function ReviewerDashboard({ onPickIndustry, queueAsync }) {
     { label: "Founders", key: "founders", weight: 14 },
     { label: "Commitment", key: "commit", weight: 12 },
   ];
-  const compAvgs = COMPS.map((c) => ({
-    ...c,
-    avg: withAI.length ? withAI.reduce((a, s) => a + (s.ai[c.key] || 0), 0) / withAI.length : 0,
-  }));
+  // Average only the apps that actually have the component (a missing one is
+  // not a zero), matching leadership's ai_component_means.
+  const compAvgs = COMPS.map((c) => {
+    const have = withAI.filter((s) => typeof s.ai[c.key] === "number");
+    return { ...c, avg: have.length ? have.reduce((a, s) => a + s.ai[c.key], 0) / have.length : 0 };
+  });
 
   const sorted = [...withAI].map((s) => s.ai.overall).sort((a, b) => a - b);
-  const medianAI = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+  const medianAI = sorted.length
+    ? sorted.length % 2
+      ? sorted[(sorted.length - 1) / 2]
+      : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+    : 0;
 
   // Industry breakdown (server field is `industry`). Over the rows My Queue
   // shows by default (no closed / unassigned), so a tile's count is what the

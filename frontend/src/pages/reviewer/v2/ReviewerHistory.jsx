@@ -59,6 +59,15 @@ export default function ReviewerHistory({ onOpenEval }) {
       </div>
     );
 
+  // The backend answers 200 {rows:[], degraded:true} when its read failed —
+  // that is an outage, not "no reviews".
+  if (data && data.degraded)
+    return (
+      <div style={{ padding: "48px 0" }}>
+        <ErrorState error={new Error("Your review history is temporarily unavailable.")} onRetry={reload} />
+      </div>
+    );
+
   const history = (data && data.rows) || [];
   const stats = (data && data.stats) || {};
   const recoTone = (r) => (r === "yes" ? "green" : r === "no" ? "red" : "amber");
