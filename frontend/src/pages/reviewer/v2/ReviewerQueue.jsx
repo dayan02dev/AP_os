@@ -62,11 +62,18 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
     appliedPickRef.current = pickKey;
     writeStickyState(SCOPE, "appliedPick", pickKey);
     if (domainFilter !== initialDomain) setDomainFilter(initialDomain);
+    // The dashboard tile counted every live row of that industry, so the queue
+    // it opens must not stay narrowed by other remembered filters.
+    if (search !== "") setSearch("");
+    if (track !== "all") setTrack("all");
+    if (statusFilter !== "all") setStatusFilter("all");
+    if (stageFilter !== "all") setStageFilter("all");
+    if (recoFilter !== "all") setRecoFilter("all");
+    if (showInactive) setShowInactive(false);
   }
 
   const { data, loading, error, reload } = queueAsync;
   const allQueue = data || [];
-  const inactiveCount = allQueue.filter(isInactive).length;
   // Rows the reviewer can actually see: closed/unassigned ones only when
   // "Show inactive" is on. Every count (chips, "N of total") is over this set.
   const visible = visibleQueueRows(allQueue, showInactive);
@@ -75,6 +82,8 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
     reco: recoFilter, showInactive, sortCol, sortAsc,
   };
   const filtered = applyQueueFilters(visible, filters);
+  // Inactive rows the current filters would reveal (the toggle's promise).
+  const inactiveCount = applyQueueFilters(allQueue.filter(isInactive), filters).length;
 
   const handleSort = (col) => {
     if (sortCol === col) {
@@ -173,7 +182,7 @@ export default function ReviewerQueue({ onOpen, initialDomain, navKey, queueAsyn
           {hasFilters && (
             <button className="lp-filter-btn lp-clear-btn" onClick={clearAll}>Clear filters</button>
           )}
-          {inactiveCount > 0 && (
+          {(inactiveCount > 0 || showInactive) && (
             <button
               className={`lp-filter-btn${showInactive ? " active" : ""}`}
               title="Reviewed applications that were rejected, or whose assignment was removed"

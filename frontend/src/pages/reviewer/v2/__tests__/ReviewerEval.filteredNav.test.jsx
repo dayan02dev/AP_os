@@ -227,10 +227,13 @@ describe("auto-advance after submit", () => {
     // Wait for the debounced autosave to start (and hang).
     await waitFor(() => expect(api.patchReview).toHaveBeenCalledTimes(1), { timeout: 2000 });
     fireEvent.click(screen.getByRole("button", { name: /Submit evaluation/ }));
-    await screen.findByText(/opening next in your filter/);
+    // Submit now waits for the in-flight autosave (S2-REV-06), so nothing
+    // advances (and no second PATCH is sent) until it lands.
     await new Promise((r) => setTimeout(r, 120));
+    expect(api.patchReview).toHaveBeenCalledTimes(1);
     expect(onOpen).not.toHaveBeenCalled();
     await act(async () => { release(); });
+    await screen.findByText(/opening next in your filter/);
     await waitFor(() => expect(onOpen).toHaveBeenCalledWith("sip", "v4"));
   });
 });
