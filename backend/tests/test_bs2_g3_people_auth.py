@@ -366,3 +366,49 @@ def test_jury_accept_still_resets_plain_account_password():
         sb, {"email": "p@x.in", "name": "P"}, reset_password=True)
     assert pw
     admin.auth.admin.update_user_by_id.assert_called_once()
+
+
+# ── fix round: S2-SH-05 per-email ceiling, S2-ADM-15 audit triples ───────
+def test_ip_rotation_hits_per_email_ceiling(client, monkeypatch):
+    anon = MagicMock()
+    monkeypatch.setattr(auth_mod, "get_anon_client", lambda: anon)
+    monkeypatch.setattr(auth_mod, "get_admin_client", lambda: MagicMock())
+    ip = {"v": ""}
+    monkeypatch.setattr(auth_mod, "_client_ip", lambda request: ip["v"])
+    anon.auth.sign_in_with_password.side_effect = Exception("Invalid login credentials")
+    codes = []
+    for n in range(7):          # 7 IPs x 5 failures = 35 > ceiling of 30
+        ip["v"] = f"9.9.9.{n}"
+        for _ in range(5):
+            codes.append(client.post("/auth/sign-in-password",
+                         json={"email": "victim@artpark.in", "password": "wrongpass1"}).status_code)
+    assert codes[:30] == [401] * 30
+    assert 429 in codes[30:]
+
+
+def test_ip_rotation_hits_per_email_ceiling_otp(client, monkeypatch):
+    anon = MagicMock()
+    monkeypatch.setattr(auth_mod, "get_anon_client", lambda: anon)
+    monkeypatch.setattr(auth_mod, "get_admin_client", lambda: MagicMock())
+    ip = {"v": ""}
+    monkeypatch.setattr(auth_mod, "_client_ip", lambda request: ip["v"])
+    anon.auth.verify_otp.side_effect = Exception("bad")
+    codes = []
+    for n in range(7):
+        ip["v"] = f"8.8.8.{n}"
+        for _ in range(5):
+            codes.append(client.post("/auth/verify-otp",
+                         json={"email": "victim@artpark.in", "token": "000000"}).status_code)
+    assert 429 in codes[30:]
+
+
+async def test_revoke_reviewer_audit_records_deleted_triples(monkeypatch):
+    audits: list = []
+    sb = _SB(_world())
+    expected = [{"application_id": a["application_id"], "track": a["application_track"]}
+                for a in sb.tables["reviewer_assignments"] if a["reviewer_user_id"] == "R"]
+    _wire(monkeypatch, sb, audits)
+    await admin_users.revoke_role("R", "reviewer", current_user=ADMIN)
+    rec = [a for a in audits if a["action_type"] == "role.revoked"][0]
+    assert rec["before"]["role"] == "reviewer"
+    assert rec["before"]["removed"] == expected

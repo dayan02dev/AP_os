@@ -645,7 +645,17 @@ async def revoke_role(
                 },
             )
 
+    removed_triples: list[dict] = []
     if role == "reviewer":
+        removed_triples = [
+            {"application_id": r["application_id"], "track": r["application_track"]}
+            for r in admin_query._fetch_all(
+                lambda: client.table("reviewer_assignments")
+                .select("application_id,application_track")
+                .eq("reviewer_user_id", user_id)
+                .order("application_id")
+            )
+        ]
         # An ex-reviewer must not keep live assignments / batch membership (they
         # would still count in pipeline 'assigned/active'). Submitted reviews
         # are kept; same release as the roster Delete.
@@ -659,7 +669,8 @@ async def revoke_role(
         action_type="role.revoked",
         target_table="user_roles",
         target_id=user_id,
-        before={"role": role},
+        before=({"role": role, "removed": removed_triples}
+                if removed_triples else {"role": role}),
     )
     return {"ok": True, "role": role}
 

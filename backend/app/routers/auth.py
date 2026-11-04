@@ -79,6 +79,12 @@ _VERIFY_OTP_WINDOW_S = 15 * 60   # per 15 minutes per email
 _PWD_SIGNIN_MAX = 5
 _PWD_SIGNIN_WINDOW_S = 15 * 60
 
+# Looser per-email ceiling across ALL source IPs. The per-(email, IP) bucket
+# stops a third party locking the owner out; this one still caps distributed
+# (IP-rotating) brute force, and needs 30+ requests to lock the owner out.
+_EMAIL_CEILING_MAX = 30
+_EMAIL_CEILING_WINDOW_S = 15 * 60
+
 # Set-password is per-user (Bearer-keyed) — 5/hour is plenty for the legitimate
 # "set initial password" + "change password" flows and stops a stolen-token
 # attacker from rotating credentials at speed.
@@ -237,6 +243,7 @@ async def verify_otp(payload: OTPVerify, request: Request):
     email = payload.email.lower().strip()
     # Every verify attempt counts (brute-force defence over 6-digit code space).
     check_and_record("verify-otp", _attempt_key(email, request), _VERIFY_OTP_MAX, _VERIFY_OTP_WINDOW_S)
+    check_and_record("verify-otp-email", email, _EMAIL_CEILING_MAX, _EMAIL_CEILING_WINDOW_S)
 
     req_id = _new_request_id()
     try:
@@ -427,6 +434,7 @@ async def sign_in_password(payload: PasswordSignIn, request: Request):
     # gets locked, but the limit doesn't cross-pollinate across users (so
     # one applicant's typo storm doesn't block their colleague).
     check_and_record("sign-in-password", _attempt_key(email, request), _PWD_SIGNIN_MAX, _PWD_SIGNIN_WINDOW_S)
+    check_and_record("sign-in-password-email", email, _EMAIL_CEILING_MAX, _EMAIL_CEILING_WINDOW_S)
 
     req_id = _new_request_id()
     try:

@@ -921,7 +921,7 @@ async def update_meta(
     body: MetaBody,
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """Upsert hide/archive meta for an application; audited."""
+    """Upsert hide/archive meta for an application; audited. `track` must be the NATIVE track."""
     fields = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
     if not fields:
         raise HTTPException(
