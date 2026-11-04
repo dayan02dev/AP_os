@@ -11,24 +11,11 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
-import { isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
+import { canOpenNext, isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
 import { founderApi } from "../lib/founderApi.js";
-import { hasCapability } from "../lib/rbac.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { usePageTheme } from "../hooks/usePageTheme.jsx";
-
-// A staff ?next= is honoured only when the signing-in account can open that
-// surface (a stale next left by another role's sign-out must not land the next
-// person on an "Access denied" page). Mirrors the router's capability gates.
-function canOpenNext(roles, next) {
-  if (next.startsWith("/leadership/applications")) return hasCapability(roles, "view_app_detail");
-  if (next.startsWith("/leadership")) return hasCapability(roles, "view_stats");
-  if (next.startsWith("/admin/users")) return hasCapability(roles, "manage_users");
-  if (next.startsWith("/admin/")) return hasCapability(roles, "view_all_apps");
-  if (next.startsWith("/reviewer/")) return hasCapability(roles, "view_assigned_apps");
-  return true;
-}
 
 export default function SignInPage() {
   const { requestOtp, signInWithPassword } = useAuth();

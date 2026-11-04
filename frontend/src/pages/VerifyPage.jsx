@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api.js";
 import * as authApi from "../lib/auth.js";
-import { isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
+import { canOpenNext, isApplyHiddenFor, landingPathFor } from "../lib/landing.js";
 import { founderApi } from "../lib/founderApi.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
@@ -123,7 +123,8 @@ export default function VerifyPage() {
                 nextParam.startsWith("/admin/") ||
                 nextParam.startsWith("/leadership") ||
                 nextParam.startsWith("/reviewer/")) &&
-              !(isApplyHiddenFor(roles) && nextParam.startsWith("/apply"));
+              !(isApplyHiddenFor(roles) && nextParam.startsWith("/apply")) &&
+              canOpenNext(roles, nextParam);
             target = honourNext ? nextParam : applicantTarget;
           }
         }

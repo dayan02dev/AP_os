@@ -125,7 +125,7 @@ function _isCredentialPath(path) {
 // A refresh that failed for a transient reason (network, timeout, 429, 5xx)
 // leaves the still-valid refresh token in place.
 function _isTransientRefreshFailure(err) {
-  if (!(err instanceof ApiError)) return true; // network failure (TypeError) etc.
+  if (!(err instanceof ApiError)) return err?.name === "TypeError" || err?.name === "AbortError"; // network/timeout only
   return err.status === 0 || err.status === 429 || err.status >= 500;
 }
 

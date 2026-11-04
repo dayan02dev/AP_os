@@ -38,7 +38,7 @@ export function ManageApplicationsDrawer({ reviewer, onClose, onChanged, onReque
   const assigned = useMemo(() => apps.data?.applications ?? [], [apps.data]);
   const assignedIds = useMemo(() => new Set(assigned.map(a => a.id)), [assigned]);
   const reviewerBatches = Array.isArray(reviewer.batches)
-    ? reviewer.batches.map(b => (typeof b === "string" ? b : b.name))
+    ? reviewer.batches.map(b => (typeof b === "string" ? b : b.name)).filter(n => n && n !== "Unbatched")
     : [];
 
   // Group assigned apps by batch (null → "Random allotment").
