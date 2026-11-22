@@ -43,31 +43,11 @@ import { useAuth } from "./hooks/useAuth.jsx";
 import { useSipResume } from "./hooks/useSipResume.js";
 import { useToast } from "./hooks/useToast.jsx";
 import { api } from "./lib/api.js";
+import { progressFromRow } from "./lib/applicantProgress.js";
 import {
   SECTION_ORDER_SIP,
   collapseFromRowSip,
 } from "./lib/fieldMap-sip.js";
-
-// Map backend `status` (state machine in services/state_machine.py) onto
-// the dashboard's 6-stage milestone model. Mirrors the same table in
-// App.jsx so a leadership status flip drives the dashboard for both
-// tracks identically.
-const STATUS_TO_MILESTONE = {
-  submitted:        "submitted",
-  ai_screening:     "submitted",
-  screening_failed: "submitted",
-  under_review:     "under_review",
-  evaluated:        "under_review",
-  shortlisted:      "profile",
-  interview:        "interview",
-  offered:          "onboarding",
-  onboarded:        "onboarding",
-  rejected:         "under_review",
-  waitlisted:       "under_review",
-  withdrawn:        "submitted",
-};
-const milestoneFromRow = (r) =>
-  r.current_milestone || STATUS_TO_MILESTONE[r.status] || "submitted";
 import { SipTemplateScreen } from "./components/SipTemplateScreen.jsx";
 
 // SIP violet palette — overrides the TIR blue --accent + --accent-soft
@@ -788,7 +768,7 @@ export default function AppSip() {
                     : Date.now(),
                   cycle: r.cycle || "VIP.2026",
                   projectTitle: r.solution_describe?.slice(0, 80) || "",
-                  currentMilestone: milestoneFromRow(r),
+                  ...progressFromRow(r),
                   feedback: r.reviewer_feedback || null,
                   answers: collapseFromRowSip(r),
                 }));
@@ -802,7 +782,7 @@ export default function AppSip() {
                       : Date.now(),
                     cycle: r.cycle || "TIR.2026",
                     projectTitle: r.solution_describe?.slice(0, 80) || "",
-                    currentMilestone: milestoneFromRow(r),
+                    ...progressFromRow(r),
                     feedback: r.reviewer_feedback || null,
                     // TIR rows can't be opened from SIP DoneScreen.
                     answers: {},
@@ -820,8 +800,7 @@ export default function AppSip() {
                     cycle: application.cycle || "VIP.2026",
                     projectTitle:
                       application.solution_describe?.slice(0, 80) || "",
-                    currentMilestone:
-                      application.current_milestone || "submitted",
+                    ...progressFromRow(application),
                     feedback: application.reviewer_feedback || null,
                     answers,
                   });
