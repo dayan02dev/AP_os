@@ -1,11 +1,14 @@
-"""Gate-1 admin decision service (Task 7).
+"""Admin decision service: gate 1 (record_decision) and gate 2
+(record_gate2_decision).
 
 A guarded write that:
   1. pre-validates the move (404 if app missing, 422 if illegal) with ZERO
      writes,
-  2. records the decision in `admin_decisions` (gate1 row),
-  3. moves the application status via the state machine, and
-  4. appends a best-effort audit entry.
+  2. records the decision in `admin_decisions` (gate1 / gate2 row),
+  3. moves the application status via the state machine,
+  4. appends a best-effort audit entry, and
+  5. mails the applicant, best-effort (decision_email): gate-1 rejected /
+     jury_review, gate-2 rejected / offered. Waitlist and hold stay silent.
 
 Ordering rationale — the decision row is written BEFORE the status moves,
 the reverse of the original implementation. We first read the current status
@@ -177,8 +180,9 @@ def record_gate2_decision(
     currently in ``jury_review`` (409 not_in_jury_review otherwise) — except
     ``rejected``, which is also allowed from offered / waitlisted / on_hold
     (409 already_rejected / not_rejectable otherwise). Inserts an
-    admin_decisions row with gate_stage='gate2', then moves status. Unlike
-    gate-1, this path sends NO applicant email.
+    admin_decisions row with gate_stage='gate2', then moves status. ``offered``
+    sends the selection mail of the app's effective track (TIR or VIP) and
+    ``rejected`` the gate-1 decline; waitlisted / on_hold send nothing.
     """
     if decision not in _GATE2_VALID:
         raise HTTPException(

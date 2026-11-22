@@ -11,9 +11,14 @@ Behaviour under test:
   5. Signed-url returns 404 for the signed variant until the doc is signed.
   6. The list endpoint returns only current (non-superseded) rows and degrades
      to [] instead of 500-ing when the table read blows up.
+  7. Several current documents per application (mig 046).
+  8. The first signature that completes a VIP application's IC documents while
+     it is in jury_review mails the VIP selection email — once, never for TIR.
 """
 
 from __future__ import annotations
+
+from types import SimpleNamespace
 
 import pytest
 from app.deps import get_current_user
@@ -536,3 +541,161 @@ def test_remove_requires_capability(monkeypatch, _clear_overrides):
     app.dependency_overrides[get_current_user] = _override_user(["jury"])
     r = _client().delete(f"/admin/platform/ic-documents/sip/{APP_ID}/documents/x")
     assert r.status_code == 403
+
+
+# ── 8. VIP selection mail when the IC set is completed ─────────────────────
+
+_VIP_APP = {"id": APP_ID, "status": "jury_review",
+            "basic_full_name": "Udayan Pawar", "basic_email": "udayan@x.com"}
+
+
+def _mailbox(monkeypatch, *, fail: bool = False) -> list:
+    from app.services import decision_email
+
+    sent: list = []
+
+    def _send(**kw):
+        if fail:
+            raise RuntimeError("resend down")
+        sent.append(kw)
+
+    monkeypatch.setattr(decision_email, "get_email_service",
+                        lambda: SimpleNamespace(send_applicant_selected=_send))
+    return sent
+
+
+def _sign(c, track="sip", document_id=None):
+    data = {"signer_name": "N"}
+    if document_id:
+        data["document_id"] = document_id
+    return c.post(f"/admin/platform/ic-documents/{track}/{APP_ID}/signature",
+                  files={"file": ("s.pdf", PDF, "application/pdf")}, data=data)
+
+
+def test_completing_the_ic_set_mails_a_vip_applicant_once(monkeypatch, _clear_overrides):
+    _install(monkeypatch, _tables(sip_applications=[dict(_VIP_APP)]))
+    sent = _mailbox(monkeypatch)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    c = _client()
+    _upload(c, "memo.pdf")
+
+    assert _sign(c).status_code == 200
+    assert sent == [{"to": "udayan@x.com", "applicant_name": "Udayan Pawar",
+                     "track": "sip", "venture": ""}]
+
+    # Re-signing an already complete set is not a new selection.
+    assert _sign(c).status_code == 200
+    assert len(sent) == 1
+
+
+def test_no_mail_while_another_current_document_is_unsigned(monkeypatch, _clear_overrides):
+    _install(monkeypatch, _tables(sip_applications=[dict(_VIP_APP)]))
+    sent = _mailbox(monkeypatch)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    c = _client()
+    first = _upload(c, "a.pdf", "append").json()["document"]["id"]
+    second = _upload(c, "b.pdf", "append").json()["document"]["id"]
+
+    assert _sign(c, document_id=first).status_code == 200
+    assert sent == []
+
+    assert _sign(c, document_id=second).status_code == 200
+    assert len(sent) == 1 and sent[0]["track"] == "sip"
+
+
+def test_completing_the_set_again_after_replace_or_append_does_not_mail(monkeypatch,
+                                                                        _clear_overrides):
+    _install(monkeypatch, _tables(sip_applications=[dict(_VIP_APP)]))
+    sent = _mailbox(monkeypatch)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    c = _client()
+    _upload(c, "memo.pdf")
+    _sign(c)
+    assert len(sent) == 1
+
+    _upload(c, "memo-v2.pdf", "replace")
+    assert _sign(c).status_code == 200
+    _upload(c, "annex.pdf", "append")
+    assert _sign(c).status_code == 200
+
+    assert len(sent) == 1
+
+
+def test_an_app_completed_before_the_hook_existed_is_not_mailed(monkeypatch, _clear_overrides):
+    """History says the set was already complete (a since-superseded memo was
+    signed), so signing its replacement is not a first completion."""
+    _install(monkeypatch, _tables(
+        sip_applications=[dict(_VIP_APP)],
+        ic_documents=[
+            {"id": "old", "application_id": APP_ID, "application_track": "sip",
+             "storage_path": "p0", "uploaded_at": "2026-10-01T10:00:00+00:00",
+             "signed_storage_path": "s0", "signed_at": "2026-10-02T10:00:00+00:00",
+             "superseded_at": "2026-10-05T10:00:00+00:00"},
+            {"id": "new", "application_id": APP_ID, "application_track": "sip",
+             "storage_path": "p1", "uploaded_at": "2026-10-05T10:00:00+00:00",
+             "superseded_at": None},
+        ]))
+    sent = _mailbox(monkeypatch)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+
+    assert _sign(_client(), document_id="new").status_code == 200
+    assert sent == []
+
+
+def test_completing_a_tir_ic_set_sends_nothing(monkeypatch, _clear_overrides):
+    """TIR acceptance mails were sent by hand; the IC path stays VIP-only."""
+    _install(monkeypatch, _tables(sip_applications=[],
+                                  tir_applications=[dict(_VIP_APP)]))
+    sent = _mailbox(monkeypatch)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    c = _client()
+    assert c.post(f"/admin/platform/ic-documents/tir/{APP_ID}",
+                  files={"file": ("ic.pdf", PDF, "application/pdf")}).status_code == 201
+
+    assert _sign(c, track="tir").status_code == 200
+    assert sent == []
+
+
+@pytest.mark.parametrize("native,moved_to,mailed", [
+    ("tir", "sip", True),    # moved into VIP
+    ("sip", "tir", False),   # moved out of VIP
+])
+def test_the_effective_track_decides(monkeypatch, _clear_overrides, native, moved_to, mailed):
+    other = "sip" if native == "tir" else "tir"
+    _install(monkeypatch, _tables(**{
+        f"{native}_applications": [{**_VIP_APP, "moved_to_track": moved_to}],
+        f"{other}_applications": [],
+    }))
+    sent = _mailbox(monkeypatch)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    c = _client()
+    assert c.post(f"/admin/platform/ic-documents/{moved_to}/{APP_ID}",
+                  files={"file": ("ic.pdf", PDF, "application/pdf")}).status_code == 201
+
+    assert _sign(c, track=moved_to).status_code == 200
+    assert [s["track"] for s in sent] == (["sip"] if mailed else [])
+
+
+@pytest.mark.parametrize("status", ["offered", "rejected", "on_hold", "waitlisted", "evaluated"])
+def test_no_mail_unless_the_app_is_in_jury_review(monkeypatch, _clear_overrides, status):
+    _install(monkeypatch, _tables(sip_applications=[{**_VIP_APP, "status": status}]))
+    sent = _mailbox(monkeypatch)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    c = _client()
+    _upload(c, "memo.pdf")
+
+    assert _sign(c).status_code == 200
+    assert sent == []
+
+
+def test_a_mail_failure_never_fails_the_signature(monkeypatch, _clear_overrides):
+    fake = _install(monkeypatch, _tables(sip_applications=[dict(_VIP_APP)]))
+    _mailbox(monkeypatch, fail=True)
+    app.dependency_overrides[get_current_user] = _override_user(["admin"])
+    c = _client()
+    _upload(c, "memo.pdf")
+
+    r = _sign(c)
+    assert r.status_code == 200, r.text
+    assert r.json()["document"]["signed"] is True
+    assert _current(fake)[0]["signed_at"]

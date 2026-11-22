@@ -349,7 +349,7 @@ class EmailService:
         application_ref: str = "",
         program_label: str = "ARTPARK",
     ) -> dict[str, str]:
-        """Applicant-facing gate-1 decision email.
+        """Applicant-facing decision email (gate-1 outcome, or a gate-2 reject).
 
         outcome="advanced" → moved to jury_review; outcome="rejected" → declined.
         The rejected copy is deliberately gracious and exposes NO internal rationale.
@@ -374,19 +374,12 @@ class EmailService:
         applicant_name: str,
         track: str,
         venture: str = "",
-        vip_funding_line: str = "",
-        vip_duration_line: str = "",
     ) -> dict[str, str]:
-        """Gate-2 selection email — the applicant has been offered a place.
+        """Selection email — the applicant has been offered a place.
 
-        Track-specific by design: the two programmes unlock different portal
-        tabs (TIR gets Approach / Organization / Expense management, VIP gets
-        TLR evaluation / MIS filling), and only TIR's commercial terms are
-        documented, so they cannot share one template.
-
-        `vip_funding_line` / `vip_duration_line` carry VIP's programme terms.
-        While either is empty the VIP mail renders a loud DRAFT banner instead
-        of quietly shipping an offer with holes in it.
+        Track-specific by design: only TIR's commercial terms are documented
+        (the grant below), so the VIP copy states no funding amount or duration
+        and leaves the programme terms to the agreement that follows.
         """
         is_vip = track == "sip"
         template_base = "applicant_selected_vip" if is_vip else "applicant_selected_tir"
@@ -400,12 +393,8 @@ class EmailService:
             {
                 "applicant_name": applicant_name or "there",
                 "venture": venture or "",
-                "portal_url": frontend_url("/founder"),
                 # TIR's first cheque, as written in the MOU the founder signs.
                 "grant_display": "Rs. 25,00,000",
-                "vip_funding_line": vip_funding_line or "",
-                "vip_duration_line": vip_duration_line or "",
-                "vip_terms_confirmed": bool(vip_funding_line and vip_duration_line),
             },
         )
         return self.send_raw([to], subject, html, text)

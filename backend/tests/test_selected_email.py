@@ -1,9 +1,11 @@
 """send_applicant_selected: renders the real TIR / VIP selection templates.
 
 These assert on rendered copy, so they fail if a template is renamed, a
-variable stops resolving, or the VIP placeholders are silently dropped.
+variable stops resolving, or a draft marker / invented VIP term creeps back in.
 """
 from __future__ import annotations
+
+import re
 
 import pytest
 
@@ -39,41 +41,38 @@ def test_tir_selection_names_the_grant_and_residency_benefits(svc):
     assert "25,00,000" in text and "WHAT HAPPENS NEXT" not in text
 
 
-def test_vip_selection_names_the_vip_tabs_not_the_tir_ones(svc):
+def test_vip_selection_mirrors_the_tir_announcement(svc):
+    s, sent = svc
+    s.send_applicant_selected(to="ada@x.com", applicant_name="Ada", track="sip",
+                              venture="Sample Venture")
+
+    html, text = sent["html"], sent["text"]
+    assert sent["to"] == ["ada@x.com"]
+    for body in (html, text):
+        assert "Congratulations, Ada" in body
+        assert "Sample Venture" in body
+        assert "Venture Innovation Programme (VIP)" in body
+        assert "programme terms will follow with your programme agreement" in body
+    assert "What the programme gives you" in html
+    assert "WHAT THE PROGRAMME GIVES YOU" in text
+    # Same concise shape as the TIR announcement: no onboarding instructions.
+    for removed in ("What happens next", "Sign MOU", "Founder Portal", "same password"):
+        assert removed not in html
+
+
+def test_vip_selection_is_final_copy_with_no_invented_terms(svc):
+    """VIP's funding amount and duration are not known, so the mail must state
+    neither — and carry no draft banner or placeholder now that it is sent."""
     s, sent = svc
     s.send_applicant_selected(to="ada@x.com", applicant_name="Ada", track="sip")
 
-    html = sent["html"]
-    assert "TLR evaluation" in html and "MIS filling" in html
-    for tir_only in ("Approach", "Expense management"):
-        assert tir_only not in html, f"TIR-only tab leaked into the VIP mail: {tir_only}"
-    assert "Sign MOU" in html and "same password" in html
-
-
-def test_vip_shouts_when_its_programme_terms_are_still_placeholders(svc):
-    """The VIP funding and duration lines are not known. Until they are supplied
-    the mail must carry an unmissable DRAFT warning rather than quietly omit
-    them — a silently incomplete offer is the dangerous failure here."""
-    s, sent = svc
-    s.send_applicant_selected(to="ada@x.com", applicant_name="Ada", track="sip")
-
-    assert "DRAFT — NOT FOR SENDING" in sent["html"]
-    assert "TO CONFIRM" in sent["html"]
-    assert "DRAFT — NOT FOR SENDING" in sent["text"]
-
-
-def test_supplying_the_vip_terms_removes_the_draft_warning(svc):
-    s, sent = svc
-    s.send_applicant_selected(
-        to="ada@x.com", applicant_name="Ada", track="sip",
-        vip_funding_line="<strong>A non-dilutive grant of Rs. 50,00,000</strong>.",
-        vip_duration_line="<strong>A twelve-month programme</strong>.",
-    )
-
-    html = sent["html"]
-    assert "DRAFT — NOT FOR SENDING" not in html
-    assert "TO CONFIRM" not in html
-    assert "50,00,000" in html and "twelve-month" in html
+    for body in (sent["html"], sent["text"]):
+        for marker in ("DRAFT", "NOT FOR SENDING", "TO CONFIRM", "[", "{{"):
+            assert marker not in body, f"draft marker in the VIP mail: {marker}"
+        assert "Rs." not in body and "₹" not in body and "25,00,000" not in body
+        assert not re.search(r"\d+\s*-?\s*month|six-month|twelve-month", body, re.I)
+        assert "TIR" not in body and "Technology Innovator" not in body
+        assert "SIP" not in body
 
 
 def test_the_venture_name_personalises_the_opening_when_present(svc):

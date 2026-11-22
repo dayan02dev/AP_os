@@ -26,6 +26,11 @@ deleting it — the old object stays in storage as the audit trail.
 
 There is intentionally no application-status guard: the Final Gate moves an app
 out of ``jury_review``, and the IC document may be uploaded or signed after that.
+
+The first signature that completes an application's current IC documents is
+the moment the Accepted tab counts it as selected (jury_review + every current
+document signed — stats.ic_all_signed_keys), so it mails a VIP applicant the
+selection email (decision_email.notify_vip_selected).
 """
 # NOTE: no `from __future__ import annotations` — FastAPI + pydantic 2 cannot
 # resolve stringified deps (same constraint as routers/mentors.py & jury.py).
@@ -40,7 +45,7 @@ from fastapi import status as http_status
 
 from ..deps import get_current_user
 from ..rbac import require_capability
-from ..services import staff_exclusions
+from ..services import decision_email, staff_exclusions
 from ..services.audit import actor_role_of, write_audit
 from ..supabase_client import get_admin_client
 
@@ -144,6 +149,55 @@ def _pick_current(sb: Any, track: str, application_id: str,
     if document_id:
         return next((r for r in rows if r.get("id") == document_id), None)
     return rows[-1] if rows else None
+
+
+def _all_signed(docs: list[dict]) -> bool:
+    """>=1 document and every one signed: the "selected" rule of
+    stats.ic_all_signed_keys and the admin Accepted tab."""
+    return bool(docs) and all(d.get("signed_at") for d in docs)
+
+
+def _ts(value: str | None) -> datetime:
+    return datetime.fromisoformat(value) if value else datetime.min.replace(tzinfo=UTC)
+
+
+def _was_ever_all_signed(rows: list[dict]) -> bool:
+    """Replay an application's IC history (current and superseded rows): was
+    there a moment when it had >=1 current document and every one signed? A
+    set only becomes complete when a document is signed or retired, so those
+    are the moments checked."""
+    moments = {_ts(r[k]) for r in rows for k in ("signed_at", "superseded_at") if r.get(k)}
+    for t in moments:
+        live = [r for r in rows
+                if _ts(r.get("uploaded_at")) <= t
+                and not (r.get("superseded_at") and _ts(r["superseded_at"]) <= t)]
+        if live and all(r.get("signed_at") and _ts(r["signed_at"]) <= t for r in live):
+            return True
+    return False
+
+
+def _notify_if_selected(sb: Any, track: str, application_id: str, signed_id: str) -> None:
+    """Mail the selection email when the signature just recorded on
+    ``signed_id`` completed the application's IC documents for the first time.
+
+    Before = the app's whole IC history without this signature, after = its
+    current documents now; so re-signing, or completing the set again after a
+    replace / append, never mails twice. decision_email applies the rest (VIP
+    only, still jury_review). Best-effort: the signature is already recorded,
+    so nothing here may raise.
+    """
+    try:
+        rows = (sb.table("ic_documents").select("*")
+                .eq("application_id", application_id)
+                .eq("application_track", track)
+                .execute().data) or []
+        current = [r for r in rows if r.get("superseded_at") is None]
+        before = [{**r, "signed_at": None} if r.get("id") == signed_id else r for r in rows]
+        if _all_signed(current) and not _was_ever_all_signed(before):
+            decision_email.notify_vip_selected(sb, track=track, application_id=application_id)
+    except Exception:
+        log.warning("ic_documents: selection notification failed",
+                    extra={"application_id": application_id, "track": track}, exc_info=True)
 
 
 def _public_doc(row: dict | None) -> dict | None:
@@ -284,7 +338,8 @@ async def sign_ic_document(
 
     ``file`` is the browser-stamped PDF. The signer's identity is taken from the
     authenticated caller — never from the payload — so the recorded signature is
-    always attributable. Re-signing overwrites the previous signed copy.
+    always attributable. Re-signing overwrites the previous signed copy. The
+    first signature that completes the IC documents mails a VIP applicant.
     """
     name = (signer_name or "").strip()
     if not name:
@@ -317,6 +372,9 @@ async def sign_ic_document(
         raise _error(http_status.HTTP_502_BAD_GATEWAY, "storage_upload_failed",
                      "Storage upload failed. Try again.") from exc
 
+    # Read before the update: only a first signature can complete the set (the
+    # app becomes "selected"); a re-sign never changes whether it is complete.
+    first_signature = not current.get("signed_at")
     now = datetime.now(UTC).isoformat()
     patch = {
         "signed_storage_path": signed_path,
@@ -346,6 +404,8 @@ async def sign_ic_document(
                "signer_name": name, "signer_email": user.get("email"),
                "signed_at": now},
     )
+    if first_signature:
+        _notify_if_selected(sb, track, application_id, current["id"])
     return {"document": _public_doc({**current, **patch})}
 
 
