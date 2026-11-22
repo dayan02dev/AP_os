@@ -212,7 +212,8 @@ async def decide_application(
     so leadership can reject directly from the dashboard, and a rationale default
     is recorded so the audit trail and admin_decisions row are never blank.
     gate2 — offered/waitlisted/on_hold/rejected routed via
-    decisions.record_gate2_decision (its own rationale rule; no applicant email).
+    decisions.record_gate2_decision (its own rationale rule; offered and
+    rejected mail the applicant, see services/decision_email).
     """
     track, _row = _resolve_app(application_id)
     # Route to gate-2 when gate_stage is explicitly "gate2" OR when the
